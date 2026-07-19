@@ -138,25 +138,39 @@ the host firewall and cloud firewall/security group.
 
 ## Deploy updates
 
-Rebuild and restart the API after backend changes:
+Use the redeploy script (always runs `git pull` first):
 
 ```bash
+cd /root/qchat
+
+# Pull + rebuild API and web, restart systemd, reload nginx
+./deploy/redeploy.sh
+
+# Pull + API only / web only
+./deploy/redeploy.sh --api
+./deploy/redeploy.sh --web
+```
+
+If nginx serves from `/var/www/qchat` instead of `apps/web/out`:
+
+```bash
+QCHAT_WEB_ROOT=/var/www/qchat ./deploy/redeploy.sh --web
+```
+
+Manual steps (equivalent to the script):
+
+```bash
+# API
 cd /root/qchat/services/api
 /usr/local/go/bin/go build -o bin/qchat-api ./cmd/api
 systemctl restart qchat-api
-```
 
-Rebuild and publish the frontend after web changes:
-
-```bash
+# Web
 cd /root/qchat/apps/web
 NEXT_PUBLIC_API_URL="" npm run build
-
 # Only needed when nginx serves /var/www/qchat:
-rsync -a --delete out/ /var/www/qchat/
-
-nginx -t
-systemctl reload nginx
+# rsync -a --delete out/ /var/www/qchat/
+nginx -t && systemctl reload nginx
 ```
 
 ## Troubleshooting

@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down api web admin test test-api test-e2e migrate seed generate check-openapi
+.PHONY: infra-up infra-down api web admin test test-api test-e2e migrate seed generate check-openapi redeploy
 
 infra-up:
 	docker compose up -d
@@ -35,6 +35,9 @@ test-e2e:
 
 smoke:
 	bash deploy/smoke-core.sh
+
+redeploy:
+	bash deploy/redeploy.sh
 
 test: test-api check-openapi smoke
 	cd apps/web && npm run typecheck
