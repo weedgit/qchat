@@ -165,11 +165,12 @@ export function useChat() {
     if (type === "message.recalled") {
       const id = String(payload?.id ?? "");
       const convId = String(payload?.conversation_id ?? "");
+      const recalledBody = String(payload?.body ?? "");
       if (!id || !convId) return;
       setMessages((prev) => ({
         ...prev,
         [convId]: (prev[convId] ?? []).map((m) =>
-          m.id === id ? { ...m, content: "[recalled]", recalled: true } : m
+          m.id === id ? { ...m, content: recalledBody, recalled: true } : m
         ),
       }));
       return;
@@ -398,12 +399,15 @@ export function useChat() {
     await api(`/v1/messages/${messageId}/recall`, { method: "POST" });
     const conv = conversations.find((c) => c.id === convId);
     const isGroup = conv?.type === "social_group" || conv?.type === "group";
-    const canSeeNotice = !isGroup || myRole === "owner" || myRole === "admin";
+    const isGroupAdmin = isGroup && (myRole === "owner" || myRole === "admin");
+    const canSeeNotice = !isGroup || isGroupAdmin;
     setMessages((prev) => ({
       ...prev,
       [convId]: canSeeNotice
         ? (prev[convId] ?? []).map((m) =>
-            m.id === messageId ? { ...m, content: "[recalled]", recalled: true } : m
+            m.id === messageId
+              ? { ...m, content: isGroupAdmin ? m.content : "", recalled: true }
+              : m
           )
         : (prev[convId] ?? []).filter((m) => m.id !== messageId),
     }));

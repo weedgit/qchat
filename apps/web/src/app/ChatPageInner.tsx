@@ -158,6 +158,11 @@ function Bubble({
   const hasReactions = !msg.recalled && (msg.reactions?.length ?? 0) > 0;
   const meta = (
     <span className="meta">
+      {msg.recalled && (
+        <span className="recall-mark" title="This message was recalled">
+          <MenuIcon d={ICONS.trash} style={{ width: 11, height: 11 }} />
+        </span>
+      )}
       {fmtTime(msg.createdAt)}
       {receiptMark(msg)}
       {!selectMode && msg.failed && onRetry && (
@@ -212,7 +217,11 @@ function Bubble({
               {replyPreview}
             </div>
           )}
-          {msg.content}
+          {msg.recalled && !msg.content ? (
+            <span className="recalled-placeholder">Message recalled</span>
+          ) : (
+            msg.content
+          )}
           {hasReactions ? (
             <div className="bubble-footer">
               <div className="reaction-chips">

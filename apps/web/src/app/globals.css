@@ -843,6 +843,22 @@ select:focus {
 .bubble.pending {
   opacity: 0.6;
 }
+.bubble.muted {
+  opacity: 0.65;
+}
+.recalled-placeholder {
+  font-style: italic;
+  color: var(--text-dim);
+}
+.recall-mark {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+.recall-mark svg {
+  display: block;
+}
 
 /* Telegram-style reply banner inside the composer box */
 .reply-banner {

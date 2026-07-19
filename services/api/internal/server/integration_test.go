@@ -176,7 +176,7 @@ func TestTwoUserDMAndRecall(t *testing.T) {
 		m := item.(map[string]any)
 		if fmt.Sprint(m["id"]) == mid {
 			found = true
-			if m["recalled"] != true || m["body"] != "[recalled]" {
+			if m["recalled"] != true || m["body"] != "" {
 				t.Fatalf("dm recall notice missing: %v", m)
 			}
 		}

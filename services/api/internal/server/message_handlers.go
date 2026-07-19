@@ -412,13 +412,16 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	showRecalled := convType == "dm" || isAdmin
 	rows, err := s.db.Query(r.Context(), `
 		SELECT m.id::text, m.sender_id::text, m.client_msg_id, m.seq, m.type,
-		       CASE WHEN m.recalled THEN '[recalled]' ELSE m.body END,
+		       CASE
+		         WHEN m.recalled AND NOT $4 THEN ''
+		         ELSE m.body
+		       END,
 		       m.media_url, m.reply_to_id::text, m.mention_all, m.recalled, m.created_at,
 		       u.display_name
 		FROM messages m JOIN users u ON u.id=m.sender_id
 		WHERE m.conversation_id=$1 AND m.created_at >= $2
 		  AND ($3 OR m.recalled=FALSE)
-		ORDER BY m.seq DESC LIMIT $4`, convID, histFrom, showRecalled, limit)
+		ORDER BY m.seq DESC LIMIT $5`, convID, histFrom, showRecalled, isAdmin, limit)
 	if err != nil {
 		writeErrCode(w, 500, "query_failed", "query failed")
 		return
@@ -661,11 +664,11 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRecall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	msgID := r.PathValue("id")
-	var convID, sender, convType, enterpriseID string
+	var convID, sender, convType, enterpriseID, body string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT m.conversation_id::text, m.sender_id::text, conv.type, conv.enterprise_id::text
+		SELECT m.conversation_id::text, m.sender_id::text, conv.type, conv.enterprise_id::text, m.body
 		FROM messages m JOIN conversations conv ON conv.id=m.conversation_id
-		WHERE m.id=$1`, msgID).Scan(&convID, &sender, &convType, &enterpriseID)
+		WHERE m.id=$1`, msgID).Scan(&convID, &sender, &convType, &enterpriseID, &body)
 	if err != nil {
 		writeErrCode(w, 404, "not_found", "not found")
 		return
@@ -703,7 +706,8 @@ func (s *Server) handleRecall(w http.ResponseWriter, r *http.Request) {
 				ordinary = append(ordinary, id)
 			}
 		}
-		s.hub.PublishToUsers(admins, ws.Event{Type: "message.recalled", Payload: payload})
+		adminPayload := map[string]any{"id": msgID, "conversation_id": convID, "body": body}
+		s.hub.PublishToUsers(admins, ws.Event{Type: "message.recalled", Payload: adminPayload})
 		s.hub.PublishToUsers(ordinary, ws.Event{Type: "message.removed", Payload: payload})
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
