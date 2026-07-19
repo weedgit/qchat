@@ -1,0 +1,466 @@
+openapi: 3.0.3
+info:
+  title: Qchat API
+  version: 0.2.0
+servers:
+  - url: http://localhost:8080
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        error: { type: string }
+        fields:
+          type: object
+          additionalProperties: { type: string }
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        token_type: { type: string }
+        expires_in: { type: integer }
+        user_id: { type: string, format: uuid }
+        enterprise_id: { type: string, format: uuid }
+        role: { type: string }
+    UserProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        enterprise_id: { type: string, format: uuid }
+        phone: { type: string }
+        username: { type: string }
+        display_name: { type: string }
+        real_name: { type: string }
+        age: { type: integer, nullable: true }
+        region: { type: string }
+        signature: { type: string }
+        avatar_url: { type: string }
+        profile_visibility: { type: string, enum: [public, friends] }
+        friend_privacy: { type: string, enum: [open, approval, closed] }
+        role: { type: string }
+        banned: { type: boolean }
+    Friend:
+      type: object
+      properties:
+        friendship_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        username: { type: string }
+        display_name: { type: string }
+        avatar_url: { type: string }
+        note: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [pending, accepted, rejected, blocked] }
+        incoming: { type: boolean }
+        outgoing: { type: boolean }
+        online: { type: boolean }
+    Conversation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        title: { type: string }
+        avatar_url: { type: string }
+        public_id: { type: string }
+        role: { type: string }
+        last_message: { type: string }
+        last_message_at: { type: string, format: date-time }
+        unread: { type: integer }
+        unread_count: { type: integer }
+        peer_name: { type: string }
+    Message:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        conversation_id: { type: string, format: uuid }
+        sender_id: { type: string, format: uuid }
+        sender_name: { type: string }
+        client_msg_id: { type: string }
+        seq: { type: integer }
+        type: { type: string }
+        body: { type: string }
+        media_url: { type: string }
+        reply_to_id: { type: string, format: uuid }
+        mention_all: { type: boolean }
+        recalled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        delivered: { type: boolean }
+        read: { type: boolean }
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /v1/auth/captcha:
+    get:
+      summary: Issue captcha challenge
+      responses:
+        "200":
+          description: Captcha
+  /v1/auth/register:
+    post:
+      summary: Register
+      responses:
+        "201":
+          description: Tokens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+  /v1/auth/login:
+    post:
+      summary: Login
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+  /v1/auth/refresh:
+    post:
+      summary: Rotate refresh token
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenPair" }
+  /v1/auth/logout:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Logout
+      responses:
+        "200":
+          description: OK
+  /v1/me:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Current profile
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserProfile" }
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update profile
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserProfile" }
+  /v1/usernames/available:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Check username availability
+      parameters:
+        - in: query
+          name: username
+          schema: { type: string }
+      responses:
+        "200":
+          description: Availability
+  /v1/me/phone/request:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Request phone change SMS code
+      responses:
+        "200":
+          description: Challenge created
+  /v1/me/phone/confirm:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Confirm phone change
+      responses:
+        "200":
+          description: Updated
+  /v1/friends:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List friends and requests
+      responses:
+        "200":
+          description: Friends
+  /v1/users/lookup:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Lookup user by username or ID
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+      responses:
+        "200":
+          description: Users
+  /v1/friends/request:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Send friend request
+      responses:
+        "201":
+          description: Created
+  /v1/friends/{id}/accept:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Accept friend request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/friends/{id}/reject:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Reject friend request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/friends/{id}/block:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Block user/friendship
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+  /v1/friends/{id}/unblock:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Unblock
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+  /v1/friends/{id}:
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update friend note/tags
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/conversations:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List conversations
+      responses:
+        "200":
+          description: Conversations
+  /v1/conversations/dm:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Open or create DM
+      responses:
+        "200":
+          description: Conversation
+        "201":
+          description: Created
+  /v1/groups:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create group
+      responses:
+        "201":
+          description: Created
+  /v1/groups/join:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Request to join group by public ID
+      responses:
+        "202":
+          description: Pending
+  /v1/groups/{id}:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Group details
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Group
+  /v1/groups/{id}/pending:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Pending join requests
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Pending
+  /v1/groups/{id}/approve:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Approve join
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/groups/{id}/mute:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Mute member or group
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/groups/{id}/admins:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Appoint or demote admin
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/conversations/{id}/messages:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List messages
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Messages
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Send message
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Message
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+  /v1/messages/{id}/recall:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Recall message
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/messages/{id}/read:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Mark read
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/messages/{id}/delivered:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Mark delivered
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+  /v1/messages/{id}/react:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Toggle emoji reaction
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Reaction state
+  /v1/messages/{id}/forward:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Forward message
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Forwarded
+  /v1/media/upload:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Upload media
+      responses:
+        "201":
+          description: Uploaded
+  /v1/ws:
+    get:
+      summary: WebSocket realtime channel
+      parameters:
+        - in: query
+          name: token
+          schema: { type: string }
+      responses:
+        "101":
+          description: Switching Protocols

@@ -1,0 +1,13 @@
+node_modules/
+.next/
+dist/
+build/
+data/
+backups/
+*.log
+.env
+.DS_Store
+services/api/data/
+apps/desktop/node_modules/
+apps/mobile/.dart_tool/
+apps/mobile/build/
