@@ -1,5 +1,6 @@
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "development" ? "http://localhost:8080" : "");
 
 const ACCESS_KEY = "qchat.access_token";
 const REFRESH_KEY = "qchat.refresh_token";
@@ -162,6 +163,8 @@ export function asList(body: any, ...keys: string[]): any[] {
 
 export function wsUrl(): string {
   const token = getToken() ?? "";
-  const base = API_URL.replace(/^http/, "ws");
+  let origin = API_URL;
+  if (!origin && typeof window !== "undefined") origin = window.location.origin;
+  const base = origin.replace(/^http/, "ws");
   return `${base}/v1/ws?token=${encodeURIComponent(token)}`;
 }

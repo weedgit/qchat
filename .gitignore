@@ -8,6 +8,7 @@ backups/
 .env
 .DS_Store
 services/api/data/
+services/api/bin/
 apps/desktop/node_modules/
 apps/mobile/.dart_tool/
 apps/mobile/build/

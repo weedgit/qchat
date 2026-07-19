@@ -145,6 +145,8 @@ export function mediaURL(path?: string | null): string | undefined {
   if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) {
     return path;
   }
-  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+  const base =
+    process.env.NEXT_PUBLIC_API_URL ??
+    (process.env.NODE_ENV === "development" ? "http://localhost:8080" : "");
   return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
 }

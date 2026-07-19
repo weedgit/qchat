@@ -30,3 +30,7 @@ cd apps/admin && npm install && npm run dev
 ## Docs
 
 See [`docs/`](docs/) for requirements, architecture decisions, implementation plans, and operational guidance.
+
+For an always-on deployment with the Go API managed by systemd and the web
+frontend/API exposed through nginx on port 80, see
+[`docs/deployment-nginx-systemd.md`](docs/deployment-nginx-systemd.md).

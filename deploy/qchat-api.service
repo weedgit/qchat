@@ -1,0 +1,18 @@
+[Unit]
+Description=Qchat API (Go backend)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/qchat/services/api
+EnvironmentFile=/root/qchat/deploy/qchat-api.env
+ExecStart=/root/qchat/services/api/bin/qchat-api
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qchat-api
+
+[Install]
+WantedBy=multi-user.target
