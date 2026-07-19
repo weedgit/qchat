@@ -46,7 +46,18 @@ function ConversationRow({
         </div>
         <div className="conv-bottom">
           <span className="conv-preview">
-            {conv.lastMessage ?? <span className="muted">No messages yet</span>}
+            {conv.lastMessage ? (
+              <>
+                {(conv.lastMessageMine || conv.type !== "dm") && conv.lastMessageSender && (
+                  <span className="conv-sender">
+                    {conv.lastMessageMine ? "You" : conv.lastMessageSender}:{" "}
+                  </span>
+                )}
+                {conv.lastMessage}
+              </>
+            ) : (
+              <span className="muted">No messages yet</span>
+            )}
           </span>
           {conv.unreadCount > 0 && (
             <span className="badge">
@@ -102,6 +113,7 @@ const ICONS = {
   settings:
     "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M19.1 4.9L17 7 M7 17l-2.1 2.1",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
+  mic: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M19 11a7 7 0 0 1-14 0 M12 18v4",
 } as const;
 
 const QUICK_EMOJIS = [
@@ -325,7 +337,11 @@ export default function ChatPageInner() {
     e.stopPropagation();
     if (msg.pending) return;
     const hasEmojiRow = !selectMode && !msg.recalled && !msg.failed;
-    const MENU_W = hasEmojiRow ? 270 : 200;
+    const MENU_W = 200;
+    // the emoji row is wider than the menu and centered over it, so it
+    // overhangs each side; keep that overhang on-screen too
+    const EMOJI_OVERHANG = hasEmojiRow ? 35 : 0;
+    const EMOJI_ROW_H = hasEmojiRow ? 46 : 0;
     let itemCount: number;
     if (selectMode && selectedIds.has(msg.id)) {
       itemCount = 3 + (recallableSelected.length > 0 ? 1 : 0);
@@ -338,9 +354,15 @@ export default function ChatPageInner() {
         (msg.mine && !msg.recalled && !msg.failed ? 1 : 0) + // recall
         (msg.failed ? 1 : 0); // retry
     }
-    const MENU_H = itemCount * 38 + 12 + (hasEmojiRow ? 46 : 0);
-    const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8);
-    const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8);
+    const MENU_H = itemCount * 38 + 12;
+    const x = Math.min(
+      Math.max(e.clientX, 8 + EMOJI_OVERHANG),
+      window.innerWidth - MENU_W - 8 - EMOJI_OVERHANG
+    );
+    const y = Math.min(
+      Math.max(e.clientY, 8 + EMOJI_ROW_H),
+      window.innerHeight - MENU_H - 8
+    );
     setCtxMenu({ x, y, msgId: msg.id });
   }
 
@@ -429,6 +451,10 @@ export default function ChatPageInner() {
     el.style.height = `${el.scrollHeight}px`;
   }, [draft]);
 
+  useEffect(() => {
+    if (replyTo) draftRef.current?.focus();
+  }, [replyTo]);
+
   async function send() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
@@ -465,16 +491,15 @@ export default function ChatPageInner() {
           >
             <MenuIcon d={ICONS.menu} />
           </button>
-          <input
-            className="search-input"
-            placeholder="Search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <span
-            className={`conn-dot ${chat.connected ? "on" : ""}`}
-            title={chat.connected ? "Connected" : "Disconnected"}
-          />
+          <div className="search-wrap">
+            <input
+              className="search-input"
+              placeholder={chat.connected ? "Search" : "Reconnecting\u2026"}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {!chat.connected && <span className="spinner" aria-label="Reconnecting" />}
+          </div>
           {mainMenuOpen && (
             <div className="popup-menu main-menu" onClick={(e) => e.stopPropagation()}>
               <Link className="ctx-item" href="/profile">
@@ -651,41 +676,63 @@ export default function ChatPageInner() {
               ))}
             </div>
 
-            {replyTo && (
-              <div className="muted" style={{ padding: "4px 8%", fontSize: 12 }}>
-                Replying to: {replyTo.content.slice(0, 80)}{" "}
-                <button className="btn-ghost" type="button" onClick={() => setReplyTo(null)}>Cancel</button>
-              </div>
-            )}
-
             {sendError && (
-              <div className="error-text" style={{ padding: "0 8%" }}>
+              <div
+                className="error-text"
+                style={{ width: "100%", maxWidth: 720, margin: "0 auto", padding: "0 16px" }}
+              >
                 Failed to send: {sendError}
               </div>
             )}
 
             <div className="composer">
-              <textarea
-                ref={draftRef}
-                rows={1}
-                placeholder="Write a message…"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-              />
-              <button
-                className="send-btn"
-                onClick={send}
-                disabled={!draft.trim()}
-                title="Send"
-              >
-                {"\u27A4"}
-              </button>
+              <div className="composer-box">
+                {replyTo && (
+                  <div className="reply-banner">
+                    <MenuIcon d={ICONS.reply} style={{ width: 22, height: 22 }} />
+                    <div className="reply-body">
+                      <div className="reply-name">
+                        Reply to {replyTo.mine
+                          ? chat.me?.nickname || chat.me?.username || "You"
+                          : replyTo.senderName || active.title}
+                      </div>
+                      <div className="reply-text">{replyTo.content}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="reply-close"
+                      title="Cancel reply"
+                      onClick={() => setReplyTo(null)}
+                    >
+                      {"\u2715"}
+                    </button>
+                  </div>
+                )}
+                <div className="composer-row">
+                  <textarea
+                    ref={draftRef}
+                    rows={1}
+                    placeholder="Message"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        send();
+                      }
+                    }}
+                  />
+                  {draft.trim() ? (
+                    <button className="send-btn" onClick={send} title="Send">
+                      {"\u27A4"}
+                    </button>
+                  ) : (
+                    <button className="send-btn" title="Record voice message">
+                      <MenuIcon d={ICONS.mic} style={{ width: 20, height: 20 }} />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           </>
         )}

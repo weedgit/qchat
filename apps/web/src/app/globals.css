@@ -382,6 +382,8 @@ select:focus {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
   display: flex;
   flex-direction: column;
+  transform-origin: top left;
+  animation: ui-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .main-menu {
   top: 54px;
@@ -390,6 +392,7 @@ select:focus {
 .compose-menu {
   bottom: 76px;
   right: 18px;
+  transform-origin: bottom right;
 }
 .fab {
   position: absolute;
@@ -479,6 +482,9 @@ select:focus {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.conv-sender {
+  color: var(--text);
+}
 
 /* ---------- chat pane ---------- */
 
@@ -513,10 +519,17 @@ select:focus {
 .msg-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 18px 8%;
+  padding: 18px 16px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+/* keep the chat history in a narrow centered column */
+.msg-scroll > * {
+  width: 100%;
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .msg-row {
@@ -655,9 +668,12 @@ select:focus {
   color: var(--text);
   font-size: 14px;
   line-height: 1.4;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+  animation: ui-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .reaction-chip:hover {
   background: rgba(0, 0, 0, 0.34);
+  transform: translateY(-1px);
 }
 .reaction-chip.mine {
   background: rgba(255, 255, 255, 0.85);
@@ -720,15 +736,20 @@ select:focus {
 .ctx-wrap {
   position: fixed;
   z-index: 60;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  transform-origin: top left;
+  animation: ui-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .ctx-wrap .ctx-menu {
   position: static;
+  animation: none;
 }
+/* floats above the menu, horizontally centered on it */
 .ctx-emoji-row {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
   display: flex;
   gap: 2px;
   padding: 4px 6px;
@@ -748,16 +769,16 @@ select:focus {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
   display: flex;
   flex-direction: column;
-  animation: ctx-pop 0.1s ease-out;
+  animation: ui-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-@keyframes ctx-pop {
+@keyframes ui-pop-in {
   from {
     opacity: 0;
-    transform: scale(0.94);
+    transform: translateY(4px) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 .ctx-item {
@@ -823,19 +844,87 @@ select:focus {
   opacity: 0.6;
 }
 
+/* Telegram-style reply banner inside the composer box */
+.reply-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 4px 8px;
+  border-bottom: 1px solid var(--bg-panel-2);
+  margin-bottom: 6px;
+  color: var(--accent);
+  animation: ui-pop-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.reply-banner > svg {
+  flex: none;
+}
+.reply-body {
+  flex: 1;
+  min-width: 0;
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+.reply-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.reply-text {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reply-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.reply-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .composer {
   flex: none;
+  padding: 10px 16px 16px;
+  width: 100%;
+  max-width: 752px; /* 720px column + side padding */
+  margin: 0 auto;
+}
+/* single rounded box holding reply banner + input + send/mic */
+.composer-box {
   display: flex;
-  gap: 10px;
-  padding: 10px 8% 16px;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-radius: 16px;
+  padding: 8px 10px;
+}
+.composer-row {
+  display: flex;
+  gap: 8px;
   align-items: flex-end;
 }
-.composer textarea {
+.composer textarea,
+.composer textarea:focus {
+  flex: 1;
   resize: none;
   max-height: 500px;
   overflow-y: auto;
-  background: var(--bg-panel);
-  border-radius: 16px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 8px 6px;
   /* scroll works, but the scrollbar itself is hidden */
   scrollbar-width: none;
 }
@@ -849,15 +938,16 @@ select:focus {
 }
 .send-btn {
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  font-size: 18px;
+  font-size: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.12s ease, transform 0.12s ease;
 }
 .send-btn:hover {
   background: var(--accent-hover);
@@ -879,6 +969,17 @@ select:focus {
   align-items: center;
   gap: 10px;
   overflow-y: auto;
+  animation: details-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes details-enter {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 .details-panel .kv {
   width: 100%;
@@ -934,4 +1035,48 @@ select:focus {
 }
 .conn-dot.on {
   background: var(--ok);
+}
+.search-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+}
+.search-wrap .search-input {
+  width: 100%;
+}
+.search-wrap .spinner {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--text-dim);
+  border-top-color: transparent;
+  animation: spinner-enter 140ms ease-out, spin 0.8s 140ms linear infinite;
+}
+@keyframes spinner-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

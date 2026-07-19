@@ -13,6 +13,8 @@ export interface Conversation {
   avatarUrl?: string;
   lastMessage?: string;
   lastMessageAt?: string;
+  lastMessageSender?: string;
+  lastMessageMine?: boolean;
   unreadCount: number;
 }
 
@@ -82,6 +84,8 @@ export function normalizeConversation(raw: any): Conversation {
     lastMessage:
       typeof last === "string" ? last : str(last?.content ?? last?.body ?? last?.text) || undefined,
     lastMessageAt: str(raw?.last_message_at ?? raw?.updated_at ?? last?.created_at) || undefined,
+    lastMessageSender: str(raw?.last_message_sender) || undefined,
+    lastMessageMine: Boolean(raw?.last_message_mine),
     unreadCount: Number(raw?.unread_count ?? raw?.unread ?? 0) || 0,
   };
 }

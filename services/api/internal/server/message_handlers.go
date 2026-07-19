@@ -18,6 +18,11 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		       COALESCE(conv.public_id, ''), cm.role, cm.last_read_seq,
 		       COALESCE((SELECT body FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
 		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1), ''),
+		       COALESCE((SELECT m.sender_id::text FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
+		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1), ''),
+		       COALESCE((SELECT u.display_name FROM messages m JOIN users u ON u.id=m.sender_id
+		                 WHERE m.conversation_id=conv.id AND m.recalled=FALSE
+		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1), ''),
 		       COALESCE((SELECT COUNT(*)::bigint FROM messages m WHERE m.conversation_id=conv.id AND m.seq > cm.last_read_seq
 		                 AND m.recalled=FALSE AND m.sender_id<>$1 AND m.created_at >= cm.history_visible_from), 0),
 		       COALESCE((SELECT u.display_name FROM conversation_members om
@@ -44,10 +49,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var id, typ, title, avatar, publicID, role, lastBody, peerName, peerAvatar string
+		var id, typ, title, avatar, publicID, role, lastBody, lastSenderID, lastSenderName, peerName, peerAvatar string
 		var lastRead, unread int64
 		var lastAt *time.Time
-		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &lastBody, &unread, &peerName, &peerAvatar, &lastAt); err != nil {
+		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &lastBody, &lastSenderID, &lastSenderName, &unread, &peerName, &peerAvatar, &lastAt); err != nil {
 			continue
 		}
 		if title == "" && typ == "dm" && peerName != "" {
@@ -63,6 +68,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			"id": id, "type": typ, "title": title, "avatar_url": avatar, "public_id": publicID,
 			"role": role, "last_read_seq": lastRead, "last_message": lastBody, "unread": unread,
 			"unread_count": unread, "peer_name": peerName,
+			"last_message_sender": lastSenderName, "last_message_mine": lastSenderID == c.UserID,
 		}
 		if lastAt != nil {
 			item["last_message_at"] = lastAt.UTC()

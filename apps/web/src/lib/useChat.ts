@@ -21,12 +21,28 @@ export function useChat() {
 
   const meRef = useRef<CurrentUser | null>(null);
   const activeIdRef = useRef<string | null>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
 
   meRef.current = me;
   activeIdRef.current = activeId;
+  conversationsRef.current = conversations;
+
+  useEffect(() => {
+    if (!("Notification" in window) || Notification.permission !== "default") return;
+
+    const requestPermission = () => {
+      Notification.requestPermission().catch(() => {});
+    };
+    window.addEventListener("pointerdown", requestPermission, { once: true });
+    window.addEventListener("keydown", requestPermission, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", requestPermission);
+      window.removeEventListener("keydown", requestPermission);
+    };
+  }, []);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -192,6 +208,10 @@ export function useChat() {
               ...c,
               lastMessage: msg.content || c.lastMessage,
               lastMessageAt: msg.createdAt,
+              lastMessageSender: msg.mine
+                ? meRef.current?.nickname || meRef.current?.username
+                : msg.senderName,
+              lastMessageMine: Boolean(msg.mine),
               unreadCount:
                 c.id === activeIdRef.current || msg.mine
                   ? c.unreadCount
@@ -206,8 +226,31 @@ export function useChat() {
       if (activeIdRef.current === msg.conversationId) {
         api(`/v1/messages/${msg.id}/read`, { method: "POST" }).catch(() => {});
       }
+      if (
+        "Notification" in window &&
+        Notification.permission === "granted" &&
+        (document.hidden || activeIdRef.current !== msg.conversationId)
+      ) {
+        const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
+        const notification = new Notification(
+          msg.senderName || conversation?.title || "New message",
+          {
+            body: msg.content,
+            tag: `qchat-${msg.conversationId}`,
+          }
+        );
+        notification.onclick = () => {
+          window.focus();
+          setActiveId(msg.conversationId);
+          setConversations((prev) =>
+            prev.map((c) => (c.id === msg.conversationId ? { ...c, unreadCount: 0 } : c))
+          );
+          loadMessages(msg.conversationId);
+          notification.close();
+        };
+      }
     }
-  }, [loadConversations]);
+  }, [loadConversations, loadMessages]);
 
   useEffect(() => {
     if (!getToken()) return;
