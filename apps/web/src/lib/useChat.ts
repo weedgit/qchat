@@ -10,6 +10,18 @@ import {
   normalizeMessage,
 } from "./types";
 
+export type TypingUser = { userId: string; name: string };
+
+const TYPING_TTL_MS = 3500;
+const TYPING_SEND_INTERVAL_MS = 2500;
+
+export function formatTypingLabel(users: TypingUser[]): string {
+  if (users.length === 0) return "";
+  if (users.length === 1) return `${users[0].name} is typing…`;
+  if (users.length === 2) return `${users[0].name} and ${users[1].name} are typing…`;
+  return "Several people are typing…";
+}
+
 export function useChat() {
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -18,6 +30,7 @@ export function useChat() {
   const [connected, setConnected] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string>("member");
+  const [typingByConv, setTypingByConv] = useState<Record<string, TypingUser[]>>({});
 
   const meRef = useRef<CurrentUser | null>(null);
   const activeIdRef = useRef<string | null>(null);
@@ -25,10 +38,97 @@ export function useChat() {
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
+  const typingExpiryRef = useRef<Record<string, Record<string, ReturnType<typeof setTimeout>>>>({});
+  const lastTypingSentRef = useRef<Record<string, number>>({});
+  const typingActiveRef = useRef<Record<string, boolean>>({});
+  const typingIdleRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   meRef.current = me;
   activeIdRef.current = activeId;
   conversationsRef.current = conversations;
+
+  const clearTypingUser = useCallback((convId: string, userId: string) => {
+    const byUser = typingExpiryRef.current[convId];
+    if (byUser?.[userId]) {
+      clearTimeout(byUser[userId]);
+      delete byUser[userId];
+    }
+    setTypingByConv((prev) => {
+      const list = (prev[convId] ?? []).filter((u) => u.userId !== userId);
+      if (list.length === (prev[convId] ?? []).length) return prev;
+      if (list.length === 0) {
+        const next = { ...prev };
+        delete next[convId];
+        return next;
+      }
+      return { ...prev, [convId]: list };
+    });
+  }, []);
+
+  const upsertTypingUser = useCallback(
+    (convId: string, userId: string, name: string) => {
+      if (!convId || !userId || userId === meRef.current?.id) return;
+      setTypingByConv((prev) => {
+        const list = prev[convId] ?? [];
+        const idx = list.findIndex((u) => u.userId === userId);
+        const nextUser = { userId, name: name || "Someone" };
+        if (idx >= 0) {
+          const copy = [...list];
+          copy[idx] = nextUser;
+          return { ...prev, [convId]: copy };
+        }
+        return { ...prev, [convId]: [...list, nextUser] };
+      });
+      if (!typingExpiryRef.current[convId]) typingExpiryRef.current[convId] = {};
+      const existing = typingExpiryRef.current[convId][userId];
+      if (existing) clearTimeout(existing);
+      typingExpiryRef.current[convId][userId] = setTimeout(() => {
+        clearTypingUser(convId, userId);
+      }, TYPING_TTL_MS);
+    },
+    [clearTypingUser]
+  );
+
+  const wsSend = useCallback((type: string, payload: Record<string, unknown>) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    try {
+      ws.send(JSON.stringify({ type, payload }));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const stopTyping = useCallback(
+    (convId: string) => {
+      if (!convId) return;
+      if (typingIdleRef.current[convId]) {
+        clearTimeout(typingIdleRef.current[convId]);
+        delete typingIdleRef.current[convId];
+      }
+      if (!typingActiveRef.current[convId]) return;
+      typingActiveRef.current[convId] = false;
+      delete lastTypingSentRef.current[convId];
+      wsSend("typing.stop", { conversation_id: convId });
+    },
+    [wsSend]
+  );
+
+  const notifyTyping = useCallback(
+    (convId: string) => {
+      if (!convId) return;
+      const now = Date.now();
+      const last = lastTypingSentRef.current[convId] ?? 0;
+      typingActiveRef.current[convId] = true;
+      if (now - last >= TYPING_SEND_INTERVAL_MS) {
+        lastTypingSentRef.current[convId] = now;
+        wsSend("typing.start", { conversation_id: convId });
+      }
+      if (typingIdleRef.current[convId]) clearTimeout(typingIdleRef.current[convId]);
+      typingIdleRef.current[convId] = setTimeout(() => stopTyping(convId), TYPING_TTL_MS);
+    },
+    [wsSend, stopTyping]
+  );
 
   useEffect(() => {
     if (!("Notification" in window) || Notification.permission !== "default") return;
@@ -93,6 +193,20 @@ export function useChat() {
   const handleIncoming = useCallback((raw: any) => {
     const type = String(raw?.type ?? "");
     const payload = raw?.payload ?? raw?.data ?? raw;
+
+    if (type === "typing.start") {
+      const convId = String(payload?.conversation_id ?? "");
+      const userId = String(payload?.user_id ?? "");
+      const name = String(payload?.user_name ?? payload?.name ?? "Someone");
+      upsertTypingUser(convId, userId, name);
+      return;
+    }
+    if (type === "typing.stop") {
+      const convId = String(payload?.conversation_id ?? "");
+      const userId = String(payload?.user_id ?? "");
+      if (convId && userId) clearTypingUser(convId, userId);
+      return;
+    }
 
     if (type === "message.read") {
       const id = String(payload?.id ?? "");
@@ -181,6 +295,8 @@ export function useChat() {
     if (!msg.conversationId) return;
     if (!msg.content && !msg.clientMsgId) return;
 
+    if (msg.senderId) clearTypingUser(msg.conversationId, msg.senderId);
+
     setMessages((prev) => {
       const list = prev[msg.conversationId] ?? [];
       if (list.some((m) => m.id === msg.id || (msg.clientMsgId && m.clientMsgId === msg.clientMsgId))) {
@@ -251,7 +367,7 @@ export function useChat() {
         };
       }
     }
-  }, [loadConversations, loadMessages]);
+  }, [loadConversations, loadMessages, clearTypingUser, upsertTypingUser]);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -293,24 +409,24 @@ export function useChat() {
 
   const openConversation = useCallback(
     async (id: string) => {
+      const prevId = activeIdRef.current;
+      if (prevId && prevId !== id) stopTyping(prevId);
       setActiveId(id);
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
       );
-      const conv = conversations.find((c) => c.id === id);
-      if (conv?.type === "social_group" || conv?.type === "group") {
-        try {
-          const g = await api<any>(`/v1/groups/${id}`);
-          setMyRole(String(g?.role ?? "member"));
-        } catch {
-          setMyRole("member");
-        }
-      } else {
+      // Don't rely on the cached conversation list here: right after creating
+      // a group it may not contain the new conversation yet. DMs return 404
+      // from the groups endpoint and fall back to "member".
+      try {
+        const g = await api<any>(`/v1/groups/${id}`);
+        setMyRole(String(g?.role ?? "member"));
+      } catch {
         setMyRole("member");
       }
       loadMessages(id);
     },
-    [conversations, loadMessages]
+    [loadMessages, stopTyping]
   );
 
   const openDM = useCallback(
@@ -329,6 +445,7 @@ export function useChat() {
   );
 
   const sendMessage = useCallback(async (convId: string, content: string, replyToId?: string) => {
+    stopTyping(convId);
     const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const tempId = clientMsgId;
     const optimistic: Message = {
@@ -385,7 +502,7 @@ export function useChat() {
       }));
       throw e;
     }
-  }, []);
+  }, [stopTyping]);
 
   const retryMessage = useCallback(async (convId: string, msg: Message) => {
     setMessages((prev) => ({
@@ -462,6 +579,9 @@ export function useChat() {
     connected,
     loadError,
     myRole,
+    typingByConv,
+    notifyTyping,
+    stopTyping,
     openConversation,
     openDM,
     sendMessage,

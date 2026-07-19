@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -66,11 +68,73 @@ func (s *Server) readPump(c *ws.Client) {
 		return nil
 	})
 	for {
-		_, _, err := c.Conn.ReadMessage()
+		_, data, err := c.Conn.ReadMessage()
 		if err != nil {
 			break
 		}
+		s.handleClientWS(c, data)
 	}
+}
+
+func (s *Server) handleClientWS(c *ws.Client, data []byte) {
+	var msg struct {
+		Type    string          `json:"type"`
+		Payload json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(data, &msg); err != nil || msg.Type == "" {
+		return
+	}
+	switch msg.Type {
+	case "typing.start", "typing.stop":
+		var p struct {
+			ConversationID string `json:"conversation_id"`
+		}
+		if err := json.Unmarshal(msg.Payload, &p); err != nil || p.ConversationID == "" {
+			return
+		}
+		s.broadcastTyping(c, msg.Type, p.ConversationID)
+	}
+}
+
+func (s *Server) broadcastTyping(c *ws.Client, eventType, convID string) {
+	ctx := context.Background()
+	var role string
+	err := s.db.QueryRow(ctx, `
+		SELECT role FROM conversation_members
+		WHERE conversation_id=$1 AND user_id=$2 AND role <> 'pending'`,
+		convID, c.UserID).Scan(&role)
+	if err != nil || role == "" {
+		return
+	}
+	var name string
+	_ = s.db.QueryRow(ctx, `SELECT display_name FROM users WHERE id=$1`, c.UserID).Scan(&name)
+	if name == "" {
+		name = "Someone"
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT user_id::text FROM conversation_members
+		WHERE conversation_id=$1 AND role <> 'pending' AND user_id <> $2`, convID, c.UserID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var recipients []string
+	for rows.Next() {
+		var id string
+		_ = rows.Scan(&id)
+		recipients = append(recipients, id)
+	}
+	if len(recipients) == 0 {
+		return
+	}
+	s.hub.PublishToUsers(recipients, ws.Event{
+		Type: eventType,
+		Payload: map[string]any{
+			"conversation_id": convID,
+			"user_id":         c.UserID,
+			"user_name":       name,
+		},
+	})
 }
 
 func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {

@@ -13,7 +13,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import { api, clearToken } from "@/lib/api";
-import { useChat } from "@/lib/useChat";
+import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { Conversation, Message } from "@/lib/types";
 
 function fmtTime(iso?: string): string {
@@ -30,12 +30,15 @@ function fmtTime(iso?: string): string {
 function ConversationRow({
   conv,
   active,
+  typing,
   onClick,
 }: {
   conv: Conversation;
   active: boolean;
+  typing: TypingUser[];
   onClick: () => void;
 }) {
+  const typingLabel = formatTypingLabel(typing);
   return (
     <div className={`conv-item ${active ? "active" : ""}`} onClick={onClick}>
       <Avatar name={conv.title} url={conv.avatarUrl} size={50} />
@@ -45,8 +48,10 @@ function ConversationRow({
           <span className="conv-time">{fmtTime(conv.lastMessageAt)}</span>
         </div>
         <div className="conv-bottom">
-          <span className="conv-preview">
-            {conv.lastMessage ? (
+          <span className={`conv-preview ${typingLabel ? "typing" : ""}`}>
+            {typingLabel ? (
+              typingLabel
+            ) : conv.lastMessage ? (
               <>
                 {(conv.lastMessageMine || conv.type !== "dm") && conv.lastMessageSender && (
                   <span className="conv-sender">
@@ -559,6 +564,7 @@ export default function ChatPageInner() {
               key={c.id}
               conv={c}
               active={c.id === chat.activeId}
+              typing={chat.typingByConv[c.id] ?? []}
               onClick={() => chat.openConversation(c.id)}
             />
           ))}
@@ -646,8 +652,10 @@ export default function ChatPageInner() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="title">{active.title}</div>
                   <div className="sub">
-                    {active.type === "dm" ? "direct message" : active.type.replace("_", " ")}
-                    {isGroup ? ` · ${chat.myRole}` : ""}
+                    {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
+                      (active.type === "dm"
+                        ? "direct message"
+                        : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
                   </div>
                 </div>
               </div>
@@ -723,7 +731,13 @@ export default function ChatPageInner() {
                     rows={1}
                     placeholder="Message"
                     value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDraft(value);
+                      if (!chat.activeId) return;
+                      if (value.trim()) chat.notifyTyping(chat.activeId);
+                      else chat.stopTyping(chat.activeId);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();

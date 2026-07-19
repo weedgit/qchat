@@ -485,6 +485,10 @@ select:focus {
 .conv-sender {
   color: var(--text);
 }
+.conv-preview.typing {
+  color: var(--accent);
+  font-style: italic;
+}
 
 /* ---------- chat pane ---------- */
 

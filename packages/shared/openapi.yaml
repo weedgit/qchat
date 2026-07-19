@@ -457,6 +457,12 @@ paths:
   /v1/ws:
     get:
       summary: WebSocket realtime channel
+      description: |
+        Client → server events:
+        - typing.start / typing.stop with payload `{ conversation_id }`
+        Server → client events include message.*, friend.*, call.*, and
+        typing.start / typing.stop with payload
+        `{ conversation_id, user_id, user_name }`.
       parameters:
         - in: query
           name: token
