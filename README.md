@@ -29,4 +29,4 @@ cd apps/admin && npm install && npm run dev
 
 ## Docs
 
-See `../docs/qchat-*.md` and `../docs/requirements-en.md`.
+See [`docs/`](docs/) for requirements, architecture decisions, implementation plans, and operational guidance.
