@@ -4,10 +4,11 @@
   "private": true,
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "ELECTRON_DISABLE_SANDBOX=1 electron . --no-sandbox",
+    "start:sandbox": "electron .",
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^35.0.0"
+    "electron": "^43.1.1"
   }
 }
