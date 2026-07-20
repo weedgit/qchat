@@ -33,6 +33,21 @@ export type ActiveCall = {
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
 
+/** If API returns ws://localhost but the page is opened via LAN IP, rewrite host. */
+function resolveLiveKitUrl(url: string): string {
+  if (typeof window === "undefined" || !url) return url;
+  try {
+    const normalized = url.replace(/^ws/i, "http");
+    const u = new URL(normalized);
+    if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
+      u.hostname = window.location.hostname;
+    }
+    return u.toString().replace(/^http/i, "ws");
+  } catch {
+    return url;
+  }
+}
+
 /**
  * Mattermost Calls-style 1:1 ring → answer → LiveKit media.
  * Signaling via Qchat WS; media via LiveKit SFU.
@@ -55,17 +70,20 @@ export function useCall(opts: {
   const roomRef = useRef<Room | null>(null);
   const activeRef = useRef<ActiveCall | null>(null);
   const endingRef = useRef(false);
+  const intentionalDisconnectRef = useRef(false);
   activeRef.current = active;
 
   const disconnectRoom = useCallback(async () => {
     const room = roomRef.current;
     roomRef.current = null;
     if (room) {
+      intentionalDisconnectRef.current = true;
       try {
         await room.disconnect();
       } catch {
         /* ignore */
       }
+      intentionalDisconnectRef.current = false;
     }
   }, []);
 
@@ -99,10 +117,28 @@ export function useCall(opts: {
       await disconnectRoom();
       setConnecting(true);
       setError(null);
+      const lkUrl = resolveLiveKitUrl(url);
       try {
-        if (!url || !token) {
+        if (!lkUrl || !token) {
           throw new Error("Missing LiveKit URL or token");
         }
+
+        // Prompt for devices before Room.connect so a permission denial does not
+        // look like a mysterious SIGNAL_SOURCE_CLOSE hangup.
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: kind === "video",
+          });
+          stream.getTracks().forEach((t) => t.stop());
+        } catch (permErr: any) {
+          throw new Error(
+            permErr?.name === "NotAllowedError"
+              ? "Microphone/camera permission denied — allow access and try again"
+              : permErr?.message || "Could not access microphone/camera"
+          );
+        }
+
         const room = new Room({ adaptiveStream: true, dynacast: true });
         roomRef.current = room;
 
@@ -113,24 +149,33 @@ export function useCall(opts: {
           if (pub.track) attachTrack(pub.track, true);
         });
         room.on(RoomEvent.Disconnected, () => {
-          // Unexpected drop: keep overlay with error and end server session so redial works.
+          if (intentionalDisconnectRef.current || endingRef.current) return;
           const cur = activeRef.current;
-          if (cur && cur.callId === callId && cur.status === "active" && !endingRef.current) {
-            setError((prev) => prev || "Media disconnected");
-            hangupServer(callId).catch(() => {});
+          if (cur && cur.callId === callId) {
+            setError((prev) => prev || "Media disconnected — check LiveKit (port 7880) and mic permission");
           }
         });
 
-        await room.connect(url, token);
-        await room.localParticipant.setMicrophoneEnabled(true);
+        await room.connect(lkUrl, token);
+        try {
+          await room.localParticipant.setMicrophoneEnabled(true);
+          setMicMuted(false);
+        } catch (micErr: any) {
+          setError(micErr?.message || "Microphone failed — call stays open; check browser permissions");
+          setMicMuted(true);
+        }
         if (kind === "video") {
-          await room.localParticipant.setCameraEnabled(true);
-          setCameraOff(false);
+          try {
+            await room.localParticipant.setCameraEnabled(true);
+            setCameraOff(false);
+          } catch {
+            setCameraOff(true);
+            setError((prev) => prev || "Camera failed — voice may still work");
+          }
         } else {
-          await room.localParticipant.setCameraEnabled(false);
+          await room.localParticipant.setCameraEnabled(false).catch(() => {});
           setCameraOff(true);
         }
-        setMicMuted(false);
 
         room.remoteParticipants.forEach((p) => {
           p.trackPublications.forEach((pub) => {
@@ -144,15 +189,15 @@ export function useCall(opts: {
         const msg = e?.message || "Failed to connect media";
         setError(msg);
         await disconnectRoom();
-        // End server call so "already in progress" does not block redial.
-        await hangupServer(callId);
-        setActive((prev) => (prev?.callId === callId ? null : prev));
+        // Keep the in-call overlay so the user can Hang up / retry; ending the
+        // server session here caused the "auto hangup" feeling when LiveKit/WS
+        // or getUserMedia failed.
         throw e;
       } finally {
         setConnecting(false);
       }
     },
-    [attachTrack, disconnectRoom, hangupServer]
+    [attachTrack, disconnectRoom]
   );
 
   useEffect(() => {
@@ -254,7 +299,7 @@ export function useCall(opts: {
     try {
       await connectLiveKit(url, token, kind, callId);
     } catch {
-      /* error + hangup handled in connectLiveKit */
+      /* error shown on overlay; user can Hang up */
     }
   }, [incoming, connectLiveKit]);
 
