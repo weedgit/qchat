@@ -45,8 +45,9 @@ services:
       - "8222:8222"
 
   # LiveKit SFU for 1:1 voice/video (Phase 6). Coturn provides remote TURN for NAT.
+  # v1.9.12+ exposes /rtc/v1 (required by livekit-client 2.20 without legacy fallback).
   livekit:
-    image: livekit/livekit-server:v1.8.4
+    image: livekit/livekit-server:v1.9.12
     # LIVEKIT_NODE_IP = address browsers use to reach this host (VM LAN IP).
     # 127.0.0.1 only works when the browser runs on the same machine as Docker.
     command:
