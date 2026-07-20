@@ -8,8 +8,11 @@ interface AdminUser {
   id: string;
   phone: string;
   nickname: string;
+  username: string;
   status: string;
   enterprise: string;
+  registerIp: string;
+  registerRegion: string;
   createdAt: string;
 }
 
@@ -17,9 +20,12 @@ function normalize(raw: any): AdminUser {
   return {
     id: String(raw?.id ?? raw?.user_id ?? ""),
     phone: String(raw?.phone ?? ""),
-    nickname: String(raw?.nickname ?? raw?.name ?? ""),
+    nickname: String(raw?.display_name ?? raw?.nickname ?? raw?.name ?? ""),
+    username: String(raw?.username ?? ""),
     status: String(raw?.status ?? (raw?.banned ? "banned" : "active")),
     enterprise: String(raw?.enterprise_name ?? raw?.enterprise_id ?? "—"),
+    registerIp: String(raw?.register_ip ?? "") || "—",
+    registerRegion: String(raw?.register_region ?? "") || "—",
     createdAt: String(raw?.created_at ?? raw?.createdAt ?? ""),
   };
 }
@@ -51,7 +57,7 @@ export default function UsersPage() {
   return (
     <AdminShell>
       <h1>Users</h1>
-      <div className="page-sub">All registered accounts.</div>
+      <div className="page-sub">All registered accounts, including registration IP and region.</div>
 
       <div className="toolbar">
         <input
@@ -71,36 +77,38 @@ export default function UsersPage() {
         <table className="data">
           <thead>
             <tr>
-              <th>ID</th>
               <th>Phone</th>
               <th>Nickname</th>
-              <th>Enterprise</th>
+              <th>Username</th>
               <th>Status</th>
+              <th>Register IP</th>
+              <th>Region</th>
               <th>Created</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="muted">Loading…</td>
+                <td colSpan={7} className="muted">Loading…</td>
               </tr>
             )}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted">No users found.</td>
+                <td colSpan={7} className="muted">No users found.</td>
               </tr>
             )}
             {users.map((u) => (
               <tr key={u.id}>
-                <td style={{ wordBreak: "break-all" }}>{u.id}</td>
                 <td>{u.phone}</td>
                 <td>{u.nickname}</td>
-                <td>{u.enterprise}</td>
+                <td className="muted">@{u.username}</td>
                 <td>
                   <span className={`pill ${u.status === "active" ? "ok" : "danger"}`}>
                     {u.status}
                   </span>
                 </td>
+                <td style={{ fontFamily: "monospace", fontSize: 12 }}>{u.registerIp}</td>
+                <td>{u.registerRegion}</td>
                 <td className="muted">{u.createdAt}</td>
               </tr>
             ))}
