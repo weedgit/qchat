@@ -465,13 +465,72 @@ paths:
       responses:
         "201":
           description: Uploaded
+  /v1/calls:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Start a 1:1 DM voice or video call (LiveKit)
+      description: |
+        Mattermost Calls-style start. Creates call_sessions (ringing) and
+        emits WS call.ring to the peer. DM only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [conversation_id]
+              properties:
+                conversation_id: { type: string, format: uuid }
+                kind: { type: string, enum: [voice, video], default: voice }
+      responses:
+        "201":
+          description: Call created (caller receives livekit_token)
+        "409":
+          description: Call already in progress
+  /v1/calls/{id}/answer:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Answer an incoming call
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Active call with livekit_url and livekit_token
+  /v1/calls/{id}/decline:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Decline an incoming call
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Declined; emits call.ended
+  /v1/calls/{id}/hangup:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Cancel ringing or end an active call
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Ended; emits call.ended
   /v1/ws:
     get:
       summary: WebSocket realtime channel
       description: |
         Client → server events:
         - typing.start / typing.stop with payload `{ conversation_id }`
-        Server → client events include message.*, friend.*, call.*, and
+        Server → client events include message.*, friend.*,
+        call.ring / call.answered / call.ended, and
         typing.start / typing.stop with payload
         `{ conversation_id, user_id, user_name }`.
       parameters:
