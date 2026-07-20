@@ -344,13 +344,16 @@ func (s *Server) handleHangupCall(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 404, "not_found", "call not found")
 		return
 	}
-	if call.Status != "ringing" && call.Status != "active" {
-		writeErrCode(w, 409, "invalid_state", "call already ended")
-		return
-	}
 	role := s.memberRole(r, call.ConversationID, c.UserID)
 	if role == "" || role == "pending" {
 		writeErrCode(w, 403, "forbidden", "not a conversation member")
+		return
+	}
+	// Idempotent: media-fail hangup + UI hangup (or both peers) may race.
+	if call.Status != "ringing" && call.Status != "active" {
+		writeJSON(w, 200, map[string]any{
+			"id": call.ID, "call_id": call.ID, "status": call.Status, "already_ended": true,
+		})
 		return
 	}
 
