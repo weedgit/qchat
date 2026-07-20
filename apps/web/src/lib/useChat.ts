@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, asList, getToken, uploadMedia, wsUrl } from "./api";
+import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
   Conversation,
   CurrentUser,
@@ -397,15 +398,25 @@ export function useChat() {
         (document.hidden || activeIdRef.current !== msg.conversationId)
       ) {
         const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
-        // Mattermost muted channels suppress push-style notifications.
-        if (conversation?.muted) {
-          /* skip */
+        const notify = loadLocalNotifyProps();
+        const isMention =
+          Boolean((payload as any)?.mention_all) ||
+          (Array.isArray((payload as any)?.mentions) &&
+            (payload as any).mentions.includes(meRef.current?.id));
+        if (
+          !shouldNotifyDesktop(notify, {
+            muted: conversation?.muted,
+            isMention,
+          })
+        ) {
+          /* skip per Mattermost notify_props */
         } else {
         const notification = new Notification(
           msg.senderName || conversation?.title || "New message",
           {
             body: msg.content,
             tag: `qchat-${msg.conversationId}`,
+            silent: !notify.sound,
           }
         );
         notification.onclick = () => {
