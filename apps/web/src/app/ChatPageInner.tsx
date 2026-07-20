@@ -31,6 +31,24 @@ function fmtTime(iso?: string): string {
     : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+function MentionText({ text }: { text: string }) {
+  // Mattermost-style @mention highlighting in post body.
+  const parts = text.split(/(@[a-zA-Z0-9_]+)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith("@") ? (
+          <span key={i} className="mention">
+            {p}
+          </span>
+        ) : (
+          <span key={i}>{p}</span>
+        )
+      )}
+    </>
+  );
+}
+
 function ConversationRow({
   conv,
   active,
@@ -111,7 +129,8 @@ function ConversationRow({
             )}
           </span>
           {conv.unreadCount > 0 && (
-            <span className={`badge ${conv.muted ? "muted-badge" : ""}`}>
+            <span className={`badge ${conv.muted ? "muted-badge" : ""} ${conv.mentionCount ? "mention-badge" : ""}`}>
+              {conv.mentionCount ? "@" : ""}
               {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
             </span>
           )}
@@ -337,7 +356,7 @@ function Bubble({
               <span>{msg.content || "File"}</span>
             </a>
           ) : (
-            msg.content
+            <MentionText text={msg.content} />
           )}
           {hasReactions ? (
             <div className="bubble-footer">
