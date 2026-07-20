@@ -552,6 +552,90 @@ export function useChat() {
     return `Voice message (${m}:${r.toString().padStart(2, "0")})`;
   }
 
+  const sendMediaMessage = useCallback(
+    async (convId: string, file: File, replyToId?: string) => {
+      stopTyping(convId);
+      const isImage = file.type.startsWith("image/");
+      const type = isImage ? "image" : "file";
+      const preview = isImage ? "Photo" : file.name || "File";
+      const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tempId = clientMsgId;
+      const localUrl = URL.createObjectURL(file);
+      const optimistic: Message = {
+        id: tempId,
+        conversationId: convId,
+        senderId: meRef.current?.id ?? "me",
+        content: preview,
+        type,
+        mediaUrl: localUrl,
+        createdAt: new Date().toISOString(),
+        mine: true,
+        pending: true,
+        clientMsgId,
+        replyToId,
+      };
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: [...(prev[convId] ?? []), optimistic],
+      }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                lastMessage: preview,
+                lastMessageAt: optimistic.createdAt,
+                lastMessageSender: meRef.current?.nickname || meRef.current?.username,
+                lastMessageMine: true,
+              }
+            : c
+        )
+      );
+      try {
+        const uploaded = await uploadMedia(file, isImage ? "image" : "file", file.name || `upload.${isImage ? "jpg" : "bin"}`);
+        const body = await api<any>(`/v1/conversations/${convId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({
+            type,
+            body: preview,
+            media_url: uploaded.url,
+            client_msg_id: clientMsgId,
+            reply_to_id: replyToId || undefined,
+          }),
+        });
+        const saved = normalizeMessage(
+          {
+            ...body,
+            conversation_id: convId,
+            type,
+            body: body?.body ?? preview,
+            media_url: body?.media_url ?? uploaded.url,
+            sender_id: meRef.current?.id,
+          },
+          meRef.current?.id
+        );
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === tempId || m.clientMsgId === clientMsgId
+              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              : m
+          ),
+        }));
+        URL.revokeObjectURL(localUrl);
+      } catch (e: any) {
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === tempId ? { ...m, pending: false, failed: true } : m
+          ),
+        }));
+        throw e;
+      }
+    },
+    [stopTyping]
+  );
+
   const sendVoiceMessage = useCallback(
     async (convId: string, blob: Blob, durationSec: number, replyToId?: string) => {
       stopTyping(convId);
@@ -751,6 +835,7 @@ export function useChat() {
     openConversation,
     openDM,
     sendMessage,
+    sendMediaMessage,
     sendVoiceMessage,
     retryMessage,
     recallMessage,

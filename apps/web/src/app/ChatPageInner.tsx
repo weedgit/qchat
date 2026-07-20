@@ -131,6 +131,11 @@ const ICONS = {
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
   mic: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M19 11a7 7 0 0 1-14 0 M12 18v4",
   stop: "M6 6h12v12H6z",
+  paperclip: "M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48",
+  pin: "M12 17v5 M9 10.76V3h6v7.76L19 14v1H5v-1l4-3.24z",
+  mute: "M11 5L6 9H2v6h4l5 4V5z M23 9l-6 6 M17 9l6 6",
+  unmute: "M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14",
+  markUnread: "M4 4h16v12H5.17L4 17.17V4z",
 } as const;
 
 const QUICK_EMOJIS = [
@@ -241,6 +246,22 @@ function Bubble({
               <audio controls preload="metadata" src={mediaAuthURL(msg.mediaUrl)} />
               <div className="voice-label">{msg.content || "Voice message"}</div>
             </div>
+          ) : msg.type === "image" && msg.mediaUrl && !msg.recalled ? (
+            <div className="media-image">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={mediaAuthURL(msg.mediaUrl)} alt={msg.content || "Photo"} />
+            </div>
+          ) : msg.type === "file" && msg.mediaUrl && !msg.recalled ? (
+            <a
+              className="media-file"
+              href={mediaAuthURL(msg.mediaUrl)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
+              <span>{msg.content || "File"}</span>
+            </a>
           ) : (
             msg.content
           )}
@@ -313,6 +334,7 @@ export default function ChatPageInner() {
   const [voiceBusy, setVoiceBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const openedFromQuery = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -917,6 +939,34 @@ export default function ChatPageInner() {
                     </>
                   ) : (
                     <>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*,.pdf,audio/*,video/mp4,application/pdf"
+                        style={{ display: "none" }}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = "";
+                          if (!file || !chat.activeId) return;
+                          setSendError(null);
+                          const replyId = replyTo?.id;
+                          setReplyTo(null);
+                          try {
+                            await chat.sendMediaMessage(chat.activeId, file, replyId);
+                          } catch (err: any) {
+                            setSendError(err.message || "Upload failed");
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="attach-btn"
+                        title="Attach file"
+                        disabled={voiceBusy || !chat.activeId}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <MenuIcon d={ICONS.paperclip} style={{ width: 20, height: 20 }} />
+                      </button>
                       <textarea
                         ref={draftRef}
                         rows={1}

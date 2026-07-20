@@ -108,6 +108,8 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
   const mediaUrl = str(raw?.media_url ?? raw?.mediaUrl) || undefined;
   let content = str(raw?.body ?? raw?.content ?? raw?.text);
   if (!content && type === "voice") content = "Voice message";
+  if (!content && type === "image") content = "Photo";
+  if (!content && type === "file") content = "File";
   return {
     id: str(raw?.id ?? raw?.message_id ?? raw?.client_msg_id ?? crypto.randomUUID()),
     conversationId: str(raw?.conversation_id ?? raw?.conversationId),

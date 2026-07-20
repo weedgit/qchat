@@ -1036,6 +1036,47 @@ select:focus {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.55);
 }
+.media-image {
+  max-width: min(280px, 70vw);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.media-image img {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+}
+.media-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  max-width: 260px;
+}
+.media-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-btn {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  border-radius: 50%;
+}
+.attach-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
 
 /* ---------- details panel ---------- */
 
