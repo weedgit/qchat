@@ -410,6 +410,7 @@ export default function ChatPageInner() {
   const [showDetails, setShowDetails] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [forwardIds, setForwardIds] = useState<string[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [recording, setRecording] = useState(false);
@@ -638,16 +639,20 @@ export default function ChatPageInner() {
   useEffect(() => {
     if (!chat.activeId) {
       setDraft("");
+      setEditingMessage(null);
+      setReplyTo(null);
       return;
     }
+    setEditingMessage(null);
+    setReplyTo(null);
     setDraft(getDraft(chat.activeId));
   }, [chat.activeId]);
 
   useEffect(() => {
-    if (!chat.activeId) return;
+    if (!chat.activeId || editingMessage) return;
     const t = setTimeout(() => saveDraft(chat.activeId!, draft), 200);
     return () => clearTimeout(t);
-  }, [draft, chat.activeId]);
+  }, [draft, chat.activeId, editingMessage]);
 
   // Auto-grow the composer to fit its content (capped by CSS max-height).
   useEffect(() => {
@@ -658,15 +663,35 @@ export default function ChatPageInner() {
   }, [draft]);
 
   useEffect(() => {
-    if (replyTo) draftRef.current?.focus();
-  }, [replyTo]);
+    if (replyTo || editingMessage) draftRef.current?.focus();
+  }, [replyTo, editingMessage]);
 
   async function send() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
+    setSendError(null);
+    // Mattermost edit post: reuse the composer instead of a prompt dialog.
+    if (editingMessage) {
+      const id = editingMessage.id;
+      if (text === editingMessage.content) {
+        setEditingMessage(null);
+        setDraft(getDraft(chat.activeId));
+        return;
+      }
+      setDraft("");
+      setEditingMessage(null);
+      try {
+        await chat.editMessage(id, chat.activeId, text);
+        saveDraft(chat.activeId, "");
+      } catch (e: any) {
+        setSendError(e.message);
+        setEditingMessage({ ...editingMessage, content: text });
+        setDraft(text);
+      }
+      return;
+    }
     setDraft("");
     saveDraft(chat.activeId, "");
-    setSendError(null);
     const replyId = replyTo?.id;
     setReplyTo(null);
     try {
@@ -674,6 +699,19 @@ export default function ChatPageInner() {
     } catch (e: any) {
       setSendError(e.message);
     }
+  }
+
+  function startEdit(msg: Message) {
+    setReplyTo(null);
+    setEditingMessage(msg);
+    setDraft(msg.content);
+    draftRef.current?.focus();
+  }
+
+  function cancelEdit() {
+    setEditingMessage(null);
+    if (chat.activeId) setDraft(getDraft(chat.activeId));
+    else setDraft("");
   }
 
   function clearRecordTimers() {
@@ -1197,7 +1235,23 @@ export default function ChatPageInner() {
 
             <div className="composer">
               <div className="composer-box">
-                {replyTo && (
+                {editingMessage ? (
+                  <div className="reply-banner edit-banner">
+                    <MenuIcon d={ICONS.edit} style={{ width: 22, height: 22 }} />
+                    <div className="reply-body">
+                      <div className="reply-name">Edit message</div>
+                      <div className="reply-text">{editingMessage.content}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="reply-close"
+                      title="Cancel edit"
+                      onClick={cancelEdit}
+                    >
+                      {"\u2715"}
+                    </button>
+                  </div>
+                ) : replyTo ? (
                   <div className="reply-banner">
                     <MenuIcon d={ICONS.reply} style={{ width: 22, height: 22 }} />
                     <div className="reply-body">
@@ -1217,7 +1271,7 @@ export default function ChatPageInner() {
                       {"\u2715"}
                     </button>
                   </div>
-                )}
+                ) : null}
                 <div className="composer-row">
                   {recording ? (
                     <>
@@ -1296,8 +1350,17 @@ export default function ChatPageInner() {
                         }}
                       />
                       {draft.trim() ? (
-                        <button className="send-btn" onClick={send} title="Send" disabled={voiceBusy}>
+                        <button
+                          className="send-btn"
+                          onClick={send}
+                          title={editingMessage ? "Save edit" : "Send"}
+                          disabled={voiceBusy}
+                        >
                           {"\u27A4"}
+                        </button>
+                      ) : editingMessage ? (
+                        <button className="send-btn danger" onClick={cancelEdit} title="Cancel edit">
+                          {"\u2715"}
                         </button>
                       ) : (
                         <button
@@ -1557,12 +1620,7 @@ export default function ChatPageInner() {
                 <button
                   className="ctx-item"
                   onClick={() => {
-                    const next = window.prompt("Edit message", ctxMsg.content);
-                    if (next != null && next.trim() && next.trim() !== ctxMsg.content) {
-                      chat.editMessage(ctxMsg.id, chat.activeId!, next.trim()).catch((e) =>
-                        setSendError(e.message)
-                      );
-                    }
+                    startEdit(ctxMsg);
                     setCtxMenu(null);
                   }}
                 >
