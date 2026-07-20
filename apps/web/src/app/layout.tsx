@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import DesktopBootstrap from "@/components/DesktopBootstrap";
 
 export const metadata: Metadata = {
   title: "Qchat",
@@ -18,7 +19,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBoot }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <DesktopBootstrap />
+        {children}
+      </body>
     </html>
   );
 }

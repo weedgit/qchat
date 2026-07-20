@@ -2,12 +2,17 @@
   "name": "qchat-desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "Qchat desktop shell (Electron + web client)",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "ELECTRON_DISABLE_SANDBOX=1 electron . --no-sandbox",
+    "start:local": "ELECTRON_DISABLE_SANDBOX=1 QCHAT_WEB_URL=http://localhost:3000 electron . --no-sandbox",
+    "start:dev": "ELECTRON_DISABLE_SANDBOX=1 QCHAT_DESKTOP_DEV=1 QCHAT_WEB_URL=http://localhost:3000 electron . --no-sandbox",
+    "start:sandbox": "electron .",
+    "start:check": "bash run.sh",
     "pack": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^35.0.0"
+    "electron": "^43.1.1"
   }
 }

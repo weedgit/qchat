@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, api, setTokens } from "@/lib/api";
+import { getAuthDevice } from "@/lib/device";
 
 interface CaptchaState {
   id: string;
@@ -85,14 +86,15 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
+      const device = getAuthDevice();
       const payload: Record<string, any> = {
         phone,
         password,
         invite_code: inviteCode,
         captcha_id: captcha?.id ?? "",
         captcha: captchaCode,
-        device_type: "desktop",
-        device_name: "web",
+        device_type: device.deviceType,
+        device_name: device.deviceName,
       };
       if (mode === "register") {
         payload.username = username || `user_${phone.slice(-4)}`;
