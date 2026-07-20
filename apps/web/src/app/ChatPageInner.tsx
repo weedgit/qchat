@@ -1561,6 +1561,7 @@ export default function ChatPageInner() {
             <button
               className="ctx-item"
               onClick={() => {
+                setEditingMessage(null);
                 setReplyTo(ctxMsg);
                 setCtxMenu(null);
               }}
