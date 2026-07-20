@@ -12,11 +12,13 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import CallOverlay from "@/components/CallOverlay";
 import FriendNoteEditor from "@/components/FriendNoteEditor";
 import GroupQr from "@/components/GroupQr";
 import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
+import { useCall } from "@/lib/useCall";
 import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
@@ -216,6 +218,9 @@ const ICONS = {
   mute: "M11 5L6 9H2v6h4l5 4V5z M23 9l-6 6 M17 9l6 6",
   unmute: "M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14",
   markUnread: "M4 4h16v12H5.17L4 17.17V4z",
+  phone: "M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
+  video:
+    "M23 7l-7 5 7 5V7z M3 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z",
 } as const;
 
 const QUICK_EMOJIS = [
@@ -258,6 +263,15 @@ function Bubble({
   // Recommend the message's top reaction if it has one, otherwise the default quick emoji.
   const recommendedEmoji = msg.reactions?.[0]?.emoji ?? QUICK_EMOJIS[0];
   const hasReactions = !msg.recalled && (msg.reactions?.length ?? 0) > 0;
+
+  if (msg.type === "call") {
+    return (
+      <div className="msg-row system-row">
+        <div className="system-msg call-msg">{msg.content || "Call"}</div>
+      </div>
+    );
+  }
+
   const meta = (
     <span className="meta">
       {msg.recalled && (
@@ -398,6 +412,7 @@ interface CtxMenuState {
 
 export default function ChatPageInner() {
   const chat = useChat();
+  const call = useCall({ meId: chat.me?.id, subscribe: chat.subscribeEvents });
   const { theme, setTheme } = useTheme();
   const [myStatus, setMyStatus] = useState<"online" | "away" | "dnd" | "offline">("online");
   const { openConversation } = chat;
@@ -1212,6 +1227,32 @@ export default function ChatPageInner() {
                 >
                   <MenuIcon d={"M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z M21 21l-4.3-4.3"} />
                 </button>
+                {active.type === "dm" && (
+                  <>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="Voice call"
+                      disabled={!!call.active || !!call.incoming}
+                      onClick={() => {
+                        call.startCall(active.id, "voice").catch((e) => setSendError(e.message));
+                      }}
+                    >
+                      <MenuIcon d={ICONS.phone} />
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="Video call"
+                      disabled={!!call.active || !!call.incoming}
+                      onClick={() => {
+                        call.startCall(active.id, "video").catch((e) => setSendError(e.message));
+                      }}
+                    >
+                      <MenuIcon d={ICONS.video} />
+                    </button>
+                  </>
+                )}
               </div>
             )}
 
@@ -1879,6 +1920,7 @@ export default function ChatPageInner() {
           }}
         />
       )}
+      <CallOverlay call={call} />
     </AppShell>
   );
 }

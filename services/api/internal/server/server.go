@@ -107,8 +107,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/admin/audits", s.auth(s.handleAdminAudits))
 	s.mux.HandleFunc("POST /v1/admin/invite/rotate", s.auth(s.handleAdminRotateInvite))
 
-	// Calls + push stubs
+	// Calls (LiveKit 1:1) + push stubs
 	s.mux.HandleFunc("POST /v1/calls", s.auth(s.handleStartCall))
+	s.mux.HandleFunc("POST /v1/calls/{id}/answer", s.auth(s.handleAnswerCall))
+	s.mux.HandleFunc("POST /v1/calls/{id}/decline", s.auth(s.handleDeclineCall))
+	s.mux.HandleFunc("POST /v1/calls/{id}/hangup", s.auth(s.handleHangupCall))
 	s.mux.HandleFunc("POST /v1/push/register", s.auth(s.handlePushRegister))
 
 	// WebSocket

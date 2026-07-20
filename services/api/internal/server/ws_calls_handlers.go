@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/qchat/qchat/services/api/internal/auth"
 	"github.com/qchat/qchat/services/api/internal/ws"
@@ -186,41 +185,6 @@ func (s *Server) broadcastTyping(c *ws.Client, eventType, convID string) {
 			"user_name":       name,
 		},
 	})
-}
-
-func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
-	c := claimsFrom(r)
-	var req struct {
-		ConversationID string `json:"conversation_id"`
-		Kind           string `json:"kind"` // voice|video
-	}
-	if err := decodeJSON(r, &req); err != nil || req.ConversationID == "" {
-		writeErr(w, 400, "conversation_id required")
-		return
-	}
-	if req.Kind == "" {
-		req.Kind = "voice"
-	}
-	id := uuid.New()
-	room := "qchat-" + id.String()
-	_, err := s.db.Exec(r.Context(), `
-		INSERT INTO call_sessions(id, conversation_id, initiator_id, kind, room_name, status)
-		VALUES ($1,$2,$3,$4,$5,'ringing')`, id, req.ConversationID, c.UserID, req.Kind, room)
-	if err != nil {
-		writeErr(w, 500, "create failed")
-		return
-	}
-	// LiveKit-ready payload (token issuance wired in production)
-	payload := map[string]any{
-		"id":              id.String(),
-		"room_name":       room,
-		"kind":            req.Kind,
-		"livekit_url":     "wss://livekit.example.local",
-		"livekit_token":   "stub-token-" + id.String(),
-		"conversation_id": req.ConversationID,
-	}
-	s.hub.PublishToUsers(s.memberIDs(r, req.ConversationID), ws.Event{Type: "call.ring", Payload: payload})
-	writeJSON(w, 201, payload)
 }
 
 func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
