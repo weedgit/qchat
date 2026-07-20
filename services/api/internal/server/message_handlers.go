@@ -46,7 +46,9 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		                 WHERE om.conversation_id=conv.id AND om.user_id<>$1
 		                 ORDER BY om.joined_at LIMIT 1),
 		       (SELECT m.created_at FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
-		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1)
+		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1),
+		       conv.pinned_message_id::text,
+		       COALESCE((SELECT body FROM messages pm WHERE pm.id=conv.pinned_message_id AND pm.recalled=FALSE), '')
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
 		WHERE cm.user_id=$1 AND conv.enterprise_id=$2 AND cm.role <> 'pending'
@@ -66,7 +68,9 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		var lastRead, unread, mentionUnread int64
 		var favorite, muted bool
 		var lastAt, peerLastActive *time.Time
-		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &mentionUnread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt); err != nil {
+		var pinnedID *string
+		var pinnedBody string
+		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &mentionUnread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt, &pinnedID, &pinnedBody); err != nil {
 			continue
 		}
 		if title == "" && typ == "dm" && peerName != "" {
@@ -94,6 +98,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		}
 		if lastAt != nil {
 			item["last_message_at"] = lastAt.UTC()
+		}
+		if pinnedID != nil && *pinnedID != "" {
+			item["pinned_message_id"] = *pinnedID
+			item["pinned_message"] = pinnedBody
 		}
 		out = append(out, item)
 	}

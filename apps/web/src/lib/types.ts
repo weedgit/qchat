@@ -22,6 +22,8 @@ export interface Conversation {
   peerLastActiveAt?: string;
   favorite?: boolean;
   muted?: boolean;
+  pinnedMessageId?: string;
+  pinnedMessage?: string;
 }
 
 export interface Reactor {
@@ -101,6 +103,8 @@ export function normalizeConversation(raw: any): Conversation {
     peerLastActiveAt: str(raw?.peer_last_active_at) || undefined,
     favorite: Boolean(raw?.favorite),
     muted: Boolean(raw?.muted),
+    pinnedMessageId: str(raw?.pinned_message_id) || undefined,
+    pinnedMessage: str(raw?.pinned_message) || undefined,
   };
 }
 

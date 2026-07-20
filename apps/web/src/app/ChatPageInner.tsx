@@ -1075,6 +1075,23 @@ export default function ChatPageInner() {
               </div>
             )}
 
+            {active.pinnedMessageId && active.pinnedMessage && (
+              <div className="pinned-banner">
+                <MenuIcon d={ICONS.pin} style={{ width: 16, height: 16 }} />
+                <div className="pinned-text">{active.pinnedMessage}</div>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  style={{ flex: "none", padding: "2px 6px" }}
+                  onClick={() =>
+                    chat.pinMessage(active.pinnedMessageId!, active.id, false).catch(() => {})
+                  }
+                >
+                  Unpin
+                </button>
+              </div>
+            )}
+
             <div className="msg-scroll" ref={scrollRef}>
               {activeMessages.length === 0 && (
                 <div className="empty-state" style={{ minHeight: 200 }}>
@@ -1426,6 +1443,17 @@ export default function ChatPageInner() {
             <>
               <div className="ctx-sep" />
               <button
+                className="ctx-item"
+                onClick={() => {
+                  const pinned = active?.pinnedMessageId === ctxMsg.id;
+                  chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => {});
+                  setCtxMenu(null);
+                }}
+              >
+                <MenuIcon d={ICONS.pin} />
+                {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
+              </button>
+              <button
                 className="ctx-item danger"
                 onClick={() => {
                   chat.recallMessage(ctxMsg.id, chat.activeId!);
@@ -1436,6 +1464,19 @@ export default function ChatPageInner() {
                 Recall
               </button>
             </>
+          )}
+          {!ctxMsg.mine && !ctxMsg.recalled && chat.activeId && (
+            <button
+              className="ctx-item"
+              onClick={() => {
+                const pinned = active?.pinnedMessageId === ctxMsg.id;
+                chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => {});
+                setCtxMenu(null);
+              }}
+            >
+              <MenuIcon d={ICONS.pin} />
+              {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
+            </button>
           )}
           </div>
         </div>

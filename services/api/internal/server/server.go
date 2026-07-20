@@ -79,6 +79,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/messages/{id}/delivered", s.auth(s.handleDelivered))
 	s.mux.HandleFunc("POST /v1/messages/{id}/forward", s.auth(s.handleForward))
 	s.mux.HandleFunc("POST /v1/messages/{id}/react", s.auth(s.handleReact))
+	s.mux.HandleFunc("POST /v1/messages/{id}/pin", s.auth(s.handlePinMessage))
+	s.mux.HandleFunc("POST /v1/messages/{id}/unpin", s.auth(s.handleUnpinMessage))
 
 	// Media
 	s.mux.HandleFunc("POST /v1/media/upload", s.auth(s.handleMediaUpload))

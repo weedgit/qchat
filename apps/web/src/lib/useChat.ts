@@ -817,6 +817,22 @@ export function useChat() {
     }));
   }, []);
 
+  const pinMessage = useCallback(async (messageId: string, convId: string, pin: boolean) => {
+    await api(`/v1/messages/${messageId}/${pin ? "pin" : "unpin"}`, { method: "POST" });
+    const msg = (messages[convId] ?? []).find((m) => m.id === messageId);
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? {
+              ...c,
+              pinnedMessageId: pin ? messageId : undefined,
+              pinnedMessage: pin ? msg?.content : undefined,
+            }
+          : c
+      )
+    );
+  }, [messages]);
+
   const forwardMessage = useCallback(async (messageId: string, conversationIds: string[]) => {
     await api(`/v1/messages/${messageId}/forward`, {
       method: "POST",
@@ -880,6 +896,7 @@ export function useChat() {
     recallMessage,
     forwardMessage,
     reactMessage,
+    pinMessage,
     updateConversationPrefs,
     markConversationUnread,
     reload: loadConversations,
