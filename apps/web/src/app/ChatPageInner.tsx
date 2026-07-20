@@ -17,6 +17,7 @@ import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { Conversation, Message, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
+import { getDraft, saveDraft } from "@/lib/drafts";
 
 const VOICE_MAX_SEC = 60;
 
@@ -605,6 +606,21 @@ export default function ChatPageInner() {
     setSelectedIds(new Set());
   }, [chat.activeId]);
 
+  // Mattermost channel drafts: restore composer text when switching conversations.
+  useEffect(() => {
+    if (!chat.activeId) {
+      setDraft("");
+      return;
+    }
+    setDraft(getDraft(chat.activeId));
+  }, [chat.activeId]);
+
+  useEffect(() => {
+    if (!chat.activeId) return;
+    const t = setTimeout(() => saveDraft(chat.activeId!, draft), 200);
+    return () => clearTimeout(t);
+  }, [draft, chat.activeId]);
+
   // Auto-grow the composer to fit its content (capped by CSS max-height).
   useEffect(() => {
     const el = draftRef.current;
@@ -621,6 +637,7 @@ export default function ChatPageInner() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
     setDraft("");
+    saveDraft(chat.activeId, "");
     setSendError(null);
     const replyId = replyTo?.id;
     setReplyTo(null);
