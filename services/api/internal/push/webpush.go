@@ -22,12 +22,23 @@ type Subscription struct {
 	} `json:"keys"`
 }
 
+// WebPayload is the JSON shown by apps/web/public/sw.js (Mattermost-style desktop wake).
+type WebPayload struct {
+	Title          string `json:"title"`
+	Body           string `json:"body"`
+	Tag            string `json:"tag"`
+	Type           string `json:"type,omitempty"` // message|call
+	URL            string `json:"url,omitempty"`
+	CallID         string `json:"call_id,omitempty"`
+	ConversationID string `json:"conversation_id,omitempty"`
+}
+
 func (c Config) Enabled() bool {
 	return c.VAPIDPublic != "" && c.VAPIDPrivate != ""
 }
 
 // SendWeb pushes a notification to a stored Web Push subscription JSON.
-func SendWeb(ctx context.Context, cfg Config, subscriptionJSON string, title, body, tag string) error {
+func SendWeb(ctx context.Context, cfg Config, subscriptionJSON string, p WebPayload) error {
 	if !cfg.Enabled() {
 		return nil
 	}
@@ -35,20 +46,25 @@ func SendWeb(ctx context.Context, cfg Config, subscriptionJSON string, title, bo
 	if err := json.Unmarshal([]byte(subscriptionJSON), &sub); err != nil {
 		return err
 	}
-	payload, _ := json.Marshal(map[string]string{
-		"title": title,
-		"body":  body,
-		"tag":   tag,
-	})
+	if p.Type == "" {
+		p.Type = "message"
+	}
+	payload, _ := json.Marshal(p)
 	subject := cfg.Subject
 	if subject == "" {
 		subject = "mailto:admin@qchat.local"
+	}
+	ttl := 60
+	if p.Type == "call" {
+		// Cover Mattermost RING_LENGTH (~30s) so a backgrounded tab can still wake.
+		ttl = 35
 	}
 	resp, err := webpush.SendNotificationWithContext(ctx, payload, &sub, &webpush.Options{
 		Subscriber:      subject,
 		VAPIDPublicKey:  cfg.VAPIDPublic,
 		VAPIDPrivateKey: cfg.VAPIDPrivate,
-		TTL:             60,
+		TTL:             ttl,
+		Urgency:         webpush.UrgencyHigh,
 	})
 	if err != nil {
 		return err

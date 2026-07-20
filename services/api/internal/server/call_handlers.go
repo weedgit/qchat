@@ -136,6 +136,16 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.PublishToUsers(others, ws.Event{Type: "call.ring", Payload: ringPayload})
 
+	// Mattermost Calls: wake backgrounded / closed tabs (Web Push + client Notification).
+	go s.notifyCallRingPush(
+		context.Background(),
+		others,
+		req.Kind,
+		s.userDisplayName(r, c.UserID),
+		id.String(),
+		req.ConversationID,
+	)
+
 	// Mattermost RING_LENGTH: auto-end unanswered rings so caller/callee UIs clear.
 	s.scheduleRingTimeout(id.String())
 

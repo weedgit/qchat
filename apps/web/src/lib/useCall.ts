@@ -12,6 +12,11 @@ import {
   type RemoteTrack,
 } from "livekit-client";
 import { api } from "@/lib/api";
+import {
+  clearIncomingCallAlerts,
+  notifyIncomingCall,
+  ringForIncomingCall,
+} from "@/lib/callNotify";
 
 export type CallKind = "voice" | "video";
 
@@ -121,8 +126,22 @@ export function useCall(opts: {
   const remoteVideoElRef = useRef<HTMLVideoElement | null>(null);
   const localVideoElRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioElRef = useRef<HTMLAudioElement | null>(null);
+  const incomingNotifyRef = useRef<Notification | null>(null);
   activeRef.current = active;
   micMutedRef.current = micMuted;
+
+  const clearRingAlerts = useCallback(() => {
+    clearIncomingCallAlerts(incomingNotifyRef.current);
+    incomingNotifyRef.current = null;
+  }, []);
+
+  const resetMediaUi = useCallback(() => {
+    setConnecting(false);
+    setReconnecting(false);
+    setConnectedAt(null);
+    setMicLevel(0);
+    setRemoteMicLevel(0);
+  }, []);
 
   const setRemoteVideoEl = useCallback((el: HTMLVideoElement | null) => {
     remoteVideoElRef.current = el;
@@ -385,14 +404,11 @@ export function useCall(opts: {
           const cur = activeRef.current;
           if (!cur || cur.callId !== callId) return;
           endingRef.current = true;
+          clearRingAlerts();
           setActive(null);
           setIncoming(null);
-          setConnecting(false);
-          setReconnecting(false);
-          setConnectedAt(null);
-          setMicLevel(0);
-          setRemoteMicLevel(0);
           setError(null);
+          resetMediaUi();
           disconnectRoom().catch(() => {});
           hangupServer(callId).finally(() => {
             endingRef.current = false;
@@ -486,9 +502,11 @@ export function useCall(opts: {
     },
     [
       attachTrack,
+      clearRingAlerts,
       disconnectRoom,
       hangupServer,
       reattachRemoteMedia,
+      resetMediaUi,
       startMicMeter,
       startRemoteMicMeter,
       stopMicMeter,
@@ -512,13 +530,23 @@ export function useCall(opts: {
         const initiatorId = String(payload?.initiator_id ?? "");
         if (!callId || (meId && initiatorId === meId)) return;
         setError(null);
-        setIncoming({
+        const incomingCall = {
           callId,
           conversationId: String(payload?.conversation_id ?? ""),
-          kind: payload?.kind === "video" ? "video" : "voice",
+          kind: (payload?.kind === "video" ? "video" : "voice") as CallKind,
           initiatorId,
           initiatorName: String(payload?.initiator_name ?? "") || undefined,
           livekitUrl: String(payload?.livekit_url ?? "") || undefined,
+        };
+        setIncoming(incomingCall);
+        // Mattermost ringForCall + DID_NOTIFY_FOR_CALL (background tab).
+        clearRingAlerts();
+        ringForIncomingCall();
+        incomingNotifyRef.current = notifyIncomingCall({
+          callId: incomingCall.callId,
+          conversationId: incomingCall.conversationId,
+          kind: incomingCall.kind,
+          initiatorName: incomingCall.initiatorName,
         });
         return;
       }
@@ -529,6 +557,7 @@ export function useCall(opts: {
         const kind = payload?.kind === "video" ? "video" : "voice";
         const convId = String(payload?.conversation_id ?? "");
         if (!callId || !token || !url) return;
+        clearRingAlerts();
         setIncoming(null);
         setActive((prev) => ({
           callId,
@@ -545,6 +574,7 @@ export function useCall(opts: {
         const callId = String(payload?.call_id ?? payload?.id ?? "");
         const convId = String(payload?.conversation_id ?? "");
         endingRef.current = true;
+        clearRingAlerts();
         setIncoming((prev) => {
           if (!prev) return null;
           if (!callId || prev.callId === callId) return null;
@@ -557,17 +587,13 @@ export function useCall(opts: {
           if (convId && prev.conversationId === convId) return null;
           return prev;
         });
-        setConnecting(false);
-        setReconnecting(false);
-        setConnectedAt(null);
-        setMicLevel(0);
-        setRemoteMicLevel(0);
+        resetMediaUi();
         setError(null);
         disconnectRoom().catch(() => {});
         endingRef.current = false;
       }
     });
-  }, [subscribe, meId, connectLiveKit, disconnectRoom]);
+  }, [subscribe, meId, connectLiveKit, disconnectRoom, clearRingAlerts, resetMediaUi]);
 
   const startCall = useCallback(
     async (conversationId: string, kind: CallKind, peerName?: string) => {
@@ -599,6 +625,7 @@ export function useCall(opts: {
     const callId = incoming.callId;
     const convId = incoming.conversationId;
     const peerName = incoming.initiatorName?.trim() || undefined;
+    clearRingAlerts();
     const res = await api<any>(`/v1/calls/${callId}/answer`, { method: "POST" });
     const token = String(res?.livekit_token ?? "");
     const url = String(res?.livekit_url ?? incoming.livekitUrl ?? "");
@@ -616,32 +643,30 @@ export function useCall(opts: {
     } catch {
       /* error shown on overlay; user can Hang up */
     }
-  }, [incoming, connectLiveKit]);
+  }, [incoming, connectLiveKit, clearRingAlerts]);
 
   const declineCall = useCallback(async () => {
     if (!incoming) return;
     const id = incoming.callId;
+    clearRingAlerts();
     setIncoming(null);
     await api(`/v1/calls/${id}/decline`, { method: "POST" }).catch(() => {});
-  }, [incoming]);
+  }, [incoming, clearRingAlerts]);
 
   const hangup = useCallback(async () => {
     const cur = activeRef.current;
     if (!cur) return;
     const id = cur.callId;
     endingRef.current = true;
+    clearRingAlerts();
     setActive(null);
     setIncoming(null);
     setError(null);
-    setConnecting(false);
-    setReconnecting(false);
-    setConnectedAt(null);
-    setMicLevel(0);
-    setRemoteMicLevel(0);
+    resetMediaUi();
     await disconnectRoom();
     await hangupServer(id);
     endingRef.current = false;
-  }, [disconnectRoom, hangupServer]);
+  }, [disconnectRoom, hangupServer, clearRingAlerts, resetMediaUi]);
 
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;
