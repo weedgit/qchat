@@ -14,7 +14,7 @@ import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
-import { Conversation, Message } from "@/lib/types";
+import { Conversation, Message, formatLastSeen } from "@/lib/types";
 
 const VOICE_MAX_SEC = 60;
 
@@ -33,17 +33,26 @@ function ConversationRow({
   conv,
   active,
   typing,
+  online,
   onClick,
 }: {
   conv: Conversation;
   active: boolean;
   typing: TypingUser[];
+  online?: boolean;
   onClick: () => void;
 }) {
   const typingLabel = formatTypingLabel(typing);
+  const isDM = conv.type === "dm";
   return (
     <div className={`conv-item ${active ? "active" : ""}`} onClick={onClick}>
-      <Avatar name={conv.title} url={conv.avatarUrl} size={50} />
+      <Avatar
+        name={conv.title}
+        url={conv.avatarUrl}
+        size={50}
+        showStatus={isDM}
+        online={online}
+      />
       <div className="conv-body">
         <div className="conv-top">
           <span className="conv-title">{conv.title}</span>
@@ -697,6 +706,11 @@ export default function ChatPageInner() {
               conv={c}
               active={c.id === chat.activeId}
               typing={chat.typingByConv[c.id] ?? []}
+              online={
+                c.peerId
+                  ? chat.presenceByUser[c.peerId]?.online ?? c.peerOnline
+                  : undefined
+              }
               onClick={() => chat.openConversation(c.id)}
             />
           ))}
@@ -780,13 +794,30 @@ export default function ChatPageInner() {
                 title="View details"
                 onClick={() => setShowDetails(true)}
               >
-                <Avatar name={active.title} url={active.avatarUrl} size={38} />
+                <Avatar
+                  name={active.title}
+                  url={active.avatarUrl}
+                  size={38}
+                  showStatus={active.type === "dm"}
+                  online={
+                    active.peerId
+                      ? chat.presenceByUser[active.peerId]?.online ?? active.peerOnline
+                      : undefined
+                  }
+                />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="title">{active.title}</div>
                   <div className="sub">
                     {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
                       (active.type === "dm"
-                        ? "direct message"
+                        ? (() => {
+                            const p = active.peerId
+                              ? chat.presenceByUser[active.peerId]
+                              : undefined;
+                            const online = p?.online ?? active.peerOnline;
+                            if (online) return "online";
+                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
+                          })()
                         : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
                   </div>
                 </div>

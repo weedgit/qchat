@@ -41,6 +41,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.Register(client)
 	go s.writePump(client)
+	// Mattermost-style presence: publish status_change when the first session connects.
+	if s.hub.ConnectionCount(claims.UserID) == 1 {
+		s.publishPresence(claims.UserID, true)
+	}
 	s.readPump(client)
 }
 
@@ -58,8 +62,13 @@ func (s *Server) writePump(c *ws.Client) {
 
 func (s *Server) readPump(c *ws.Client) {
 	defer func() {
+		uid := c.UserID
 		s.hub.Unregister(c)
 		_ = c.Conn.Close()
+		// Only mark offline when the last session disconnects (Mattermost status_change).
+		if !s.hub.IsOnline(uid) {
+			s.publishPresence(uid, false)
+		}
 	}()
 	c.Conn.SetReadLimit(1 << 20)
 	_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -74,6 +83,40 @@ func (s *Server) readPump(c *ws.Client) {
 		}
 		s.handleClientWS(c, data)
 	}
+}
+
+// publishPresence mirrors Mattermost BroadcastStatus / status_change for conversation peers.
+func (s *Server) publishPresence(userID string, online bool) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	_, _ = s.db.Exec(ctx, `UPDATE users SET last_active_at=$2 WHERE id=$1`, userID, now)
+	rows, err := s.db.Query(ctx, `
+		SELECT DISTINCT cm2.user_id::text
+		FROM conversation_members cm1
+		JOIN conversation_members cm2
+		  ON cm2.conversation_id = cm1.conversation_id AND cm2.user_id <> cm1.user_id
+		WHERE cm1.user_id=$1 AND cm1.role <> 'pending' AND cm2.role <> 'pending'`, userID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var recipients []string
+	for rows.Next() {
+		var id string
+		_ = rows.Scan(&id)
+		recipients = append(recipients, id)
+	}
+	if len(recipients) == 0 {
+		return
+	}
+	s.hub.PublishToUsers(recipients, ws.Event{
+		Type: "presence.update",
+		Payload: map[string]any{
+			"user_id":         userID,
+			"online":          online,
+			"last_active_at":  now,
+		},
+	})
 }
 
 func (s *Server) handleClientWS(c *ws.Client, data []byte) {

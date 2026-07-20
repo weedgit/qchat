@@ -31,6 +31,10 @@ export function useChat() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string>("member");
   const [typingByConv, setTypingByConv] = useState<Record<string, TypingUser[]>>({});
+  /** Mattermost-style presence keyed by user id. */
+  const [presenceByUser, setPresenceByUser] = useState<
+    Record<string, { online: boolean; lastActiveAt?: string }>
+  >({});
 
   const meRef = useRef<CurrentUser | null>(null);
   const activeIdRef = useRef<string | null>(null);
@@ -149,6 +153,17 @@ export function useChat() {
       const body = await api<any>("/v1/conversations");
       const list = asList(body, "conversations").map(normalizeConversation);
       setConversations(list);
+      setPresenceByUser((prev) => {
+        const next = { ...prev };
+        for (const c of list) {
+          if (!c.peerId) continue;
+          next[c.peerId] = {
+            online: Boolean(c.peerOnline),
+            lastActiveAt: c.peerLastActiveAt,
+          };
+        }
+        return next;
+      });
       setLoadError(null);
       return list;
     } catch (e: any) {
@@ -205,6 +220,25 @@ export function useChat() {
       const convId = String(payload?.conversation_id ?? "");
       const userId = String(payload?.user_id ?? "");
       if (convId && userId) clearTypingUser(convId, userId);
+      return;
+    }
+    // Mattermost status_change equivalent.
+    if (type === "presence.update" || type === "status_change") {
+      const userId = String(payload?.user_id ?? "");
+      if (!userId) return;
+      const online = Boolean(payload?.online ?? payload?.status === "online");
+      const lastActiveAt = String(payload?.last_active_at ?? "") || undefined;
+      setPresenceByUser((prev) => ({
+        ...prev,
+        [userId]: { online, lastActiveAt: lastActiveAt || prev[userId]?.lastActiveAt },
+      }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.peerId === userId
+            ? { ...c, peerOnline: online, peerLastActiveAt: lastActiveAt || c.peerLastActiveAt }
+            : c
+        )
+      );
       return;
     }
 
@@ -711,6 +745,7 @@ export function useChat() {
     loadError,
     myRole,
     typingByConv,
+    presenceByUser,
     notifyTyping,
     stopTyping,
     openConversation,

@@ -81,3 +81,15 @@ func (h *Hub) OnlineUserIDs(ids []string) map[string]bool {
 	}
 	return out
 }
+
+func (h *Hub) IsOnline(userID string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients[userID]) > 0
+}
+
+func (h *Hub) ConnectionCount(userID string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients[userID])
+}
