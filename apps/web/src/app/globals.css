@@ -1397,4 +1397,51 @@ select:focus {
   gap: 8px;
   margin-top: 12px;
 }
+.tag-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 999px;
+  background: var(--bg-panel-2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.tag-chip.removable {
+  cursor: pointer;
+  background: transparent;
+  border-color: var(--accent);
+}
+.friend-note-editor {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-panel-2);
+  border-radius: var(--radius);
+}
+.friend-note-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.friend-note-modal-card {
+  width: min(400px, 100%);
+  padding: 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
 .edit-banner { color: #e6b422; }

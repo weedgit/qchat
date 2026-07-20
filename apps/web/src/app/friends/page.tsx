@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import FriendNoteEditor from "@/components/FriendNoteEditor";
 import { api, asList } from "@/lib/api";
 import { Friend, normalizeFriend } from "@/lib/types";
 
@@ -23,9 +24,7 @@ export default function FriendsPage() {
   const [results, setResults] = useState<LookupUser[]>([]);
   const [addMsg, setAddMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [noteDraft, setNoteDraft] = useState("");
-  const [tagsDraft, setTagsDraft] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -95,19 +94,6 @@ export default function FriendsPage() {
     load();
   }
 
-  async function saveNote(f: Friend) {
-    const tags = tagsDraft
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-    await api(`/v1/friends/${f.friendshipId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ note: noteDraft, tags }),
-    });
-    setEditing(null);
-    load();
-  }
-
   async function message(f: Friend) {
     setBusy(true);
     try {
@@ -129,6 +115,7 @@ export default function FriendsPage() {
   const outgoing = friends.filter((f) => f.status === "pending" && f.outgoing);
   const accepted = friends.filter((f) => f.status === "accepted");
   const blocked = friends.filter((f) => f.status === "blocked");
+  const editing = accepted.find((f) => f.friendshipId === editingId) ?? null;
 
   return (
     <AppShell>
@@ -218,24 +205,32 @@ export default function FriendsPage() {
           {!loadError && accepted.length === 0 && (
             <div className="muted">No friends yet. Search above to add someone.</div>
           )}
-          {accepted.map((f) => (
-            <div key={f.friendshipId}>
-              <div className="list-row">
-                <Avatar name={f.nickname} url={f.avatarUrl} size={42} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>{f.nickname}</div>
+          {accepted.map((f) => {
+            const display = f.note || f.nickname;
+            return (
+              <div className="list-row" key={f.friendshipId}>
+                <Avatar name={display} url={f.avatarUrl} size={42} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>{display}</div>
                   <div className="muted" style={{ fontSize: 12 }}>
-                    @{f.username}
-                    {f.note ? ` · ${f.note}` : ""}
-                    {f.tags && f.tags.length ? ` · #${f.tags.join(" #")}` : ""}
+                    {f.note ? `${f.nickname} · ` : ""}@{f.username}
                   </div>
+                  {f.tags && f.tags.length > 0 && (
+                    <div className="tag-chip-row" style={{ marginTop: 4 }}>
+                      {f.tags.map((t) => (
+                        <span key={t} className="tag-chip">
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {f.online && <span className="conn-dot on" title="Online" />}
-                <button className="btn-ghost" style={{ flex: "none" }} onClick={() => {
-                  setEditing(f.friendshipId);
-                  setNoteDraft(f.note ?? "");
-                  setTagsDraft((f.tags ?? []).join(", "));
-                }}>
+                <button
+                  className="btn-ghost"
+                  style={{ flex: "none" }}
+                  onClick={() => setEditingId(f.friendshipId)}
+                >
                   Note
                 </button>
                 <button className="btn" style={{ flex: "none" }} disabled={busy} onClick={() => message(f)}>
@@ -245,18 +240,8 @@ export default function FriendsPage() {
                   Block
                 </button>
               </div>
-              {editing === f.friendshipId && (
-                <div style={{ display: "grid", gap: 8, padding: "0 12px 12px" }}>
-                  <input placeholder="Note / alias" value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} />
-                  <input placeholder="Tags (comma-separated)" value={tagsDraft} onChange={(e) => setTagsDraft(e.target.value)} />
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn" type="button" onClick={() => saveNote(f)}>Save</button>
-                    <button className="btn-ghost" type="button" onClick={() => setEditing(null)}>Cancel</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {blocked.length > 0 && (
@@ -274,6 +259,38 @@ export default function FriendsPage() {
                 </button>
               </div>
             ))}
+          </div>
+        )}
+
+        {editing && (
+          <div className="friend-note-modal" role="dialog" aria-label="Edit friend note">
+            <div className="friend-note-modal-card">
+              <div className="list-row" style={{ marginBottom: 12 }}>
+                <Avatar name={editing.note || editing.nickname} url={editing.avatarUrl} size={48} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700 }}>{editing.nickname}</div>
+                  <div className="muted" style={{ fontSize: 12 }}>@{editing.username}</div>
+                </div>
+              </div>
+              <FriendNoteEditor
+                friendshipId={editing.friendshipId}
+                note={editing.note ?? ""}
+                tags={editing.tags ?? []}
+                startOpen
+                onSaved={() => {
+                  setEditingId(null);
+                  load();
+                }}
+              />
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ marginTop: 8, width: "100%" }}
+                onClick={() => setEditingId(null)}
+              >
+                Close
+              </button>
+            </div>
           </div>
         )}
       </main>

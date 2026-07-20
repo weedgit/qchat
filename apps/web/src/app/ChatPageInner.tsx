@@ -12,11 +12,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import FriendNoteEditor from "@/components/FriendNoteEditor";
 import GroupQr from "@/components/GroupQr";
 import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
-import { Conversation, Message, formatLastSeen } from "@/lib/types";
+import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
@@ -81,7 +82,7 @@ function ConversationRow({
       }}
     >
       <Avatar
-        name={conv.title}
+        name={conversationDisplayName(conv)}
         url={conv.avatarUrl}
         size={50}
         showStatus={isDM}
@@ -91,7 +92,7 @@ function ConversationRow({
         <div className="conv-top">
           <span className="conv-title">
             {conv.favorite ? <span className="fav-mark" title="Favorite">★ </span> : null}
-            {conv.title}
+            {conversationDisplayName(conv)}
             {conv.muted ? <span className="mute-mark" title="Muted"> · muted</span> : null}
           </span>
           <span className="conv-time">{fmtTime(conv.lastMessageAt)}</span>
@@ -651,7 +652,10 @@ export default function ChatPageInner() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return chat.conversations;
-    return chat.conversations.filter((c) => c.title.toLowerCase().includes(q));
+    return chat.conversations.filter((c) => {
+      const name = conversationDisplayName(c).toLowerCase();
+      return name.includes(q) || c.title.toLowerCase().includes(q) || (c.friendNote ?? "").toLowerCase().includes(q);
+    });
   }, [chat.conversations, query]);
 
   // Mattermost global search (users + messages) when sidebar query is long enough.
@@ -1150,7 +1154,7 @@ export default function ChatPageInner() {
                   onClick={() => setShowDetails(true)}
                 >
                   <Avatar
-                    name={active.title}
+                    name={conversationDisplayName(active)}
                     url={active.avatarUrl}
                     size={38}
                     showStatus={active.type === "dm"}
@@ -1161,7 +1165,7 @@ export default function ChatPageInner() {
                     }
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="title">{active.title}</div>
+                    <div className="title">{conversationDisplayName(active)}</div>
                     <div className="sub">
                       {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
                         (active.type === "dm"
@@ -1431,7 +1435,7 @@ export default function ChatPageInner() {
             {"\u2715"}
           </button>
           <Avatar
-            name={active.title}
+            name={conversationDisplayName(active)}
             url={groupDetails?.avatar_url || active.avatarUrl}
             size={96}
           />
@@ -1459,7 +1463,29 @@ export default function ChatPageInner() {
               </button>
             </>
           )}
-          <div style={{ fontSize: 17, fontWeight: 700 }}>{active.title}</div>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>{conversationDisplayName(active)}</div>
+          {active.type === "dm" && active.friendNote && (
+            <div className="muted" style={{ fontSize: 13 }}>
+              {active.title}
+            </div>
+          )}
+          {active.type === "dm" && active.friendTags && active.friendTags.length > 0 && (
+            <div className="tag-chip-row" style={{ marginTop: 8 }}>
+              {active.friendTags.map((t) => (
+                <span key={t} className="tag-chip">
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
+          {active.type === "dm" && active.friendshipId && (
+            <FriendNoteEditor
+              friendshipId={active.friendshipId}
+              note={active.friendNote ?? ""}
+              tags={active.friendTags ?? []}
+              onSaved={() => chat.reload()}
+            />
+          )}
           <div className="kv">
             <div className="k">Type</div>
             <div>{active.type}</div>
@@ -1824,9 +1850,9 @@ function ForwardPicker({
                 checked={selected.has(c.id)}
                 onChange={() => toggle(c.id)}
               />
-              <Avatar name={c.title} url={c.avatarUrl} size={32} />
+              <Avatar name={conversationDisplayName(c)} url={c.avatarUrl} size={32} />
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontWeight: 600 }}>{c.title}</span>
+                <span style={{ fontWeight: 600 }}>{conversationDisplayName(c)}</span>
                 <span className="muted" style={{ display: "block", fontSize: 12 }}>
                   {c.type === "dm" ? "Direct message" : "Group"}
                 </span>
