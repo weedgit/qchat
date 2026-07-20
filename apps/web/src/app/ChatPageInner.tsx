@@ -418,14 +418,18 @@ export default function ChatPageInner() {
   const [recordSecs, setRecordSecs] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [groupDetails, setGroupDetails] = useState<{
-    members: { user_id: string; display_name: string; username: string; role: string; avatar_url?: string }[];
+    members: { user_id: string; display_name: string; username: string; role: string; avatar_url?: string; mute_until?: string }[];
     public_id?: string;
     description?: string;
     role?: string;
+    avatar_url?: string;
+    mute_all?: boolean;
   } | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const groupAvatarInputRef = useRef<HTMLInputElement>(null);
   const openedFromQuery = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -480,6 +484,38 @@ export default function ChatPageInner() {
       await chat.recallMessage(m.id, chat.activeId);
     }
     clearSelection();
+  }
+
+  const canEditGroup =
+    isGroup &&
+    (groupDetails?.role === "owner" ||
+      groupDetails?.role === "admin" ||
+      chat.myRole === "owner" ||
+      chat.myRole === "admin");
+
+  async function uploadGroupAvatar(file: File) {
+    if (!active || !canEditGroup) return;
+    setAvatarBusy(true);
+    setSendError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", "avatar");
+      const up = await api<{ url?: string }>("/v1/media/upload", { method: "POST", body: fd });
+      const url = String(up?.url ?? "");
+      const g = await api<any>(`/v1/groups/${active.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ avatar_url: url }),
+      });
+      setGroupDetails((prev) =>
+        prev ? { ...prev, avatar_url: String(g?.avatar_url ?? url) } : prev
+      );
+      await chat.reload();
+    } catch (err: any) {
+      setSendError(err.message);
+    } finally {
+      setAvatarBusy(false);
+    }
   }
 
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
@@ -600,6 +636,8 @@ export default function ChatPageInner() {
           public_id: g?.public_id,
           description: g?.description,
           role: g?.role,
+          avatar_url: g?.avatar_url,
+          mute_all: Boolean(g?.mute_all),
         });
       })
       .catch(() => {
@@ -1392,7 +1430,35 @@ export default function ChatPageInner() {
           >
             {"\u2715"}
           </button>
-          <Avatar name={active.title} url={active.avatarUrl} size={96} />
+          <Avatar
+            name={active.title}
+            url={groupDetails?.avatar_url || active.avatarUrl}
+            size={96}
+          />
+          {canEditGroup && (
+            <>
+              <input
+                ref={groupAvatarInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) uploadGroupAvatar(f).catch(() => {});
+                }}
+              />
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ marginTop: 8 }}
+                disabled={avatarBusy}
+                onClick={() => groupAvatarInputRef.current?.click()}
+              >
+                {avatarBusy ? "Uploading…" : "Change group avatar"}
+              </button>
+            </>
+          )}
           <div style={{ fontSize: 17, fontWeight: 700 }}>{active.title}</div>
           <div className="kv">
             <div className="k">Type</div>

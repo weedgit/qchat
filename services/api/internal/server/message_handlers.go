@@ -255,6 +255,53 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handlePatchGroup mirrors Mattermost patchChannel / setTeamIcon for group metadata.
+func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+	if !s.isGroupAdmin(r, convID, c.UserID) {
+		writeErrCode(w, 403, "forbidden", "only owners and admins can edit group")
+		return
+	}
+	var ent, typ string
+	err := s.db.QueryRow(r.Context(), `
+		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+	var req map[string]any
+	if err := decodeJSON(r, &req); err != nil {
+		writeErrCode(w, 400, "invalid_request", "invalid json")
+		return
+	}
+	_, err = s.db.Exec(r.Context(), `
+		UPDATE conversations SET
+			title=COALESCE($2, title),
+			description=COALESCE($3, description),
+			avatar_url=COALESCE($4, avatar_url)
+		WHERE id=$1`,
+		convID,
+		strPtr(req, "title"),
+		strPtr(req, "description"),
+		strPtr(req, "avatar_url"),
+	)
+	if err != nil {
+		writeErrCode(w, 400, "update_failed", "update failed")
+		return
+	}
+	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
+		Type: "group.updated",
+		Payload: map[string]any{
+			"conversation_id": convID,
+			"title":           req["title"],
+			"description":     req["description"],
+			"avatar_url":      req["avatar_url"],
+		},
+	})
+	s.handleGroupDetails(w, r)
+}
+
 func (s *Server) handleGroupPending(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
