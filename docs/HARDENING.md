@@ -11,7 +11,7 @@
 - [ ] TLS termination (nginx/caddy) in production
 - [x] Rotate `QCHAT_JWT_SECRET` — `deploy/rotate-jwt-secret.sh` + `qchat-api.env.example`; production refuses weak default (`QCHAT_ENV=production`)
 - [ ] Penetration test before public launch
-- [ ] Rate limits at reverse proxy
+- [x] Rate limits at reverse proxy — `deploy/nginx-qchat.conf` (`limit_req` on auth / API / WS)
 
 ## Reliability
 
