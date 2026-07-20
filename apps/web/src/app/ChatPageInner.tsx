@@ -200,6 +200,7 @@ const ICONS = {
   retry: "M3 12a9 9 0 1 0 3-6.7 M6 2v4h4",
   menu: "M3 6h18 M3 12h18 M3 18h18",
   pencil: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
+  edit: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
   user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
   users:
     "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M23 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8",
@@ -262,6 +263,7 @@ function Bubble({
           <MenuIcon d={ICONS.trash} style={{ width: 11, height: 11 }} />
         </span>
       )}
+      {msg.editedAt && !msg.recalled && <span className="edited-mark">edited </span>}
       {fmtTime(msg.createdAt)}
       {receiptMark(msg)}
       {!selectMode && msg.failed && onRetry && (
@@ -1470,6 +1472,23 @@ export default function ChatPageInner() {
           {ctxMsg.mine && !ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
             <>
               <div className="ctx-sep" />
+              {ctxMsg.type !== "voice" && ctxMsg.type !== "image" && ctxMsg.type !== "file" && (
+                <button
+                  className="ctx-item"
+                  onClick={() => {
+                    const next = window.prompt("Edit message", ctxMsg.content);
+                    if (next != null && next.trim() && next.trim() !== ctxMsg.content) {
+                      chat.editMessage(ctxMsg.id, chat.activeId!, next.trim()).catch((e) =>
+                        setSendError(e.message)
+                      );
+                    }
+                    setCtxMenu(null);
+                  }}
+                >
+                  <MenuIcon d={ICONS.edit} />
+                  Edit
+                </button>
+              )}
               <button
                 className="ctx-item"
                 onClick={() => {

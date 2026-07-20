@@ -453,7 +453,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		         ELSE m.body
 		       END,
 		       m.media_url, m.reply_to_id::text, m.mention_all, m.recalled, m.created_at,
-		       u.display_name
+		       u.display_name, m.edited_at
 		FROM messages m JOIN users u ON u.id=m.sender_id
 		WHERE m.conversation_id=$1 AND m.created_at >= $2
 		  AND ($3 OR m.recalled=FALSE)
@@ -469,8 +469,9 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		var seq int64
 		var mentionAll, recalled bool
 		var created time.Time
+		var editedAt *time.Time
 		var replyPtr *string
-		_ = rows.Scan(&id, &sid, &cmid, &seq, &typ, &body, &media, &replyPtr, &mentionAll, &recalled, &created, &dname)
+		_ = rows.Scan(&id, &sid, &cmid, &seq, &typ, &body, &media, &replyPtr, &mentionAll, &recalled, &created, &dname, &editedAt)
 		if replyPtr != nil {
 			reply = *replyPtr
 		}
@@ -479,6 +480,9 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 			"body": body, "media_url": media, "reply_to_id": reply, "mention_all": mentionAll,
 			"recalled": recalled, "created_at": created, "sender_name": dname,
 			"conversation_id": convID,
+		}
+		if editedAt != nil {
+			item["edited_at"] = editedAt.UTC()
 		}
 		out = append(out, item)
 	}

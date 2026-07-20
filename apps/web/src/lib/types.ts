@@ -58,6 +58,7 @@ export interface Message {
   delivered?: boolean;
   read?: boolean;
   reactions?: Reaction[];
+  editedAt?: string;
 }
 
 export interface Friend {
@@ -132,6 +133,7 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
     replyToId: str(raw?.reply_to_id) || undefined,
     delivered: Boolean(raw?.delivered),
     read: Boolean(raw?.read),
+    editedAt: str(raw?.edited_at ?? raw?.editedAt) || undefined,
     reactions: Array.isArray(raw?.reactions)
       ? raw.reactions.map((r: any) => ({
           emoji: str(r?.emoji),

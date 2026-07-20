@@ -241,6 +241,20 @@ export function useChat() {
       );
       return;
     }
+    if (type === "message.updated") {
+      const id = String(payload?.id ?? "");
+      const convId = String(payload?.conversation_id ?? "");
+      const body = String(payload?.body ?? "");
+      const editedAt = String(payload?.edited_at ?? new Date().toISOString());
+      if (!id || !convId) return;
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: (prev[convId] ?? []).map((m) =>
+          m.id === id ? { ...m, content: body, editedAt } : m
+        ),
+      }));
+      return;
+    }
 
     if (type === "message.read") {
       const id = String(payload?.id ?? "");
@@ -833,6 +847,20 @@ export function useChat() {
     );
   }, [messages]);
 
+  const editMessage = useCallback(async (messageId: string, convId: string, body: string) => {
+    const res = await api<any>(`/v1/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body }),
+    });
+    const editedAt = String(res?.edited_at ?? new Date().toISOString());
+    setMessages((prev) => ({
+      ...prev,
+      [convId]: (prev[convId] ?? []).map((m) =>
+        m.id === messageId ? { ...m, content: body, editedAt } : m
+      ),
+    }));
+  }, []);
+
   const forwardMessage = useCallback(async (messageId: string, conversationIds: string[]) => {
     await api(`/v1/messages/${messageId}/forward`, {
       method: "POST",
@@ -897,6 +925,7 @@ export function useChat() {
     forwardMessage,
     reactMessage,
     pinMessage,
+    editMessage,
     updateConversationPrefs,
     markConversationUnread,
     reload: loadConversations,
