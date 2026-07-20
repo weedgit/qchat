@@ -787,6 +787,14 @@ export default function ChatPageInner() {
     setDraft(getDraft(chat.activeId));
   }, [chat.activeId]);
 
+  // Mattermost focus_post_textbox / useTextboxFocus: focus composer so the user
+  // can type immediately after picking a DM or group in the sidebar.
+  useEffect(() => {
+    if (!chat.activeId || recording || voiceBusy) return;
+    const id = window.setTimeout(() => draftRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [chat.activeId, recording, voiceBusy]);
+
   useEffect(() => {
     if (!chat.activeId || editingMessage) return;
     const t = setTimeout(() => saveDraft(chat.activeId!, draft), 200);
