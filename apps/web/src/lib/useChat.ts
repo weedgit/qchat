@@ -38,6 +38,7 @@ export function useChat() {
   >({});
 
   const meRef = useRef<CurrentUser | null>(null);
+  const eventListenersRef = useRef<Set<(type: string, payload: any) => void>>(new Set());
   const activeIdRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
@@ -209,6 +210,17 @@ export function useChat() {
   const handleIncoming = useCallback((raw: any) => {
     const type = String(raw?.type ?? "");
     const payload = raw?.payload ?? raw?.data ?? raw;
+
+    if (type.startsWith("call.")) {
+      eventListenersRef.current.forEach((fn) => {
+        try {
+          fn(type, payload);
+        } catch {
+          /* ignore listener errors */
+        }
+      });
+      return;
+    }
 
     if (type === "typing.start") {
       const convId = String(payload?.conversation_id ?? "");
@@ -930,6 +942,13 @@ export function useChat() {
     if (activeIdRef.current === convId) setActiveId(null);
   }, []);
 
+  const subscribeEvents = useCallback((handler: (type: string, payload: any) => void) => {
+    eventListenersRef.current.add(handler);
+    return () => {
+      eventListenersRef.current.delete(handler);
+    };
+  }, []);
+
   return {
     me,
     conversations,
@@ -956,5 +975,6 @@ export function useChat() {
     updateConversationPrefs,
     markConversationUnread,
     reload: loadConversations,
+    subscribeEvents,
   };
 }

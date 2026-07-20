@@ -1466,3 +1466,93 @@ select:focus {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 .edit-banner { color: #e6b422; }
+
+/* Mattermost Calls-style overlay */
+.call-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+.call-overlay.in-call {
+  align-items: flex-end;
+  justify-content: flex-end;
+  background: transparent;
+  pointer-events: none;
+}
+.call-overlay-card {
+  pointer-events: auto;
+  width: min(360px, 100%);
+  padding: 20px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+.call-media-card {
+  width: min(420px, 100%);
+}
+.call-overlay-title {
+  font-size: 13px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.call-overlay-name {
+  font-size: 20px;
+  font-weight: 700;
+}
+.call-overlay-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.call-answer {
+  background: var(--ok) !important;
+  border-color: var(--ok) !important;
+}
+.call-decline {
+  background: var(--danger) !important;
+  border-color: var(--danger) !important;
+  color: #fff !important;
+}
+.call-videos {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #0a1018;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.call-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #0a1018;
+}
+.call-video.local {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 28%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  z-index: 1;
+}
+.call-voice-placeholder {
+  padding: 28px 12px;
+  font-size: 15px;
+}
+
