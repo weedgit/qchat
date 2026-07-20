@@ -12,10 +12,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import FriendNoteEditor from "@/components/FriendNoteEditor";
+import GroupQr from "@/components/GroupQr";
 import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
-import { Conversation, Message, formatLastSeen } from "@/lib/types";
+import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
@@ -80,7 +82,7 @@ function ConversationRow({
       }}
     >
       <Avatar
-        name={conv.title}
+        name={conversationDisplayName(conv)}
         url={conv.avatarUrl}
         size={50}
         showStatus={isDM}
@@ -90,7 +92,7 @@ function ConversationRow({
         <div className="conv-top">
           <span className="conv-title">
             {conv.favorite ? <span className="fav-mark" title="Favorite">★ </span> : null}
-            {conv.title}
+            {conversationDisplayName(conv)}
             {conv.muted ? <span className="mute-mark" title="Muted"> · muted</span> : null}
           </span>
           <span className="conv-time">{fmtTime(conv.lastMessageAt)}</span>
@@ -417,14 +419,18 @@ export default function ChatPageInner() {
   const [recordSecs, setRecordSecs] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [groupDetails, setGroupDetails] = useState<{
-    members: { user_id: string; display_name: string; username: string; role: string; avatar_url?: string }[];
+    members: { user_id: string; display_name: string; username: string; role: string; avatar_url?: string; mute_until?: string }[];
     public_id?: string;
     description?: string;
     role?: string;
+    avatar_url?: string;
+    mute_all?: boolean;
   } | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const groupAvatarInputRef = useRef<HTMLInputElement>(null);
   const openedFromQuery = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -479,6 +485,61 @@ export default function ChatPageInner() {
       await chat.recallMessage(m.id, chat.activeId);
     }
     clearSelection();
+  }
+
+  const canEditGroup =
+    isGroup &&
+    (groupDetails?.role === "owner" ||
+      groupDetails?.role === "admin" ||
+      chat.myRole === "owner" ||
+      chat.myRole === "admin");
+
+  async function uploadGroupAvatar(file: File) {
+    if (!active || !canEditGroup) return;
+    setAvatarBusy(true);
+    setSendError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", "avatar");
+      const up = await api<{ url?: string }>("/v1/media/upload", { method: "POST", body: fd });
+      const url = String(up?.url ?? "");
+      const g = await api<any>(`/v1/groups/${active.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ avatar_url: url }),
+      });
+      setGroupDetails((prev) =>
+        prev ? { ...prev, avatar_url: String(g?.avatar_url ?? url) } : prev
+      );
+      await chat.reload();
+    } catch (err: any) {
+      setSendError(err.message);
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function reloadGroupDetails() {
+    if (!active || (active.type !== "social_group" && active.type !== "group")) return;
+    const g = await api<any>(`/v1/groups/${active.id}`);
+    setGroupDetails({
+      members: Array.isArray(g?.members) ? g.members : [],
+      public_id: g?.public_id,
+      description: g?.description,
+      role: g?.role,
+      avatar_url: g?.avatar_url,
+      mute_all: Boolean(g?.mute_all),
+    });
+  }
+
+  /** Timed speak-mute (JD 10m/1h/permanent); Mattermost channel moderation has no timed per-member mute. */
+  async function muteMember(userId: string, duration: string) {
+    if (!active || !canEditGroup) return;
+    await api(`/v1/groups/${active.id}/mute`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, duration }),
+    });
+    await reloadGroupDetails();
   }
 
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
@@ -599,6 +660,8 @@ export default function ChatPageInner() {
           public_id: g?.public_id,
           description: g?.description,
           role: g?.role,
+          avatar_url: g?.avatar_url,
+          mute_all: Boolean(g?.mute_all),
         });
       })
       .catch(() => {
@@ -612,7 +675,10 @@ export default function ChatPageInner() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return chat.conversations;
-    return chat.conversations.filter((c) => c.title.toLowerCase().includes(q));
+    return chat.conversations.filter((c) => {
+      const name = conversationDisplayName(c).toLowerCase();
+      return name.includes(q) || c.title.toLowerCase().includes(q) || (c.friendNote ?? "").toLowerCase().includes(q);
+    });
   }, [chat.conversations, query]);
 
   // Mattermost global search (users + messages) when sidebar query is long enough.
@@ -1111,7 +1177,7 @@ export default function ChatPageInner() {
                   onClick={() => setShowDetails(true)}
                 >
                   <Avatar
-                    name={active.title}
+                    name={conversationDisplayName(active)}
                     url={active.avatarUrl}
                     size={38}
                     showStatus={active.type === "dm"}
@@ -1122,7 +1188,7 @@ export default function ChatPageInner() {
                     }
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="title">{active.title}</div>
+                    <div className="title">{conversationDisplayName(active)}</div>
                     <div className="sub">
                       {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
                         (active.type === "dm"
@@ -1391,8 +1457,58 @@ export default function ChatPageInner() {
           >
             {"\u2715"}
           </button>
-          <Avatar name={active.title} url={active.avatarUrl} size={96} />
-          <div style={{ fontSize: 17, fontWeight: 700 }}>{active.title}</div>
+          <Avatar
+            name={conversationDisplayName(active)}
+            url={groupDetails?.avatar_url || active.avatarUrl}
+            size={96}
+          />
+          {canEditGroup && (
+            <>
+              <input
+                ref={groupAvatarInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) uploadGroupAvatar(f).catch(() => {});
+                }}
+              />
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ marginTop: 8 }}
+                disabled={avatarBusy}
+                onClick={() => groupAvatarInputRef.current?.click()}
+              >
+                {avatarBusy ? "Uploading…" : "Change group avatar"}
+              </button>
+            </>
+          )}
+          <div style={{ fontSize: 17, fontWeight: 700 }}>{conversationDisplayName(active)}</div>
+          {active.type === "dm" && active.friendNote && (
+            <div className="muted" style={{ fontSize: 13 }}>
+              {active.title}
+            </div>
+          )}
+          {active.type === "dm" && active.friendTags && active.friendTags.length > 0 && (
+            <div className="tag-chip-row" style={{ marginTop: 8 }}>
+              {active.friendTags.map((t) => (
+                <span key={t} className="tag-chip">
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
+          {active.type === "dm" && active.friendshipId && (
+            <FriendNoteEditor
+              friendshipId={active.friendshipId}
+              note={active.friendNote ?? ""}
+              tags={active.friendTags ?? []}
+              onSaved={() => chat.reload()}
+            />
+          )}
           <div className="kv">
             <div className="k">Type</div>
             <div>{active.type}</div>
@@ -1413,6 +1529,14 @@ export default function ChatPageInner() {
                   <div>{groupDetails.public_id}</div>
                 </div>
               )}
+              {groupDetails.public_id && (
+                <div className="group-qr-block">
+                  <div className="k" style={{ marginBottom: 8 }}>
+                    Invite QR
+                  </div>
+                  <GroupQr publicId={groupDetails.public_id} size={140} />
+                </div>
+              )}
               {groupDetails.description && (
                 <div className="kv">
                   <div className="k">Description</div>
@@ -1423,24 +1547,96 @@ export default function ChatPageInner() {
                 <div className="k">Your role</div>
                 <div>{groupDetails.role || chat.myRole}</div>
               </div>
+              {groupDetails.mute_all && (
+                <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+                  Whole group is muted (members cannot send).
+                </div>
+              )}
               <div className="details-members">
                 <div className="k" style={{ marginBottom: 8 }}>
                   Members ({groupDetails.members.length})
                 </div>
-                {groupDetails.members.map((m) => (
-                  <div key={m.user_id} className="details-member">
-                    <Avatar name={m.display_name} url={m.avatar_url} size={28} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600 }}>{m.display_name}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        @{m.username} · {m.role}
+                {groupDetails.members.map((m) => {
+                  const mutedUntil = m.mute_until ? new Date(m.mute_until) : null;
+                  const isMuted =
+                    mutedUntil != null && !Number.isNaN(mutedUntil.getTime()) && mutedUntil.getTime() > Date.now();
+                  const permanentMute =
+                    mutedUntil != null && mutedUntil.getUTCFullYear() >= 9999;
+                  return (
+                    <div key={m.user_id} className="details-member details-member-admin">
+                      <Avatar name={m.display_name} url={m.avatar_url} size={28} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{m.display_name}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          @{m.username} · {m.role}
+                          {isMuted
+                            ? permanentMute
+                              ? " · muted permanently"
+                              : ` · muted until ${mutedUntil!.toLocaleString()}`
+                            : ""}
+                        </div>
+                        {canEditGroup && m.role !== "owner" && (
+                          <div className="mute-actions">
+                            <button
+                              type="button"
+                              className="btn-ghost mute-chip"
+                              onClick={() => muteMember(m.user_id, "10m").catch(() => {})}
+                            >
+                              10m
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-ghost mute-chip"
+                              onClick={() => muteMember(m.user_id, "1h").catch(() => {})}
+                            >
+                              1h
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-ghost mute-chip"
+                              onClick={() => muteMember(m.user_id, "permanent").catch(() => {})}
+                            >
+                              Mute
+                            </button>
+                            {isMuted && (
+                              <button
+                                type="button"
+                                className="btn-ghost mute-chip"
+                                onClick={() => muteMember(m.user_id, "off").catch(() => {})}
+                              >
+                                Unmute
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-              <Link className="btn" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
-                Manage group
+              {canEditGroup && (
+                <div className="mute-group-actions">
+                  {groupDetails.mute_all ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => muteMember("", "all_off").catch(() => {})}
+                    >
+                      Unmute whole group
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => muteMember("", "all").catch(() => {})}
+                    >
+                      Mute whole group
+                    </button>
+                  )}
+                </div>
+              )}
+              <Link className="btn-ghost" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
+                More group settings
               </Link>
             </>
           )}
@@ -1670,37 +1866,113 @@ export default function ChatPageInner() {
       )}
 
       {forwardIds && forwardIds.length > 0 && (
-        <div className="card" style={{ position: "fixed", right: 24, bottom: 24, width: 320, zIndex: 20 }}>
-          <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>
-            Forward {forwardIds.length > 1 ? `${forwardIds.length} messages` : "message"} to…
-          </h3>
-          <div style={{ maxHeight: 240, overflow: "auto" }}>
-            {chat.conversations
-              .filter((c) => c.id !== chat.activeId)
-              .map((c) => (
-                <div className="list-row" key={c.id}>
-                  <div style={{ flex: 1 }}>{c.title}</div>
-                  <button
-                    className="btn"
-                    style={{ flex: "none" }}
-                    onClick={async () => {
-                      for (const id of forwardIds) {
-                        await chat.forwardMessage(id, [c.id]);
-                      }
-                      setForwardIds(null);
-                      clearSelection();
-                    }}
-                  >
-                    Send
-                  </button>
-                </div>
-              ))}
-          </div>
-          <button className="btn-ghost" style={{ marginTop: 8 }} onClick={() => setForwardIds(null)}>
-            Cancel
-          </button>
-        </div>
+        <ForwardPicker
+          conversations={chat.conversations.filter((c) => c.id !== chat.activeId)}
+          messageCount={forwardIds.length}
+          onCancel={() => setForwardIds(null)}
+          onSend={async (targetIds) => {
+            for (const id of forwardIds) {
+              await chat.forwardMessage(id, targetIds);
+            }
+            setForwardIds(null);
+            clearSelection();
+          }}
+        />
       )}
     </AppShell>
+  );
+}
+
+/** Mattermost ForwardPostModal-style picker; Qchat API already accepts multiple conversation_ids. */
+function ForwardPicker({
+  conversations,
+  messageCount,
+  onCancel,
+  onSend,
+}: {
+  conversations: Conversation[];
+  messageCount: number;
+  onCancel: () => void;
+  onSend: (conversationIds: string[]) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter((c) => c.title.toLowerCase().includes(q));
+  }, [conversations, filter]);
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function submit() {
+    if (selected.size === 0 || busy) return;
+    setBusy(true);
+    try {
+      await onSend(Array.from(selected));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="forward-modal" role="dialog" aria-label="Forward messages">
+      <div className="forward-modal-card">
+        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>
+          Forward {messageCount > 1 ? `${messageCount} messages` : "message"} to…
+        </h3>
+        <input
+          placeholder="Search conversations"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{ marginBottom: 8 }}
+        />
+        <div className="forward-modal-list">
+          {filtered.length === 0 && <div className="muted">No conversations</div>}
+          {filtered.map((c) => (
+            <label key={c.id} className="forward-modal-row">
+              <input
+                type="checkbox"
+                checked={selected.has(c.id)}
+                onChange={() => toggle(c.id)}
+              />
+              <Avatar name={conversationDisplayName(c)} url={c.avatarUrl} size={32} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontWeight: 600 }}>{conversationDisplayName(c)}</span>
+                <span className="muted" style={{ display: "block", fontSize: 12 }}>
+                  {c.type === "dm" ? "Direct message" : "Group"}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="forward-modal-actions">
+          <button className="btn-ghost" type="button" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="btn"
+            type="button"
+            disabled={busy || selected.size === 0}
+            onClick={() => submit().catch(() => {})}
+          >
+            {busy
+              ? "Sending…"
+              : selected.size > 0
+                ? `Send to ${selected.size}`
+                : "Select targets"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

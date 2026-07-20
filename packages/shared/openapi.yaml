@@ -313,6 +313,17 @@ paths:
       responses:
         "200":
           description: Group
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update group metadata (title, description, avatar)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Updated group
   /v1/groups/{id}/pending:
     get:
       security: [{ bearerAuth: [] }]

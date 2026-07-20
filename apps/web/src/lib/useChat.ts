@@ -257,6 +257,22 @@ export function useChat() {
       return;
     }
 
+    // Mattermost patchChannel / team icon update → refresh list row.
+    if (type === "group.updated") {
+      const convId = String(payload?.conversation_id ?? "");
+      if (!convId) return;
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          const title = payload?.title != null ? String(payload.title) : c.title;
+          const avatarUrl =
+            payload?.avatar_url != null ? String(payload.avatar_url) || undefined : c.avatarUrl;
+          return { ...c, title, avatarUrl };
+        })
+      );
+      return;
+    }
+
     if (type === "message.read") {
       const id = String(payload?.id ?? "");
       const convId = String(payload?.conversation_id ?? "");

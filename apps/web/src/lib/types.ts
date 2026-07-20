@@ -24,6 +24,10 @@ export interface Conversation {
   muted?: boolean;
   pinnedMessageId?: string;
   pinnedMessage?: string;
+  /** Viewer-only friend alias (note). */
+  friendNote?: string;
+  friendshipId?: string;
+  friendTags?: string[];
 }
 
 export interface Reactor {
@@ -106,7 +110,16 @@ export function normalizeConversation(raw: any): Conversation {
     muted: Boolean(raw?.muted),
     pinnedMessageId: str(raw?.pinned_message_id) || undefined,
     pinnedMessage: str(raw?.pinned_message) || undefined,
+    friendNote: str(raw?.friend_note) || undefined,
+    friendshipId: str(raw?.friendship_id) || undefined,
+    friendTags: Array.isArray(raw?.friend_tags) ? raw.friend_tags.map(String) : undefined,
   };
+}
+
+/** Display title preferring friend note/alias over peer name. */
+export function conversationDisplayName(c: Conversation): string {
+  if (c.type === "dm" && c.friendNote) return c.friendNote;
+  return c.title;
 }
 
 export function normalizeMessage(raw: any, currentUserId?: string): Message {

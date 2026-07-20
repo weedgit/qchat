@@ -4,7 +4,9 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import GroupQr from "@/components/GroupQr";
 import { api, asList } from "@/lib/api";
+import { parseGroupJoinPayload } from "@/lib/groupQr";
 import { Conversation, Friend, normalizeConversation, normalizeFriend } from "@/lib/types";
 
 interface PendingUser {
@@ -36,6 +38,7 @@ export default function GroupsPage() {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [role, setRole] = useState("");
   const [publicId, setPublicId] = useState("");
+  const [muteAll, setMuteAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -81,9 +84,14 @@ export default function GroupsPage() {
     setBusy(true);
     setMsg(null);
     try {
+      const publicId = parseGroupJoinPayload(joinId) ?? joinId.trim();
+      if (!publicId) {
+        setMsg("Enter a group ID or paste a scanned QR payload.");
+        return;
+      }
       const res = await api<any>("/v1/groups/join", {
         method: "POST",
-        body: JSON.stringify({ public_id: joinId.trim() }),
+        body: JSON.stringify({ public_id: publicId }),
       });
       setMsg(`Join request: ${res?.status ?? "submitted"}`);
       setJoinId("");
@@ -104,6 +112,7 @@ export default function GroupsPage() {
       ]);
       setRole(String(details?.role ?? ""));
       setPublicId(String(details?.public_id ?? ""));
+      setMuteAll(Boolean(details?.mute_all));
       setMembers(asList(details, "members"));
       setPending(asList(pend, "pending"));
     } catch (err: any) {
@@ -171,8 +180,16 @@ export default function GroupsPage() {
         </form>
 
         <form className="card" onSubmit={joinGroup} style={{ display: "grid", gap: 10 }}>
-          <h2 style={{ margin: 0, fontSize: 15 }}>Join by group ID</h2>
-          <input placeholder="e.g. Gxxxxxxxx" value={joinId} onChange={(e) => setJoinId(e.target.value)} required />
+          <h2 style={{ margin: 0, fontSize: 15 }}>Join by ID or QR</h2>
+          <input
+            placeholder="Gxxxxxxxx or paste qchat://join/…"
+            value={joinId}
+            onChange={(e) => setJoinId(e.target.value)}
+            required
+          />
+          <div className="muted" style={{ fontSize: 12 }}>
+            Scan a group QR with your phone camera, then paste the result here — or type the invite ID.
+          </div>
           <button className="btn" disabled={busy}>Request to join</button>
         </form>
 
@@ -200,6 +217,7 @@ export default function GroupsPage() {
           <div className="card" style={{ display: "grid", gap: 10 }}>
             <h2 style={{ margin: 0, fontSize: 15 }}>Manage group</h2>
             <div className="muted">Public ID: {publicId || "—"} · Your role: {role || "—"}</div>
+            {publicId && <GroupQr publicId={publicId} size={148} />}
 
             {isAdmin && (
               <>
@@ -232,6 +250,9 @@ export default function GroupsPage() {
                     <button className="btn-ghost" style={{ flex: "none" }} onClick={() => mute(m.user_id, "10m")}>10m</button>
                     <button className="btn-ghost" style={{ flex: "none" }} onClick={() => mute(m.user_id, "1h")}>1h</button>
                     <button className="btn-ghost" style={{ flex: "none" }} onClick={() => mute(m.user_id, "permanent")}>Mute</button>
+                    {m.mute_until && (
+                      <button className="btn-ghost" style={{ flex: "none" }} onClick={() => mute(m.user_id, "off")}>Unmute</button>
+                    )}
                     {role === "owner" && (
                       <button
                         className="btn-ghost"
@@ -246,7 +267,9 @@ export default function GroupsPage() {
               </div>
             ))}
             {isAdmin && (
-              <button className="btn" onClick={() => mute("", "all")}>Mute whole group</button>
+              <button className="btn" onClick={() => mute("", muteAll ? "all_off" : "all")}>
+                {muteAll ? "Unmute whole group" : "Mute whole group"}
+              </button>
             )}
           </div>
         )}

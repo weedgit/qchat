@@ -113,6 +113,29 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		if pid, ok := item["peer_id"].(string); ok && pid != "" {
 			item["peer_online"] = online[pid]
 		}
+		// Friend note/alias for DMs (Mattermost has no per-viewer friend notes).
+		if typ, _ := item["type"].(string); typ == "dm" {
+			if pid, ok := item["peer_id"].(string); ok && pid != "" {
+				var note, friendshipID string
+				var tags []string
+				_ = s.db.QueryRow(r.Context(), `
+					SELECT f.id::text, COALESCE(f.note,''), COALESCE(f.tags, '{}')
+					FROM friendships f
+					WHERE f.status='accepted' AND f.enterprise_id=$1
+					  AND ((f.requester_id=$2 AND f.addressee_id=$3)
+					    OR (f.requester_id=$3 AND f.addressee_id=$2))
+					LIMIT 1`, c.EnterpriseID, c.UserID, pid).Scan(&friendshipID, &note, &tags)
+				if friendshipID != "" {
+					item["friendship_id"] = friendshipID
+				}
+				if note != "" {
+					item["friend_note"] = note
+				}
+				if len(tags) > 0 {
+					item["friend_tags"] = tags
+				}
+			}
+		}
 	}
 	writeJSON(w, 200, map[string]any{"conversations": out})
 }
@@ -253,6 +276,53 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 		"id": convID, "title": title, "description": description, "public_id": publicID,
 		"avatar_url": avatar, "mute_all": muteAll, "role": role, "owner_id": ownerID, "members": members,
 	})
+}
+
+// handlePatchGroup mirrors Mattermost patchChannel / setTeamIcon for group metadata.
+func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+	if !s.isGroupAdmin(r, convID, c.UserID) {
+		writeErrCode(w, 403, "forbidden", "only owners and admins can edit group")
+		return
+	}
+	var ent, typ string
+	err := s.db.QueryRow(r.Context(), `
+		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+	var req map[string]any
+	if err := decodeJSON(r, &req); err != nil {
+		writeErrCode(w, 400, "invalid_request", "invalid json")
+		return
+	}
+	_, err = s.db.Exec(r.Context(), `
+		UPDATE conversations SET
+			title=COALESCE($2, title),
+			description=COALESCE($3, description),
+			avatar_url=COALESCE($4, avatar_url)
+		WHERE id=$1`,
+		convID,
+		strPtr(req, "title"),
+		strPtr(req, "description"),
+		strPtr(req, "avatar_url"),
+	)
+	if err != nil {
+		writeErrCode(w, 400, "update_failed", "update failed")
+		return
+	}
+	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
+		Type: "group.updated",
+		Payload: map[string]any{
+			"conversation_id": convID,
+			"title":           req["title"],
+			"description":     req["description"],
+			"avatar_url":      req["avatar_url"],
+		},
+	})
+	s.handleGroupDetails(w, r)
 }
 
 func (s *Server) handleGroupPending(w http.ResponseWriter, r *http.Request) {
@@ -398,6 +468,22 @@ func (s *Server) handleMuteMember(w http.ResponseWriter, r *http.Request) {
 	if req.Duration == "all" {
 		_, _ = s.db.Exec(r.Context(), `UPDATE conversations SET mute_all=TRUE WHERE id=$1`, convID)
 		writeJSON(w, 200, map[string]any{"mute_all": true})
+		return
+	}
+	if req.Duration == "all_off" {
+		_, _ = s.db.Exec(r.Context(), `UPDATE conversations SET mute_all=FALSE WHERE id=$1`, convID)
+		writeJSON(w, 200, map[string]any{"mute_all": false})
+		return
+	}
+	if req.Duration == "off" {
+		_, err := s.db.Exec(r.Context(), `
+			UPDATE conversation_members SET mute_until=NULL
+			WHERE conversation_id=$1 AND user_id=$2`, convID, req.UserID)
+		if err != nil {
+			writeErr(w, 400, "unmute failed")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"mute_until": nil})
 		return
 	}
 	var until *time.Time
