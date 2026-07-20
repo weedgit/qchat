@@ -12,10 +12,13 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { Conversation, Message, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
+import { useGlobalSearch } from "@/lib/useSearch";
+import { getDraft, saveDraft } from "@/lib/drafts";
 
 const VOICE_MAX_SEC = 60;
 
@@ -110,7 +113,8 @@ function ConversationRow({
             )}
           </span>
           {conv.unreadCount > 0 && (
-            <span className={`badge ${conv.muted ? "muted-badge" : ""}`}>
+            <span className={`badge ${conv.muted ? "muted-badge" : ""} ${conv.mentionCount ? "mention-badge" : ""}`}>
+              {conv.mentionCount ? "@" : ""}
               {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
             </span>
           )}
@@ -196,6 +200,7 @@ const ICONS = {
   retry: "M3 12a9 9 0 1 0 3-6.7 M6 2v4h4",
   menu: "M3 6h18 M3 12h18 M3 18h18",
   pencil: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
+  edit: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
   user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
   users:
     "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M23 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8",
@@ -258,6 +263,7 @@ function Bubble({
           <MenuIcon d={ICONS.trash} style={{ width: 11, height: 11 }} />
         </span>
       )}
+      {msg.editedAt && !msg.recalled && <span className="edited-mark">edited </span>}
       {fmtTime(msg.createdAt)}
       {receiptMark(msg)}
       {!selectMode && msg.failed && onRetry && (
@@ -336,7 +342,7 @@ function Bubble({
               <span>{msg.content || "File"}</span>
             </a>
           ) : (
-            msg.content
+            <MessageBody text={msg.content} />
           )}
           {hasReactions ? (
             <div className="bubble-footer">
@@ -391,21 +397,31 @@ interface CtxMenuState {
 export default function ChatPageInner() {
   const chat = useChat();
   const { theme, setTheme } = useTheme();
+  const [myStatus, setMyStatus] = useState<"online" | "away" | "dnd" | "offline">("online");
   const { openConversation } = chat;
   const params = useSearchParams();
   const router = useRouter();
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [inChatSearch, setInChatSearch] = useState("");
+  const [showInChatSearch, setShowInChatSearch] = useState(false);
   const [draft, setDraft] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [forwardIds, setForwardIds] = useState<string[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [groupDetails, setGroupDetails] = useState<{
+    members: { user_id: string; display_name: string; username: string; role: string; avatar_url?: string }[];
+    public_id?: string;
+    description?: string;
+    role?: string;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -557,11 +573,51 @@ export default function ChatPageInner() {
     router.replace("/login");
   }
 
+  useEffect(() => {
+    api<any>("/v1/me")
+      .then((u) => {
+        const st = String(u?.status ?? "online");
+        if (st === "online" || st === "away" || st === "dnd" || st === "offline") {
+          setMyStatus(st);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Mattermost channel info RHS: load group members when details open.
+  useEffect(() => {
+    if (!showDetails || !active || (active.type !== "social_group" && active.type !== "group")) {
+      setGroupDetails(null);
+      return;
+    }
+    let cancelled = false;
+    api<any>(`/v1/groups/${active.id}`)
+      .then((g) => {
+        if (cancelled) return;
+        setGroupDetails({
+          members: Array.isArray(g?.members) ? g.members : [],
+          public_id: g?.public_id,
+          description: g?.description,
+          role: g?.role,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setGroupDetails(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showDetails, active]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return chat.conversations;
     return chat.conversations.filter((c) => c.title.toLowerCase().includes(q));
   }, [chat.conversations, query]);
+
+  // Mattermost global search (users + messages) when sidebar query is long enough.
+  const globalSearch = useGlobalSearch(query);
+  const chatSearch = useGlobalSearch(inChatSearch, chat.activeId);
 
   useEffect(() => {
     const c = params.get("c");
@@ -579,6 +635,25 @@ export default function ChatPageInner() {
     setSelectedIds(new Set());
   }, [chat.activeId]);
 
+  // Mattermost channel drafts: restore composer text when switching conversations.
+  useEffect(() => {
+    if (!chat.activeId) {
+      setDraft("");
+      setEditingMessage(null);
+      setReplyTo(null);
+      return;
+    }
+    setEditingMessage(null);
+    setReplyTo(null);
+    setDraft(getDraft(chat.activeId));
+  }, [chat.activeId]);
+
+  useEffect(() => {
+    if (!chat.activeId || editingMessage) return;
+    const t = setTimeout(() => saveDraft(chat.activeId!, draft), 200);
+    return () => clearTimeout(t);
+  }, [draft, chat.activeId, editingMessage]);
+
   // Auto-grow the composer to fit its content (capped by CSS max-height).
   useEffect(() => {
     const el = draftRef.current;
@@ -588,14 +663,35 @@ export default function ChatPageInner() {
   }, [draft]);
 
   useEffect(() => {
-    if (replyTo) draftRef.current?.focus();
-  }, [replyTo]);
+    if (replyTo || editingMessage) draftRef.current?.focus();
+  }, [replyTo, editingMessage]);
 
   async function send() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
-    setDraft("");
     setSendError(null);
+    // Mattermost edit post: reuse the composer instead of a prompt dialog.
+    if (editingMessage) {
+      const id = editingMessage.id;
+      if (text === editingMessage.content) {
+        setEditingMessage(null);
+        setDraft(getDraft(chat.activeId));
+        return;
+      }
+      setDraft("");
+      setEditingMessage(null);
+      try {
+        await chat.editMessage(id, chat.activeId, text);
+        saveDraft(chat.activeId, "");
+      } catch (e: any) {
+        setSendError(e.message);
+        setEditingMessage({ ...editingMessage, content: text });
+        setDraft(text);
+      }
+      return;
+    }
+    setDraft("");
+    saveDraft(chat.activeId, "");
     const replyId = replyTo?.id;
     setReplyTo(null);
     try {
@@ -603,6 +699,19 @@ export default function ChatPageInner() {
     } catch (e: any) {
       setSendError(e.message);
     }
+  }
+
+  function startEdit(msg: Message) {
+    setReplyTo(null);
+    setEditingMessage(msg);
+    setDraft(msg.content);
+    draftRef.current?.focus();
+  }
+
+  function cancelEdit() {
+    setEditingMessage(null);
+    if (chat.activeId) setDraft(getDraft(chat.activeId));
+    else setDraft("");
   }
 
   function clearRecordTimers() {
@@ -785,6 +894,22 @@ export default function ChatPageInner() {
                 <MenuIcon d={ICONS.settings} />
                 Theme: {theme}
               </button>
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  const order = ["online", "away", "dnd", "offline"] as const;
+                  const i = order.indexOf(myStatus);
+                  const next = order[(i + 1) % order.length];
+                  setMyStatus(next);
+                  api("/v1/me/status", {
+                    method: "PUT",
+                    body: JSON.stringify({ status: next }),
+                  }).catch(() => {});
+                }}
+              >
+                <MenuIcon d={ICONS.user} />
+                Status: {myStatus}
+              </button>
               <div className="ctx-sep" />
               <button className="ctx-item" onClick={logout}>
                 <MenuIcon d={ICONS.logout} />
@@ -794,6 +919,58 @@ export default function ChatPageInner() {
           )}
         </div>
         <div className="conv-list">
+          {globalSearch.active ? (
+            <div className="search-results">
+              {globalSearch.loading && <div className="muted" style={{ padding: 12 }}>Searching…</div>}
+              {globalSearch.users.length > 0 && (
+                <div className="search-section">
+                  <div className="search-section-title">People</div>
+                  {globalSearch.users.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className="search-hit"
+                      onClick={() => {
+                        chat.openDM(u.id).catch(() => {});
+                        setQuery("");
+                      }}
+                    >
+                      <Avatar name={u.displayName} size={36} />
+                      <div>
+                        <div className="conv-title">{u.displayName}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>@{u.username}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {globalSearch.messages.length > 0 && (
+                <div className="search-section">
+                  <div className="search-section-title">Messages</div>
+                  {globalSearch.messages.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className="search-hit"
+                      onClick={() => {
+                        chat.openConversation(m.conversationId);
+                        setQuery("");
+                      }}
+                    >
+                      <div className="search-hit-body">{m.body}</div>
+                      <div className="muted" style={{ fontSize: 11 }}>{fmtTime(m.createdAt)}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!globalSearch.loading &&
+                globalSearch.users.length === 0 &&
+                globalSearch.messages.length === 0 && (
+                  <div className="muted" style={{ padding: 14 }}>No results</div>
+                )}
+            </div>
+          ) : (
+            <>
           {chat.loadError && (
             <div style={{ padding: 14 }}>
               <div className="error-text">{chat.loadError}</div>
@@ -828,6 +1005,8 @@ export default function ChatPageInner() {
               onMarkUnread={() => chat.markConversationUnread(c.id).catch(() => {})}
             />
           ))}
+            </>
+          )}
         </div>
         <button
           type="button"
@@ -902,39 +1081,113 @@ export default function ChatPageInner() {
                   </button>
                 )}
               </div>
-            ) : (
-              <div
-                className="chat-header clickable"
-                title="View details"
-                onClick={() => setShowDetails(true)}
-              >
-                <Avatar
-                  name={active.title}
-                  url={active.avatarUrl}
-                  size={38}
-                  showStatus={active.type === "dm"}
-                  online={
-                    active.peerId
-                      ? chat.presenceByUser[active.peerId]?.online ?? active.peerOnline
-                      : undefined
-                  }
+            ) : showInChatSearch ? (
+              <div className="chat-header" onClick={(e) => e.stopPropagation()}>
+                <input
+                  className="search-input"
+                  autoFocus
+                  placeholder="Search in conversation"
+                  value={inChatSearch}
+                  onChange={(e) => setInChatSearch(e.target.value)}
                 />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="title">{active.title}</div>
-                  <div className="sub">
-                    {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
-                      (active.type === "dm"
-                        ? (() => {
-                            const p = active.peerId
-                              ? chat.presenceByUser[active.peerId]
-                              : undefined;
-                            const online = p?.online ?? active.peerOnline;
-                            if (online) return "online";
-                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
-                          })()
-                        : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Close search"
+                  onClick={() => {
+                    setShowInChatSearch(false);
+                    setInChatSearch("");
+                  }}
+                >
+                  {"\u2715"}
+                </button>
+              </div>
+            ) : (
+              <div className="chat-header">
+                <div
+                  className="chat-header clickable"
+                  style={{ flex: 1, border: "none", padding: 0, minWidth: 0 }}
+                  title="View details"
+                  onClick={() => setShowDetails(true)}
+                >
+                  <Avatar
+                    name={active.title}
+                    url={active.avatarUrl}
+                    size={38}
+                    showStatus={active.type === "dm"}
+                    online={
+                      active.peerId
+                        ? chat.presenceByUser[active.peerId]?.online ?? active.peerOnline
+                        : undefined
+                    }
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="title">{active.title}</div>
+                    <div className="sub">
+                      {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
+                        (active.type === "dm"
+                          ? (() => {
+                              const p = active.peerId
+                                ? chat.presenceByUser[active.peerId]
+                                : undefined;
+                              const online = p?.online ?? active.peerOnline;
+                              if (online) return "online";
+                              return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
+                            })()
+                          : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
+                    </div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Search in chat"
+                  onClick={() => setShowInChatSearch(true)}
+                >
+                  <MenuIcon d={"M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z M21 21l-4.3-4.3"} />
+                </button>
+              </div>
+            )}
+
+            {showInChatSearch && chatSearch.active && (
+              <div className="inchat-search-results">
+                {chatSearch.loading && <div className="muted">Searching…</div>}
+                {chatSearch.messages.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className="search-hit"
+                    onClick={() => {
+                      const el = document.getElementById(`msg-${m.id}`);
+                      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      el?.classList.add("msg-flash");
+                      setTimeout(() => el?.classList.remove("msg-flash"), 1200);
+                    }}
+                  >
+                    <div className="search-hit-body">{m.body}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>{fmtTime(m.createdAt)}</div>
+                  </button>
+                ))}
+                {!chatSearch.loading && chatSearch.messages.length === 0 && (
+                  <div className="muted">No matches in this chat</div>
+                )}
+              </div>
+            )}
+
+            {active.pinnedMessageId && active.pinnedMessage && (
+              <div className="pinned-banner">
+                <MenuIcon d={ICONS.pin} style={{ width: 16, height: 16 }} />
+                <div className="pinned-text">{active.pinnedMessage}</div>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  style={{ flex: "none", padding: "2px 6px" }}
+                  onClick={() =>
+                    chat.pinMessage(active.pinnedMessageId!, active.id, false).catch(() => {})
+                  }
+                >
+                  Unpin
+                </button>
               </div>
             )}
 
@@ -945,8 +1198,8 @@ export default function ChatPageInner() {
                 </div>
               )}
               {activeMessages.map((m) => (
+                <div key={m.id} id={`msg-${m.id}`}>
                 <Bubble
-                  key={m.id}
                   msg={m}
                   isGroup={!!isGroup}
                   replyPreview={previewFor(m)}
@@ -967,6 +1220,7 @@ export default function ChatPageInner() {
                       : undefined
                   }
                 />
+                </div>
               ))}
             </div>
 
@@ -981,7 +1235,23 @@ export default function ChatPageInner() {
 
             <div className="composer">
               <div className="composer-box">
-                {replyTo && (
+                {editingMessage ? (
+                  <div className="reply-banner edit-banner">
+                    <MenuIcon d={ICONS.edit} style={{ width: 22, height: 22 }} />
+                    <div className="reply-body">
+                      <div className="reply-name">Edit message</div>
+                      <div className="reply-text">{editingMessage.content}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="reply-close"
+                      title="Cancel edit"
+                      onClick={cancelEdit}
+                    >
+                      {"\u2715"}
+                    </button>
+                  </div>
+                ) : replyTo ? (
                   <div className="reply-banner">
                     <MenuIcon d={ICONS.reply} style={{ width: 22, height: 22 }} />
                     <div className="reply-body">
@@ -1001,7 +1271,7 @@ export default function ChatPageInner() {
                       {"\u2715"}
                     </button>
                   </div>
-                )}
+                ) : null}
                 <div className="composer-row">
                   {recording ? (
                     <>
@@ -1080,8 +1350,17 @@ export default function ChatPageInner() {
                         }}
                       />
                       {draft.trim() ? (
-                        <button className="send-btn" onClick={send} title="Send" disabled={voiceBusy}>
+                        <button
+                          className="send-btn"
+                          onClick={send}
+                          title={editingMessage ? "Save edit" : "Send"}
+                          disabled={voiceBusy}
+                        >
                           {"\u27A4"}
+                        </button>
+                      ) : editingMessage ? (
+                        <button className="send-btn danger" onClick={cancelEdit} title="Cancel edit">
+                          {"\u2715"}
                         </button>
                       ) : (
                         <button
@@ -1126,6 +1405,56 @@ export default function ChatPageInner() {
             <div className="k">Last activity</div>
             <div>{active.lastMessageAt ? fmtTime(active.lastMessageAt) : "\u2014"}</div>
           </div>
+          {isGroup && groupDetails && (
+            <>
+              {groupDetails.public_id && (
+                <div className="kv">
+                  <div className="k">Invite ID</div>
+                  <div>{groupDetails.public_id}</div>
+                </div>
+              )}
+              {groupDetails.description && (
+                <div className="kv">
+                  <div className="k">Description</div>
+                  <div>{groupDetails.description}</div>
+                </div>
+              )}
+              <div className="kv">
+                <div className="k">Your role</div>
+                <div>{groupDetails.role || chat.myRole}</div>
+              </div>
+              <div className="details-members">
+                <div className="k" style={{ marginBottom: 8 }}>
+                  Members ({groupDetails.members.length})
+                </div>
+                {groupDetails.members.map((m) => (
+                  <div key={m.user_id} className="details-member">
+                    <Avatar name={m.display_name} url={m.avatar_url} size={28} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600 }}>{m.display_name}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        @{m.username} · {m.role}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Link className="btn" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
+                Manage group
+              </Link>
+            </>
+          )}
+          {active.muted != null && (
+            <button
+              className="btn-ghost"
+              style={{ marginTop: 12 }}
+              onClick={() =>
+                chat.updateConversationPrefs(active.id, { muted: !active.muted }).catch(() => {})
+              }
+            >
+              {active.muted ? "Unmute conversation" : "Mute conversation"}
+            </button>
+          )}
         </aside>
       )}
 
@@ -1232,6 +1561,7 @@ export default function ChatPageInner() {
             <button
               className="ctx-item"
               onClick={() => {
+                setEditingMessage(null);
                 setReplyTo(ctxMsg);
                 setCtxMenu(null);
               }}
@@ -1287,6 +1617,29 @@ export default function ChatPageInner() {
           {ctxMsg.mine && !ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
             <>
               <div className="ctx-sep" />
+              {ctxMsg.type !== "voice" && ctxMsg.type !== "image" && ctxMsg.type !== "file" && (
+                <button
+                  className="ctx-item"
+                  onClick={() => {
+                    startEdit(ctxMsg);
+                    setCtxMenu(null);
+                  }}
+                >
+                  <MenuIcon d={ICONS.edit} />
+                  Edit
+                </button>
+              )}
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  const pinned = active?.pinnedMessageId === ctxMsg.id;
+                  chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => {});
+                  setCtxMenu(null);
+                }}
+              >
+                <MenuIcon d={ICONS.pin} />
+                {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
+              </button>
               <button
                 className="ctx-item danger"
                 onClick={() => {
@@ -1298,6 +1651,19 @@ export default function ChatPageInner() {
                 Recall
               </button>
             </>
+          )}
+          {!ctxMsg.mine && !ctxMsg.recalled && chat.activeId && (
+            <button
+              className="ctx-item"
+              onClick={() => {
+                const pinned = active?.pinnedMessageId === ctxMsg.id;
+                chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => {});
+                setCtxMenu(null);
+              }}
+            >
+              <MenuIcon d={ICONS.pin} />
+              {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
+            </button>
           )}
           </div>
         </div>

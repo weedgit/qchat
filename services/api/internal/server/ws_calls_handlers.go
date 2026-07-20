@@ -89,7 +89,11 @@ func (s *Server) readPump(c *ws.Client) {
 func (s *Server) publishPresence(userID string, online bool) {
 	ctx := context.Background()
 	now := time.Now().UTC()
-	_, _ = s.db.Exec(ctx, `UPDATE users SET last_active_at=$2 WHERE id=$1`, userID, now)
+	status := "offline"
+	if online {
+		status = "online"
+	}
+	_, _ = s.db.Exec(ctx, `UPDATE users SET last_active_at=$2, status=$3 WHERE id=$1`, userID, now, status)
 	rows, err := s.db.Query(ctx, `
 		SELECT DISTINCT cm2.user_id::text
 		FROM conversation_members cm1
@@ -109,12 +113,16 @@ func (s *Server) publishPresence(userID string, online bool) {
 	if len(recipients) == 0 {
 		return
 	}
+	var statusText string
+	_ = s.db.QueryRow(ctx, `SELECT COALESCE(status_text,'') FROM users WHERE id=$1`, userID).Scan(&statusText)
 	s.hub.PublishToUsers(recipients, ws.Event{
 		Type: "presence.update",
 		Payload: map[string]any{
-			"user_id":         userID,
-			"online":          online,
-			"last_active_at":  now,
+			"user_id":        userID,
+			"online":         online,
+			"status":         status,
+			"status_text":    statusText,
+			"last_active_at": now,
 		},
 	})
 }

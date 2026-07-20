@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, asList, getToken, uploadMedia, wsUrl } from "./api";
+import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
   Conversation,
   CurrentUser,
@@ -241,6 +242,20 @@ export function useChat() {
       );
       return;
     }
+    if (type === "message.updated") {
+      const id = String(payload?.id ?? "");
+      const convId = String(payload?.conversation_id ?? "");
+      const body = String(payload?.body ?? "");
+      const editedAt = String(payload?.edited_at ?? new Date().toISOString());
+      if (!id || !convId) return;
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: (prev[convId] ?? []).map((m) =>
+          m.id === id ? { ...m, content: body, editedAt } : m
+        ),
+      }));
+      return;
+    }
 
     if (type === "message.read") {
       const id = String(payload?.id ?? "");
@@ -383,15 +398,25 @@ export function useChat() {
         (document.hidden || activeIdRef.current !== msg.conversationId)
       ) {
         const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
-        // Mattermost muted channels suppress push-style notifications.
-        if (conversation?.muted) {
-          /* skip */
+        const notify = loadLocalNotifyProps();
+        const isMention =
+          Boolean((payload as any)?.mention_all) ||
+          (Array.isArray((payload as any)?.mentions) &&
+            (payload as any).mentions.includes(meRef.current?.id));
+        if (
+          !shouldNotifyDesktop(notify, {
+            muted: conversation?.muted,
+            isMention,
+          })
+        ) {
+          /* skip per Mattermost notify_props */
         } else {
         const notification = new Notification(
           msg.senderName || conversation?.title || "New message",
           {
             body: msg.content,
             tag: `qchat-${msg.conversationId}`,
+            silent: !notify.sound,
           }
         );
         notification.onclick = () => {
@@ -817,6 +842,36 @@ export function useChat() {
     }));
   }, []);
 
+  const pinMessage = useCallback(async (messageId: string, convId: string, pin: boolean) => {
+    await api(`/v1/messages/${messageId}/${pin ? "pin" : "unpin"}`, { method: "POST" });
+    const msg = (messages[convId] ?? []).find((m) => m.id === messageId);
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? {
+              ...c,
+              pinnedMessageId: pin ? messageId : undefined,
+              pinnedMessage: pin ? msg?.content : undefined,
+            }
+          : c
+      )
+    );
+  }, [messages]);
+
+  const editMessage = useCallback(async (messageId: string, convId: string, body: string) => {
+    const res = await api<any>(`/v1/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body }),
+    });
+    const editedAt = String(res?.edited_at ?? new Date().toISOString());
+    setMessages((prev) => ({
+      ...prev,
+      [convId]: (prev[convId] ?? []).map((m) =>
+        m.id === messageId ? { ...m, content: body, editedAt } : m
+      ),
+    }));
+  }, []);
+
   const forwardMessage = useCallback(async (messageId: string, conversationIds: string[]) => {
     await api(`/v1/messages/${messageId}/forward`, {
       method: "POST",
@@ -880,6 +935,8 @@ export function useChat() {
     recallMessage,
     forwardMessage,
     reactMessage,
+    pinMessage,
+    editMessage,
     updateConversationPrefs,
     markConversationUnread,
     reload: loadConversations,

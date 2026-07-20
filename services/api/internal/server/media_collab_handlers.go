@@ -213,37 +213,60 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	convID := strings.TrimSpace(r.URL.Query().Get("conversation_id"))
 	if q == "" {
 		writeJSON(w, 200, map[string]any{"messages": []any{}, "users": []any{}})
 		return
 	}
 	like := "%" + q + "%"
-	mrows, _ := s.db.Query(r.Context(), `
-		SELECT m.id::text, m.conversation_id::text, m.body, m.created_at
-		FROM messages m
-		JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=$1
-		WHERE m.enterprise_id=$2 AND m.recalled=FALSE AND m.body ILIKE $3 AND m.created_at >= cm.history_visible_from
-		ORDER BY m.created_at DESC LIMIT 30`, c.UserID, c.EnterpriseID, like)
+	// Mattermost-style post search scoped to membership; optional in-channel filter.
 	var messages []map[string]any
-	if mrows != nil {
-		defer mrows.Close()
-		for mrows.Next() {
-			var id, cid, body string
-			var created time.Time
-			_ = mrows.Scan(&id, &cid, &body, &created)
-			messages = append(messages, map[string]any{"id": id, "conversation_id": cid, "body": body, "created_at": created})
+	if convID != "" {
+		mrows, _ := s.db.Query(r.Context(), `
+			SELECT m.id::text, m.conversation_id::text, m.body, m.created_at
+			FROM messages m
+			JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=$1
+			WHERE m.enterprise_id=$2 AND m.conversation_id=$3 AND m.recalled=FALSE
+			  AND m.body ILIKE $4 AND m.created_at >= cm.history_visible_from
+			ORDER BY m.created_at DESC LIMIT 50`, c.UserID, c.EnterpriseID, convID, like)
+		if mrows != nil {
+			defer mrows.Close()
+			for mrows.Next() {
+				var id, cid, body string
+				var created time.Time
+				_ = mrows.Scan(&id, &cid, &body, &created)
+				messages = append(messages, map[string]any{"id": id, "conversation_id": cid, "body": body, "created_at": created})
+			}
+		}
+	} else {
+		mrows, _ := s.db.Query(r.Context(), `
+			SELECT m.id::text, m.conversation_id::text, m.body, m.created_at
+			FROM messages m
+			JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=$1
+			WHERE m.enterprise_id=$2 AND m.recalled=FALSE AND m.body ILIKE $3 AND m.created_at >= cm.history_visible_from
+			ORDER BY m.created_at DESC LIMIT 30`, c.UserID, c.EnterpriseID, like)
+		if mrows != nil {
+			defer mrows.Close()
+			for mrows.Next() {
+				var id, cid, body string
+				var created time.Time
+				_ = mrows.Scan(&id, &cid, &body, &created)
+				messages = append(messages, map[string]any{"id": id, "conversation_id": cid, "body": body, "created_at": created})
+			}
 		}
 	}
-	urows, _ := s.db.Query(r.Context(), `
-		SELECT id::text, username, display_name FROM users
-		WHERE enterprise_id=$1 AND (username ILIKE $2 OR display_name ILIKE $2) LIMIT 20`, c.EnterpriseID, like)
 	var users []map[string]any
-	if urows != nil {
-		defer urows.Close()
-		for urows.Next() {
-			var id, un, dn string
-			_ = urows.Scan(&id, &un, &dn)
-			users = append(users, map[string]any{"id": id, "username": un, "display_name": dn})
+	if convID == "" {
+		urows, _ := s.db.Query(r.Context(), `
+			SELECT id::text, username, display_name FROM users
+			WHERE enterprise_id=$1 AND (username ILIKE $2 OR display_name ILIKE $2) LIMIT 20`, c.EnterpriseID, like)
+		if urows != nil {
+			defer urows.Close()
+			for urows.Next() {
+				var id, un, dn string
+				_ = urows.Scan(&id, &un, &dn)
+				users = append(users, map[string]any{"id": id, "username": un, "display_name": dn})
+			}
 		}
 	}
 	if messages == nil {

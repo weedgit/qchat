@@ -16,11 +16,14 @@ export interface Conversation {
   lastMessageSender?: string;
   lastMessageMine?: boolean;
   unreadCount: number;
+  mentionCount?: number;
   peerId?: string;
   peerOnline?: boolean;
   peerLastActiveAt?: string;
   favorite?: boolean;
   muted?: boolean;
+  pinnedMessageId?: string;
+  pinnedMessage?: string;
 }
 
 export interface Reactor {
@@ -55,6 +58,7 @@ export interface Message {
   delivered?: boolean;
   read?: boolean;
   reactions?: Reaction[];
+  editedAt?: string;
 }
 
 export interface Friend {
@@ -94,11 +98,14 @@ export function normalizeConversation(raw: any): Conversation {
     lastMessageSender: str(raw?.last_message_sender) || undefined,
     lastMessageMine: Boolean(raw?.last_message_mine),
     unreadCount: Number(raw?.unread_count ?? raw?.unread ?? 0) || 0,
+    mentionCount: Number(raw?.mention_count ?? 0) || 0,
     peerId: str(raw?.peer_id) || undefined,
     peerOnline: raw?.peer_online != null ? Boolean(raw.peer_online) : undefined,
     peerLastActiveAt: str(raw?.peer_last_active_at) || undefined,
     favorite: Boolean(raw?.favorite),
     muted: Boolean(raw?.muted),
+    pinnedMessageId: str(raw?.pinned_message_id) || undefined,
+    pinnedMessage: str(raw?.pinned_message) || undefined,
   };
 }
 
@@ -126,6 +133,7 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
     replyToId: str(raw?.reply_to_id) || undefined,
     delivered: Boolean(raw?.delivered),
     read: Boolean(raw?.read),
+    editedAt: str(raw?.edited_at ?? raw?.editedAt) || undefined,
     reactions: Array.isArray(raw?.reactions)
       ? raw.reactions.map((r: any) => ({
           emoji: str(r?.emoji),

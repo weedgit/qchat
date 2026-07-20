@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,9 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1), ''),
 		       COALESCE((SELECT COUNT(*)::bigint FROM messages m WHERE m.conversation_id=conv.id AND m.seq > cm.last_read_seq
 		                 AND m.recalled=FALSE AND m.sender_id<>$1 AND m.created_at >= cm.history_visible_from), 0),
+		       COALESCE((SELECT COUNT(*)::bigint FROM messages m WHERE m.conversation_id=conv.id AND m.seq > cm.last_read_seq
+		                 AND m.recalled=FALSE AND m.sender_id<>$1 AND m.created_at >= cm.history_visible_from
+		                 AND (m.mention_all OR $1 = ANY(m.mentions))), 0),
 		       COALESCE((SELECT u.id::text FROM conversation_members om
 		                 JOIN users u ON u.id=om.user_id
 		                 WHERE om.conversation_id=conv.id AND om.user_id<>$1
@@ -42,7 +46,9 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		                 WHERE om.conversation_id=conv.id AND om.user_id<>$1
 		                 ORDER BY om.joined_at LIMIT 1),
 		       (SELECT m.created_at FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
-		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1)
+		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1),
+		       conv.pinned_message_id::text,
+		       COALESCE((SELECT body FROM messages pm WHERE pm.id=conv.pinned_message_id AND pm.recalled=FALSE), '')
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
 		WHERE cm.user_id=$1 AND conv.enterprise_id=$2 AND cm.role <> 'pending'
@@ -59,10 +65,12 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	var peerIDs []string
 	for rows.Next() {
 		var id, typ, title, avatar, publicID, role, lastBody, lastSenderID, lastSenderName, peerID, peerName, peerAvatar string
-		var lastRead, unread int64
+		var lastRead, unread, mentionUnread int64
 		var favorite, muted bool
 		var lastAt, peerLastActive *time.Time
-		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt); err != nil {
+		var pinnedID *string
+		var pinnedBody string
+		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &mentionUnread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt, &pinnedID, &pinnedBody); err != nil {
 			continue
 		}
 		if title == "" && typ == "dm" && peerName != "" {
@@ -77,7 +85,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		item := map[string]any{
 			"id": id, "type": typ, "title": title, "avatar_url": avatar, "public_id": publicID,
 			"role": role, "last_read_seq": lastRead, "last_message": lastBody, "unread": unread,
-			"unread_count": unread, "peer_name": peerName,
+			"unread_count": unread, "mention_count": mentionUnread, "peer_name": peerName,
 			"last_message_sender": lastSenderName, "last_message_mine": lastSenderID == c.UserID,
 			"favorite": favorite, "muted": muted,
 		}
@@ -90,6 +98,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		}
 		if lastAt != nil {
 			item["last_message_at"] = lastAt.UTC()
+		}
+		if pinnedID != nil && *pinnedID != "" {
+			item["pinned_message_id"] = *pinnedID
+			item["pinned_message"] = pinnedBody
 		}
 		out = append(out, item)
 	}
@@ -441,7 +453,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		         ELSE m.body
 		       END,
 		       m.media_url, m.reply_to_id::text, m.mention_all, m.recalled, m.created_at,
-		       u.display_name
+		       u.display_name, m.edited_at
 		FROM messages m JOIN users u ON u.id=m.sender_id
 		WHERE m.conversation_id=$1 AND m.created_at >= $2
 		  AND ($3 OR m.recalled=FALSE)
@@ -457,8 +469,9 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		var seq int64
 		var mentionAll, recalled bool
 		var created time.Time
+		var editedAt *time.Time
 		var replyPtr *string
-		_ = rows.Scan(&id, &sid, &cmid, &seq, &typ, &body, &media, &replyPtr, &mentionAll, &recalled, &created, &dname)
+		_ = rows.Scan(&id, &sid, &cmid, &seq, &typ, &body, &media, &replyPtr, &mentionAll, &recalled, &created, &dname, &editedAt)
 		if replyPtr != nil {
 			reply = *replyPtr
 		}
@@ -467,6 +480,9 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 			"body": body, "media_url": media, "reply_to_id": reply, "mention_all": mentionAll,
 			"recalled": recalled, "created_at": created, "sender_name": dname,
 			"conversation_id": convID,
+		}
+		if editedAt != nil {
+			item["edited_at"] = editedAt.UTC()
 		}
 		out = append(out, item)
 	}
@@ -656,6 +672,10 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "you are muted")
 		return
 	}
+	// Mattermost-style mention parsing from message text when client omits mentions.
+	if req.Type == "text" && len(req.Mentions) == 0 && !req.MentionAll {
+		req.Mentions, req.MentionAll = s.parseMentions(r, convID, c.EnterpriseID, req.Body)
+	}
 	newID := uuid.New()
 	var reply any
 	if req.ReplyToID != "" {
@@ -680,9 +700,48 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]any{
 		"id": msgID, "conversation_id": convID, "sender_id": c.UserID, "client_msg_id": req.ClientMsgID,
 		"seq": seq, "type": req.Type, "body": req.Body, "media_url": req.MediaURL, "created_at": time.Now().UTC(),
+		"mentions": req.Mentions, "mention_all": req.MentionAll,
 	}
 	s.hub.PublishToUsers(memberIDs, ws.Event{Type: "message.new", Payload: payload})
 	writeJSON(w, 201, payload)
+}
+
+// parseMentions mirrors Mattermost @user / @channel / @all mention extraction.
+func (s *Server) parseMentions(r *http.Request, convID, enterpriseID, body string) ([]string, bool) {
+	lower := strings.ToLower(body)
+	mentionAll := strings.Contains(lower, "@all") || strings.Contains(lower, "@channel") || strings.Contains(lower, "@everyone")
+	re := regexp.MustCompile(`@([a-zA-Z0-9_]{2,32})`)
+	names := map[string]struct{}{}
+	for _, m := range re.FindAllStringSubmatch(body, -1) {
+		name := strings.ToLower(m[1])
+		if name == "all" || name == "channel" || name == "everyone" {
+			mentionAll = true
+			continue
+		}
+		names[name] = struct{}{}
+	}
+	if len(names) == 0 {
+		return nil, mentionAll
+	}
+	list := make([]string, 0, len(names))
+	for n := range names {
+		list = append(list, n)
+	}
+	rows, err := s.db.Query(r.Context(), `
+		SELECT u.id::text FROM users u
+		JOIN conversation_members cm ON cm.user_id=u.id AND cm.conversation_id=$1 AND cm.role <> 'pending'
+		WHERE u.enterprise_id=$2 AND lower(u.username) = ANY($3::text[])`, convID, enterpriseID, list)
+	if err != nil {
+		return nil, mentionAll
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		_ = rows.Scan(&id)
+		ids = append(ids, id)
+	}
+	return ids, mentionAll
 }
 
 func (s *Server) handleRecall(w http.ResponseWriter, r *http.Request) {

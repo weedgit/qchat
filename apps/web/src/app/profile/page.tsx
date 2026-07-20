@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import { api, clearToken, API_URL } from "@/lib/api";
+import {
+  loadLocalNotifyProps,
+  saveLocalNotifyProps,
+  type NotifyProps,
+} from "@/lib/notifyProps";
 
 interface Profile {
   id: string;
@@ -31,6 +36,12 @@ export default function ProfilePage() {
   const [phoneCode, setPhoneCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [phoneHint, setPhoneHint] = useState<string | null>(null);
+  const [notify, setNotify] = useState({
+    desktop: "all" as "all" | "mention" | "none",
+    sound: true,
+    mentions_only: false,
+  });
+  const [notifySaved, setNotifySaved] = useState(false);
 
   async function uploadAvatar(file: File) {
     if (!me) return;
@@ -79,6 +90,19 @@ export default function ProfilePage() {
 
   useEffect(() => {
     load();
+    const local = loadLocalNotifyProps();
+    setNotify(local);
+    api<any>("/v1/me/notify_props")
+      .then((p) => {
+        const next: NotifyProps = {
+          desktop: p?.desktop === "mention" || p?.desktop === "none" ? p.desktop : "all",
+          sound: p?.sound !== false,
+          mentions_only: Boolean(p?.mentions_only),
+        };
+        setNotify(next);
+        saveLocalNotifyProps(next);
+      })
+      .catch(() => {});
   }, []);
 
   async function onSave(e: FormEvent) {
@@ -246,6 +270,73 @@ export default function ProfilePage() {
               {saved && <span className="muted">Saved</span>}
             </div>
           </form>
+        )}
+
+        {me && (
+          <div className="card" style={{ display: "grid", gap: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 16 }}>Notifications</h2>
+            <div className="muted" style={{ fontSize: 12 }}>
+              Mattermost-style desktop notify preferences
+            </div>
+            <label className="field">
+              <span>Desktop notifications</span>
+              <select
+                value={notify.desktop}
+                onChange={(e) =>
+                  setNotify({
+                    ...notify,
+                    desktop: e.target.value as NotifyProps["desktop"],
+                  })
+                }
+              >
+                <option value="all">All new messages</option>
+                <option value="mention">Mentions only</option>
+                <option value="none">Nothing</option>
+              </select>
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={notify.sound}
+                onChange={(e) => setNotify({ ...notify, sound: e.target.checked })}
+              />
+              Play notification sound
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={notify.mentions_only}
+                onChange={(e) => setNotify({ ...notify, mentions_only: e.target.checked })}
+              />
+              Mentions only (overrides desktop when on)
+            </label>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <button
+                className="btn"
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  setSaving(true);
+                  setNotifySaved(false);
+                  try {
+                    await api("/v1/me/notify_props", {
+                      method: "PUT",
+                      body: JSON.stringify(notify),
+                    });
+                    saveLocalNotifyProps(notify);
+                    setNotifySaved(true);
+                  } catch (err: any) {
+                    setError(err.message);
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+              >
+                Save notifications
+              </button>
+              {notifySaved && <span className="muted">Saved</span>}
+            </div>
+          </div>
         )}
 
         {me && (

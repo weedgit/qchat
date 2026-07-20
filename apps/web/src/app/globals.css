@@ -1258,3 +1258,90 @@ select:focus {
 [data-theme="light"] .status-dot {
   border-color: var(--bg-panel);
 }
+
+/* Mattermost-style search results */
+.search-results { padding: 8px 0; }
+.search-section { margin-bottom: 10px; }
+.search-section-title {
+  padding: 6px 14px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  font-weight: 700;
+}
+.search-hit {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 8px 14px;
+  border-radius: 0;
+}
+.search-hit:hover { background: var(--bg-hover); }
+.search-hit-body {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.inchat-search-results {
+  max-height: 180px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  padding: 6px 0;
+}
+.msg-flash .bubble {
+  outline: 2px solid var(--accent);
+  animation: ui-pop-in 200ms ease;
+}
+.badge.mention-badge { background: var(--accent); }
+.mention {
+  color: var(--accent);
+  font-weight: 600;
+  background: rgba(42, 171, 238, 0.15);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+[data-theme="light"] .mention {
+  background: rgba(30, 136, 229, 0.12);
+}
+.pinned-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--bg-panel-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 13px;
+}
+.pinned-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.md-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.md-link { color: var(--accent); text-decoration: underline; }
+[data-theme="light"] .md-code { background: rgba(0, 0, 0, 0.06); }
+.edited-mark { font-style: italic; opacity: 0.7; margin-right: 4px; }
+.details-members { width: 100%; margin-top: 12px; }
+.details-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.edit-banner { color: #e6b422; }

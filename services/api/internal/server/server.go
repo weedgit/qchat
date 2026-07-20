@@ -45,6 +45,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/auth/logout", s.auth(s.handleLogout))
 	s.mux.HandleFunc("GET /v1/me", s.auth(s.handleMe))
 	s.mux.HandleFunc("PATCH /v1/me", s.auth(s.handleUpdateMe))
+	s.mux.HandleFunc("PUT /v1/me/status", s.auth(s.handleUpdateStatus))
+	s.mux.HandleFunc("GET /v1/me/notify_props", s.auth(s.handleNotifyPrefs))
+	s.mux.HandleFunc("PUT /v1/me/notify_props", s.auth(s.handleNotifyPrefs))
 	s.mux.HandleFunc("GET /v1/usernames/available", s.auth(s.handleUsernameAvailable))
 	s.mux.HandleFunc("POST /v1/me/phone/request", s.auth(s.handlePhoneChangeRequest))
 	s.mux.HandleFunc("POST /v1/me/phone/confirm", s.auth(s.handlePhoneChangeConfirm))
@@ -79,6 +82,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/messages/{id}/delivered", s.auth(s.handleDelivered))
 	s.mux.HandleFunc("POST /v1/messages/{id}/forward", s.auth(s.handleForward))
 	s.mux.HandleFunc("POST /v1/messages/{id}/react", s.auth(s.handleReact))
+	s.mux.HandleFunc("PATCH /v1/messages/{id}", s.auth(s.handleEditMessage))
+	s.mux.HandleFunc("POST /v1/messages/{id}/pin", s.auth(s.handlePinMessage))
+	s.mux.HandleFunc("POST /v1/messages/{id}/unpin", s.auth(s.handleUnpinMessage))
 
 	// Media
 	s.mux.HandleFunc("POST /v1/media/upload", s.auth(s.handleMediaUpload))
