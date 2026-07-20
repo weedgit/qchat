@@ -4,6 +4,37 @@ import type { useCall } from "@/lib/useCall";
 
 type CallApi = ReturnType<typeof useCall>;
 
+const MIC_BAR_COUNT = 5;
+
+/** Continuous local/remote mic VU (Web Audio analyser → 0–1). */
+function MicLevelMeter({
+  level,
+  muted,
+  label,
+}: {
+  level: number;
+  muted?: boolean;
+  label: string;
+}) {
+  const lit = muted ? 0 : Math.min(MIC_BAR_COUNT, Math.round(level * MIC_BAR_COUNT));
+  const pct = muted ? 0 : Math.round(level * 100);
+  return (
+    <div
+      className={`call-mic-meter ${muted ? "muted" : lit >= 4 ? "hot" : lit >= 2 ? "mid" : "low"}`}
+      role="status"
+      aria-label={muted ? `${label} muted` : `${label} level ${pct}%`}
+      title={muted ? `${label}: muted` : `${label}: ${pct}%`}
+    >
+      <div className="call-mic-meter-bars" aria-hidden>
+        {Array.from({ length: MIC_BAR_COUNT }, (_, i) => (
+          <span key={i} className={`call-mic-meter-bar ${i < lit ? "on" : ""}`} />
+        ))}
+      </div>
+      <span className="call-mic-meter-label">{muted ? `${label} muted` : label}</span>
+    </div>
+  );
+}
+
 /** Incoming ring overlay + in-call panel (Mattermost Calls UI placement). */
 export default function CallOverlay({ call }: { call: CallApi }) {
   const {
@@ -11,6 +42,8 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     active,
     error,
     connecting,
+    micLevel,
+    remoteMicLevel,
     micMuted,
     cameraOff,
     setRemoteVideoEl,
@@ -21,11 +54,18 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     hangup,
     toggleMic,
     toggleCamera,
+    enableSound,
+    audioPlaybackOk,
   } = call;
 
   return (
     <>
-      <audio ref={(el) => setRemoteAudioEl(el)} autoPlay playsInline />
+      <audio
+        ref={(el) => setRemoteAudioEl(el)}
+        autoPlay
+        playsInline
+        style={{ display: "none" }}
+      />
 
       {incoming && (
         <div className="call-overlay incoming" role="dialog" aria-label="Incoming call">
@@ -85,7 +125,43 @@ export default function CallOverlay({ call }: { call: CallApi }) {
                 {connecting ? "Setting up media…" : "Voice connected"}
               </div>
             )}
-            {error && <div className="error-text">{error}</div>}
+            {active.status === "active" && !connecting && (
+              <div className="call-mic-meters">
+                <MicLevelMeter level={micLevel} muted={micMuted} label="You" />
+                <MicLevelMeter level={remoteMicLevel} label="Them" />
+              </div>
+            )}
+            {active.status === "active" && !connecting && !audioPlaybackOk && (
+              <button
+                type="button"
+                className="btn call-enable-sound"
+                onClick={() => enableSound().catch(() => {})}
+              >
+                Tap to enable sound
+              </button>
+            )}
+            {error && (
+              error.startsWith("MIC_INSECURE_ORIGIN:") ? (
+                <div className="error-text call-mic-help">
+                  <div>Microphone needs a secure context.</div>
+                  <ol className="call-mic-steps">
+                    <li>
+                      Fastest with Cursor: open{" "}
+                      <a href="http://localhost:3000">http://localhost:3000</a> (mic allowed on
+                      localhost).
+                    </li>
+                    <li>
+                      Or keep this LAN URL: in Chrome open{" "}
+                      <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>, enable
+                      it, add{" "}
+                      <code>{error.slice("MIC_INSECURE_ORIGIN:".length)}</code>, relaunch Chrome.
+                    </li>
+                  </ol>
+                </div>
+              ) : (
+                <div className="error-text">{error}</div>
+              )
+            )}
             <div className="call-overlay-actions">
               {active.status === "active" && (
                 <>

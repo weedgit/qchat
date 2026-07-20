@@ -5,10 +5,11 @@ import {
   Room,
   RoomEvent,
   Track,
+  createAudioAnalyser,
+  type LocalAudioTrack,
+  type RemoteAudioTrack,
   type LocalTrackPublication,
   type RemoteTrack,
-  type RemoteTrackPublication,
-  type RemoteParticipant,
 } from "livekit-client";
 import { api } from "@/lib/api";
 
@@ -33,19 +34,48 @@ export type ActiveCall = {
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
 
-/** If API returns ws://localhost but the page is opened via LAN IP, rewrite host. */
+/**
+ * LiveKit WS URL the browser can reach.
+ * - Optional NEXT_PUBLIC_LIVEKIT_URL overrides everything (recommended for Cursor
+ *   Remote: set to ws://<VM-LAN-IP>:7880 — Cursor does not tunnel UDP media).
+ * - If API returns localhost but the page is on a LAN IP, rewrite to the page host.
+ * - If both are loopback, keep localhost only when no env override (native local).
+ */
 function resolveLiveKitUrl(url: string): string {
-  if (typeof window === "undefined" || !url) return url;
+  if (typeof window === "undefined") return url;
+  const fromEnv = process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/^http/i, "ws");
+  if (!url) return url;
   try {
     const normalized = url.replace(/^ws/i, "http");
     const u = new URL(normalized);
-    if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
-      u.hostname = window.location.hostname;
+    const pageHost = window.location.hostname;
+    const lkHost = u.hostname;
+    const pageIsLoopback = pageHost === "localhost" || pageHost === "127.0.0.1";
+    const lkIsLoopback = lkHost === "localhost" || lkHost === "127.0.0.1";
+    if (lkIsLoopback && !pageIsLoopback) {
+      u.hostname = pageHost;
     }
     return u.toString().replace(/^http/i, "ws");
   } catch {
     return url;
   }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
 }
 
 /**
@@ -61,19 +91,111 @@ export function useCall(opts: {
   const [active, setActive] = useState<ActiveCall | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  /** Live local mic volume 0–1 (Web Audio analyser), updated continuously while in call. */
+  const [micLevel, setMicLevel] = useState(0);
+  /** Remote peer audio level 0–1 — proves RTP is arriving even if speakers are silent. */
+  const [remoteMicLevel, setRemoteMicLevel] = useState(0);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
-  const [remoteVideoEl, setRemoteVideoEl] = useState<HTMLVideoElement | null>(null);
-  const [localVideoEl, setLocalVideoEl] = useState<HTMLVideoElement | null>(null);
-  const [remoteAudioEl, setRemoteAudioEl] = useState<HTMLAudioElement | null>(null);
+  /** False when Chrome blocks remote audio until a user gesture (LiveKit startAudio). */
+  const [audioPlaybackOk, setAudioPlaybackOk] = useState(true);
+  const [remoteVideoEl, setRemoteVideoElState] = useState<HTMLVideoElement | null>(null);
+  const [localVideoEl, setLocalVideoElState] = useState<HTMLVideoElement | null>(null);
+  const [remoteAudioEl, setRemoteAudioElState] = useState<HTMLAudioElement | null>(null);
 
   const roomRef = useRef<Room | null>(null);
   const activeRef = useRef<ActiveCall | null>(null);
   const endingRef = useRef(false);
   const intentionalDisconnectRef = useRef(false);
+  /** True once a remote peer has joined this LiveKit room (avoids hangup on brief empty room). */
+  const hadRemoteRef = useRef(false);
+  const micMeterStopRef = useRef<(() => void) | null>(null);
+  const remoteMicMeterStopRef = useRef<(() => void) | null>(null);
+  const micMutedRef = useRef(false);
+  const remoteVideoElRef = useRef<HTMLVideoElement | null>(null);
+  const localVideoElRef = useRef<HTMLVideoElement | null>(null);
+  const remoteAudioElRef = useRef<HTMLAudioElement | null>(null);
   activeRef.current = active;
+  micMutedRef.current = micMuted;
+
+  const setRemoteVideoEl = useCallback((el: HTMLVideoElement | null) => {
+    remoteVideoElRef.current = el;
+    setRemoteVideoElState(el);
+  }, []);
+  const setLocalVideoEl = useCallback((el: HTMLVideoElement | null) => {
+    localVideoElRef.current = el;
+    setLocalVideoElState(el);
+  }, []);
+  const setRemoteAudioEl = useCallback((el: HTMLAudioElement | null) => {
+    remoteAudioElRef.current = el;
+    setRemoteAudioElState(el);
+  }, []);
+
+  const stopMicMeter = useCallback(() => {
+    micMeterStopRef.current?.();
+    micMeterStopRef.current = null;
+    setMicLevel(0);
+  }, []);
+
+  const stopRemoteMicMeter = useCallback(() => {
+    remoteMicMeterStopRef.current?.();
+    remoteMicMeterStopRef.current = null;
+    setRemoteMicLevel(0);
+  }, []);
+
+  function runVolumeMeter(
+    track: LocalAudioTrack | RemoteAudioTrack,
+    onLevel: (v: number) => void,
+    shouldZero?: () => boolean
+  ): () => void {
+    const { calculateVolume, cleanup } = createAudioAnalyser(track, {
+      cloneTrack: false,
+      fftSize: 512,
+      smoothingTimeConstant: 0.4,
+      minDecibels: -90,
+      maxDecibels: -25,
+    });
+    let stopped = false;
+    let raf = 0;
+    const tick = () => {
+      if (stopped) return;
+      if (shouldZero?.()) {
+        onLevel(0);
+      } else {
+        onLevel(Math.min(1, calculateVolume() * 2.2));
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+      cleanup().catch(() => {});
+    };
+  }
+
+  /** Continuous mic VU via LiveKit createAudioAnalyser (Mattermost-style speaking feedback). */
+  const startMicMeter = useCallback((track: LocalAudioTrack) => {
+    stopMicMeter();
+    try {
+      micMeterStopRef.current = runVolumeMeter(track, setMicLevel, () => micMutedRef.current);
+    } catch {
+      /* AudioContext unavailable */
+    }
+  }, [stopMicMeter]);
+
+  const startRemoteMicMeter = useCallback((track: RemoteAudioTrack) => {
+    stopRemoteMicMeter();
+    try {
+      remoteMicMeterStopRef.current = runVolumeMeter(track, setRemoteMicLevel);
+    } catch {
+      /* AudioContext unavailable */
+    }
+  }, [stopRemoteMicMeter]);
 
   const disconnectRoom = useCallback(async () => {
+    stopMicMeter();
+    stopRemoteMicMeter();
     const room = roomRef.current;
     roomRef.current = null;
     if (room) {
@@ -85,7 +207,7 @@ export function useCall(opts: {
       }
       intentionalDisconnectRef.current = false;
     }
-  }, []);
+  }, [stopMicMeter, stopRemoteMicMeter]);
 
   // Notify server so peers get call.ended (Mattermost call_end). Do not gate on
   // endingRef — hangup() sets that flag before calling us to suppress media noise.
@@ -98,24 +220,49 @@ export function useCall(opts: {
     }
   }, []);
 
+  /** Attach via refs so TrackSubscribed never misses a late-mounted <audio>/<video>. */
   const attachTrack = useCallback(
     (track: RemoteTrack | LocalTrackPublication["track"], participantLocal: boolean) => {
       if (!track) return;
       if (track.kind === Track.Kind.Video) {
-        const el = participantLocal ? localVideoEl : remoteVideoEl;
-        if (el) track.attach(el);
+        const el = participantLocal ? localVideoElRef.current : remoteVideoElRef.current;
+        if (el) {
+          track.attach(el);
+          el.play().catch(() => {});
+        }
       } else if (track.kind === Track.Kind.Audio && !participantLocal) {
-        if (remoteAudioEl) track.attach(remoteAudioEl);
+        const el = remoteAudioElRef.current;
+        if (el) {
+          track.attach(el);
+          el.muted = false;
+          el.volume = 1;
+          el.play().catch(() => {
+            /* Autoplay may block until a click — Accept/Mute usually unlocks it. */
+          });
+        }
       }
     },
-    [localVideoEl, remoteVideoEl, remoteAudioEl]
+    []
   );
+
+  /** Re-bind any already-subscribed remote tracks when the <audio> element mounts. */
+  const reattachRemoteMedia = useCallback(() => {
+    const room = roomRef.current;
+    if (!room) return;
+    room.remoteParticipants.forEach((p) => {
+      p.trackPublications.forEach((pub) => {
+        if (pub.track) attachTrack(pub.track, false);
+      });
+    });
+  }, [attachTrack]);
 
   const connectLiveKit = useCallback(
     async (url: string, token: string, kind: CallKind, callId: string) => {
       await disconnectRoom();
       setConnecting(true);
       setError(null);
+      setMicLevel(0);
+      setRemoteMicLevel(0);
       const lkUrl = resolveLiveKitUrl(url);
       try {
         if (!lkUrl || !token) {
@@ -126,20 +273,25 @@ export function useCall(opts: {
         // http://192.168.x.x is insecure → navigator.mediaDevices is undefined.
         const media = navigator.mediaDevices;
         if (!media?.getUserMedia) {
-          const host = typeof window !== "undefined" ? window.location.host : "";
+          const origin =
+            typeof window !== "undefined" ? window.location.origin : "http://192.168.91.136:3000";
           const insecure =
             typeof window !== "undefined" && !window.isSecureContext;
           throw new Error(
             insecure
-              ? `Microphone blocked: ${host} is not a secure context. Use http://localhost:3000, or in Chrome open chrome://flags/#unsafely-treat-insecure-origin-as-secure and add http://${host}`
+              ? `MIC_INSECURE_ORIGIN:${origin}`
               : "Microphone API unavailable in this browser"
           );
         }
         try {
-          const stream = await media.getUserMedia({
-            audio: true,
-            video: kind === "video",
-          });
+          const stream = await withTimeout(
+            media.getUserMedia({
+              audio: true,
+              video: kind === "video",
+            }),
+            20_000,
+            "Microphone permission"
+          );
           stream.getTracks().forEach((t) => t.stop());
         } catch (permErr: any) {
           if (permErr?.message?.includes("secure context") || permErr?.message?.includes("Microphone")) {
@@ -154,24 +306,49 @@ export function useCall(opts: {
 
         const room = new Room({ adaptiveStream: true, dynacast: true });
         roomRef.current = room;
+        hadRemoteRef.current = false;
+        setAudioPlaybackOk(room.canPlaybackAudio);
 
-        room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, _p: RemoteParticipant) => {
+        room.on(RoomEvent.AudioPlaybackStatusChanged, (playing: boolean) => {
+          setAudioPlaybackOk(playing);
+          if (playing) reattachRemoteMedia();
+        });
+        room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+          hadRemoteRef.current = true;
           attachTrack(track, false);
+          if (track.kind === Track.Kind.Audio) {
+            startRemoteMicMeter(track as RemoteAudioTrack);
+          }
+        });
+        room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+          if (track.kind === Track.Kind.Audio) stopRemoteMicMeter();
+          track.detach();
         });
         room.on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
           if (pub.track) attachTrack(pub.track, true);
+          if (pub.track?.kind === Track.Kind.Audio) {
+            startMicMeter(pub.track as LocalAudioTrack);
+          }
+        });
+        room.on(RoomEvent.ParticipantConnected, () => {
+          hadRemoteRef.current = true;
+          // Peer may already be publishing — bind any existing remote tracks.
+          reattachRemoteMedia();
         });
         room.on(RoomEvent.Disconnected, () => {
           if (intentionalDisconnectRef.current || endingRef.current) return;
           const cur = activeRef.current;
           if (cur && cur.callId === callId) {
+            stopMicMeter();
             setError((prev) => prev || "Media disconnected — check LiveKit (port 7880) and mic permission");
           }
         });
-        // 1:1: when the other party leaves the LiveKit room, end local UI
-        // (fallback if call.ended WS was missed).
+        // 1:1: peer left LiveKit after having joined → end call (tab close fallback).
+        // Do not hang up on never-joined / ICE flap — that caused ~15s auto-ends when
+        // LiveKit peerConnectionTimeout (default 15s) dropped a side.
         room.on(RoomEvent.ParticipantDisconnected, () => {
           if (intentionalDisconnectRef.current || endingRef.current) return;
+          if (!hadRemoteRef.current) return;
           if (room.remoteParticipants.size > 0) return;
           const cur = activeRef.current;
           if (!cur || cur.callId !== callId) return;
@@ -179,6 +356,8 @@ export function useCall(opts: {
           setActive(null);
           setIncoming(null);
           setConnecting(false);
+          setMicLevel(0);
+          setRemoteMicLevel(0);
           setError(null);
           disconnectRoom().catch(() => {});
           hangupServer(callId).finally(() => {
@@ -186,10 +365,36 @@ export function useCall(opts: {
           });
         });
 
-        await room.connect(lkUrl, token);
+        // LiveKit defaults peerConnectionTimeout/websocketTimeout to 15s — that was
+        // ending answered calls at "Voice call · 15s" on slow ICE (VM / Cursor).
+        await withTimeout(
+          room.connect(lkUrl, token, {
+            peerConnectionTimeout: 60_000,
+            websocketTimeout: 60_000,
+          }),
+          65_000,
+          `LiveKit connect (${lkUrl})`
+        );
+        if (room.remoteParticipants.size > 0) {
+          hadRemoteRef.current = true;
+        }
+        // SFU is up — leave "Setting up media…" even if mic publish is slow.
+        setConnecting(false);
+        // Unlock remote playback (Chrome autoplay). Best-effort after connect;
+        // if it fails, UI shows "Tap to enable sound".
+        try {
+          await room.startAudio();
+          setAudioPlaybackOk(true);
+        } catch {
+          setAudioPlaybackOk(false);
+        }
         try {
           await room.localParticipant.setMicrophoneEnabled(true);
           setMicMuted(false);
+          const micPub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+          if (micPub?.track?.kind === Track.Kind.Audio) {
+            startMicMeter(micPub.track as LocalAudioTrack);
+          }
         } catch (micErr: any) {
           setError(micErr?.message || "Microphone failed — call stays open; check browser permissions");
           setMicMuted(true);
@@ -209,7 +414,12 @@ export function useCall(opts: {
 
         room.remoteParticipants.forEach((p) => {
           p.trackPublications.forEach((pub) => {
-            if (pub.track) attachTrack(pub.track, false);
+            if (pub.track) {
+              attachTrack(pub.track, false);
+              if (pub.track.kind === Track.Kind.Audio) {
+                startRemoteMicMeter(pub.track as RemoteAudioTrack);
+              }
+            }
           });
         });
         room.localParticipant.trackPublications.forEach((pub) => {
@@ -227,21 +437,26 @@ export function useCall(opts: {
         setConnecting(false);
       }
     },
-    [attachTrack, disconnectRoom, hangupServer]
+    [
+      attachTrack,
+      disconnectRoom,
+      hangupServer,
+      reattachRemoteMedia,
+      startMicMeter,
+      startRemoteMicMeter,
+      stopMicMeter,
+      stopRemoteMicMeter,
+    ]
   );
 
   useEffect(() => {
+    reattachRemoteMedia();
     const room = roomRef.current;
     if (!room) return;
-    room.remoteParticipants.forEach((p) => {
-      p.trackPublications.forEach((pub) => {
-        if (pub.track) attachTrack(pub.track, false);
-      });
-    });
     room.localParticipant.trackPublications.forEach((pub) => {
       if (pub.track) attachTrack(pub.track, true);
     });
-  }, [attachTrack]);
+  }, [attachTrack, reattachRemoteMedia, remoteAudioEl, remoteVideoEl, localVideoEl]);
 
   useEffect(() => {
     return subscribe((type, payload) => {
@@ -295,6 +510,8 @@ export function useCall(opts: {
           return prev;
         });
         setConnecting(false);
+        setMicLevel(0);
+        setRemoteMicLevel(0);
         setError(null);
         disconnectRoom().catch(() => {});
         endingRef.current = false;
@@ -362,6 +579,8 @@ export function useCall(opts: {
     setIncoming(null);
     setError(null);
     setConnecting(false);
+    setMicLevel(0);
+    setRemoteMicLevel(0);
     await disconnectRoom();
     await hangupServer(id);
     endingRef.current = false;
@@ -373,7 +592,30 @@ export function useCall(opts: {
     const next = !micMuted;
     await room.localParticipant.setMicrophoneEnabled(!next);
     setMicMuted(next);
+    if (next) setMicLevel(0);
+    // User gesture: unlock remote playback if Chrome blocked autoplay.
+    try {
+      await room.startAudio();
+      setAudioPlaybackOk(true);
+    } catch {
+      /* still blocked */
+    }
+    remoteAudioElRef.current?.play().catch(() => {});
   }, [micMuted]);
+
+  /** Explicit user-gesture unlock for remote call audio (LiveKit startAudio). */
+  const enableSound = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room) return;
+    try {
+      await room.startAudio();
+      setAudioPlaybackOk(true);
+    } catch {
+      setAudioPlaybackOk(false);
+    }
+    reattachRemoteMedia();
+    remoteAudioElRef.current?.play().catch(() => {});
+  }, [reattachRemoteMedia]);
 
   const toggleCamera = useCallback(async () => {
     const room = roomRef.current;
@@ -388,8 +630,11 @@ export function useCall(opts: {
     active,
     error,
     connecting,
+    micLevel,
+    remoteMicLevel,
     micMuted,
     cameraOff,
+    audioPlaybackOk,
     setRemoteVideoEl,
     setLocalVideoEl,
     setRemoteAudioEl,
@@ -399,5 +644,6 @@ export function useCall(opts: {
     hangup,
     toggleMic,
     toggleCamera,
+    enableSound,
   };
 }
