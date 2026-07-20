@@ -1,10 +1,32 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { useCall } from "@/lib/useCall";
 
 type CallApi = ReturnType<typeof useCall>;
 
 const MIC_BAR_COUNT = 5;
+
+function formatCallClock(elapsedMs: number): string {
+  const sec = Math.max(0, Math.floor(elapsedMs / 1000));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/** In-call elapsed timer (Mattermost Calls duration display). */
+function CallDuration({ connectedAt }: { connectedAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [connectedAt]);
+  return (
+    <div className="call-duration" aria-live="polite">
+      {formatCallClock(now - connectedAt)}
+    </div>
+  );
+}
 
 /** Continuous local/remote mic VU (Web Audio analyser → 0–1). */
 function MicLevelMeter({
@@ -43,6 +65,7 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     error,
     connecting,
     reconnecting,
+    connectedAt,
     micLevel,
     remoteMicLevel,
     micMuted,
@@ -107,6 +130,9 @@ export default function CallOverlay({ call }: { call: CallApi }) {
         <div className={`call-overlay in-call ${active.kind}`} role="dialog" aria-label="In call">
           <div className="call-overlay-card call-media-card">
             <div className="call-overlay-title">{statusTitle}</div>
+            {active.status === "active" && connectedAt != null && !connecting && (
+              <CallDuration connectedAt={connectedAt} />
+            )}
             {active.kind === "video" && active.status === "active" && (
               <div className="call-videos">
                 <video

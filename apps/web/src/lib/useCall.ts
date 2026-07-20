@@ -93,7 +93,9 @@ export function useCall(opts: {
   const [connecting, setConnecting] = useState(false);
   /** LiveKit signal/media reconnect in progress (RoomEvent.Reconnecting). */
   const [reconnecting, setReconnecting] = useState(false);
-/** Live local mic volume 0–1 (Web Audio analyser), updated continuously while in call. */
+  /** Wall-clock ms when media became active (in-call timer). */
+  const [connectedAt, setConnectedAt] = useState<number | null>(null);
+  /** Live local mic volume 0–1 (Web Audio analyser), updated continuously while in call. */
   const [micLevel, setMicLevel] = useState(0);
   /** Remote peer audio level 0–1 — proves RTP is arriving even if speakers are silent. */
   const [remoteMicLevel, setRemoteMicLevel] = useState(0);
@@ -377,6 +379,7 @@ export function useCall(opts: {
           setIncoming(null);
           setConnecting(false);
           setReconnecting(false);
+          setConnectedAt(null);
           setMicLevel(0);
           setRemoteMicLevel(0);
           setError(null);
@@ -402,6 +405,7 @@ export function useCall(opts: {
         }
         // SFU is up — leave "Setting up media…" even if mic publish is slow.
         setConnecting(false);
+        setConnectedAt(Date.now());
         // Unlock remote playback (Chrome autoplay). Best-effort after connect;
         // if it fails, UI shows "Tap to enable sound".
         try {
@@ -534,7 +538,8 @@ export function useCall(opts: {
         });
         setConnecting(false);
         setReconnecting(false);
-            setMicLevel(0);
+        setConnectedAt(null);
+        setMicLevel(0);
         setRemoteMicLevel(0);
         setError(null);
         disconnectRoom().catch(() => {});
@@ -551,7 +556,8 @@ export function useCall(opts: {
         body: JSON.stringify({ conversation_id: conversationId, kind }),
       });
       const callId = String(res?.call_id ?? res?.id ?? "");
-        setReconnecting(false);
+      setConnectedAt(null);
+      setReconnecting(false);
       setActive({
         callId,
         conversationId,
@@ -605,6 +611,7 @@ export function useCall(opts: {
     setError(null);
     setConnecting(false);
     setReconnecting(false);
+    setConnectedAt(null);
     setMicLevel(0);
     setRemoteMicLevel(0);
     await disconnectRoom();
@@ -657,6 +664,7 @@ export function useCall(opts: {
     error,
     connecting,
     reconnecting,
+    connectedAt,
     micLevel,
     remoteMicLevel,
     micMuted,
