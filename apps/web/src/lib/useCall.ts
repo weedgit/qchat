@@ -30,6 +30,8 @@ export type ActiveCall = {
   kind: CallKind;
   status: "ringing" | "active";
   role: "caller" | "callee";
+  /** Remote peer display name (DM title / initiator_name / LiveKit participant name). */
+  peerName?: string;
 };
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
@@ -335,8 +337,16 @@ export function useCall(opts: {
             startMicMeter(pub.track as LocalAudioTrack);
           }
         });
-        room.on(RoomEvent.ParticipantConnected, () => {
+        room.on(RoomEvent.ParticipantConnected, (participant) => {
           hadRemoteRef.current = true;
+          const name = String(participant?.name ?? "").trim();
+          if (name) {
+            setActive((prev) =>
+              prev && prev.callId === callId && !prev.peerName
+                ? { ...prev, peerName: name }
+                : prev
+            );
+          }
           // Peer may already be publishing — bind any existing remote tracks.
           reattachRemoteMedia();
         });
@@ -402,6 +412,16 @@ export function useCall(opts: {
         );
         if (room.remoteParticipants.size > 0) {
           hadRemoteRef.current = true;
+          room.remoteParticipants.forEach((p) => {
+            const name = String(p.name ?? "").trim();
+            if (name) {
+              setActive((prev) =>
+                prev && prev.callId === callId && !prev.peerName
+                  ? { ...prev, peerName: name }
+                  : prev
+              );
+            }
+          });
         }
         // SFU is up — leave "Setting up media…" even if mic publish is slow.
         setConnecting(false);
@@ -510,13 +530,14 @@ export function useCall(opts: {
         const convId = String(payload?.conversation_id ?? "");
         if (!callId || !token || !url) return;
         setIncoming(null);
-        setActive({
+        setActive((prev) => ({
           callId,
           conversationId: convId,
           kind,
           status: "active",
           role: "caller",
-        });
+          peerName: prev?.peerName,
+        }));
         connectLiveKit(url, token, kind, callId).catch(() => {});
         return;
       }
@@ -549,7 +570,7 @@ export function useCall(opts: {
   }, [subscribe, meId, connectLiveKit, disconnectRoom]);
 
   const startCall = useCallback(
-    async (conversationId: string, kind: CallKind) => {
+    async (conversationId: string, kind: CallKind, peerName?: string) => {
       setError(null);
       const res = await api<any>("/v1/calls", {
         method: "POST",
@@ -564,6 +585,7 @@ export function useCall(opts: {
         kind,
         status: "ringing",
         role: "caller",
+        peerName: peerName?.trim() || undefined,
       });
       return res;
     },
@@ -576,6 +598,7 @@ export function useCall(opts: {
     const kind = incoming.kind;
     const callId = incoming.callId;
     const convId = incoming.conversationId;
+    const peerName = incoming.initiatorName?.trim() || undefined;
     const res = await api<any>(`/v1/calls/${callId}/answer`, { method: "POST" });
     const token = String(res?.livekit_token ?? "");
     const url = String(res?.livekit_url ?? incoming.livekitUrl ?? "");
@@ -586,6 +609,7 @@ export function useCall(opts: {
       kind,
       status: "active",
       role: "callee",
+      peerName,
     });
     try {
       await connectLiveKit(url, token, kind, callId);

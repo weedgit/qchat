@@ -1301,7 +1301,9 @@ export default function ChatPageInner() {
                       title="Voice call"
                       disabled={!!call.active || !!call.incoming}
                       onClick={() => {
-                        call.startCall(active.id, "voice").catch((e) => setSendError(e.message));
+                        call
+                          .startCall(active.id, "voice", conversationDisplayName(active))
+                          .catch((e) => setSendError(e.message));
                       }}
                     >
                       <MenuIcon d={ICONS.phone} />
@@ -1312,7 +1314,9 @@ export default function ChatPageInner() {
                       title="Video call"
                       disabled={!!call.active || !!call.incoming}
                       onClick={() => {
-                        call.startCall(active.id, "video").catch((e) => setSendError(e.message));
+                        call
+                          .startCall(active.id, "video", conversationDisplayName(active))
+                          .catch((e) => setSendError(e.message));
                       }}
                     >
                       <MenuIcon d={ICONS.video} />

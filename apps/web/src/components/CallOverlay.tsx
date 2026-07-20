@@ -162,7 +162,10 @@ export default function CallOverlay({ call }: { call: CallApi }) {
             {active.status === "active" && !connecting && (
               <div className="call-mic-meters">
                 <MicLevelMeter level={micLevel} muted={micMuted} label="You" />
-                <MicLevelMeter level={remoteMicLevel} label="Them" />
+                <MicLevelMeter
+                  level={remoteMicLevel}
+                  label={active.peerName?.trim() || "Them"}
+                />
               </div>
             )}
             {active.status === "active" && !connecting && !audioPlaybackOk && (
