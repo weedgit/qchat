@@ -39,6 +39,7 @@ func (s *Server) routes() {
 
 	// Auth
 	s.mux.HandleFunc("GET /v1/auth/captcha", s.handleCaptcha)
+	s.mux.HandleFunc("POST /v1/auth/register/otp", s.handleRegisterOTP)
 	s.mux.HandleFunc("POST /v1/auth/register", s.handleRegister)
 	s.mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /v1/auth/refresh", s.handleRefresh)
