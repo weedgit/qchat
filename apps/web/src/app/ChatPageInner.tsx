@@ -415,6 +415,12 @@ export default function ChatPageInner() {
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [groupDetails, setGroupDetails] = useState<{
+    members: { user_id: string; display_name: string; username: string; role: string; avatar_url?: string }[];
+    public_id?: string;
+    description?: string;
+    role?: string;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -576,6 +582,31 @@ export default function ChatPageInner() {
       })
       .catch(() => {});
   }, []);
+
+  // Mattermost channel info RHS: load group members when details open.
+  useEffect(() => {
+    if (!showDetails || !active || (active.type !== "social_group" && active.type !== "group")) {
+      setGroupDetails(null);
+      return;
+    }
+    let cancelled = false;
+    api<any>(`/v1/groups/${active.id}`)
+      .then((g) => {
+        if (cancelled) return;
+        setGroupDetails({
+          members: Array.isArray(g?.members) ? g.members : [],
+          public_id: g?.public_id,
+          description: g?.description,
+          role: g?.role,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setGroupDetails(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showDetails, active]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1311,6 +1342,56 @@ export default function ChatPageInner() {
             <div className="k">Last activity</div>
             <div>{active.lastMessageAt ? fmtTime(active.lastMessageAt) : "\u2014"}</div>
           </div>
+          {isGroup && groupDetails && (
+            <>
+              {groupDetails.public_id && (
+                <div className="kv">
+                  <div className="k">Invite ID</div>
+                  <div>{groupDetails.public_id}</div>
+                </div>
+              )}
+              {groupDetails.description && (
+                <div className="kv">
+                  <div className="k">Description</div>
+                  <div>{groupDetails.description}</div>
+                </div>
+              )}
+              <div className="kv">
+                <div className="k">Your role</div>
+                <div>{groupDetails.role || chat.myRole}</div>
+              </div>
+              <div className="details-members">
+                <div className="k" style={{ marginBottom: 8 }}>
+                  Members ({groupDetails.members.length})
+                </div>
+                {groupDetails.members.map((m) => (
+                  <div key={m.user_id} className="details-member">
+                    <Avatar name={m.display_name} url={m.avatar_url} size={28} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600 }}>{m.display_name}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        @{m.username} · {m.role}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Link className="btn" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
+                Manage group
+              </Link>
+            </>
+          )}
+          {active.muted != null && (
+            <button
+              className="btn-ghost"
+              style={{ marginTop: 12 }}
+              onClick={() =>
+                chat.updateConversationPrefs(active.id, { muted: !active.muted }).catch(() => {})
+              }
+            >
+              {active.muted ? "Unmute conversation" : "Mute conversation"}
+            </button>
+          )}
         </aside>
       )}
 
