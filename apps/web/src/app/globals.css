@@ -1514,6 +1514,40 @@ select:focus {
   letter-spacing: 0.02em;
   color: var(--text);
 }
+.call-quality-badge {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.call-quality-badge.excellent,
+.call-quality-badge.good {
+  color: var(--ok);
+}
+.call-quality-badge.poor {
+  color: #e6b422;
+}
+.call-quality-badge.lost {
+  color: var(--danger);
+}
+.call-quality-hint {
+  font-size: 13px;
+  line-height: 1.35;
+  color: #e6b422;
+  max-width: 28ch;
+}
+.call-stats {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  text-align: left;
+  width: 100%;
+  max-width: 220px;
+  margin-inline: auto;
+}
 .call-overlay-name {
   font-size: 20px;
   font-weight: 700;

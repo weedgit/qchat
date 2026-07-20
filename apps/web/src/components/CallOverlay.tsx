@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { useCall } from "@/lib/useCall";
+import { qualityLabel } from "@/lib/callQuality";
 
 type CallApi = ReturnType<typeof useCall>;
 
@@ -66,6 +67,10 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     connecting,
     reconnecting,
     connectedAt,
+    connectionQuality,
+    qualityDegraded,
+    showCallStats,
+    callStats,
     micLevel,
     remoteMicLevel,
     micMuted,
@@ -79,6 +84,7 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     toggleMic,
     toggleCamera,
     enableSound,
+    toggleCallStats,
     audioPlaybackOk,
   } = call;
 
@@ -133,6 +139,21 @@ export default function CallOverlay({ call }: { call: CallApi }) {
             {active.status === "active" && connectedAt != null && !connecting && (
               <CallDuration connectedAt={connectedAt} />
             )}
+            {active.status === "active" && !connecting && connectionQuality !== "unknown" && (
+              <div
+                className={`call-quality-badge ${connectionQuality}`}
+                title="LiveKit connection quality"
+              >
+                {qualityLabel(connectionQuality)}
+              </div>
+            )}
+            {(qualityDegraded || reconnecting) && active.status === "active" && (
+              <div className="call-quality-hint" role="status">
+                {reconnecting
+                  ? "Network interrupted — reconnecting…"
+                  : "Connection unstable — check your network or move closer to Wi‑Fi."}
+              </div>
+            )}
             {active.kind === "video" && active.status === "active" && (
               <div className="call-videos">
                 <video
@@ -166,6 +187,17 @@ export default function CallOverlay({ call }: { call: CallApi }) {
                   level={remoteMicLevel}
                   label={active.peerName?.trim() || "Them"}
                 />
+              </div>
+            )}
+            {active.status === "active" && !connecting && showCallStats && (
+              <div className="call-stats" aria-live="polite">
+                <div>Quality: {qualityLabel(connectionQuality)}</div>
+                <div>RTT: {callStats?.rttMs != null ? `${callStats.rttMs} ms` : "—"}</div>
+                <div>Jitter: {callStats?.jitterMs != null ? `${callStats.jitterMs} ms` : "—"}</div>
+                <div>Lost: {callStats?.packetsLost != null ? callStats.packetsLost : "—"}</div>
+                {callStats?.bitrateKbps != null && (
+                  <div>Bitrate: ~{callStats.bitrateKbps} kbps</div>
+                )}
               </div>
             )}
             {active.status === "active" && !connecting && !audioPlaybackOk && (
@@ -210,6 +242,9 @@ export default function CallOverlay({ call }: { call: CallApi }) {
                       {cameraOff ? "Camera on" : "Camera off"}
                     </button>
                   )}
+                  <button type="button" className="btn-ghost" onClick={() => toggleCallStats()}>
+                    {showCallStats ? "Hide stats" : "Stats"}
+                  </button>
                 </>
               )}
               <button type="button" className="btn call-decline" onClick={() => hangup().catch(() => {})}>

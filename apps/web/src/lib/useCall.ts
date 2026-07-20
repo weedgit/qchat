@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ConnectionQuality,
   Room,
   RoomEvent,
   Track,
@@ -9,6 +10,7 @@ import {
   type LocalAudioTrack,
   type RemoteAudioTrack,
   type LocalTrackPublication,
+  type Participant,
   type RemoteTrack,
 } from "livekit-client";
 import { api } from "@/lib/api";
@@ -17,6 +19,15 @@ import {
   notifyIncomingCall,
   ringForIncomingCall,
 } from "@/lib/callNotify";
+import {
+  DEGRADED_CALL_QUALITY_ALERT_WAIT_MS,
+  friendlyCallError,
+  isDegradedQuality,
+  qualityFromLiveKit,
+  sampleCallStats,
+  type CallQualityLevel,
+  type CallRtcStats,
+} from "@/lib/callQuality";
 
 export type CallKind = "voice" | "video";
 
@@ -110,6 +121,12 @@ export function useCall(opts: {
   const [cameraOff, setCameraOff] = useState(false);
   /** False when Chrome blocks remote audio until a user gesture (LiveKit startAudio). */
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(true);
+  /** LiveKit ConnectionQuality for local participant (Mattermost MOS-style hint). */
+  const [connectionQuality, setConnectionQuality] = useState<CallQualityLevel>("unknown");
+  /** True after sustained poor/lost quality (DEGRADED_CALL_QUALITY_ALERT_WAIT). */
+  const [qualityDegraded, setQualityDegraded] = useState(false);
+  const [showCallStats, setShowCallStats] = useState(false);
+  const [callStats, setCallStats] = useState<CallRtcStats | null>(null);
   const [remoteVideoEl, setRemoteVideoElState] = useState<HTMLVideoElement | null>(null);
   const [localVideoEl, setLocalVideoElState] = useState<HTMLVideoElement | null>(null);
   const [remoteAudioEl, setRemoteAudioElState] = useState<HTMLAudioElement | null>(null);
@@ -127,6 +144,7 @@ export function useCall(opts: {
   const localVideoElRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioElRef = useRef<HTMLAudioElement | null>(null);
   const incomingNotifyRef = useRef<Notification | null>(null);
+  const degradedSinceRef = useRef<number | null>(null);
   activeRef.current = active;
   micMutedRef.current = micMuted;
 
@@ -141,6 +159,11 @@ export function useCall(opts: {
     setConnectedAt(null);
     setMicLevel(0);
     setRemoteMicLevel(0);
+    setConnectionQuality("unknown");
+    setQualityDegraded(false);
+    setShowCallStats(false);
+    setCallStats(null);
+    degradedSinceRef.current = null;
   }, []);
 
   const setRemoteVideoEl = useCallback((el: HTMLVideoElement | null) => {
@@ -286,6 +309,10 @@ export function useCall(opts: {
       await disconnectRoom();
       setConnecting(true);
       setReconnecting(false);
+      setConnectionQuality("unknown");
+      setQualityDegraded(false);
+      setCallStats(null);
+      degradedSinceRef.current = null;
       setError(null);
       setMicLevel(0);
       setRemoteMicLevel(0);
@@ -384,6 +411,20 @@ export function useCall(opts: {
           setError(null);
           reattachRemoteMedia();
           room.startAudio().catch(() => {});
+        });
+        room.on(RoomEvent.ConnectionQualityChanged, (quality: ConnectionQuality, participant: Participant) => {
+          if (participant !== room.localParticipant) return;
+          const level = qualityFromLiveKit(quality);
+          setConnectionQuality(level);
+          if (isDegradedQuality(level)) {
+            if (degradedSinceRef.current == null) degradedSinceRef.current = Date.now();
+            else if (Date.now() - degradedSinceRef.current >= DEGRADED_CALL_QUALITY_ALERT_WAIT_MS) {
+              setQualityDegraded(true);
+            }
+          } else {
+            degradedSinceRef.current = null;
+            setQualityDegraded(false);
+          }
         });
         room.on(RoomEvent.Disconnected, () => {
           if (intentionalDisconnectRef.current || endingRef.current) return;
@@ -488,7 +529,7 @@ export function useCall(opts: {
           if (pub.track) attachTrack(pub.track, true);
         });
       } catch (e: any) {
-        const msg = e?.message || "Failed to connect media";
+        const msg = friendlyCallError(e);
         setError(msg);
         setReconnecting(false);
         await disconnectRoom();
@@ -595,6 +636,38 @@ export function useCall(opts: {
     });
   }, [subscribe, meId, connectLiveKit, disconnectRoom, clearRingAlerts, resetMediaUi]);
 
+  // Optional RTC stats while the stats panel is open.
+  useEffect(() => {
+    if (!showCallStats || !active || active.status !== "active") {
+      setCallStats(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      const stats = await sampleCallStats(roomRef.current);
+      if (!cancelled) setCallStats(stats);
+    };
+    tick();
+    const id = window.setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [showCallStats, active?.callId, active?.status]);
+
+  // Re-check degraded quality wait while still poor (ConnectionQuality may not re-fire).
+  useEffect(() => {
+    if (!active || active.status !== "active") return;
+    if (!isDegradedQuality(connectionQuality)) return;
+    const id = window.setInterval(() => {
+      if (degradedSinceRef.current == null) return;
+      if (Date.now() - degradedSinceRef.current >= DEGRADED_CALL_QUALITY_ALERT_WAIT_MS) {
+        setQualityDegraded(true);
+      }
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [active?.callId, active?.status, connectionQuality]);
+
   const startCall = useCallback(
     async (conversationId: string, kind: CallKind, peerName?: string) => {
       setError(null);
@@ -668,6 +741,10 @@ export function useCall(opts: {
     endingRef.current = false;
   }, [disconnectRoom, hangupServer, clearRingAlerts, resetMediaUi]);
 
+  const toggleCallStats = useCallback(() => {
+    setShowCallStats((v) => !v);
+  }, []);
+
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
@@ -714,6 +791,10 @@ export function useCall(opts: {
     connecting,
     reconnecting,
     connectedAt,
+    connectionQuality,
+    qualityDegraded,
+    showCallStats,
+    callStats,
     micLevel,
     remoteMicLevel,
     micMuted,
@@ -729,5 +810,6 @@ export function useCall(opts: {
     toggleMic,
     toggleCamera,
     enableSound,
+    toggleCallStats,
   };
 }
