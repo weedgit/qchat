@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, asList, getToken, uploadMedia, wsUrl } from "./api";
+import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "./api";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
   Conversation,
@@ -478,8 +478,16 @@ export function useChat() {
     if (!getToken()) return;
     let disposed = false;
 
-    function connect() {
+    async function connect() {
       if (disposed) return;
+      const authed = await ensureAccessToken();
+      if (disposed) return;
+      if (!authed || !getToken()) {
+        setConnected(false);
+        retryRef.current = setTimeout(connect, Math.min(backoffRef.current, 15000));
+        backoffRef.current = Math.min(backoffRef.current * 2, 15000);
+        return;
+      }
       // Close any prior socket before opening a new one (Mattermost WebSocketClient reconnect).
       if (wsRef.current && wsRef.current.readyState < WebSocket.CLOSING) {
         try {
@@ -522,7 +530,6 @@ export function useChat() {
         }
       };
     }
-
     connect();
     return () => {
       disposed = true;

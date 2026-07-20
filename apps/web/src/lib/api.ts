@@ -100,6 +100,28 @@ async function refreshAccess(): Promise<boolean> {
   return refreshPromise;
 }
 
+function accessTokenExpiresSoon(token: string, skewMs = 60_000): boolean {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return true;
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(json);
+    const exp = Number(payload?.exp);
+    if (!exp) return true;
+    return exp * 1000 <= Date.now() + skewMs;
+  } catch {
+    return true;
+  }
+}
+
+/** Refresh access token when missing or near expiry (used by WebSocket connect). */
+export async function ensureAccessToken(): Promise<boolean> {
+  const token = getToken();
+  if (token && !accessTokenExpiresSoon(token)) return true;
+  if (!getRefreshToken()) return Boolean(token);
+  return refreshAccess();
+}
+
 function redirectLogin() {
   if (typeof window === "undefined") return;
   if (!window.location.pathname.startsWith("/login")) {
