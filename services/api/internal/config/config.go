@@ -21,6 +21,10 @@ type Config struct {
 	LiveKitURL       string
 	LiveKitAPIKey    string
 	LiveKitAPISecret string
+	// Web Push VAPID (dev defaults; override in production).
+	VAPIDPublic  string
+	VAPIDPrivate string
+	VAPIDSubject string
 }
 
 func Load() Config {
@@ -37,6 +41,9 @@ func Load() Config {
 		LiveKitURL:       getenv("LIVEKIT_URL", "ws://localhost:7880"),
 		LiveKitAPIKey:    getenv("LIVEKIT_API_KEY", "devkey"),
 		LiveKitAPISecret: getenv("LIVEKIT_API_SECRET", "secret-that-is-at-least-32-characters-long"),
+		VAPIDPublic:      getenv("QCHAT_VAPID_PUBLIC", "BFdXB2ANYUTz51uvhyiHY690_q7gwTQugmCht6XglXgTLyoubrPvnpQVk4Jac5cP_zVayT88l0gTgnCt1gK5cfA"),
+		VAPIDPrivate:     getenv("QCHAT_VAPID_PRIVATE", "bUnBIxgamtcANH9nAryWvxT0v8s4iosetHMSeOmcB7g"),
+		VAPIDSubject:     getenv("QCHAT_VAPID_SUBJECT", "mailto:admin@qchat.local"),
 	}
 }
 

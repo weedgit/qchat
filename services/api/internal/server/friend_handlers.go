@@ -152,6 +152,21 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 403, "blocked", "cannot send friend request")
 		return
 	}
+	// JD: group setting forbid_member_friend_add blocks peer adds when both share such a group.
+	var forbid bool
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM conversation_members a
+			JOIN conversation_members b ON b.conversation_id=a.conversation_id
+			JOIN conversations conv ON conv.id=a.conversation_id
+			WHERE a.user_id=$1 AND b.user_id=$2
+			  AND a.role <> 'pending' AND b.role <> 'pending'
+			  AND conv.type='social_group' AND conv.forbid_member_friend_add=TRUE
+		)`, c.UserID, targetID).Scan(&forbid)
+	if forbid {
+		writeErrCode(w, 403, "group_forbid_friend", "group policy forbids adding members as friends")
+		return
+	}
 	// Existing accepted friendship?
 	var existing string
 	_ = s.db.QueryRow(r.Context(), `

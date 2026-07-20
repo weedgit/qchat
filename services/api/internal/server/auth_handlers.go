@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/qchat/qchat/services/api/internal/auth"
+	"github.com/qchat/qchat/services/api/internal/sms"
 )
 
 func (s *Server) handleCaptcha(w http.ResponseWriter, r *http.Request) {
@@ -29,14 +30,93 @@ func (s *Server) handleCaptcha(w http.ResponseWriter, r *http.Request) {
 }
 
 type registerReq struct {
-	Phone      string `json:"phone"`
-	Password   string `json:"password"`
-	Username   string `json:"username"`
-	InviteCode string `json:"invite_code"`
-	CaptchaID  string `json:"captcha_id"`
-	Captcha    string `json:"captcha"`
-	DeviceType string `json:"device_type"`
-	DeviceName string `json:"device_name"`
+	Phone          string `json:"phone"`
+	Password       string `json:"password"`
+	Username       string `json:"username"`
+	InviteCode     string `json:"invite_code"`
+	CaptchaID      string `json:"captcha_id"`
+	Captcha        string `json:"captcha"`
+	SMSChallengeID string `json:"sms_challenge_id"`
+	SMSCode        string `json:"sms_code"`
+	DeviceType     string `json:"device_type"`
+	DeviceName     string `json:"device_name"`
+}
+
+// handleRegisterOTP sends an SMS code required before registration (JD phone verification).
+func (s *Server) handleRegisterOTP(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Phone      string `json:"phone"`
+		InviteCode string `json:"invite_code"`
+		CaptchaID  string `json:"captcha_id"`
+		Captcha    string `json:"captcha"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeErr(w, 400, "invalid json")
+		return
+	}
+	if !auth.ValidatePhone(req.Phone) {
+		writeErr(w, 400, "phone must be 11 digits")
+		return
+	}
+	if !s.consumeCaptcha(r, req.CaptchaID, req.Captcha) {
+		writeErr(w, 400, "invalid captcha")
+		return
+	}
+	var entID string
+	var active bool
+	err := s.db.QueryRow(r.Context(), `SELECT id::text, invite_active FROM enterprises WHERE invite_code=$1`, req.InviteCode).Scan(&entID, &active)
+	if err != nil || !active {
+		writeErr(w, 400, "invalid invite code")
+		return
+	}
+	var exists bool
+	_ = s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE enterprise_id=$1 AND phone=$2)`, entID, req.Phone).Scan(&exists)
+	if exists {
+		writeErrFields(w, 409, "conflict", "phone already registered", map[string]string{"phone": "already registered"})
+		return
+	}
+	code := auth.NewCaptchaCode()
+	id := uuid.New()
+	_, err = s.db.Exec(r.Context(), `
+		INSERT INTO register_otp_challenges(id, phone, invite_code, code_hash, expires_at)
+		VALUES ($1,$2,$3,$4,$5)`,
+		id, req.Phone, req.InviteCode, auth.HashRefresh(strings.ToUpper(code)), time.Now().Add(10*time.Minute))
+	if err != nil {
+		writeErr(w, 500, "challenge failed")
+		return
+	}
+	body := sms.FormatPhoneCode(code)
+	_ = s.sms.Send(r.Context(), req.Phone, body)
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,'dev')`, req.Phone, body)
+	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600}
+	if os.Getenv("QCHAT_SMS_PROVIDER") == "" || os.Getenv("QCHAT_SMS_PROVIDER") == "dev" {
+		resp["dev_code"] = code
+	}
+	writeJSON(w, 200, resp)
+}
+
+func (s *Server) consumeRegisterOTP(r *http.Request, challengeID, phone, invite, code string) bool {
+	if challengeID == "" || code == "" {
+		return false
+	}
+	var phoneDB, inviteDB, hash string
+	var consumed bool
+	var expires time.Time
+	err := s.db.QueryRow(r.Context(), `
+		SELECT phone, invite_code, code_hash, consumed, expires_at
+		FROM register_otp_challenges WHERE id=$1`, challengeID).
+		Scan(&phoneDB, &inviteDB, &hash, &consumed, &expires)
+	if err != nil || consumed || time.Now().After(expires) {
+		return false
+	}
+	if phoneDB != phone || inviteDB != invite {
+		return false
+	}
+	if hash != auth.HashRefresh(strings.ToUpper(code)) {
+		return false
+	}
+	_, _ = s.db.Exec(r.Context(), `UPDATE register_otp_challenges SET consumed=TRUE WHERE id=$1`, challengeID)
+	return true
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +139,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.consumeCaptcha(r, req.CaptchaID, req.Captcha) {
 		writeErr(w, 400, "invalid captcha")
+		return
+	}
+	if !s.consumeRegisterOTP(r, req.SMSChallengeID, req.Phone, req.InviteCode, req.SMSCode) {
+		writeErr(w, 400, "invalid or missing SMS code")
 		return
 	}
 	var entID string
@@ -294,6 +378,18 @@ func strPtr(m map[string]any, k string) *string {
 		return nil
 	}
 	return &s
+}
+
+func boolPtr(m map[string]any, k string) *bool {
+	v, ok := m[k]
+	if !ok || v == nil {
+		return nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return nil
+	}
+	return &b
 }
 
 func intPtr(m map[string]any, k string) *int {

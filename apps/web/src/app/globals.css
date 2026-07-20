@@ -1569,4 +1569,25 @@ select:focus {
 .call-msg {
   font-style: italic;
 }
+.group-meta-edit {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--bg-panel-2);
+  border-radius: var(--radius);
+  text-align: left;
+}
+.group-meta-edit textarea,
+.group-meta-edit input {
+  width: 100%;
+}
+.group-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
 

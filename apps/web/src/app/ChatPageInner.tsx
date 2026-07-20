@@ -437,10 +437,17 @@ export default function ChatPageInner() {
     members: { user_id: string; display_name: string; username: string; role: string; avatar_url?: string; mute_until?: string }[];
     public_id?: string;
     description?: string;
+    announcement?: string;
+    title?: string;
     role?: string;
     avatar_url?: string;
     mute_all?: boolean;
+    forbid_member_friend_add?: boolean;
   } | null>(null);
+  const [groupEditTitle, setGroupEditTitle] = useState("");
+  const [groupEditDesc, setGroupEditDesc] = useState("");
+  const [groupEditAnnounce, setGroupEditAnnounce] = useState("");
+  const [groupMetaBusy, setGroupMetaBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
@@ -541,10 +548,55 @@ export default function ChatPageInner() {
       members: Array.isArray(g?.members) ? g.members : [],
       public_id: g?.public_id,
       description: g?.description,
+      announcement: g?.announcement,
+      title: g?.title,
       role: g?.role,
       avatar_url: g?.avatar_url,
       mute_all: Boolean(g?.mute_all),
+      forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
     });
+    setGroupEditTitle(String(g?.title ?? ""));
+    setGroupEditDesc(String(g?.description ?? ""));
+    setGroupEditAnnounce(String(g?.announcement ?? ""));
+  }
+
+  async function saveGroupMeta() {
+    if (!active || !canEditGroup) return;
+    setGroupMetaBusy(true);
+    try {
+      await api(`/v1/groups/${active.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          title: groupEditTitle.trim(),
+          description: groupEditDesc,
+          announcement: groupEditAnnounce,
+        }),
+      });
+      await reloadGroupDetails();
+      await chat.reload();
+    } catch (err: any) {
+      setSendError(err.message);
+    } finally {
+      setGroupMetaBusy(false);
+    }
+  }
+
+  async function toggleForbidFriendAdd() {
+    if (!active || !canEditGroup || !groupDetails) return;
+    setGroupMetaBusy(true);
+    try {
+      await api(`/v1/groups/${active.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          forbid_member_friend_add: !groupDetails.forbid_member_friend_add,
+        }),
+      });
+      await reloadGroupDetails();
+    } catch (err: any) {
+      setSendError(err.message);
+    } finally {
+      setGroupMetaBusy(false);
+    }
   }
 
   /** Timed speak-mute (JD 10m/1h/permanent); Mattermost channel moderation has no timed per-member mute. */
@@ -674,10 +726,16 @@ export default function ChatPageInner() {
           members: Array.isArray(g?.members) ? g.members : [],
           public_id: g?.public_id,
           description: g?.description,
+          announcement: g?.announcement,
+          title: g?.title,
           role: g?.role,
           avatar_url: g?.avatar_url,
           mute_all: Boolean(g?.mute_all),
+          forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
         });
+        setGroupEditTitle(String(g?.title ?? ""));
+        setGroupEditDesc(String(g?.description ?? ""));
+        setGroupEditAnnounce(String(g?.announcement ?? ""));
       })
       .catch(() => {
         if (!cancelled) setGroupDetails(null);
@@ -1578,11 +1636,66 @@ export default function ChatPageInner() {
                   <GroupQr publicId={groupDetails.public_id} size={140} />
                 </div>
               )}
-              {groupDetails.description && (
-                <div className="kv">
-                  <div className="k">Description</div>
-                  <div>{groupDetails.description}</div>
+              {canEditGroup ? (
+                <div className="group-meta-edit">
+                  <label className="k">Group name</label>
+                  <input
+                    value={groupEditTitle}
+                    onChange={(e) => setGroupEditTitle(e.target.value)}
+                    maxLength={80}
+                  />
+                  <label className="k">Description</label>
+                  <textarea
+                    value={groupEditDesc}
+                    onChange={(e) => setGroupEditDesc(e.target.value)}
+                    rows={2}
+                    maxLength={500}
+                  />
+                  <label className="k">Announcement</label>
+                  <textarea
+                    value={groupEditAnnounce}
+                    onChange={(e) => setGroupEditAnnounce(e.target.value)}
+                    rows={2}
+                    maxLength={1000}
+                  />
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={groupMetaBusy}
+                    onClick={() => saveGroupMeta().catch(() => {})}
+                  >
+                    {groupMetaBusy ? "Saving…" : "Save group info"}
+                  </button>
+                  <label className="group-toggle">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(groupDetails.forbid_member_friend_add)}
+                      disabled={groupMetaBusy}
+                      onChange={() => toggleForbidFriendAdd().catch(() => {})}
+                    />
+                    Forbid members adding each other as friends
+                  </label>
                 </div>
+              ) : (
+                <>
+                  {groupDetails.announcement && (
+                    <div className="kv">
+                      <div className="k">Announcement</div>
+                      <div>{groupDetails.announcement}</div>
+                    </div>
+                  )}
+                  {groupDetails.description && (
+                    <div className="kv">
+                      <div className="k">Description</div>
+                      <div>{groupDetails.description}</div>
+                    </div>
+                  )}
+                  {groupDetails.forbid_member_friend_add && (
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      Members cannot add each other as friends.
+                    </div>
+                  )}
+                </>
               )}
               <div className="kv">
                 <div className="k">Your role</div>

@@ -39,6 +39,7 @@ func (s *Server) routes() {
 
 	// Auth
 	s.mux.HandleFunc("GET /v1/auth/captcha", s.handleCaptcha)
+	s.mux.HandleFunc("POST /v1/auth/register/otp", s.handleRegisterOTP)
 	s.mux.HandleFunc("POST /v1/auth/register", s.handleRegister)
 	s.mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /v1/auth/refresh", s.handleRefresh)
@@ -101,11 +102,16 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/admin/enterprises", s.auth(s.handleAdminEnterprises))
 	s.mux.HandleFunc("POST /v1/admin/enterprises", s.auth(s.handleAdminCreateEnterprise))
 	s.mux.HandleFunc("GET /v1/admin/users", s.auth(s.handleAdminUsers))
+	s.mux.HandleFunc("POST /v1/admin/users", s.auth(s.handleAdminCreateUser))
 	s.mux.HandleFunc("POST /v1/admin/users/{id}/ban", s.auth(s.handleAdminBan))
 	s.mux.HandleFunc("POST /v1/admin/users/{id}/reset-password", s.auth(s.handleAdminResetPassword))
 	s.mux.HandleFunc("GET /v1/admin/messages", s.auth(s.handleAdminMessages))
 	s.mux.HandleFunc("GET /v1/admin/audits", s.auth(s.handleAdminAudits))
 	s.mux.HandleFunc("POST /v1/admin/invite/rotate", s.auth(s.handleAdminRotateInvite))
+	s.mux.HandleFunc("POST /v1/admin/invite/revoke", s.auth(s.handleAdminRevokeInvite))
+	s.mux.HandleFunc("POST /v1/admin/invite/activate", s.auth(s.handleAdminActivateInvite))
+	s.mux.HandleFunc("PATCH /v1/admin/enterprises/{id}", s.auth(s.handleAdminPatchEnterprise))
+	s.mux.HandleFunc("POST /v1/admin/retention/run", s.auth(s.handleAdminRunRetention))
 
 	// Calls (LiveKit 1:1) + push stubs
 	s.mux.HandleFunc("POST /v1/calls", s.auth(s.handleStartCall))
@@ -113,6 +119,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/calls/{id}/decline", s.auth(s.handleDeclineCall))
 	s.mux.HandleFunc("POST /v1/calls/{id}/hangup", s.auth(s.handleHangupCall))
 	s.mux.HandleFunc("POST /v1/push/register", s.auth(s.handlePushRegister))
+	s.mux.HandleFunc("GET /v1/push/vapid", s.handlePushVAPID)
 
 	// WebSocket
 	s.mux.HandleFunc("GET /v1/ws", s.handleWS)

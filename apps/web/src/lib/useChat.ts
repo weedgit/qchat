@@ -150,6 +150,16 @@ export function useChat() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!me) return;
+    const t = window.setTimeout(() => {
+      import("./webPush")
+        .then((m) => m.registerWebPush())
+        .catch(() => {});
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [me]);
+
   const loadConversations = useCallback(async () => {
     try {
       const body = await api<any>("/v1/conversations");

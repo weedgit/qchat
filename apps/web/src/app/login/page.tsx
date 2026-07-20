@@ -18,6 +18,10 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
+  const [smsCode, setSmsCode] = useState("");
+  const [smsChallengeId, setSmsChallengeId] = useState("");
+  const [smsHint, setSmsHint] = useState<string | null>(null);
+  const [smsBusy, setSmsBusy] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +43,43 @@ export default function LoginPage() {
     loadCaptcha();
   }, [loadCaptcha]);
 
+  async function sendRegisterOTP() {
+    setSmsBusy(true);
+    setError(null);
+    setSmsHint(null);
+    try {
+      const data = await api<any>("/v1/auth/register/otp", {
+        method: "POST",
+        body: JSON.stringify({
+          phone,
+          invite_code: inviteCode,
+          captcha_id: captcha?.id ?? "",
+          captcha: captchaCode,
+        }),
+      });
+      setSmsChallengeId(String(data?.challenge_id ?? ""));
+      if (data?.dev_code) {
+        setSmsHint(`Dev SMS code: ${data.dev_code}`);
+        setSmsCode(String(data.dev_code));
+      } else {
+        setSmsHint("SMS code sent. Enter it below.");
+      }
+      setCaptchaCode("");
+      await loadCaptcha();
+    } catch (e: any) {
+      if (e instanceof ApiError && e.fields) {
+        const parts = Object.entries(e.fields).map(([k, v]) => `${k}: ${v}`);
+        setError(parts.length ? parts.join("; ") : e.message);
+      } else {
+        setError(e.message);
+      }
+      setCaptchaCode("");
+      loadCaptcha();
+    } finally {
+      setSmsBusy(false);
+    }
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -55,6 +96,8 @@ export default function LoginPage() {
       };
       if (mode === "register") {
         payload.username = username || `user_${phone.slice(-4)}`;
+        payload.sms_challenge_id = smsChallengeId;
+        payload.sms_code = smsCode;
       } else {
         payload.remember_me = remember;
       }
@@ -147,6 +190,30 @@ export default function LoginPage() {
           </div>
         </div>
 
+        {mode === "register" && (
+          <div className="field">
+            <label>SMS verification</label>
+            <div className="captcha-row">
+              <input
+                value={smsCode}
+                onChange={(e) => setSmsCode(e.target.value)}
+                placeholder="SMS code"
+                required
+              />
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{ padding: "8px 12px", borderRadius: 8, whiteSpace: "nowrap" }}
+                disabled={smsBusy || !phone || !captchaCode}
+                onClick={sendRegisterOTP}
+              >
+                {smsBusy ? "Sending…" : "Send SMS"}
+              </button>
+            </div>
+            {smsHint && <div className="auth-sub" style={{ marginTop: 6 }}>{smsHint}</div>}
+          </div>
+        )}
+
         <div className="remember-row">
           {mode === "login" ? (
             <label>
@@ -167,6 +234,9 @@ export default function LoginPage() {
             onClick={() => {
               setMode(mode === "login" ? "register" : "login");
               setError(null);
+              setSmsCode("");
+              setSmsChallengeId("");
+              setSmsHint(null);
             }}
           >
             {mode === "login" ? "Need an account?" : "Have an account?"}

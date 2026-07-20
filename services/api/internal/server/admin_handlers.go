@@ -124,6 +124,68 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"users": out})
 }
 
+// handleAdminCreateUser provisions a member without self-service SMS (Mattermost CreateUser / assisted registration).
+func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
+	c := s.requireAdmin(w, r)
+	if c == nil {
+		return
+	}
+	var req struct {
+		Phone       string `json:"phone"`
+		Password    string `json:"password"`
+		Username    string `json:"username"`
+		DisplayName string `json:"display_name"`
+		Role        string `json:"role"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeErr(w, 400, "invalid json")
+		return
+	}
+	if !auth.ValidatePhone(req.Phone) {
+		writeErr(w, 400, "phone must be 11 digits")
+		return
+	}
+	if err := auth.ValidatePassword(req.Password); err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	if !auth.ValidateUsername(req.Username) {
+		writeErr(w, 400, "invalid username")
+		return
+	}
+	role := req.Role
+	if role == "" {
+		role = "member"
+	}
+	if role != "member" && role != "enterprise_admin" {
+		writeErr(w, 400, "role must be member or enterprise_admin")
+		return
+	}
+	display := req.DisplayName
+	if display == "" {
+		display = req.Username
+	}
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		writeErr(w, 500, "hash failed")
+		return
+	}
+	uid := uuid.New()
+	ip := clientIP(r)
+	_, err = s.db.Exec(r.Context(), `
+		INSERT INTO users(id, enterprise_id, phone, password_hash, username, display_name, role, register_ip, register_region)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		uid, c.EnterpriseID, req.Phone, hash, req.Username, display, role, ip, guessRegion(ip))
+	if err != nil {
+		writeErr(w, 409, "phone or username already exists")
+		return
+	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.create", "user", uid.String(), "assisted registration", ip, map[string]any{"role": role})
+	writeJSON(w, 201, map[string]any{
+		"id": uid.String(), "phone": req.Phone, "username": req.Username, "display_name": display, "role": role,
+	})
+}
+
 func (s *Server) handleAdminBan(w http.ResponseWriter, r *http.Request) {
 	c := s.requireAdmin(w, r)
 	if c == nil {
@@ -245,17 +307,3 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"audits": out})
 }
 
-func (s *Server) handleAdminRotateInvite(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
-	if c == nil {
-		return
-	}
-	code := strings.ToUpper(uuid.NewString()[:8])
-	_, err := s.db.Exec(r.Context(), `UPDATE enterprises SET invite_code=$2 WHERE id=$1`, c.EnterpriseID, code)
-	if err != nil {
-		writeErr(w, 500, "rotate failed")
-		return
-	}
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "invite.rotate", "enterprise", c.EnterpriseID, "", clientIP(r), map[string]any{"invite_code": code})
-	writeJSON(w, 200, map[string]any{"invite_code": code})
-}
