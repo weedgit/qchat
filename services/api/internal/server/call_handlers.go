@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -132,18 +133,61 @@ type callRow struct {
 	RoomName       string
 	Status         string
 	CreatedAt      time.Time
+	AnsweredAt     *time.Time
 }
 
 func (s *Server) loadCall(r *http.Request, callID string) (*callRow, error) {
 	var row callRow
 	err := s.db.QueryRow(r.Context(), `
-		SELECT id::text, conversation_id::text, initiator_id::text, kind, room_name, status, created_at
+		SELECT id::text, conversation_id::text, initiator_id::text, kind, room_name, status, created_at, answered_at
 		FROM call_sessions WHERE id=$1`, callID).
-		Scan(&row.ID, &row.ConversationID, &row.InitiatorID, &row.Kind, &row.RoomName, &row.Status, &row.CreatedAt)
+		Scan(&row.ID, &row.ConversationID, &row.InitiatorID, &row.Kind, &row.RoomName, &row.Status, &row.CreatedAt, &row.AnsweredAt)
 	if err != nil {
 		return nil, err
 	}
 	return &row, nil
+}
+
+// postCallSystemMessage mirrors Mattermost custom_calls posts in the timeline.
+func (s *Server) postCallSystemMessage(r *http.Request, call *callRow, body string, byUserID string) {
+	var enterpriseID string
+	_ = s.db.QueryRow(r.Context(), `SELECT enterprise_id::text FROM conversations WHERE id=$1`, call.ConversationID).Scan(&enterpriseID)
+	if enterpriseID == "" {
+		return
+	}
+	msgID := uuid.New()
+	clientID := "call-" + call.ID
+	var outID string
+	var seq int64
+	err := s.db.QueryRow(r.Context(), `
+		INSERT INTO messages(id, conversation_id, enterprise_id, sender_id, client_msg_id, type, body)
+		VALUES ($1,$2,$3,$4,$5,'call',$6)
+		ON CONFLICT (conversation_id, client_msg_id) DO UPDATE SET body=EXCLUDED.body
+		RETURNING id::text, seq`,
+		msgID, call.ConversationID, enterpriseID, byUserID, clientID, body).Scan(&outID, &seq)
+	if err != nil {
+		return
+	}
+	s.hub.PublishToUsers(s.memberIDs(r, call.ConversationID), ws.Event{
+		Type: "message.new",
+		Payload: map[string]any{
+			"id": outID, "conversation_id": call.ConversationID, "sender_id": byUserID,
+			"client_msg_id": clientID, "seq": seq, "type": "call", "body": body,
+			"created_at": time.Now().UTC(),
+		},
+	})
+}
+
+func formatCallDuration(sec int) string {
+	if sec < 60 {
+		return fmt.Sprintf("%ds", sec)
+	}
+	m := sec / 60
+	s := sec % 60
+	if s == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dm %ds", m, s)
 }
 
 // handleAnswerCall mirrors Mattermost join / accept incoming ring.
@@ -170,7 +214,7 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tag, err := s.db.Exec(r.Context(), `
-		UPDATE call_sessions SET status='active' WHERE id=$1 AND status='ringing'`, callID)
+		UPDATE call_sessions SET status='active', answered_at=now() WHERE id=$1 AND status='ringing'`, callID)
 	if err != nil || tag.RowsAffected() == 0 {
 		writeErrCode(w, 409, "invalid_state", "call is not ringing")
 		return
@@ -250,6 +294,13 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 		UPDATE call_sessions SET status='declined', ended_at=now()
 		WHERE id=$1 AND status='ringing'`, callID)
 
+	kindLabel := "Voice"
+	if call.Kind == "video" {
+		kindLabel = "Video"
+	}
+	body := kindLabel + " call declined"
+	s.postCallSystemMessage(r, call, body, c.UserID)
+
 	payload := map[string]any{
 		"id":              call.ID,
 		"call_id":         call.ID,
@@ -296,11 +347,34 @@ func (s *Server) handleHangupCall(w http.ResponseWriter, r *http.Request) {
 	_ = s.db.QueryRow(r.Context(), `SELECT ended_at FROM call_sessions WHERE id=$1`, callID).Scan(&endedAt)
 	durationSec := 0
 	if call.Status == "active" && endedAt != nil {
-		durationSec = int(endedAt.Sub(call.CreatedAt).Seconds())
+		start := call.CreatedAt
+		if call.AnsweredAt != nil {
+			start = *call.AnsweredAt
+		}
+		durationSec = int(endedAt.Sub(start).Seconds())
 		if durationSec < 0 {
 			durationSec = 0
 		}
 	}
+
+	kindLabel := "Voice"
+	if call.Kind == "video" {
+		kindLabel = "Video"
+	}
+	var body string
+	switch reason {
+	case "cancelled":
+		body = kindLabel + " call cancelled"
+	case "declined":
+		body = kindLabel + " call declined"
+	default:
+		if durationSec > 0 {
+			body = fmt.Sprintf("%s call · %s", kindLabel, formatCallDuration(durationSec))
+		} else {
+			body = kindLabel + " call ended"
+		}
+	}
+	s.postCallSystemMessage(r, call, body, c.UserID)
 
 	payload := map[string]any{
 		"id":              call.ID,

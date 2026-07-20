@@ -263,6 +263,15 @@ function Bubble({
   // Recommend the message's top reaction if it has one, otherwise the default quick emoji.
   const recommendedEmoji = msg.reactions?.[0]?.emoji ?? QUICK_EMOJIS[0];
   const hasReactions = !msg.recalled && (msg.reactions?.length ?? 0) > 0;
+
+  if (msg.type === "call") {
+    return (
+      <div className="msg-row system-row">
+        <div className="system-msg call-msg">{msg.content || "Call"}</div>
+      </div>
+    );
+  }
+
   const meta = (
     <span className="meta">
       {msg.recalled && (
