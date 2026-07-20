@@ -1,7 +1,7 @@
 # Qchat Desktop (Electron)
 
-Thin shell around the web client (Mattermost-inspired pattern). **D1** loads a
-configurable web origin and reports desktop session identity to the API.
+Thin shell around the web client (Mattermost-inspired pattern). **D2** adds
+native desktop polish on top of the D1 shell.
 
 ## Prerequisites
 
@@ -37,23 +37,25 @@ Config precedence: `--url` → `QCHAT_WEB_URL` env → `.env` → `http://localh
 
 ### Missing X server / `$DISPLAY`
 
-Electron is a GUI app. If you see:
-
-```text
-Missing X server or $DISPLAY
-The platform failed to initialize.  Exiting.
-```
-
-you are in a text/SSH session without a display. Use a **GUI terminal** on the
-Ubuntu desktop (not SSH/tty), or:
+If you run from **Cursor's terminal**, **SSH**, or a **text console (tty)**, `$DISPLAY`
+is often unset even when Ubuntu desktop is running on the same machine.
 
 ```bash
-# helpful preflight (exits with instructions if no display)
-npm run start:check
+# attach to the logged-in GNOME session, then start
+source ./attach-display.sh
+npm start
 
-# optional: headless smoke only (no visible window)
+# or in one line
+source ./attach-display.sh && QCHAT_WEB_URL=http://135.181.224.36 npm start
+```
+
+Best option: open **Terminal from the Ubuntu desktop GUI** and run `npm start` there.
+
+Headless smoke (no visible window):
+
+```bash
 sudo apt-get install -y xvfb
-xvfb-run -a QCHAT_WEB_URL=http://135.181.224.36 npm start
+npm run start:headless
 ```
 
 ### Linux sandbox note
@@ -84,9 +86,21 @@ Browser login uses `device_name: web`. Both share the desktop session bucket
 - External / off-origin navigations open in the OS browser
 - Single-instance lock; failed loads show an error dialog
 
-## D1 checklist
+## D2 features
 
-- [ ] Window opens against local or server web UI
-- [ ] Login / chat / WebSocket work inside the window
-- [ ] Bad `QCHAT_WEB_URL` shows an error dialog
-- [ ] Second launch focuses the existing window
+- App icon in window / taskbar (`assets/icon.png`)
+- Window title locked to **Qchat Desktop**
+- Menu bar always visible: **Help → About Qchat Desktop** (or `Ctrl+Shift+A`)
+- Restores window size/position between launches
+- Native app menu with reload / zoom / edit shortcuts
+- Native desktop notifications focus the app and open the target conversation
+- Downloaded files use the OS save dialog
+- Single-instance behavior focuses the existing window
+
+### Where to find About / icon / title
+
+| Item | Where |
+|---|---|
+| **Title** | Top of the window: `Qchat Desktop` |
+| **Icon** | Window title bar / taskbar / Alt-Tab (Linux may need a restart of the session to refresh) |
+| **About** | Menu bar → **Help** → **About Qchat Desktop**, or press `Ctrl+Shift+A` |

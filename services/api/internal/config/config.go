@@ -40,7 +40,7 @@ func Load() Config {
 		JWTSecret:        getenv("QCHAT_JWT_SECRET", DefaultJWTSecret),
 		AccessTTL:        durationEnv("QCHAT_ACCESS_TTL", 15*time.Minute),
 		RefreshTTL:       durationEnv("QCHAT_REFRESH_TTL", 60*24*time.Hour),
-		CORSOrigin:       getenv("QCHAT_CORS_ORIGIN", "http://localhost:3000"),
+		CORSOrigin:       getenv("QCHAT_CORS_ORIGIN", "*"),
 		ObjectStorageURL: getenv("QCHAT_OBJECT_STORAGE_URL", "http://localhost:9000"),
 		Bucket:           getenv("QCHAT_BUCKET", "qchat"),
 		Env:              strings.ToLower(getenv("QCHAT_ENV", "development")),

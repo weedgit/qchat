@@ -1,35 +1,50 @@
 #!/usr/bin/env bash
-# Preflight for Electron: require a graphical display, then start the app.
+# Start Qchat Desktop. Auto-attaches to the local GNOME session when DISPLAY is unset
+# (common in Cursor/SSH/tty terminals on the same machine as the desktop).
 set -euo pipefail
-cd "$(dirname "$0")"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
 
-if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+die_no_display() {
   cat >&2 <<'EOF'
 Qchat Desktop needs a graphical session (X11 or Wayland).
 
-Your shell has no $DISPLAY / $WAYLAND_DISPLAY — common when using SSH or a
-text console (tty). Electron cannot open a window from here.
+This terminal has no usable $DISPLAY / $WAYLAND_DISPLAY. Electron cannot open a window.
 
-Fix (pick one):
-  1. On the Ubuntu desktop, open Terminal from the GUI and run:
+Try one of these:
+
+  1. Ubuntu desktop → open Terminal from the GUI (not Cursor/SSH), then:
        cd ~/Desktop/chatapp/qchat/apps/desktop
-       QCHAT_WEB_URL=http://135.181.224.36 npm start
-
-  2. If you SSH in, enable X11 forwarding and use an X server on your laptop:
-       ssh -X ubuntu@<host>
-       cd ~/Desktop/chatapp/qchat/apps/desktop && npm start
-
-  3. Or attach to the existing local desktop session (same machine, user logged
-     into GNOME), then:
-       export DISPLAY=:0
-       # if needed: export XAUTHORITY=/run/user/$(id -u)/.mutter-Xwaylandauth.*
        npm start
 
-Headless smoke (no visible window) requires xvfb:
-  sudo apt-get install -y xvfb
-  xvfb-run -a npm start
+  2. From this terminal, attach to the logged-in desktop session:
+       source ./attach-display.sh
+       npm start
+
+  3. SSH with X11 forwarding (X server required on your laptop):
+       ssh -X ubuntu@<host>
+
+  4. Headless smoke only (no visible window):
+       sudo apt-get install -y xvfb
+       xvfb-run -a npm start
 EOF
   exit 1
+}
+
+# Source attach-display if present (sets DISPLAY / WAYLAND / XAUTHORITY when possible).
+if [[ -f "$ROOT/attach-display.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "$ROOT/attach-display.sh" || true
 fi
 
-exec npm start -- "$@"
+if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+  die_no_display
+fi
+
+# Prefer Wayland on modern Ubuntu when the socket exists.
+if [[ -n "${WAYLAND_DISPLAY:-}" && -z "${ELECTRON_OZONE_PLATFORM:-}" ]]; then
+  export ELECTRON_OZONE_PLATFORM=wayland
+fi
+
+export ELECTRON_DISABLE_SANDBOX="${ELECTRON_DISABLE_SANDBOX:-1}"
+exec electron . --no-sandbox "$@"

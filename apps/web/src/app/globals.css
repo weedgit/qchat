@@ -305,15 +305,28 @@ select:focus {
 }
 .captcha-placeholder {
   flex: none;
-  width: 120px;
+  width: 132px;
+  min-height: 42px;
   border-radius: var(--radius);
-  background: var(--bg-panel-2);
-  color: var(--text-faint);
-  font-size: 12px;
+  background: #fff;
+  color: #0e1621;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.18em;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  border: 1px solid var(--bg-panel-2);
+  user-select: none;
+}
+.captcha-placeholder.error {
+  background: var(--bg-panel-2);
+  color: var(--danger);
+  font-size: 14px;
+  letter-spacing: 0;
+  font-weight: 600;
 }
 
 .remember-row {
