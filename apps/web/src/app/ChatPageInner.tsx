@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import GroupQr from "@/components/GroupQr";
 import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
@@ -1411,6 +1412,14 @@ export default function ChatPageInner() {
                 <div className="kv">
                   <div className="k">Invite ID</div>
                   <div>{groupDetails.public_id}</div>
+                </div>
+              )}
+              {groupDetails.public_id && (
+                <div className="group-qr-block">
+                  <div className="k" style={{ marginBottom: 8 }}>
+                    Invite QR
+                  </div>
+                  <GroupQr publicId={groupDetails.public_id} size={140} />
                 </div>
               )}
               {groupDetails.description && (
