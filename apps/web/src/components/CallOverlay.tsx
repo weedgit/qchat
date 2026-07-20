@@ -81,7 +81,9 @@ export default function CallOverlay({ call }: { call: CallApi }) {
               </div>
             )}
             {active.kind === "voice" && active.status === "active" && (
-              <div className="call-voice-placeholder muted">Voice connected</div>
+              <div className="call-voice-placeholder muted">
+                {connecting ? "Setting up media…" : "Voice connected"}
+              </div>
             )}
             {error && <div className="error-text">{error}</div>}
             <div className="call-overlay-actions">

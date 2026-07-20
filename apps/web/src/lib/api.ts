@@ -1,6 +1,16 @@
+/** API origin: env override, else same host as the page on :8080 (LAN-friendly). */
+export function apiBaseUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8080`;
+  }
+  return process.env.NODE_ENV === "development" ? "http://localhost:8080" : "";
+}
+
+/** @deprecated prefer apiBaseUrl() — kept for call sites that need a sync string at import time in the browser. */
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
-  (process.env.NODE_ENV === "development" ? "http://localhost:8080" : "");
+  typeof window !== "undefined" ? apiBaseUrl() : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 const ACCESS_KEY = "qchat.access_token";
 const REFRESH_KEY = "qchat.refresh_token";
@@ -70,7 +80,7 @@ async function refreshAccess(): Promise<boolean> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
       try {
-        const res = await fetch(`${API_URL}/v1/auth/refresh`, {
+        const res = await fetch(`${apiBaseUrl()}/v1/auth/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ refresh_token: refresh }),
@@ -142,7 +152,7 @@ export async function api<T = any>(
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+  const res = await fetch(`${apiBaseUrl()}${path}`, { ...init, headers });
 
   let body: unknown = null;
   const text = await res.text();
@@ -185,7 +195,7 @@ export function asList(body: any, ...keys: string[]): any[] {
 
 export function wsUrl(): string {
   const token = getToken() ?? "";
-  let origin = API_URL;
+  let origin = apiBaseUrl();
   if (!origin && typeof window !== "undefined") origin = window.location.origin;
   const base = origin.replace(/^http/, "ws");
   return `${base}/v1/ws?token=${encodeURIComponent(token)}`;
@@ -205,7 +215,7 @@ export function mediaAuthURL(path?: string | null): string | undefined {
     return path;
   }
   const rel = path.startsWith("/") ? path : `/${path}`;
-  const abs = `${API_URL}${rel}`;
+  const abs = `${apiBaseUrl()}${rel}`;
   const token = getToken();
   if (rel.startsWith("/v1/media/") && token) {
     return `${abs}${abs.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;

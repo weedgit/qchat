@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -158,8 +160,8 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := s.cfg.CORSOrigin
 		if o := r.Header.Get("Origin"); o != "" {
-			// allow local web + admin during development
-			if strings.HasPrefix(o, "http://localhost:") {
+			// Dev: reflect localhost / private LAN origins (Mattermost AllowCorsFrom-style).
+			if isDevBrowserOrigin(o) {
 				origin = o
 			}
 		}
@@ -172,6 +174,27 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isDevBrowserOrigin allows http(s) origins on loopback or RFC1918 hosts so
+// opening the web app via a VM LAN IP (e.g. http://192.168.x.x:3000) works.
+func isDevBrowserOrigin(o string) bool {
+	u, err := url.Parse(o)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate()
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

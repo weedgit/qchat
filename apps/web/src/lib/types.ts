@@ -187,8 +187,12 @@ export function mediaURL(path?: string | null): string | undefined {
     return path;
   }
   const base =
-    process.env.NEXT_PUBLIC_API_URL ??
-    (process.env.NODE_ENV === "development" ? "http://localhost:8080" : "");
+    process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
+    (typeof window !== "undefined"
+      ? `${window.location.protocol}//${window.location.hostname}:8080`
+      : process.env.NODE_ENV === "development"
+        ? "http://localhost:8080"
+        : "");
   return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
 }
 

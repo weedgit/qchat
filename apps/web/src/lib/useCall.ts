@@ -87,15 +87,14 @@ export function useCall(opts: {
     }
   }, []);
 
+  // Notify server so peers get call.ended (Mattermost call_end). Do not gate on
+  // endingRef — hangup() sets that flag before calling us to suppress media noise.
   const hangupServer = useCallback(async (callId: string) => {
-    if (!callId || endingRef.current) return;
-    endingRef.current = true;
+    if (!callId) return;
     try {
       await api(`/v1/calls/${callId}/hangup`, { method: "POST" });
     } catch {
       /* ignore — may already be ended */
-    } finally {
-      endingRef.current = false;
     }
   }, []);
 
@@ -123,15 +122,29 @@ export function useCall(opts: {
           throw new Error("Missing LiveKit URL or token");
         }
 
-        // Prompt for devices before Room.connect so a permission denial does not
-        // look like a mysterious SIGNAL_SOURCE_CLOSE hangup.
+        // Chrome only exposes mediaDevices in a secure context (HTTPS or localhost).
+        // http://192.168.x.x is insecure → navigator.mediaDevices is undefined.
+        const media = navigator.mediaDevices;
+        if (!media?.getUserMedia) {
+          const host = typeof window !== "undefined" ? window.location.host : "";
+          const insecure =
+            typeof window !== "undefined" && !window.isSecureContext;
+          throw new Error(
+            insecure
+              ? `Microphone blocked: ${host} is not a secure context. Use http://localhost:3000, or in Chrome open chrome://flags/#unsafely-treat-insecure-origin-as-secure and add http://${host}`
+              : "Microphone API unavailable in this browser"
+          );
+        }
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({
+          const stream = await media.getUserMedia({
             audio: true,
             video: kind === "video",
           });
           stream.getTracks().forEach((t) => t.stop());
         } catch (permErr: any) {
+          if (permErr?.message?.includes("secure context") || permErr?.message?.includes("Microphone")) {
+            throw permErr;
+          }
           throw new Error(
             permErr?.name === "NotAllowedError"
               ? "Microphone/camera permission denied — allow access and try again"
@@ -154,6 +167,23 @@ export function useCall(opts: {
           if (cur && cur.callId === callId) {
             setError((prev) => prev || "Media disconnected — check LiveKit (port 7880) and mic permission");
           }
+        });
+        // 1:1: when the other party leaves the LiveKit room, end local UI
+        // (fallback if call.ended WS was missed).
+        room.on(RoomEvent.ParticipantDisconnected, () => {
+          if (intentionalDisconnectRef.current || endingRef.current) return;
+          if (room.remoteParticipants.size > 0) return;
+          const cur = activeRef.current;
+          if (!cur || cur.callId !== callId) return;
+          endingRef.current = true;
+          setActive(null);
+          setIncoming(null);
+          setConnecting(false);
+          setError(null);
+          disconnectRoom().catch(() => {});
+          hangupServer(callId).finally(() => {
+            endingRef.current = false;
+          });
         });
 
         await room.connect(lkUrl, token);
@@ -197,7 +227,7 @@ export function useCall(opts: {
         setConnecting(false);
       }
     },
-    [attachTrack, disconnectRoom]
+    [attachTrack, disconnectRoom, hangupServer]
   );
 
   useEffect(() => {
@@ -250,9 +280,22 @@ export function useCall(opts: {
       }
       if (type === "call.ended") {
         const callId = String(payload?.call_id ?? payload?.id ?? "");
+        const convId = String(payload?.conversation_id ?? "");
         endingRef.current = true;
-        setIncoming((prev) => (prev?.callId === callId ? null : prev));
-        setActive((prev) => (prev?.callId === callId ? null : prev));
+        setIncoming((prev) => {
+          if (!prev) return null;
+          if (!callId || prev.callId === callId) return null;
+          if (convId && prev.conversationId === convId) return null;
+          return prev;
+        });
+        setActive((prev) => {
+          if (!prev) return null;
+          if (!callId || prev.callId === callId) return null;
+          if (convId && prev.conversationId === convId) return null;
+          return prev;
+        });
+        setConnecting(false);
+        setError(null);
         disconnectRoom().catch(() => {});
         endingRef.current = false;
       }
@@ -318,6 +361,7 @@ export function useCall(opts: {
     setActive(null);
     setIncoming(null);
     setError(null);
+    setConnecting(false);
     await disconnectRoom();
     await hangupServer(id);
     endingRef.current = false;

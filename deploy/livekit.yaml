@@ -8,9 +8,10 @@ rtc:
   port_range_start: 50000
   port_range_end: 50100
   use_external_ip: false
-  node_ip: 127.0.0.1
-  # Useful when LiveKit runs in Docker and the browser is on the same host.
-  enable_loopback_candidate: true
+  # Must be an IP the *browser* can reach (not 127.0.0.1 when Chrome is on
+  # Windows and LiveKit is in a Linux VM). Override via compose --node-ip.
+  node_ip: 192.168.91.136
+  enable_loopback_candidate: false
 keys:
   # Must be ≥32 chars for LiveKit secrets
   devkey: secret-that-is-at-least-32-characters-long
