@@ -591,7 +591,76 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		out[i], out[j] = out[j], out[i]
 	}
 	s.attachReactions(r, out, c.UserID)
+	s.attachReceipts(r, out, c.UserID, convID)
 	writeJSON(w, 200, map[string]any{"messages": out})
+}
+
+// attachReceipts sets delivered/read on the viewer's own messages (DM receipts).
+// Prefer peer last_read_seq (Mattermost-style read watermark) plus message_receipts.
+func (s *Server) attachReceipts(r *http.Request, msgs []map[string]any, viewerID, convID string) {
+	if len(msgs) == 0 {
+		return
+	}
+	var peerReadSeq int64
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT COALESCE(MAX(last_read_seq), 0)
+		FROM conversation_members
+		WHERE conversation_id=$1 AND user_id<>$2 AND role <> 'pending'`,
+		convID, viewerID).Scan(&peerReadSeq)
+
+	ids := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		id, _ := m["id"].(string)
+		sid, _ := m["sender_id"].(string)
+		if id != "" && sid == viewerID {
+			ids = append(ids, id)
+		}
+	}
+	delivered := map[string]bool{}
+	read := map[string]bool{}
+	if len(ids) > 0 {
+		rows, err := s.db.Query(r.Context(), `
+			SELECT message_id::text, status FROM message_receipts
+			WHERE message_id = ANY($1::uuid[]) AND user_id <> $2`, ids, viewerID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var mid, st string
+				if rows.Scan(&mid, &st) != nil {
+					continue
+				}
+				if st == "read" {
+					read[mid] = true
+					delivered[mid] = true
+				} else if st == "delivered" {
+					delivered[mid] = true
+				}
+			}
+		}
+	}
+	for _, m := range msgs {
+		sid, _ := m["sender_id"].(string)
+		if sid != viewerID {
+			continue
+		}
+		id, _ := m["id"].(string)
+		seq, _ := m["seq"].(int64)
+		// JSON numbers from earlier scan may be int64 already in the map
+		if seq == 0 {
+			switch v := m["seq"].(type) {
+			case int64:
+				seq = v
+			case int:
+				seq = int64(v)
+			case float64:
+				seq = int64(v)
+			}
+		}
+		isRead := read[id] || (seq > 0 && seq <= peerReadSeq)
+		isDelivered := delivered[id] || isRead
+		m["delivered"] = isDelivered
+		m["read"] = isRead
+	}
 }
 
 // attachReactions adds a "reactions" array to each message map:
@@ -921,7 +990,9 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 	_, _ = s.db.Exec(r.Context(), `
 		INSERT INTO message_receipts(message_id, user_id, status) VALUES ($1,$2,'read')
 		ON CONFLICT DO NOTHING`, msgID, c.UserID)
-	s.hub.PublishToUsers([]string{sender}, ws.Event{Type: "message.read", Payload: map[string]any{"id": msgID, "by": c.UserID, "conversation_id": convID}})
+	s.hub.PublishToUsers([]string{sender}, ws.Event{Type: "message.read", Payload: map[string]any{
+		"id": msgID, "by": c.UserID, "conversation_id": convID, "seq": seq,
+	}})
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 

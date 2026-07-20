@@ -298,12 +298,19 @@ export function useChat() {
     if (type === "message.read") {
       const id = String(payload?.id ?? "");
       const convId = String(payload?.conversation_id ?? "");
+      const seq = Number(payload?.seq);
       if (!id || !convId) return;
       setMessages((prev) => ({
         ...prev,
-        [convId]: (prev[convId] ?? []).map((m) =>
-          m.id === id ? { ...m, read: true, delivered: true } : m
-        ),
+        [convId]: (prev[convId] ?? []).map((m) => {
+          if (!m.mine) return m;
+          if (m.id === id) return { ...m, read: true, delivered: true };
+          // Peer read watermark: all earlier own messages are read too.
+          if (Number.isFinite(seq) && seq > 0 && typeof m.seq === "number" && m.seq <= seq) {
+            return { ...m, read: true, delivered: true };
+          }
+          return m;
+        }),
       }));
       return;
     }
