@@ -20,7 +20,7 @@
 - [x] `deploy/retention.sql` for 90-day purge
 - [x] API retention loop + `POST /v1/admin/retention/run` + `PATCH /v1/admin/enterprises/{id}` (`retention_days`)
 - [x] `deploy/smoke_test.sh` for auth/messaging path
-- [ ] Load test ≥ 1000 WS connections
+- [x] Load / reconnect soak: `go run ./cmd/ws_soak -n 1000` (from `services/api`)
 - [ ] Restore drill (RPO ≤ 24h, RTO ≤ 4h)
 
 ## Observability
