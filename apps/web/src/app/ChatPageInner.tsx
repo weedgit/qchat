@@ -14,7 +14,8 @@ import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
-import { Conversation, Message } from "@/lib/types";
+import { Conversation, Message, formatLastSeen } from "@/lib/types";
+import { useTheme } from "@/lib/theme";
 
 const VOICE_MAX_SEC = 60;
 
@@ -33,20 +34,62 @@ function ConversationRow({
   conv,
   active,
   typing,
+  online,
   onClick,
+  onFavorite,
+  onMute,
+  onMarkUnread,
 }: {
   conv: Conversation;
   active: boolean;
   typing: TypingUser[];
+  online?: boolean;
   onClick: () => void;
+  onFavorite: () => void;
+  onMute: () => void;
+  onMarkUnread: () => void;
 }) {
   const typingLabel = formatTypingLabel(typing);
+  const isDM = conv.type === "dm";
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+    };
+  }, [menu]);
+
   return (
-    <div className={`conv-item ${active ? "active" : ""}`} onClick={onClick}>
-      <Avatar name={conv.title} url={conv.avatarUrl} size={50} />
+    <div
+      className={`conv-item ${active ? "active" : ""} ${conv.muted ? "muted-conv" : ""} ${
+        conv.favorite ? "favorited" : ""
+      }`}
+      onClick={onClick}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
+      <Avatar
+        name={conv.title}
+        url={conv.avatarUrl}
+        size={50}
+        showStatus={isDM}
+        online={online}
+      />
       <div className="conv-body">
         <div className="conv-top">
-          <span className="conv-title">{conv.title}</span>
+          <span className="conv-title">
+            {conv.favorite ? <span className="fav-mark" title="Favorite">★ </span> : null}
+            {conv.title}
+            {conv.muted ? <span className="mute-mark" title="Muted"> · muted</span> : null}
+          </span>
           <span className="conv-time">{fmtTime(conv.lastMessageAt)}</span>
         </div>
         <div className="conv-bottom">
@@ -67,12 +110,51 @@ function ConversationRow({
             )}
           </span>
           {conv.unreadCount > 0 && (
-            <span className="badge">
+            <span className={`badge ${conv.muted ? "muted-badge" : ""}`}>
               {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
             </span>
           )}
         </div>
       </div>
+      {menu && (
+        <div
+          className="ctx-menu conv-ctx"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            className="ctx-item"
+            onClick={() => {
+              onFavorite();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.pin} />
+            {conv.favorite ? "Unfavorite" : "Favorite"}
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => {
+              onMute();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={conv.muted ? ICONS.unmute : ICONS.mute} />
+            {conv.muted ? "Unmute" : "Mute"}
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => {
+              onMarkUnread();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.markUnread} />
+            Mark as unread
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -122,6 +204,11 @@ const ICONS = {
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
   mic: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M19 11a7 7 0 0 1-14 0 M12 18v4",
   stop: "M6 6h12v12H6z",
+  paperclip: "M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48",
+  pin: "M12 17v5 M9 10.76V3h6v7.76L19 14v1H5v-1l4-3.24z",
+  mute: "M11 5L6 9H2v6h4l5 4V5z M23 9l-6 6 M17 9l6 6",
+  unmute: "M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14",
+  markUnread: "M4 4h16v12H5.17L4 17.17V4z",
 } as const;
 
 const QUICK_EMOJIS = [
@@ -232,6 +319,22 @@ function Bubble({
               <audio controls preload="metadata" src={mediaAuthURL(msg.mediaUrl)} />
               <div className="voice-label">{msg.content || "Voice message"}</div>
             </div>
+          ) : msg.type === "image" && msg.mediaUrl && !msg.recalled ? (
+            <div className="media-image">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={mediaAuthURL(msg.mediaUrl)} alt={msg.content || "Photo"} />
+            </div>
+          ) : msg.type === "file" && msg.mediaUrl && !msg.recalled ? (
+            <a
+              className="media-file"
+              href={mediaAuthURL(msg.mediaUrl)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
+              <span>{msg.content || "File"}</span>
+            </a>
           ) : (
             msg.content
           )}
@@ -287,6 +390,7 @@ interface CtxMenuState {
 
 export default function ChatPageInner() {
   const chat = useChat();
+  const { theme, setTheme } = useTheme();
   const { openConversation } = chat;
   const params = useSearchParams();
   const router = useRouter();
@@ -304,6 +408,7 @@ export default function ChatPageInner() {
   const [voiceBusy, setVoiceBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const openedFromQuery = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -669,6 +774,17 @@ export default function ChatPageInner() {
                 <MenuIcon d={ICONS.settings} />
                 Settings
               </Link>
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  const order = ["dark", "light", "system"] as const;
+                  const i = order.indexOf(theme);
+                  setTheme(order[(i + 1) % order.length]);
+                }}
+              >
+                <MenuIcon d={ICONS.settings} />
+                Theme: {theme}
+              </button>
               <div className="ctx-sep" />
               <button className="ctx-item" onClick={logout}>
                 <MenuIcon d={ICONS.logout} />
@@ -697,7 +813,19 @@ export default function ChatPageInner() {
               conv={c}
               active={c.id === chat.activeId}
               typing={chat.typingByConv[c.id] ?? []}
+              online={
+                c.peerId
+                  ? chat.presenceByUser[c.peerId]?.online ?? c.peerOnline
+                  : undefined
+              }
               onClick={() => chat.openConversation(c.id)}
+              onFavorite={() =>
+                chat.updateConversationPrefs(c.id, { favorite: !c.favorite }).catch(() => {})
+              }
+              onMute={() =>
+                chat.updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => {})
+              }
+              onMarkUnread={() => chat.markConversationUnread(c.id).catch(() => {})}
             />
           ))}
         </div>
@@ -780,13 +908,30 @@ export default function ChatPageInner() {
                 title="View details"
                 onClick={() => setShowDetails(true)}
               >
-                <Avatar name={active.title} url={active.avatarUrl} size={38} />
+                <Avatar
+                  name={active.title}
+                  url={active.avatarUrl}
+                  size={38}
+                  showStatus={active.type === "dm"}
+                  online={
+                    active.peerId
+                      ? chat.presenceByUser[active.peerId]?.online ?? active.peerOnline
+                      : undefined
+                  }
+                />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="title">{active.title}</div>
                   <div className="sub">
                     {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
                       (active.type === "dm"
-                        ? "direct message"
+                        ? (() => {
+                            const p = active.peerId
+                              ? chat.presenceByUser[active.peerId]
+                              : undefined;
+                            const online = p?.online ?? active.peerOnline;
+                            if (online) return "online";
+                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
+                          })()
                         : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
                   </div>
                 </div>
@@ -886,6 +1031,34 @@ export default function ChatPageInner() {
                     </>
                   ) : (
                     <>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*,.pdf,audio/*,video/mp4,application/pdf"
+                        style={{ display: "none" }}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = "";
+                          if (!file || !chat.activeId) return;
+                          setSendError(null);
+                          const replyId = replyTo?.id;
+                          setReplyTo(null);
+                          try {
+                            await chat.sendMediaMessage(chat.activeId, file, replyId);
+                          } catch (err: any) {
+                            setSendError(err.message || "Upload failed");
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="attach-btn"
+                        title="Attach file"
+                        disabled={voiceBusy || !chat.activeId}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <MenuIcon d={ICONS.paperclip} style={{ width: 20, height: 20 }} />
+                      </button>
                       <textarea
                         ref={draftRef}
                         rows={1}

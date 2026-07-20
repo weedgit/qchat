@@ -31,6 +31,10 @@ export function useChat() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string>("member");
   const [typingByConv, setTypingByConv] = useState<Record<string, TypingUser[]>>({});
+  /** Mattermost-style presence keyed by user id. */
+  const [presenceByUser, setPresenceByUser] = useState<
+    Record<string, { online: boolean; lastActiveAt?: string }>
+  >({});
 
   const meRef = useRef<CurrentUser | null>(null);
   const activeIdRef = useRef<string | null>(null);
@@ -149,6 +153,17 @@ export function useChat() {
       const body = await api<any>("/v1/conversations");
       const list = asList(body, "conversations").map(normalizeConversation);
       setConversations(list);
+      setPresenceByUser((prev) => {
+        const next = { ...prev };
+        for (const c of list) {
+          if (!c.peerId) continue;
+          next[c.peerId] = {
+            online: Boolean(c.peerOnline),
+            lastActiveAt: c.peerLastActiveAt,
+          };
+        }
+        return next;
+      });
       setLoadError(null);
       return list;
     } catch (e: any) {
@@ -205,6 +220,25 @@ export function useChat() {
       const convId = String(payload?.conversation_id ?? "");
       const userId = String(payload?.user_id ?? "");
       if (convId && userId) clearTypingUser(convId, userId);
+      return;
+    }
+    // Mattermost status_change equivalent.
+    if (type === "presence.update" || type === "status_change") {
+      const userId = String(payload?.user_id ?? "");
+      if (!userId) return;
+      const online = Boolean(payload?.online ?? payload?.status === "online");
+      const lastActiveAt = String(payload?.last_active_at ?? "") || undefined;
+      setPresenceByUser((prev) => ({
+        ...prev,
+        [userId]: { online, lastActiveAt: lastActiveAt || prev[userId]?.lastActiveAt },
+      }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.peerId === userId
+            ? { ...c, peerOnline: online, peerLastActiveAt: lastActiveAt || c.peerLastActiveAt }
+            : c
+        )
+      );
       return;
     }
 
@@ -349,6 +383,10 @@ export function useChat() {
         (document.hidden || activeIdRef.current !== msg.conversationId)
       ) {
         const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
+        // Mattermost muted channels suppress push-style notifications.
+        if (conversation?.muted) {
+          /* skip */
+        } else {
         const notification = new Notification(
           msg.senderName || conversation?.title || "New message",
           {
@@ -365,6 +403,7 @@ export function useChat() {
           loadMessages(msg.conversationId);
           notification.close();
         };
+        }
       }
     }
   }, [loadConversations, loadMessages, clearTypingUser, upsertTypingUser]);
@@ -517,6 +556,90 @@ export function useChat() {
     const r = s % 60;
     return `Voice message (${m}:${r.toString().padStart(2, "0")})`;
   }
+
+  const sendMediaMessage = useCallback(
+    async (convId: string, file: File, replyToId?: string) => {
+      stopTyping(convId);
+      const isImage = file.type.startsWith("image/");
+      const type = isImage ? "image" : "file";
+      const preview = isImage ? "Photo" : file.name || "File";
+      const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tempId = clientMsgId;
+      const localUrl = URL.createObjectURL(file);
+      const optimistic: Message = {
+        id: tempId,
+        conversationId: convId,
+        senderId: meRef.current?.id ?? "me",
+        content: preview,
+        type,
+        mediaUrl: localUrl,
+        createdAt: new Date().toISOString(),
+        mine: true,
+        pending: true,
+        clientMsgId,
+        replyToId,
+      };
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: [...(prev[convId] ?? []), optimistic],
+      }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                lastMessage: preview,
+                lastMessageAt: optimistic.createdAt,
+                lastMessageSender: meRef.current?.nickname || meRef.current?.username,
+                lastMessageMine: true,
+              }
+            : c
+        )
+      );
+      try {
+        const uploaded = await uploadMedia(file, isImage ? "image" : "file", file.name || `upload.${isImage ? "jpg" : "bin"}`);
+        const body = await api<any>(`/v1/conversations/${convId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({
+            type,
+            body: preview,
+            media_url: uploaded.url,
+            client_msg_id: clientMsgId,
+            reply_to_id: replyToId || undefined,
+          }),
+        });
+        const saved = normalizeMessage(
+          {
+            ...body,
+            conversation_id: convId,
+            type,
+            body: body?.body ?? preview,
+            media_url: body?.media_url ?? uploaded.url,
+            sender_id: meRef.current?.id,
+          },
+          meRef.current?.id
+        );
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === tempId || m.clientMsgId === clientMsgId
+              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              : m
+          ),
+        }));
+        URL.revokeObjectURL(localUrl);
+      } catch (e: any) {
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === tempId ? { ...m, pending: false, failed: true } : m
+          ),
+        }));
+        throw e;
+      }
+    },
+    [stopTyping]
+  );
 
   const sendVoiceMessage = useCallback(
     async (convId: string, blob: Blob, durationSec: number, replyToId?: string) => {
@@ -702,6 +825,40 @@ export function useChat() {
     await loadConversations();
   }, [loadConversations]);
 
+  const updateConversationPrefs = useCallback(
+    async (convId: string, prefs: { favorite?: boolean; muted?: boolean }) => {
+      const res = await api<any>(`/v1/conversations/${convId}/prefs`, {
+        method: "PATCH",
+        body: JSON.stringify(prefs),
+      });
+      setConversations((prev) => {
+        const next = prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                favorite: res?.favorite != null ? Boolean(res.favorite) : c.favorite,
+                muted: res?.muted != null ? Boolean(res.muted) : c.muted,
+              }
+            : c
+        );
+        return [...next].sort((a, b) => {
+          if (Boolean(a.favorite) !== Boolean(b.favorite)) return a.favorite ? -1 : 1;
+          return (b.lastMessageAt || "").localeCompare(a.lastMessageAt || "");
+        });
+      });
+    },
+    []
+  );
+
+  const markConversationUnread = useCallback(async (convId: string) => {
+    const res = await api<any>(`/v1/conversations/${convId}/unread`, { method: "POST" });
+    const unread = Number(res?.unread_count) || 1;
+    setConversations((prev) =>
+      prev.map((c) => (c.id === convId ? { ...c, unreadCount: Math.max(1, unread) } : c))
+    );
+    if (activeIdRef.current === convId) setActiveId(null);
+  }, []);
+
   return {
     me,
     conversations,
@@ -711,16 +868,20 @@ export function useChat() {
     loadError,
     myRole,
     typingByConv,
+    presenceByUser,
     notifyTyping,
     stopTyping,
     openConversation,
     openDM,
     sendMessage,
+    sendMediaMessage,
     sendVoiceMessage,
     retryMessage,
     recallMessage,
     forwardMessage,
     reactMessage,
+    updateConversationPrefs,
+    markConversationUnread,
     reload: loadConversations,
   };
 }

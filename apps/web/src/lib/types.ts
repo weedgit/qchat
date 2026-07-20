@@ -16,6 +16,11 @@ export interface Conversation {
   lastMessageSender?: string;
   lastMessageMine?: boolean;
   unreadCount: number;
+  peerId?: string;
+  peerOnline?: boolean;
+  peerLastActiveAt?: string;
+  favorite?: boolean;
+  muted?: boolean;
 }
 
 export interface Reactor {
@@ -89,6 +94,11 @@ export function normalizeConversation(raw: any): Conversation {
     lastMessageSender: str(raw?.last_message_sender) || undefined,
     lastMessageMine: Boolean(raw?.last_message_mine),
     unreadCount: Number(raw?.unread_count ?? raw?.unread ?? 0) || 0,
+    peerId: str(raw?.peer_id) || undefined,
+    peerOnline: raw?.peer_online != null ? Boolean(raw.peer_online) : undefined,
+    peerLastActiveAt: str(raw?.peer_last_active_at) || undefined,
+    favorite: Boolean(raw?.favorite),
+    muted: Boolean(raw?.muted),
   };
 }
 
@@ -98,6 +108,8 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
   const mediaUrl = str(raw?.media_url ?? raw?.mediaUrl) || undefined;
   let content = str(raw?.body ?? raw?.content ?? raw?.text);
   if (!content && type === "voice") content = "Voice message";
+  if (!content && type === "image") content = "Photo";
+  if (!content && type === "file") content = "File";
   return {
     id: str(raw?.id ?? raw?.message_id ?? raw?.client_msg_id ?? crypto.randomUUID()),
     conversationId: str(raw?.conversation_id ?? raw?.conversationId),
@@ -157,4 +169,16 @@ export function mediaURL(path?: string | null): string | undefined {
     process.env.NEXT_PUBLIC_API_URL ??
     (process.env.NODE_ENV === "development" ? "http://localhost:8080" : "");
   return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
+}
+
+/** Mattermost-style last-online label for offline peers. */
+export function formatLastSeen(iso?: string): string {
+  if (!iso) return "offline";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "offline";
+  const diff = Date.now() - d.getTime();
+  if (diff < 60_000) return "last seen just now";
+  if (diff < 3_600_000) return `last seen ${Math.floor(diff / 60_000)} min ago`;
+  if (diff < 86_400_000) return `last seen ${Math.floor(diff / 3_600_000)} h ago`;
+  return `last seen ${d.toLocaleDateString([], { month: "short", day: "numeric" })}`;
 }

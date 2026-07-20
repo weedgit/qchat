@@ -30,16 +30,21 @@ export default function Avatar({
   name,
   url,
   size = 48,
+  online,
+  showStatus = false,
 }: {
   name: string;
   url?: string;
   size?: number;
+  online?: boolean;
+  showStatus?: boolean;
 }) {
   const initial = (name || "?").trim().charAt(0).toUpperCase() || "?";
   let hash = 0;
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   const bg = PALETTE[Math.abs(hash) % PALETTE.length];
   const src = resolveURL(url);
+  const dot = Math.max(8, Math.round(size * 0.28));
 
   return (
     <div
@@ -51,6 +56,13 @@ export default function Avatar({
         <img src={src} alt={name} width={size} height={size} style={{ objectFit: "cover" }} />
       ) : (
         initial
+      )}
+      {showStatus && (
+        <span
+          className={`status-dot ${online ? "on" : ""}`}
+          style={{ width: dot, height: dot }}
+          title={online ? "Online" : "Offline"}
+        />
       )}
     </div>
   );

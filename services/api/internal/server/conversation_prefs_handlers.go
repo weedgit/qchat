@@ -1,0 +1,81 @@
+package server
+
+import (
+	"net/http"
+)
+
+// handleConversationPrefs mirrors Mattermost favoriteChannel / muteChannel
+// (notify_props) as per-member conversation preferences.
+func (s *Server) handleConversationPrefs(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+	role := s.memberRole(r, convID, c.UserID)
+	if role == "" || role == "pending" {
+		writeErrCode(w, 403, "forbidden", "forbidden")
+		return
+	}
+	var req struct {
+		Favorite *bool `json:"favorite"`
+		Muted    *bool `json:"muted"`
+	}
+	if err := decodeJSON(r, &req); err != nil || (req.Favorite == nil && req.Muted == nil) {
+		writeErrCode(w, 400, "invalid_request", "favorite or muted required")
+		return
+	}
+	if req.Favorite != nil {
+		_, err := s.db.Exec(r.Context(), `
+			UPDATE conversation_members SET favorite=$3
+			WHERE conversation_id=$1 AND user_id=$2`, convID, c.UserID, *req.Favorite)
+		if err != nil {
+			writeErrCode(w, 500, "update_failed", "update failed")
+			return
+		}
+	}
+	if req.Muted != nil {
+		_, err := s.db.Exec(r.Context(), `
+			UPDATE conversation_members SET muted=$3
+			WHERE conversation_id=$1 AND user_id=$2`, convID, c.UserID, *req.Muted)
+		if err != nil {
+			writeErrCode(w, 500, "update_failed", "update failed")
+			return
+		}
+	}
+	var favorite, muted bool
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT favorite, muted FROM conversation_members
+		WHERE conversation_id=$1 AND user_id=$2`, convID, c.UserID).Scan(&favorite, &muted)
+	writeJSON(w, 200, map[string]any{"id": convID, "favorite": favorite, "muted": muted})
+}
+
+// handleMarkUnread mirrors Mattermost setUnreadPost / mark channel unread by
+// rewinding last_read_seq so the conversation shows as unread again.
+func (s *Server) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+	role := s.memberRole(r, convID, c.UserID)
+	if role == "" || role == "pending" {
+		writeErrCode(w, 403, "forbidden", "forbidden")
+		return
+	}
+	var lastSeq int64
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT COALESCE(MAX(seq), 0) FROM messages
+		WHERE conversation_id=$1 AND recalled=FALSE`, convID).Scan(&lastSeq)
+	target := lastSeq - 1
+	if target < 0 {
+		target = 0
+	}
+	_, err := s.db.Exec(r.Context(), `
+		UPDATE conversation_members SET last_read_seq=$3
+		WHERE conversation_id=$1 AND user_id=$2`, convID, c.UserID, target)
+	if err != nil {
+		writeErrCode(w, 500, "update_failed", "update failed")
+		return
+	}
+	var unread int64
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT COUNT(*)::bigint FROM messages
+		WHERE conversation_id=$1 AND seq > $2 AND recalled=FALSE AND sender_id<>$3`,
+		convID, target, c.UserID).Scan(&unread)
+	writeJSON(w, 200, map[string]any{"id": convID, "last_read_seq": target, "unread_count": unread})
+}
