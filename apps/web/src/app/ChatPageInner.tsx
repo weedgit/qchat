@@ -23,6 +23,7 @@ import { Conversation, Message, conversationDisplayName, formatLastSeen } from "
 import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
+import { dataTransferHasFiles, filesFromDataTransfer } from "@/lib/fileDrop";
 
 const VOICE_MAX_SEC = 60;
 
@@ -42,19 +43,25 @@ function ConversationRow({
   active,
   typing,
   online,
+  dropHover,
   onClick,
   onFavorite,
   onMute,
   onMarkUnread,
+  onDropHover,
+  onFilesDrop,
 }: {
   conv: Conversation;
   active: boolean;
   typing: TypingUser[];
   online?: boolean;
+  dropHover?: boolean;
   onClick: () => void;
   onFavorite: () => void;
   onMute: () => void;
   onMarkUnread: () => void;
+  onDropHover?: (hover: boolean) => void;
+  onFilesDrop?: (files: File[]) => void;
 }) {
   const typingLabel = formatTypingLabel(typing);
   const isDM = conv.type === "dm";
@@ -75,12 +82,37 @@ function ConversationRow({
     <div
       className={`conv-item ${active ? "active" : ""} ${conv.muted ? "muted-conv" : ""} ${
         conv.favorite ? "favorited" : ""
-      }`}
+      } ${dropHover ? "drop-hover" : ""}`}
       onClick={onClick}
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
         setMenu({ x: e.clientX, y: e.clientY });
+      }}
+      onDragEnter={(e) => {
+        if (!dataTransferHasFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onDropHover?.(true);
+      }}
+      onDragOver={(e) => {
+        if (!dataTransferHasFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "copy";
+        onDropHover?.(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        onDropHover?.(false);
+      }}
+      onDrop={(e) => {
+        if (!dataTransferHasFiles(e.dataTransfer)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onDropHover?.(false);
+        const files = filesFromDataTransfer(e.dataTransfer);
+        if (files.length) onFilesDrop?.(files);
       }}
     >
       <Avatar
@@ -426,6 +458,11 @@ export default function ChatPageInner() {
   const [draft, setDraft] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  /** Conversation id under file drag in the sidebar list (Mattermost channel drop). */
+  const [dropHoverConvId, setDropHoverConvId] = useState<string | null>(null);
+  /** File drag over the open chat history pane. */
+  const [chatDropActive, setChatDropActive] = useState(false);
+  const chatDropDepthRef = useRef(0);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [forwardIds, setForwardIds] = useState<string[] | null>(null);
@@ -813,6 +850,25 @@ export default function ChatPageInner() {
     if (replyTo || editingMessage) draftRef.current?.focus();
   }, [replyTo, editingMessage]);
 
+  async function attachDroppedFiles(convId: string, files: File[]) {
+    if (!convId || files.length === 0) return;
+    setSendError(null);
+    setDropHoverConvId(null);
+    setChatDropActive(false);
+    chatDropDepthRef.current = 0;
+    if (chat.activeId !== convId) {
+      chat.openConversation(convId);
+    }
+    for (const file of files) {
+      try {
+        await chat.sendMediaMessage(convId, file);
+      } catch (err: any) {
+        setSendError(err?.message || "Upload failed");
+        break;
+      }
+    }
+  }
+
   async function send() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
@@ -1136,6 +1192,7 @@ export default function ChatPageInner() {
               key={c.id}
               conv={c}
               active={c.id === chat.activeId}
+              dropHover={dropHoverConvId === c.id}
               typing={chat.typingByConv[c.id] ?? []}
               online={
                 c.peerId
@@ -1150,6 +1207,10 @@ export default function ChatPageInner() {
                 chat.updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => {})
               }
               onMarkUnread={() => chat.markConversationUnread(c.id).catch(() => {})}
+              onDropHover={(hover) => setDropHoverConvId(hover ? c.id : null)}
+              onFilesDrop={(files) => {
+                attachDroppedFiles(c.id, files).catch(() => {});
+              }}
             />
           ))}
             </>
@@ -1368,7 +1429,45 @@ export default function ChatPageInner() {
               </div>
             )}
 
-            <div className="msg-scroll" ref={scrollRef}>
+            <div
+              className={`msg-scroll ${chatDropActive ? "drop-target" : ""}`}
+              ref={scrollRef}
+              onDragEnter={(e) => {
+                if (!dataTransferHasFiles(e.dataTransfer) || !chat.activeId) return;
+                e.preventDefault();
+                e.stopPropagation();
+                chatDropDepthRef.current += 1;
+                setChatDropActive(true);
+              }}
+              onDragOver={(e) => {
+                if (!dataTransferHasFiles(e.dataTransfer) || !chat.activeId) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "copy";
+              }}
+              onDragLeave={(e) => {
+                if (!dataTransferHasFiles(e.dataTransfer)) return;
+                e.stopPropagation();
+                chatDropDepthRef.current = Math.max(0, chatDropDepthRef.current - 1);
+                if (chatDropDepthRef.current === 0) setChatDropActive(false);
+              }}
+              onDrop={(e) => {
+                if (!dataTransferHasFiles(e.dataTransfer) || !chat.activeId) return;
+                e.preventDefault();
+                e.stopPropagation();
+                chatDropDepthRef.current = 0;
+                setChatDropActive(false);
+                const files = filesFromDataTransfer(e.dataTransfer);
+                if (files.length) {
+                  attachDroppedFiles(chat.activeId, files).catch(() => {});
+                }
+              }}
+            >
+              {chatDropActive && (
+                <div className="msg-drop-overlay" aria-hidden>
+                  Drop to attach
+                </div>
+              )}
               {activeMessages.length === 0 && (
                 <div className="empty-state" style={{ minHeight: 200 }}>
                   <div className="muted">No messages here yet…</div>
