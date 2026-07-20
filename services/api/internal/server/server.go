@@ -113,6 +113,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/calls/{id}/decline", s.auth(s.handleDeclineCall))
 	s.mux.HandleFunc("POST /v1/calls/{id}/hangup", s.auth(s.handleHangupCall))
 	s.mux.HandleFunc("POST /v1/push/register", s.auth(s.handlePushRegister))
+	s.mux.HandleFunc("GET /v1/push/vapid", s.handlePushVAPID)
 
 	// WebSocket
 	s.mux.HandleFunc("GET /v1/ws", s.handleWS)

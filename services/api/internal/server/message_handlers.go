@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -789,6 +790,11 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		"mentions": req.Mentions, "mention_all": req.MentionAll,
 	}
 	s.hub.PublishToUsers(memberIDs, ws.Event{Type: "message.new", Payload: payload})
+	preview := req.Body
+	if len([]rune(preview)) > 80 {
+		preview = string([]rune(preview)[:80]) + "…"
+	}
+	go s.notifyPush(context.Background(), memberIDs, c.UserID, "New message", preview, "qchat-"+convID)
 	writeJSON(w, 201, payload)
 }
 

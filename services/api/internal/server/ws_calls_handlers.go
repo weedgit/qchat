@@ -186,32 +186,3 @@ func (s *Server) broadcastTyping(c *ws.Client, eventType, convID string) {
 		},
 	})
 }
-
-func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
-	c := claimsFrom(r)
-	var req struct {
-		Platform string `json:"platform"`
-		Token    string `json:"token"`
-	}
-	if err := decodeJSON(r, &req); err != nil || req.Token == "" {
-		writeErr(w, 400, "token required")
-		return
-	}
-	switch req.Platform {
-	case "web", "ios", "android", "huawei", "xiaomi", "oppo", "vivo":
-	default:
-		writeErr(w, 400, "unsupported platform")
-		return
-	}
-	_, err := s.db.Exec(r.Context(), `
-		INSERT INTO push_devices(user_id, platform, token) VALUES ($1,$2,$3)
-		ON CONFLICT (user_id, token) DO UPDATE SET platform=EXCLUDED.platform`, c.UserID, req.Platform, req.Token)
-	if err != nil {
-		writeErr(w, 500, "register failed")
-		return
-	}
-	writeJSON(w, 200, map[string]any{
-		"ok": true,
-		"adapters": []string{"web-push", "apns", "fcm", "huawei", "xiaomi", "oppo", "vivo"},
-	})
-}
