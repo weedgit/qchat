@@ -1351,4 +1351,50 @@ select:focus {
   background: var(--bg-panel-2);
   border-radius: var(--radius);
 }
+.forward-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.forward-modal-card {
+  width: min(360px, 100%);
+  max-height: min(520px, 90vh);
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.forward-modal-list {
+  flex: 1;
+  overflow: auto;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.forward-modal-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.forward-modal-row:hover {
+  background: var(--bg-hover);
+}
+.forward-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
 .edit-banner { color: #e6b422; }

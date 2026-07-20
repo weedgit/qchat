@@ -1745,37 +1745,113 @@ export default function ChatPageInner() {
       )}
 
       {forwardIds && forwardIds.length > 0 && (
-        <div className="card" style={{ position: "fixed", right: 24, bottom: 24, width: 320, zIndex: 20 }}>
-          <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>
-            Forward {forwardIds.length > 1 ? `${forwardIds.length} messages` : "message"} to…
-          </h3>
-          <div style={{ maxHeight: 240, overflow: "auto" }}>
-            {chat.conversations
-              .filter((c) => c.id !== chat.activeId)
-              .map((c) => (
-                <div className="list-row" key={c.id}>
-                  <div style={{ flex: 1 }}>{c.title}</div>
-                  <button
-                    className="btn"
-                    style={{ flex: "none" }}
-                    onClick={async () => {
-                      for (const id of forwardIds) {
-                        await chat.forwardMessage(id, [c.id]);
-                      }
-                      setForwardIds(null);
-                      clearSelection();
-                    }}
-                  >
-                    Send
-                  </button>
-                </div>
-              ))}
-          </div>
-          <button className="btn-ghost" style={{ marginTop: 8 }} onClick={() => setForwardIds(null)}>
-            Cancel
-          </button>
-        </div>
+        <ForwardPicker
+          conversations={chat.conversations.filter((c) => c.id !== chat.activeId)}
+          messageCount={forwardIds.length}
+          onCancel={() => setForwardIds(null)}
+          onSend={async (targetIds) => {
+            for (const id of forwardIds) {
+              await chat.forwardMessage(id, targetIds);
+            }
+            setForwardIds(null);
+            clearSelection();
+          }}
+        />
       )}
     </AppShell>
+  );
+}
+
+/** Mattermost ForwardPostModal-style picker; Qchat API already accepts multiple conversation_ids. */
+function ForwardPicker({
+  conversations,
+  messageCount,
+  onCancel,
+  onSend,
+}: {
+  conversations: Conversation[];
+  messageCount: number;
+  onCancel: () => void;
+  onSend: (conversationIds: string[]) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter((c) => c.title.toLowerCase().includes(q));
+  }, [conversations, filter]);
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function submit() {
+    if (selected.size === 0 || busy) return;
+    setBusy(true);
+    try {
+      await onSend(Array.from(selected));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="forward-modal" role="dialog" aria-label="Forward messages">
+      <div className="forward-modal-card">
+        <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>
+          Forward {messageCount > 1 ? `${messageCount} messages` : "message"} to…
+        </h3>
+        <input
+          placeholder="Search conversations"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          style={{ marginBottom: 8 }}
+        />
+        <div className="forward-modal-list">
+          {filtered.length === 0 && <div className="muted">No conversations</div>}
+          {filtered.map((c) => (
+            <label key={c.id} className="forward-modal-row">
+              <input
+                type="checkbox"
+                checked={selected.has(c.id)}
+                onChange={() => toggle(c.id)}
+              />
+              <Avatar name={c.title} url={c.avatarUrl} size={32} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontWeight: 600 }}>{c.title}</span>
+                <span className="muted" style={{ display: "block", fontSize: 12 }}>
+                  {c.type === "dm" ? "Direct message" : "Group"}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="forward-modal-actions">
+          <button className="btn-ghost" type="button" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="btn"
+            type="button"
+            disabled={busy || selected.size === 0}
+            onClick={() => submit().catch(() => {})}
+          >
+            {busy
+              ? "Sending…"
+              : selected.size > 0
+                ? `Send to ${selected.size}`
+                : "Select targets"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
