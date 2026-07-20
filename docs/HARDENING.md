@@ -9,7 +9,7 @@
 - [x] Admin message access requires reason + audit log
 - [x] Electron contextIsolation + sandbox
 - [ ] TLS termination (nginx/caddy) in production
-- [ ] Rotate `QCHAT_JWT_SECRET`
+- [x] Rotate `QCHAT_JWT_SECRET` — `deploy/rotate-jwt-secret.sh` + `qchat-api.env.example`; production refuses weak default (`QCHAT_ENV=production`)
 - [ ] Penetration test before public launch
 - [ ] Rate limits at reverse proxy
 

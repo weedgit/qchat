@@ -12,3 +12,5 @@ services/api/bin/
 apps/desktop/node_modules/
 apps/mobile/.dart_tool/
 apps/mobile/build/
+# Local deploy secrets (create via example + rotate-jwt-secret.sh)
+deploy/qchat-api.env
