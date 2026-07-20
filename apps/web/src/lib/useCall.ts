@@ -10,7 +10,7 @@ import {
   type RemoteTrackPublication,
   type RemoteParticipant,
 } from "livekit-client";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 
 export type CallKind = "voice" | "video";
 
@@ -54,6 +54,7 @@ export function useCall(opts: {
 
   const roomRef = useRef<Room | null>(null);
   const activeRef = useRef<ActiveCall | null>(null);
+  const hangupInFlightRef = useRef<string | null>(null);
   activeRef.current = active;
 
   const disconnectRoom = useCallback(async () => {
@@ -67,6 +68,21 @@ export function useCall(opts: {
       }
     }
   }, []);
+
+  const hangupCallId = useCallback(
+    async (callId: string) => {
+      if (!callId || hangupInFlightRef.current === callId) return;
+      hangupInFlightRef.current = callId;
+      try {
+        await api(`/v1/calls/${callId}/hangup`, { method: "POST" });
+      } catch {
+        /* already ended is fine */
+      } finally {
+        if (hangupInFlightRef.current === callId) hangupInFlightRef.current = null;
+      }
+    },
+    []
+  );
 
   const attachTrack = useCallback(
     (track: RemoteTrack | LocalTrackPublication["track"], participantLocal: boolean) => {
@@ -96,10 +112,13 @@ export function useCall(opts: {
         room.on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
           if (pub.track) attachTrack(pub.track, true);
         });
+        // LiveKit drop must end the server session or the next call hits call_in_progress.
         room.on(RoomEvent.Disconnected, () => {
-          if (activeRef.current?.status === "active") {
-            setActive(null);
-          }
+          const cur = activeRef.current;
+          if (!cur || cur.status !== "active") return;
+          const id = cur.callId;
+          setActive(null);
+          hangupCallId(id).catch(() => {});
         });
 
         await room.connect(url, token);
@@ -113,7 +132,6 @@ export function useCall(opts: {
         }
         setMicMuted(false);
 
-        // Attach already-subscribed remote tracks
         room.remoteParticipants.forEach((p) => {
           p.trackPublications.forEach((pub) => {
             if (pub.track) attachTrack(pub.track, false);
@@ -124,16 +142,20 @@ export function useCall(opts: {
         });
       } catch (e: any) {
         setError(e?.message || "Failed to connect media");
+        const cur = activeRef.current;
         await disconnectRoom();
+        if (cur?.callId) {
+          setActive(null);
+          await hangupCallId(cur.callId);
+        }
         throw e;
       } finally {
         setConnecting(false);
       }
     },
-    [attachTrack, disconnectRoom]
+    [attachTrack, disconnectRoom, hangupCallId]
   );
 
-  // Re-attach when video elements mount
   useEffect(() => {
     const room = roomRef.current;
     if (!room) return;
@@ -193,10 +215,28 @@ export function useCall(opts: {
   const startCall = useCallback(
     async (conversationId: string, kind: CallKind) => {
       setError(null);
-      const res = await api<any>("/v1/calls", {
-        method: "POST",
-        body: JSON.stringify({ conversation_id: conversationId, kind }),
-      });
+      const attempt = async () =>
+        api<any>("/v1/calls", {
+          method: "POST",
+          body: JSON.stringify({ conversation_id: conversationId, kind }),
+        });
+      let res: any;
+      try {
+        res = await attempt();
+      } catch (e: any) {
+        // Clear orphaned server session (LiveKit drop without hangup) then retry once.
+        if (e instanceof ApiError && e.status === 409) {
+          const stuckId = String((e.body as any)?.call_id ?? "");
+          if (stuckId) {
+            await hangupCallId(stuckId);
+            res = await attempt();
+          } else {
+            throw e;
+          }
+        } else {
+          throw e;
+        }
+      }
       const callId = String(res?.call_id ?? res?.id ?? "");
       setActive({
         callId,
@@ -205,11 +245,9 @@ export function useCall(opts: {
         status: "ringing",
         role: "caller",
       });
-      // Stay in ringing until call.answered; keep token for when media starts.
-      // Caller connects only after answer (avoids empty room wait UX).
       return res;
     },
-    []
+    [hangupCallId]
   );
 
   const answerCall = useCallback(async () => {
@@ -246,8 +284,8 @@ export function useCall(opts: {
     setActive(null);
     setIncoming(null);
     await disconnectRoom();
-    await api(`/v1/calls/${id}/hangup`, { method: "POST" }).catch(() => {});
-  }, [disconnectRoom]);
+    await hangupCallId(id);
+  }, [disconnectRoom, hangupCallId]);
 
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;

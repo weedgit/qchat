@@ -60,12 +60,29 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var existing string
+	var existingStatus string
+	var existingCreated time.Time
 	_ = s.db.QueryRow(r.Context(), `
-		SELECT id::text FROM call_sessions
+		SELECT id::text, status, created_at FROM call_sessions
 		WHERE conversation_id=$1 AND status IN ('ringing','active')
-		ORDER BY created_at DESC LIMIT 1`, req.ConversationID).Scan(&existing)
+		ORDER BY created_at DESC LIMIT 1`, req.ConversationID).Scan(&existing, &existingStatus, &existingCreated)
 	if existing != "" {
-		writeErrCode(w, 409, "call_in_progress", "a call is already in progress")
+		// Auto-expire abandoned rings (callee never answered / caller never cancelled).
+		staleRing := existingStatus == "ringing" && time.Since(existingCreated) > 90*time.Second
+		if staleRing {
+			_, _ = s.db.Exec(r.Context(), `
+				UPDATE call_sessions SET status='ended', ended_at=now()
+				WHERE id=$1 AND status='ringing'`, existing)
+			existing = ""
+		}
+	}
+	if existing != "" {
+		writeJSON(w, 409, map[string]any{
+			"code":    "call_in_progress",
+			"message": "a call is already in progress",
+			"error":   "a call is already in progress",
+			"call_id": existing,
+		})
 		return
 	}
 
