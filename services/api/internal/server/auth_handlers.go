@@ -162,14 +162,15 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	row := map[string]any{}
-	var id, ent, phone, username, display, realName, region, sig, avatar, vis, fp, role string
+	var id, ent, phone, username, display, realName, region, sig, avatar, vis, fp, role, status, statusText string
 	var age *int
 	var banned bool
 	err := s.db.QueryRow(r.Context(), `
 		SELECT id::text, enterprise_id::text, phone, username, display_name, real_name, age, region, signature,
-		       avatar_url, profile_visibility, friend_privacy, role, banned
+		       avatar_url, profile_visibility, friend_privacy, role, banned,
+		       COALESCE(status,'offline'), COALESCE(status_text,'')
 		FROM users WHERE id=$1`, c.UserID).
-		Scan(&id, &ent, &phone, &username, &display, &realName, &age, &region, &sig, &avatar, &vis, &fp, &role, &banned)
+		Scan(&id, &ent, &phone, &username, &display, &realName, &age, &region, &sig, &avatar, &vis, &fp, &role, &banned, &status, &statusText)
 	if err != nil {
 		writeErr(w, 404, "not found")
 		return
@@ -188,6 +189,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	row["friend_privacy"] = fp
 	row["role"] = role
 	row["banned"] = banned
+	row["status"] = status
+	row["status_text"] = statusText
 	writeJSON(w, 200, row)
 }
 

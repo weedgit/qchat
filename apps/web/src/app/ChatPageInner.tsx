@@ -395,6 +395,7 @@ interface CtxMenuState {
 export default function ChatPageInner() {
   const chat = useChat();
   const { theme, setTheme } = useTheme();
+  const [myStatus, setMyStatus] = useState<"online" | "away" | "dnd" | "offline">("online");
   const { openConversation } = chat;
   const params = useSearchParams();
   const router = useRouter();
@@ -562,6 +563,17 @@ export default function ChatPageInner() {
     clearToken();
     router.replace("/login");
   }
+
+  useEffect(() => {
+    api<any>("/v1/me")
+      .then((u) => {
+        const st = String(u?.status ?? "online");
+        if (st === "online" || st === "away" || st === "dnd" || st === "offline") {
+          setMyStatus(st);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -810,6 +822,22 @@ export default function ChatPageInner() {
               >
                 <MenuIcon d={ICONS.settings} />
                 Theme: {theme}
+              </button>
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  const order = ["online", "away", "dnd", "offline"] as const;
+                  const i = order.indexOf(myStatus);
+                  const next = order[(i + 1) % order.length];
+                  setMyStatus(next);
+                  api("/v1/me/status", {
+                    method: "PUT",
+                    body: JSON.stringify({ status: next }),
+                  }).catch(() => {});
+                }}
+              >
+                <MenuIcon d={ICONS.user} />
+                Status: {myStatus}
               </button>
               <div className="ctx-sep" />
               <button className="ctx-item" onClick={logout}>
