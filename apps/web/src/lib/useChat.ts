@@ -471,43 +471,77 @@ export function useChat() {
     }
   }, [loadConversations, loadMessages, clearTypingUser, upsertTypingUser]);
 
+  const handleIncomingRef = useRef(handleIncoming);
+  handleIncomingRef.current = handleIncoming;
+
   useEffect(() => {
     if (!getToken()) return;
     let disposed = false;
 
     function connect() {
       if (disposed) return;
+      // Close any prior socket before opening a new one (Mattermost WebSocketClient reconnect).
+      if (wsRef.current && wsRef.current.readyState < WebSocket.CLOSING) {
+        try {
+          wsRef.current.onclose = null;
+          wsRef.current.close();
+        } catch {
+          /* ignore */
+        }
+      }
       const ws = new WebSocket(wsUrl());
       wsRef.current = ws;
       ws.onopen = () => {
+        if (disposed || wsRef.current !== ws) return;
         setConnected(true);
         backoffRef.current = 1000;
       };
       ws.onmessage = (ev) => {
         try {
-          handleIncoming(JSON.parse(ev.data));
+          handleIncomingRef.current(JSON.parse(ev.data));
         } catch {
           /* ignore */
         }
       };
       ws.onclose = () => {
-        setConnected(false);
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+          setConnected(false);
+        }
         if (!disposed) {
           const delay = Math.min(backoffRef.current, 15000);
           backoffRef.current = Math.min(delay * 2, 15000);
           retryRef.current = setTimeout(connect, delay);
         }
       };
-      ws.onerror = () => ws.close();
+      ws.onerror = () => {
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+      };
     }
 
     connect();
     return () => {
       disposed = true;
       if (retryRef.current) clearTimeout(retryRef.current);
-      wsRef.current?.close();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        try {
+          ws.onclose = null;
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      setConnected(false);
     };
-  }, [handleIncoming]);
+    // Intentionally empty: keep one long-lived socket. Handlers use refs (Mattermost WS pattern).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const openConversation = useCallback(
     async (id: string) => {

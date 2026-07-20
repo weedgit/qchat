@@ -48,13 +48,28 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) writePump(c *ws.Client) {
+	// Keepalive so clients behind idle proxies stay up (Mattermost WebSocket ping).
+	ticker := time.NewTicker(25 * time.Second)
 	defer func() {
+		ticker.Stop()
 		_ = c.Conn.Close()
 	}()
-	for msg := range c.Send {
-		_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			return
+	for {
+		select {
+		case msg, ok := <-c.Send:
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if !ok {
+				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				return
+			}
+		case <-ticker.C:
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -80,6 +95,8 @@ func (s *Server) readPump(c *ws.Client) {
 		if err != nil {
 			break
 		}
+		// Extend deadline on any client frame (typing, etc.), not only pong.
+		_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		s.handleClientWS(c, data)
 	}
 }
