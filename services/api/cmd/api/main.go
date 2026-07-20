@@ -41,6 +41,10 @@ func main() {
 
 	hub := ws.NewHub()
 	srv := server.New(cfg, pool, hub)
+	runCtx, runCancel := context.WithCancel(context.Background())
+	defer runCancel()
+	srv.StartRetentionLoop(runCtx, 24*time.Hour)
+
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           srv.Handler(),
@@ -57,6 +61,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+	runCancel()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = httpServer.Shutdown(shutdownCtx)

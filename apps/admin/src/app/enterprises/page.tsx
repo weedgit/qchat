@@ -30,12 +30,17 @@ export default function EnterprisesPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [retentionDraft, setRetentionDraft] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const body = await api<any>("/v1/admin/enterprises");
-      setRows(asList(body, "enterprises").map(normalize));
+      const list = asList(body, "enterprises").map(normalize);
+      setRows(list);
+      const drafts: Record<string, string> = {};
+      for (const e of list) drafts[e.id] = String(e.retentionDays);
+      setRetentionDraft(drafts);
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -79,11 +84,42 @@ export default function EnterprisesPage() {
     }
   }
 
+  async function saveRetention(id: string) {
+    setBusy(`retention-${id}`);
+    setNotice(null);
+    try {
+      const days = Number(retentionDraft[id] ?? 90);
+      await api(`/v1/admin/enterprises/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ retention_days: days }),
+      });
+      setNotice(`Retention set to ${days} days.`);
+      await load();
+    } catch (e: any) {
+      setNotice(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runRetention() {
+    setBusy("run-retention");
+    setNotice(null);
+    try {
+      const body = await api<any>("/v1/admin/retention/run", { method: "POST", body: "{}" });
+      setNotice(`Retention job deleted ${body?.deleted ?? 0} messages.`);
+    } catch (e: any) {
+      setNotice(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <AdminShell>
       <h1>Enterprises</h1>
       <div className="page-sub">
-        Organizations, invite codes, and retention settings.
+        Organizations, invite codes, and 90-day history retention (Mattermost DataRetention).
       </div>
 
       <div className="toolbar">
@@ -95,6 +131,9 @@ export default function EnterprisesPage() {
         </button>
         <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(true)}>
           {busy === "activate" ? "Activating…" : "Activate invite"}
+        </button>
+        <button className="btn" type="button" disabled={!!busy} onClick={runRetention}>
+          {busy === "run-retention" ? "Running…" : "Run retention now"}
         </button>
       </div>
 
@@ -132,7 +171,25 @@ export default function EnterprisesPage() {
                     {r.inviteActive ? "active" : "revoked"}
                   </span>
                 </td>
-                <td>{r.retentionDays}</td>
+                <td>
+                  <div className="toolbar" style={{ gap: 6, margin: 0 }}>
+                    <input
+                      style={{ width: 72 }}
+                      value={retentionDraft[r.id] ?? String(r.retentionDays)}
+                      onChange={(e) =>
+                        setRetentionDraft((d) => ({ ...d, [r.id]: e.target.value }))
+                      }
+                    />
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={busy === `retention-${r.id}`}
+                      onClick={() => saveRetention(r.id)}
+                    >
+                      Save
+                    </button>
+                  </div>
+                </td>
                 <td className="muted">{r.createdAt}</td>
               </tr>
             ))}
