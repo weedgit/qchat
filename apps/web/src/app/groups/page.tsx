@@ -38,6 +38,7 @@ export default function GroupsPage() {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [role, setRole] = useState("");
   const [publicId, setPublicId] = useState("");
+  const [muteAll, setMuteAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -111,6 +112,7 @@ export default function GroupsPage() {
       ]);
       setRole(String(details?.role ?? ""));
       setPublicId(String(details?.public_id ?? ""));
+      setMuteAll(Boolean(details?.mute_all));
       setMembers(asList(details, "members"));
       setPending(asList(pend, "pending"));
     } catch (err: any) {
@@ -248,6 +250,9 @@ export default function GroupsPage() {
                     <button className="btn-ghost" style={{ flex: "none" }} onClick={() => mute(m.user_id, "10m")}>10m</button>
                     <button className="btn-ghost" style={{ flex: "none" }} onClick={() => mute(m.user_id, "1h")}>1h</button>
                     <button className="btn-ghost" style={{ flex: "none" }} onClick={() => mute(m.user_id, "permanent")}>Mute</button>
+                    {m.mute_until && (
+                      <button className="btn-ghost" style={{ flex: "none" }} onClick={() => mute(m.user_id, "off")}>Unmute</button>
+                    )}
                     {role === "owner" && (
                       <button
                         className="btn-ghost"
@@ -262,7 +267,9 @@ export default function GroupsPage() {
               </div>
             ))}
             {isAdmin && (
-              <button className="btn" onClick={() => mute("", "all")}>Mute whole group</button>
+              <button className="btn" onClick={() => mute("", muteAll ? "all_off" : "all")}>
+                {muteAll ? "Unmute whole group" : "Mute whole group"}
+              </button>
             )}
           </div>
         )}

@@ -519,6 +519,29 @@ export default function ChatPageInner() {
     }
   }
 
+  async function reloadGroupDetails() {
+    if (!active || (active.type !== "social_group" && active.type !== "group")) return;
+    const g = await api<any>(`/v1/groups/${active.id}`);
+    setGroupDetails({
+      members: Array.isArray(g?.members) ? g.members : [],
+      public_id: g?.public_id,
+      description: g?.description,
+      role: g?.role,
+      avatar_url: g?.avatar_url,
+      mute_all: Boolean(g?.mute_all),
+    });
+  }
+
+  /** Timed speak-mute (JD 10m/1h/permanent); Mattermost channel moderation has no timed per-member mute. */
+  async function muteMember(userId: string, duration: string) {
+    if (!active || !canEditGroup) return;
+    await api(`/v1/groups/${active.id}/mute`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId, duration }),
+    });
+    await reloadGroupDetails();
+  }
+
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
   const ctxMsg = ctxMenu ? activeMessages.find((m) => m.id === ctxMenu.msgId) ?? null : null;
 
@@ -1524,24 +1547,96 @@ export default function ChatPageInner() {
                 <div className="k">Your role</div>
                 <div>{groupDetails.role || chat.myRole}</div>
               </div>
+              {groupDetails.mute_all && (
+                <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+                  Whole group is muted (members cannot send).
+                </div>
+              )}
               <div className="details-members">
                 <div className="k" style={{ marginBottom: 8 }}>
                   Members ({groupDetails.members.length})
                 </div>
-                {groupDetails.members.map((m) => (
-                  <div key={m.user_id} className="details-member">
-                    <Avatar name={m.display_name} url={m.avatar_url} size={28} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600 }}>{m.display_name}</div>
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        @{m.username} · {m.role}
+                {groupDetails.members.map((m) => {
+                  const mutedUntil = m.mute_until ? new Date(m.mute_until) : null;
+                  const isMuted =
+                    mutedUntil != null && !Number.isNaN(mutedUntil.getTime()) && mutedUntil.getTime() > Date.now();
+                  const permanentMute =
+                    mutedUntil != null && mutedUntil.getUTCFullYear() >= 9999;
+                  return (
+                    <div key={m.user_id} className="details-member details-member-admin">
+                      <Avatar name={m.display_name} url={m.avatar_url} size={28} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{m.display_name}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          @{m.username} · {m.role}
+                          {isMuted
+                            ? permanentMute
+                              ? " · muted permanently"
+                              : ` · muted until ${mutedUntil!.toLocaleString()}`
+                            : ""}
+                        </div>
+                        {canEditGroup && m.role !== "owner" && (
+                          <div className="mute-actions">
+                            <button
+                              type="button"
+                              className="btn-ghost mute-chip"
+                              onClick={() => muteMember(m.user_id, "10m").catch(() => {})}
+                            >
+                              10m
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-ghost mute-chip"
+                              onClick={() => muteMember(m.user_id, "1h").catch(() => {})}
+                            >
+                              1h
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-ghost mute-chip"
+                              onClick={() => muteMember(m.user_id, "permanent").catch(() => {})}
+                            >
+                              Mute
+                            </button>
+                            {isMuted && (
+                              <button
+                                type="button"
+                                className="btn-ghost mute-chip"
+                                onClick={() => muteMember(m.user_id, "off").catch(() => {})}
+                              >
+                                Unmute
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-              <Link className="btn" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
-                Manage group
+              {canEditGroup && (
+                <div className="mute-group-actions">
+                  {groupDetails.mute_all ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => muteMember("", "all_off").catch(() => {})}
+                    >
+                      Unmute whole group
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => muteMember("", "all").catch(() => {})}
+                    >
+                      Mute whole group
+                    </button>
+                  )}
+                </div>
+              )}
+              <Link className="btn-ghost" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
+                More group settings
               </Link>
             </>
           )}

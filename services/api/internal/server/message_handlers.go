@@ -470,6 +470,22 @@ func (s *Server) handleMuteMember(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"mute_all": true})
 		return
 	}
+	if req.Duration == "all_off" {
+		_, _ = s.db.Exec(r.Context(), `UPDATE conversations SET mute_all=FALSE WHERE id=$1`, convID)
+		writeJSON(w, 200, map[string]any{"mute_all": false})
+		return
+	}
+	if req.Duration == "off" {
+		_, err := s.db.Exec(r.Context(), `
+			UPDATE conversation_members SET mute_until=NULL
+			WHERE conversation_id=$1 AND user_id=$2`, convID, req.UserID)
+		if err != nil {
+			writeErr(w, 400, "unmute failed")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"mute_until": nil})
+		return
+	}
 	var until *time.Time
 	switch req.Duration {
 	case "10m":

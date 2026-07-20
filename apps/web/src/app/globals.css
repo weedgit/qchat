@@ -1344,6 +1344,27 @@ select:focus {
   gap: 10px;
   padding: 6px 0;
 }
+.details-member-admin {
+  align-items: flex-start;
+}
+.mute-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.mute-chip {
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+  flex: none;
+}
+.mute-group-actions {
+  width: 100%;
+  margin-top: 12px;
+}
+.mute-group-actions .btn {
+  width: 100%;
+}
 .group-qr-block {
   width: 100%;
   margin: 12px 0;
