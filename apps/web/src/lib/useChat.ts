@@ -558,13 +558,19 @@ export function useChat() {
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
       );
-      // Don't rely on the cached conversation list here: right after creating
-      // a group it may not contain the new conversation yet. DMs return 404
-      // from the groups endpoint and fall back to "member".
-      try {
-        const g = await api<any>(`/v1/groups/${id}`);
-        setMyRole(String(g?.role ?? "member"));
-      } catch {
+      // Group role only applies to social_group; DMs must not hit /v1/groups (404).
+      const conv =
+        conversationsRef.current.find((c) => c.id === id) ??
+        null;
+      const isGroup = conv?.type === "social_group" || conv?.type === "group";
+      if (isGroup || !conv) {
+        try {
+          const g = await api<any>(`/v1/groups/${id}`);
+          setMyRole(String(g?.role ?? "member"));
+        } catch {
+          setMyRole("member");
+        }
+      } else {
         setMyRole("member");
       }
       loadMessages(id);
