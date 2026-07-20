@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, asList, getToken, uploadMedia, wsUrl } from "./api";
+import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "./api";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
   Conversation,
@@ -298,12 +298,19 @@ export function useChat() {
     if (type === "message.read") {
       const id = String(payload?.id ?? "");
       const convId = String(payload?.conversation_id ?? "");
+      const seq = Number(payload?.seq);
       if (!id || !convId) return;
       setMessages((prev) => ({
         ...prev,
-        [convId]: (prev[convId] ?? []).map((m) =>
-          m.id === id ? { ...m, read: true, delivered: true } : m
-        ),
+        [convId]: (prev[convId] ?? []).map((m) => {
+          if (!m.mine) return m;
+          if (m.id === id) return { ...m, read: true, delivered: true };
+          // Peer read watermark: all earlier own messages are read too.
+          if (Number.isFinite(seq) && seq > 0 && typeof m.seq === "number" && m.seq <= seq) {
+            return { ...m, read: true, delivered: true };
+          }
+          return m;
+        }),
       }));
       return;
     }
@@ -471,43 +478,84 @@ export function useChat() {
     }
   }, [loadConversations, loadMessages, clearTypingUser, upsertTypingUser]);
 
+  const handleIncomingRef = useRef(handleIncoming);
+  handleIncomingRef.current = handleIncoming;
+
   useEffect(() => {
     if (!getToken()) return;
     let disposed = false;
 
-    function connect() {
+    async function connect() {
       if (disposed) return;
+      const authed = await ensureAccessToken();
+      if (disposed) return;
+      if (!authed || !getToken()) {
+        setConnected(false);
+        retryRef.current = setTimeout(connect, Math.min(backoffRef.current, 15000));
+        backoffRef.current = Math.min(backoffRef.current * 2, 15000);
+        return;
+      }
+      // Close any prior socket before opening a new one (Mattermost WebSocketClient reconnect).
+      if (wsRef.current && wsRef.current.readyState < WebSocket.CLOSING) {
+        try {
+          wsRef.current.onclose = null;
+          wsRef.current.close();
+        } catch {
+          /* ignore */
+        }
+      }
       const ws = new WebSocket(wsUrl());
       wsRef.current = ws;
       ws.onopen = () => {
+        if (disposed || wsRef.current !== ws) return;
         setConnected(true);
         backoffRef.current = 1000;
       };
       ws.onmessage = (ev) => {
         try {
-          handleIncoming(JSON.parse(ev.data));
+          handleIncomingRef.current(JSON.parse(ev.data));
         } catch {
           /* ignore */
         }
       };
       ws.onclose = () => {
-        setConnected(false);
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+          setConnected(false);
+        }
         if (!disposed) {
           const delay = Math.min(backoffRef.current, 15000);
           backoffRef.current = Math.min(delay * 2, 15000);
           retryRef.current = setTimeout(connect, delay);
         }
       };
-      ws.onerror = () => ws.close();
+      ws.onerror = () => {
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+      };
     }
-
     connect();
     return () => {
       disposed = true;
       if (retryRef.current) clearTimeout(retryRef.current);
-      wsRef.current?.close();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      if (ws) {
+        try {
+          ws.onclose = null;
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      setConnected(false);
     };
-  }, [handleIncoming]);
+    // Intentionally empty: keep one long-lived socket. Handlers use refs (Mattermost WS pattern).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const openConversation = useCallback(
     async (id: string) => {
@@ -517,13 +565,19 @@ export function useChat() {
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
       );
-      // Don't rely on the cached conversation list here: right after creating
-      // a group it may not contain the new conversation yet. DMs return 404
-      // from the groups endpoint and fall back to "member".
-      try {
-        const g = await api<any>(`/v1/groups/${id}`);
-        setMyRole(String(g?.role ?? "member"));
-      } catch {
+      // Group role only applies to social_group; DMs must not hit /v1/groups (404).
+      const conv =
+        conversationsRef.current.find((c) => c.id === id) ??
+        null;
+      const isGroup = conv?.type === "social_group" || conv?.type === "group";
+      if (isGroup || !conv) {
+        try {
+          const g = await api<any>(`/v1/groups/${id}`);
+          setMyRole(String(g?.role ?? "member"));
+        } catch {
+          setMyRole("member");
+        }
+      } else {
         setMyRole("member");
       }
       loadMessages(id);

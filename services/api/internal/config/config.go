@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,8 @@ type Config struct {
 	CORSOrigin       string
 	ObjectStorageURL string
 	Bucket           string
+	// DataDir holds local uploads (…/uploads). Override with QCHAT_DATA_DIR.
+	DataDir          string
 	MigrateOnly      bool
 	Env              string
 	// LiveKit SFU (Phase 6 voice/video). Defaults match deploy/livekit.yaml.
@@ -43,6 +46,7 @@ func Load() Config {
 		CORSOrigin:       getenv("QCHAT_CORS_ORIGIN", "http://localhost:3000"),
 		ObjectStorageURL: getenv("QCHAT_OBJECT_STORAGE_URL", "http://localhost:9000"),
 		Bucket:           getenv("QCHAT_BUCKET", "qchat"),
+		DataDir:          resolveDataDir(),
 		Env:              strings.ToLower(getenv("QCHAT_ENV", "development")),
 		LiveKitURL:       getenv("LIVEKIT_URL", "ws://localhost:7880"),
 		LiveKitAPIKey:    getenv("LIVEKIT_API_KEY", "devkey"),
@@ -70,6 +74,25 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// resolveDataDir picks the local upload root (…/uploads). Prefer an existing
+// tree so API cwd may be either services/api or the monorepo root.
+func resolveDataDir() string {
+	if v := os.Getenv("QCHAT_DATA_DIR"); v != "" {
+		return v
+	}
+	candidates := []string{
+		"data",
+		"services/api/data",
+		filepath.Join("..", "data"),
+	}
+	for _, c := range candidates {
+		if st, err := os.Stat(filepath.Join(c, "uploads")); err == nil && st.IsDir() {
+			return c
+		}
+	}
+	return "data"
 }
 
 func durationEnv(k string, def time.Duration) time.Duration {

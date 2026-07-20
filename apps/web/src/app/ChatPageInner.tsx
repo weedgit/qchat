@@ -168,11 +168,11 @@ function ConversationRow({
 }
 
 function receiptMark(msg: Message): string {
+  // JD / WeChat-style: ⏳ sending → ✓ sent/delivered → ✓✓ read
   if (msg.pending) return " \u23F3";
   if (msg.failed) return " !";
   if (!msg.mine || msg.recalled) return "";
   if (msg.read) return " \u2713\u2713";
-  if (msg.delivered) return " \u2713\u2713";
   return " \u2713";
 }
 
@@ -786,6 +786,14 @@ export default function ChatPageInner() {
     setReplyTo(null);
     setDraft(getDraft(chat.activeId));
   }, [chat.activeId]);
+
+  // Mattermost focus_post_textbox / useTextboxFocus: focus composer so the user
+  // can type immediately after picking a DM or group in the sidebar.
+  useEffect(() => {
+    if (!chat.activeId || recording || voiceBusy) return;
+    const id = window.setTimeout(() => draftRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [chat.activeId, recording, voiceBusy]);
 
   useEffect(() => {
     if (!chat.activeId || editingMessage) return;

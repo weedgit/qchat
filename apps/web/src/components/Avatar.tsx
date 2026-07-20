@@ -1,6 +1,6 @@
 "use client";
 
-import { API_URL, getToken } from "@/lib/api";
+import { apiBaseUrl, getToken } from "@/lib/api";
 
 const PALETTE = [
   "#e17076",
@@ -19,7 +19,7 @@ function resolveURL(url?: string): string | undefined {
   }
   const path = url.startsWith("/") ? url : `/${url}`;
   const token = getToken();
-  const abs = `${API_URL}${path}`;
+  const abs = `${apiBaseUrl()}${path}`;
   if (path.startsWith("/v1/media/") && token) {
     return `${abs}${abs.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
   }

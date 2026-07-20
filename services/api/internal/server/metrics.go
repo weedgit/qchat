@@ -1,6 +1,9 @@
 package server
 
 import (
+	"bufio"
+	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -32,7 +35,6 @@ var (
 		Name: "qchat_ws_connections",
 		Help: "Current WebSocket connections (Mattermost-style websocket metrics)",
 	}, func() float64 {
-		// Set by Server via registerWSGauge once hub exists.
 		if wsGaugeFn == nil {
 			return 0
 		}
@@ -58,6 +60,21 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Hijack lets WebSocket upgrades work when metrics wrap the writer.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("response does not implement http.Hijacker")
+	}
+	return h.Hijack()
+}
+
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func metricsPath(p string) string {
 	switch {
 	case p == "/healthz" || p == "/metrics":
@@ -81,7 +98,8 @@ func metricsPath(p string) string {
 
 func (s *Server) withMetrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/metrics" {
+		// Never wrap /v1/ws: gorilla Upgrade needs the raw Hijacker.
+		if r.URL.Path == "/metrics" || r.URL.Path == "/v1/ws" {
 			next.ServeHTTP(w, r)
 			return
 		}

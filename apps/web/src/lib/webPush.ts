@@ -1,4 +1,4 @@
-import { api, API_URL } from "@/lib/api";
+import { api } from "@/lib/api";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -38,8 +38,6 @@ export async function registerWebPush(): Promise<boolean> {
     body: JSON.stringify({
       platform: "web",
       subscription: sub.toJSON(),
-      // Keep API_URL in payload for debugging; unused by server.
-      api_url: API_URL,
     }),
   });
   return true;

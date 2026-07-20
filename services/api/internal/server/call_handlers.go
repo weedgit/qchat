@@ -59,15 +59,35 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var existing string
-	_ = s.db.QueryRow(r.Context(), `
+	// 1:1: replace any leftover ringing/active session so redial works after media failures.
+	rows, _ := s.db.Query(r.Context(), `
 		SELECT id::text FROM call_sessions
-		WHERE conversation_id=$1 AND status IN ('ringing','active')
-		ORDER BY created_at DESC LIMIT 1`, req.ConversationID).Scan(&existing)
-	if existing != "" {
-		writeErrCode(w, 409, "call_in_progress", "a call is already in progress")
-		return
+		WHERE conversation_id=$1 AND status IN ('ringing','active')`, req.ConversationID)
+	var staleIDs []string
+	if rows != nil {
+		for rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil {
+				staleIDs = append(staleIDs, id)
+			}
+		}
+		rows.Close()
 	}
+	if len(staleIDs) > 0 {
+		_, _ = s.db.Exec(r.Context(), `
+			UPDATE call_sessions SET status='ended', ended_at=COALESCE(ended_at, now())
+			WHERE conversation_id=$1 AND status IN ('ringing','active')`, req.ConversationID)
+		for _, sid := range staleIDs {
+			s.hub.PublishToUsers(s.memberIDs(r, req.ConversationID), ws.Event{
+				Type: "call.ended",
+				Payload: map[string]any{
+					"id": sid, "call_id": sid, "conversation_id": req.ConversationID,
+					"status": "ended", "reason": "replaced", "by": c.UserID,
+				},
+			})
+		}
+	}
+
 
 	if !s.livekitCfg().Enabled() {
 		writeErrCode(w, 503, "livekit_unavailable", "livekit not configured")
@@ -324,13 +344,16 @@ func (s *Server) handleHangupCall(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 404, "not_found", "call not found")
 		return
 	}
-	if call.Status != "ringing" && call.Status != "active" {
-		writeErrCode(w, 409, "invalid_state", "call already ended")
-		return
-	}
 	role := s.memberRole(r, call.ConversationID, c.UserID)
 	if role == "" || role == "pending" {
 		writeErrCode(w, 403, "forbidden", "not a conversation member")
+		return
+	}
+	// Idempotent: media-fail hangup + UI hangup (or both peers) may race.
+	if call.Status != "ringing" && call.Status != "active" {
+		writeJSON(w, 200, map[string]any{
+			"id": call.ID, "call_id": call.ID, "status": call.Status, "already_ended": true,
+		})
 		return
 	}
 
