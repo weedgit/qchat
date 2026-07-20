@@ -93,3 +93,13 @@ func (h *Hub) ConnectionCount(userID string) int {
 	defer h.mu.RUnlock()
 	return len(h.clients[userID])
 }
+
+func (h *Hub) TotalConnections() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	n := 0
+	for _, m := range h.clients {
+		n += len(m)
+	}
+	return n
+}

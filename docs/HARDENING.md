@@ -27,7 +27,7 @@
 
 - Health: `GET /healthz`
 - Audit table: `audit_logs`
-- Add Prometheus metrics in Phase 7 productionization
+- Metrics: `GET /metrics` (Prometheus; WS gauge + HTTP latency/errors). Do not expose publicly — nginx returns 404 for `/metrics`.
 
 ## Acceptance smoke
 
