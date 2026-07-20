@@ -1080,7 +1080,11 @@ func (s *Server) isGroupAdmin(r *http.Request, convID, userID string) bool {
 }
 
 func (s *Server) memberIDs(r *http.Request, convID string) []string {
-	rows, err := s.db.Query(r.Context(), `SELECT user_id::text FROM conversation_members WHERE conversation_id=$1 AND role <> 'pending'`, convID)
+	return s.memberIDsCtx(r.Context(), convID)
+}
+
+func (s *Server) memberIDsCtx(ctx context.Context, convID string) []string {
+	rows, err := s.db.Query(ctx, `SELECT user_id::text FROM conversation_members WHERE conversation_id=$1 AND role <> 'pending'`, convID)
 	if err != nil {
 		return nil
 	}
