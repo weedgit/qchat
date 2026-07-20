@@ -15,7 +15,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	c := claimsFrom(r)
 	rows, err := s.db.Query(r.Context(), `
 		SELECT conv.id::text, conv.type, COALESCE(conv.title, ''), COALESCE(conv.avatar_url, ''),
-		       COALESCE(conv.public_id, ''), cm.role, cm.last_read_seq,
+		       COALESCE(conv.public_id, ''), cm.role, cm.last_read_seq, cm.favorite, cm.muted,
 		       COALESCE((SELECT body FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
 		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1), ''),
 		       COALESCE((SELECT m.sender_id::text FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
@@ -46,7 +46,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
 		WHERE cm.user_id=$1 AND conv.enterprise_id=$2 AND cm.role <> 'pending'
-		ORDER BY COALESCE(
+		ORDER BY cm.favorite DESC, COALESCE(
 		  (SELECT m.created_at FROM messages m WHERE m.conversation_id=conv.id ORDER BY m.seq DESC LIMIT 1),
 		  conv.created_at
 		) DESC`, c.UserID, c.EnterpriseID)
@@ -60,8 +60,9 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	for rows.Next() {
 		var id, typ, title, avatar, publicID, role, lastBody, lastSenderID, lastSenderName, peerID, peerName, peerAvatar string
 		var lastRead, unread int64
+		var favorite, muted bool
 		var lastAt, peerLastActive *time.Time
-		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &lastBody, &lastSenderID, &lastSenderName, &unread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt); err != nil {
+		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt); err != nil {
 			continue
 		}
 		if title == "" && typ == "dm" && peerName != "" {
@@ -78,6 +79,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			"role": role, "last_read_seq": lastRead, "last_message": lastBody, "unread": unread,
 			"unread_count": unread, "peer_name": peerName,
 			"last_message_sender": lastSenderName, "last_message_mine": lastSenderID == c.UserID,
+			"favorite": favorite, "muted": muted,
 		}
 		if peerID != "" {
 			item["peer_id"] = peerID

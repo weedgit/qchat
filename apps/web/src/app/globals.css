@@ -508,6 +508,25 @@ select:focus {
   color: var(--accent);
   font-style: italic;
 }
+.conv-item.muted-conv {
+  opacity: 0.72;
+}
+.conv-item.favorited .conv-title {
+  font-weight: 700;
+}
+.fav-mark {
+  color: #e6b422;
+}
+.mute-mark {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.badge.muted-badge {
+  background: var(--text-faint);
+}
+.conv-ctx {
+  z-index: 80;
+}
 
 /* ---------- chat pane ---------- */
 

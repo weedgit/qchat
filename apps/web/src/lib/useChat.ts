@@ -383,6 +383,10 @@ export function useChat() {
         (document.hidden || activeIdRef.current !== msg.conversationId)
       ) {
         const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
+        // Mattermost muted channels suppress push-style notifications.
+        if (conversation?.muted) {
+          /* skip */
+        } else {
         const notification = new Notification(
           msg.senderName || conversation?.title || "New message",
           {
@@ -399,6 +403,7 @@ export function useChat() {
           loadMessages(msg.conversationId);
           notification.close();
         };
+        }
       }
     }
   }, [loadConversations, loadMessages, clearTypingUser, upsertTypingUser]);
@@ -820,6 +825,40 @@ export function useChat() {
     await loadConversations();
   }, [loadConversations]);
 
+  const updateConversationPrefs = useCallback(
+    async (convId: string, prefs: { favorite?: boolean; muted?: boolean }) => {
+      const res = await api<any>(`/v1/conversations/${convId}/prefs`, {
+        method: "PATCH",
+        body: JSON.stringify(prefs),
+      });
+      setConversations((prev) => {
+        const next = prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                favorite: res?.favorite != null ? Boolean(res.favorite) : c.favorite,
+                muted: res?.muted != null ? Boolean(res.muted) : c.muted,
+              }
+            : c
+        );
+        return [...next].sort((a, b) => {
+          if (Boolean(a.favorite) !== Boolean(b.favorite)) return a.favorite ? -1 : 1;
+          return (b.lastMessageAt || "").localeCompare(a.lastMessageAt || "");
+        });
+      });
+    },
+    []
+  );
+
+  const markConversationUnread = useCallback(async (convId: string) => {
+    const res = await api<any>(`/v1/conversations/${convId}/unread`, { method: "POST" });
+    const unread = Number(res?.unread_count) || 1;
+    setConversations((prev) =>
+      prev.map((c) => (c.id === convId ? { ...c, unreadCount: Math.max(1, unread) } : c))
+    );
+    if (activeIdRef.current === convId) setActiveId(null);
+  }, []);
+
   return {
     me,
     conversations,
@@ -841,6 +880,8 @@ export function useChat() {
     recallMessage,
     forwardMessage,
     reactMessage,
+    updateConversationPrefs,
+    markConversationUnread,
     reload: loadConversations,
   };
 }

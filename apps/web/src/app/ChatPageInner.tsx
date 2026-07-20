@@ -35,17 +35,46 @@ function ConversationRow({
   typing,
   online,
   onClick,
+  onFavorite,
+  onMute,
+  onMarkUnread,
 }: {
   conv: Conversation;
   active: boolean;
   typing: TypingUser[];
   online?: boolean;
   onClick: () => void;
+  onFavorite: () => void;
+  onMute: () => void;
+  onMarkUnread: () => void;
 }) {
   const typingLabel = formatTypingLabel(typing);
   const isDM = conv.type === "dm";
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+    };
+  }, [menu]);
+
   return (
-    <div className={`conv-item ${active ? "active" : ""}`} onClick={onClick}>
+    <div
+      className={`conv-item ${active ? "active" : ""} ${conv.muted ? "muted-conv" : ""} ${
+        conv.favorite ? "favorited" : ""
+      }`}
+      onClick={onClick}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
       <Avatar
         name={conv.title}
         url={conv.avatarUrl}
@@ -55,7 +84,11 @@ function ConversationRow({
       />
       <div className="conv-body">
         <div className="conv-top">
-          <span className="conv-title">{conv.title}</span>
+          <span className="conv-title">
+            {conv.favorite ? <span className="fav-mark" title="Favorite">★ </span> : null}
+            {conv.title}
+            {conv.muted ? <span className="mute-mark" title="Muted"> · muted</span> : null}
+          </span>
           <span className="conv-time">{fmtTime(conv.lastMessageAt)}</span>
         </div>
         <div className="conv-bottom">
@@ -76,12 +109,51 @@ function ConversationRow({
             )}
           </span>
           {conv.unreadCount > 0 && (
-            <span className="badge">
+            <span className={`badge ${conv.muted ? "muted-badge" : ""}`}>
               {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
             </span>
           )}
         </div>
       </div>
+      {menu && (
+        <div
+          className="ctx-menu conv-ctx"
+          style={{ left: menu.x, top: menu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            className="ctx-item"
+            onClick={() => {
+              onFavorite();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.pin} />
+            {conv.favorite ? "Unfavorite" : "Favorite"}
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => {
+              onMute();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={conv.muted ? ICONS.unmute : ICONS.mute} />
+            {conv.muted ? "Unmute" : "Mute"}
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => {
+              onMarkUnread();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.markUnread} />
+            Mark as unread
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -734,6 +806,13 @@ export default function ChatPageInner() {
                   : undefined
               }
               onClick={() => chat.openConversation(c.id)}
+              onFavorite={() =>
+                chat.updateConversationPrefs(c.id, { favorite: !c.favorite }).catch(() => {})
+              }
+              onMute={() =>
+                chat.updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => {})
+              }
+              onMarkUnread={() => chat.markConversationUnread(c.id).catch(() => {})}
             />
           ))}
         </div>
