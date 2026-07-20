@@ -1,5 +1,5 @@
 # Local LiveKit SFU (Phase 6 calls). Keys match API LIVEKIT_* defaults.
-# Remote TURN via coturn: rtc.turn_servers (shared secret must match deploy/coturn.conf).
+# LiveKit v1.8.x TURN entries use username/credential (not secret).
 port: 7880
 rtc:
   tcp_port: 7881
@@ -13,11 +13,13 @@ rtc:
     - host: 127.0.0.1
       port: 3478
       protocol: udp
-      secret: qchat-turn-static-secret-change-me
+      username: qchat
+      credential: qchatturnsecret
     - host: 127.0.0.1
       port: 3478
       protocol: tcp
-      secret: qchat-turn-static-secret-change-me
+      username: qchat
+      credential: qchatturnsecret
 keys:
   # Must be ≥32 chars for LiveKit secrets
   devkey: secret-that-is-at-least-32-characters-long

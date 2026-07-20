@@ -59,32 +59,35 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var existing string
-	var existingStatus string
-	var existingCreated time.Time
-	_ = s.db.QueryRow(r.Context(), `
-		SELECT id::text, status, created_at FROM call_sessions
-		WHERE conversation_id=$1 AND status IN ('ringing','active')
-		ORDER BY created_at DESC LIMIT 1`, req.ConversationID).Scan(&existing, &existingStatus, &existingCreated)
-	if existing != "" {
-		// Auto-expire abandoned rings (callee never answered / caller never cancelled).
-		staleRing := existingStatus == "ringing" && time.Since(existingCreated) > 90*time.Second
-		if staleRing {
-			_, _ = s.db.Exec(r.Context(), `
-				UPDATE call_sessions SET status='ended', ended_at=now()
-				WHERE id=$1 AND status='ringing'`, existing)
-			existing = ""
+	// 1:1: replace any leftover ringing/active session so redial works after media failures.
+	rows, _ := s.db.Query(r.Context(), `
+		SELECT id::text FROM call_sessions
+		WHERE conversation_id=$1 AND status IN ('ringing','active')`, req.ConversationID)
+	var staleIDs []string
+	if rows != nil {
+		for rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil {
+				staleIDs = append(staleIDs, id)
+			}
+		}
+		rows.Close()
+	}
+	if len(staleIDs) > 0 {
+		_, _ = s.db.Exec(r.Context(), `
+			UPDATE call_sessions SET status='ended', ended_at=COALESCE(ended_at, now())
+			WHERE conversation_id=$1 AND status IN ('ringing','active')`, req.ConversationID)
+		for _, sid := range staleIDs {
+			s.hub.PublishToUsers(s.memberIDs(r, req.ConversationID), ws.Event{
+				Type: "call.ended",
+				Payload: map[string]any{
+					"id": sid, "call_id": sid, "conversation_id": req.ConversationID,
+					"status": "ended", "reason": "replaced", "by": c.UserID,
+				},
+			})
 		}
 	}
-	if existing != "" {
-		writeJSON(w, 409, map[string]any{
-			"code":    "call_in_progress",
-			"message": "a call is already in progress",
-			"error":   "a call is already in progress",
-			"call_id": existing,
-		})
-		return
-	}
+
 
 	if !s.livekitCfg().Enabled() {
 		writeErrCode(w, 503, "livekit_unavailable", "livekit not configured")

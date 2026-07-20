@@ -10,7 +10,7 @@ import {
   type RemoteTrackPublication,
   type RemoteParticipant,
 } from "livekit-client";
-import { ApiError, api } from "@/lib/api";
+import { api } from "@/lib/api";
 
 export type CallKind = "voice" | "video";
 
@@ -54,7 +54,7 @@ export function useCall(opts: {
 
   const roomRef = useRef<Room | null>(null);
   const activeRef = useRef<ActiveCall | null>(null);
-  const hangupInFlightRef = useRef<string | null>(null);
+  const endingRef = useRef(false);
   activeRef.current = active;
 
   const disconnectRoom = useCallback(async () => {
@@ -69,20 +69,17 @@ export function useCall(opts: {
     }
   }, []);
 
-  const hangupCallId = useCallback(
-    async (callId: string) => {
-      if (!callId || hangupInFlightRef.current === callId) return;
-      hangupInFlightRef.current = callId;
-      try {
-        await api(`/v1/calls/${callId}/hangup`, { method: "POST" });
-      } catch {
-        /* already ended is fine */
-      } finally {
-        if (hangupInFlightRef.current === callId) hangupInFlightRef.current = null;
-      }
-    },
-    []
-  );
+  const hangupServer = useCallback(async (callId: string) => {
+    if (!callId || endingRef.current) return;
+    endingRef.current = true;
+    try {
+      await api(`/v1/calls/${callId}/hangup`, { method: "POST" });
+    } catch {
+      /* ignore — may already be ended */
+    } finally {
+      endingRef.current = false;
+    }
+  }, []);
 
   const attachTrack = useCallback(
     (track: RemoteTrack | LocalTrackPublication["track"], participantLocal: boolean) => {
@@ -98,11 +95,14 @@ export function useCall(opts: {
   );
 
   const connectLiveKit = useCallback(
-    async (url: string, token: string, kind: CallKind) => {
+    async (url: string, token: string, kind: CallKind, callId: string) => {
       await disconnectRoom();
       setConnecting(true);
       setError(null);
       try {
+        if (!url || !token) {
+          throw new Error("Missing LiveKit URL or token");
+        }
         const room = new Room({ adaptiveStream: true, dynacast: true });
         roomRef.current = room;
 
@@ -112,13 +112,13 @@ export function useCall(opts: {
         room.on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
           if (pub.track) attachTrack(pub.track, true);
         });
-        // LiveKit drop must end the server session or the next call hits call_in_progress.
         room.on(RoomEvent.Disconnected, () => {
+          // Unexpected drop: keep overlay with error and end server session so redial works.
           const cur = activeRef.current;
-          if (!cur || cur.status !== "active") return;
-          const id = cur.callId;
-          setActive(null);
-          hangupCallId(id).catch(() => {});
+          if (cur && cur.callId === callId && cur.status === "active" && !endingRef.current) {
+            setError((prev) => prev || "Media disconnected");
+            hangupServer(callId).catch(() => {});
+          }
         });
 
         await room.connect(url, token);
@@ -141,19 +141,18 @@ export function useCall(opts: {
           if (pub.track) attachTrack(pub.track, true);
         });
       } catch (e: any) {
-        setError(e?.message || "Failed to connect media");
-        const cur = activeRef.current;
+        const msg = e?.message || "Failed to connect media";
+        setError(msg);
         await disconnectRoom();
-        if (cur?.callId) {
-          setActive(null);
-          await hangupCallId(cur.callId);
-        }
+        // End server call so "already in progress" does not block redial.
+        await hangupServer(callId);
+        setActive((prev) => (prev?.callId === callId ? null : prev));
         throw e;
       } finally {
         setConnecting(false);
       }
     },
-    [attachTrack, disconnectRoom, hangupCallId]
+    [attachTrack, disconnectRoom, hangupServer]
   );
 
   useEffect(() => {
@@ -175,6 +174,7 @@ export function useCall(opts: {
         const callId = String(payload?.call_id ?? payload?.id ?? "");
         const initiatorId = String(payload?.initiator_id ?? "");
         if (!callId || (meId && initiatorId === meId)) return;
+        setError(null);
         setIncoming({
           callId,
           conversationId: String(payload?.conversation_id ?? ""),
@@ -200,14 +200,16 @@ export function useCall(opts: {
           status: "active",
           role: "caller",
         });
-        connectLiveKit(url, token, kind).catch(() => {});
+        connectLiveKit(url, token, kind, callId).catch(() => {});
         return;
       }
       if (type === "call.ended") {
         const callId = String(payload?.call_id ?? payload?.id ?? "");
+        endingRef.current = true;
         setIncoming((prev) => (prev?.callId === callId ? null : prev));
         setActive((prev) => (prev?.callId === callId ? null : prev));
         disconnectRoom().catch(() => {});
+        endingRef.current = false;
       }
     });
   }, [subscribe, meId, connectLiveKit, disconnectRoom]);
@@ -215,28 +217,10 @@ export function useCall(opts: {
   const startCall = useCallback(
     async (conversationId: string, kind: CallKind) => {
       setError(null);
-      const attempt = async () =>
-        api<any>("/v1/calls", {
-          method: "POST",
-          body: JSON.stringify({ conversation_id: conversationId, kind }),
-        });
-      let res: any;
-      try {
-        res = await attempt();
-      } catch (e: any) {
-        // Clear orphaned server session (LiveKit drop without hangup) then retry once.
-        if (e instanceof ApiError && e.status === 409) {
-          const stuckId = String((e.body as any)?.call_id ?? "");
-          if (stuckId) {
-            await hangupCallId(stuckId);
-            res = await attempt();
-          } else {
-            throw e;
-          }
-        } else {
-          throw e;
-        }
-      }
+      const res = await api<any>("/v1/calls", {
+        method: "POST",
+        body: JSON.stringify({ conversation_id: conversationId, kind }),
+      });
       const callId = String(res?.call_id ?? res?.id ?? "");
       setActive({
         callId,
@@ -247,18 +231,18 @@ export function useCall(opts: {
       });
       return res;
     },
-    [hangupCallId]
+    []
   );
 
   const answerCall = useCallback(async () => {
     if (!incoming) return;
     setError(null);
-    const res = await api<any>(`/v1/calls/${incoming.callId}/answer`, { method: "POST" });
-    const token = String(res?.livekit_token ?? "");
-    const url = String(res?.livekit_url ?? incoming.livekitUrl ?? "");
     const kind = incoming.kind;
     const callId = incoming.callId;
     const convId = incoming.conversationId;
+    const res = await api<any>(`/v1/calls/${callId}/answer`, { method: "POST" });
+    const token = String(res?.livekit_token ?? "");
+    const url = String(res?.livekit_url ?? incoming.livekitUrl ?? "");
     setIncoming(null);
     setActive({
       callId,
@@ -267,7 +251,11 @@ export function useCall(opts: {
       status: "active",
       role: "callee",
     });
-    await connectLiveKit(url, token, kind);
+    try {
+      await connectLiveKit(url, token, kind, callId);
+    } catch {
+      /* error + hangup handled in connectLiveKit */
+    }
   }, [incoming, connectLiveKit]);
 
   const declineCall = useCallback(async () => {
@@ -281,11 +269,14 @@ export function useCall(opts: {
     const cur = activeRef.current;
     if (!cur) return;
     const id = cur.callId;
+    endingRef.current = true;
     setActive(null);
     setIncoming(null);
+    setError(null);
     await disconnectRoom();
-    await hangupCallId(id);
-  }, [disconnectRoom, hangupCallId]);
+    await hangupServer(id);
+    endingRef.current = false;
+  }, [disconnectRoom, hangupServer]);
 
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;
