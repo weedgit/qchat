@@ -44,7 +44,7 @@ services:
       - "4222:4222"
       - "8222:8222"
 
-  # LiveKit SFU for 1:1 voice/video (Phase 6). TURN optional in prod; local uses host UDP range.
+  # LiveKit SFU for 1:1 voice/video (Phase 6). Coturn provides remote TURN for NAT.
   livekit:
     image: livekit/livekit-server:v1.8.4
     command: ["--config", "/etc/livekit.yaml", "--node-ip", "127.0.0.1"]
@@ -54,6 +54,18 @@ services:
       - "7880:7880"
       - "7881:7881"
       - "50000-50100:50000-50100/udp"
+    depends_on:
+      - coturn
+
+  coturn:
+    image: coturn/coturn:4.6.2
+    volumes:
+      - ./deploy/coturn.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
 
 volumes:
   qchat_pg:

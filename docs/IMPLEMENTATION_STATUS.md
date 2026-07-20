@@ -10,7 +10,7 @@ All planned phases have an actionable foundation in this monorepo.
 | 3 Media / search / notifications | Done | upload, forward, search, push register adapters |
 | 4 Collaboration | Done | spaces, channels, bots, webhooks |
 | 5 Admin / compliance | Done | ban, reset password, audits, message inspect+reason, invite rotate |
-| 6 Desktop / mobile / calls | Partial | Web 1:1 LiveKit voice/video done (`/v1/calls*`, `deploy/livekit.yaml`); desktop/mobile still scaffolded |
+| 6 Desktop / mobile / calls | Partial | Web 1:1 LiveKit voice/video done (`/v1/calls*`, `deploy/livekit.yaml` + coturn TURN); desktop/mobile still scaffolded |
 | 7 Hardening / launch | Done | `deploy/*`, `docs/HARDENING.md`, smoke tests |
 
 ## Seed accounts
