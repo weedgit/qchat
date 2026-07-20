@@ -296,6 +296,18 @@ func strPtr(m map[string]any, k string) *string {
 	return &s
 }
 
+func boolPtr(m map[string]any, k string) *bool {
+	v, ok := m[k]
+	if !ok || v == nil {
+		return nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return nil
+	}
+	return &b
+}
+
 func intPtr(m map[string]any, k string) *int {
 	v, ok := m[k]
 	if !ok || v == nil {

@@ -236,15 +236,17 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
-	var title, description, publicID, avatar, role, ownerID string
-	var muteAll bool
+	var title, description, announcement, publicID, avatar, role, ownerID string
+	var muteAll, forbidFriendAdd bool
 	err := s.db.QueryRow(r.Context(), `
-		SELECT conv.title, conv.description, COALESCE(conv.public_id,''), COALESCE(conv.avatar_url,''),
-		       conv.mute_all, cm.role, conv.owner_id::text
+		SELECT conv.title, COALESCE(conv.description,''), COALESCE(conv.announcement,''),
+		       COALESCE(conv.public_id,''), COALESCE(conv.avatar_url,''),
+		       conv.mute_all, COALESCE(conv.forbid_member_friend_add, FALSE), cm.role, conv.owner_id::text
 		FROM conversations conv
 		JOIN conversation_members cm ON cm.conversation_id=conv.id AND cm.user_id=$2
 		WHERE conv.id=$1 AND conv.enterprise_id=$3 AND conv.type='social_group' AND cm.role <> 'pending'`,
-		convID, c.UserID, c.EnterpriseID).Scan(&title, &description, &publicID, &avatar, &muteAll, &role, &ownerID)
+		convID, c.UserID, c.EnterpriseID).Scan(
+		&title, &description, &announcement, &publicID, &avatar, &muteAll, &forbidFriendAdd, &role, &ownerID)
 	if err != nil {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
@@ -274,8 +276,10 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 		members = []map[string]any{}
 	}
 	writeJSON(w, 200, map[string]any{
-		"id": convID, "title": title, "description": description, "public_id": publicID,
-		"avatar_url": avatar, "mute_all": muteAll, "role": role, "owner_id": ownerID, "members": members,
+		"id": convID, "title": title, "description": description, "announcement": announcement,
+		"public_id": publicID, "avatar_url": avatar, "mute_all": muteAll,
+		"forbid_member_friend_add": forbidFriendAdd,
+		"role": role, "owner_id": ownerID, "members": members,
 	})
 }
 
@@ -303,12 +307,16 @@ func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
 		UPDATE conversations SET
 			title=COALESCE($2, title),
 			description=COALESCE($3, description),
-			avatar_url=COALESCE($4, avatar_url)
+			avatar_url=COALESCE($4, avatar_url),
+			announcement=COALESCE($5, announcement),
+			forbid_member_friend_add=COALESCE($6, forbid_member_friend_add)
 		WHERE id=$1`,
 		convID,
 		strPtr(req, "title"),
 		strPtr(req, "description"),
 		strPtr(req, "avatar_url"),
+		strPtr(req, "announcement"),
+		boolPtr(req, "forbid_member_friend_add"),
 	)
 	if err != nil {
 		writeErrCode(w, 400, "update_failed", "update failed")
@@ -317,10 +325,12 @@ func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
 	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
 		Type: "group.updated",
 		Payload: map[string]any{
-			"conversation_id": convID,
-			"title":           req["title"],
-			"description":     req["description"],
-			"avatar_url":      req["avatar_url"],
+			"conversation_id":          convID,
+			"title":                    req["title"],
+			"description":              req["description"],
+			"avatar_url":               req["avatar_url"],
+			"announcement":             req["announcement"],
+			"forbid_member_friend_add": req["forbid_member_friend_add"],
 		},
 	})
 	s.handleGroupDetails(w, r)
