@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/qchat/qchat/services/api/internal/auth"
+	"github.com/qchat/qchat/services/api/internal/livekit"
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
@@ -210,14 +211,27 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "create failed")
 		return
 	}
-	// LiveKit-ready payload (token issuance wired in production)
+	lk := livekit.TokenConfig{
+		URL:       s.cfg.LiveKitURL,
+		APIKey:    s.cfg.LiveKitAPIKey,
+		APISecret: s.cfg.LiveKitAPISecret,
+	}
+	var displayName string
+	_ = s.db.QueryRow(r.Context(), `SELECT display_name FROM users WHERE id=$1`, c.UserID).Scan(&displayName)
+	token, tokErr := livekit.MintJoinToken(lk, room, c.UserID, displayName, time.Hour)
+	if tokErr != nil {
+		writeErrCode(w, 503, "livekit_unavailable", "livekit not configured")
+		return
+	}
 	payload := map[string]any{
 		"id":              id.String(),
 		"room_name":       room,
 		"kind":            req.Kind,
-		"livekit_url":     "wss://livekit.example.local",
-		"livekit_token":   "stub-token-" + id.String(),
+		"livekit_url":     lk.URL,
+		"livekit_token":   token,
 		"conversation_id": req.ConversationID,
+		"initiator_id":    c.UserID,
+		"status":          "ringing",
 	}
 	s.hub.PublishToUsers(s.memberIDs(r, req.ConversationID), ws.Event{Type: "call.ring", Payload: payload})
 	writeJSON(w, 201, payload)

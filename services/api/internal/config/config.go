@@ -17,6 +17,10 @@ type Config struct {
 	ObjectStorageURL string
 	Bucket           string
 	MigrateOnly      bool
+	// LiveKit SFU (Phase 6 voice/video). Defaults match deploy/livekit.yaml.
+	LiveKitURL       string
+	LiveKitAPIKey    string
+	LiveKitAPISecret string
 }
 
 func Load() Config {
@@ -30,6 +34,9 @@ func Load() Config {
 		CORSOrigin:       getenv("QCHAT_CORS_ORIGIN", "http://localhost:3000"),
 		ObjectStorageURL: getenv("QCHAT_OBJECT_STORAGE_URL", "http://localhost:9000"),
 		Bucket:           getenv("QCHAT_BUCKET", "qchat"),
+		LiveKitURL:       getenv("LIVEKIT_URL", "ws://localhost:7880"),
+		LiveKitAPIKey:    getenv("LIVEKIT_API_KEY", "devkey"),
+		LiveKitAPISecret: getenv("LIVEKIT_API_SECRET", "secret-that-is-at-least-32-characters-long"),
 	}
 }
 
