@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { Conversation, Message, formatLastSeen } from "@/lib/types";
@@ -30,24 +31,6 @@ function fmtTime(iso?: string): string {
   return sameDay
     ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : d.toLocaleDateString([], { month: "short", day: "numeric" });
-}
-
-function MentionText({ text }: { text: string }) {
-  // Mattermost-style @mention highlighting in post body.
-  const parts = text.split(/(@[a-zA-Z0-9_]+)/g);
-  return (
-    <>
-      {parts.map((p, i) =>
-        p.startsWith("@") ? (
-          <span key={i} className="mention">
-            {p}
-          </span>
-        ) : (
-          <span key={i}>{p}</span>
-        )
-      )}
-    </>
-  );
 }
 
 function ConversationRow({
@@ -357,7 +340,7 @@ function Bubble({
               <span>{msg.content || "File"}</span>
             </a>
           ) : (
-            <MentionText text={msg.content} />
+            <MessageBody text={msg.content} />
           )}
           {hasReactions ? (
             <div className="bubble-footer">

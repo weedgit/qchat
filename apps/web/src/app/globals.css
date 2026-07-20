@@ -1327,3 +1327,12 @@ select:focus {
   white-space: nowrap;
   color: var(--text);
 }
+.md-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.md-link { color: var(--accent); text-decoration: underline; }
+[data-theme="light"] .md-code { background: rgba(0, 0, 0, 0.06); }
