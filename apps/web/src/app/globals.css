@@ -1,4 +1,5 @@
-:root {
+:root,
+[data-theme="dark"] {
   --bg: #0e1621;
   --bg-panel: #17212b;
   --bg-panel-2: #1e2c3a;
@@ -15,6 +16,28 @@
   --ok: #4fae4e;
   --border: #0d1520;
   --radius: 10px;
+  --scrollbar: #2f3d4a;
+}
+
+/* Mattermost-inspired light theme tokens (Display → Theme). */
+[data-theme="light"] {
+  --bg: #e8eef3;
+  --bg-panel: #ffffff;
+  --bg-panel-2: #f4f7fa;
+  --bg-hover: #eef3f8;
+  --bg-active: #d6ebfa;
+  --accent: #1e88e5;
+  --accent-hover: #1976d2;
+  --text: #1a2332;
+  --text-dim: #6b7c8f;
+  --text-faint: #9aabbc;
+  --bubble-in: #ffffff;
+  --bubble-out: #d6ebfa;
+  --danger: #d64545;
+  --ok: #3d9a4a;
+  --border: #d5dee8;
+  --radius: 10px;
+  --scrollbar: #c5d0dc;
 }
 
 * {
@@ -79,7 +102,7 @@ select:focus {
   height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2f3d4a;
+  background: var(--scrollbar);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-track {
@@ -1220,4 +1243,18 @@ select:focus {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+[data-theme="light"] .bubble .meta {
+  color: rgba(26, 35, 50, 0.45);
+}
+[data-theme="light"] .voice-label {
+  color: rgba(26, 35, 50, 0.55);
+}
+[data-theme="light"] .conv-item.active .muted,
+[data-theme="light"] .conv-item.active .conv-time {
+  color: var(--text-dim);
+}
+[data-theme="light"] .status-dot {
+  border-color: var(--bg-panel);
 }

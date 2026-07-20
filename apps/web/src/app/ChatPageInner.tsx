@@ -15,6 +15,7 @@ import Avatar from "@/components/Avatar";
 import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { Conversation, Message, formatLastSeen } from "@/lib/types";
+import { useTheme } from "@/lib/theme";
 
 const VOICE_MAX_SEC = 60;
 
@@ -389,6 +390,7 @@ interface CtxMenuState {
 
 export default function ChatPageInner() {
   const chat = useChat();
+  const { theme, setTheme } = useTheme();
   const { openConversation } = chat;
   const params = useSearchParams();
   const router = useRouter();
@@ -772,6 +774,17 @@ export default function ChatPageInner() {
                 <MenuIcon d={ICONS.settings} />
                 Settings
               </Link>
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  const order = ["dark", "light", "system"] as const;
+                  const i = order.indexOf(theme);
+                  setTheme(order[(i + 1) % order.length]);
+                }}
+              >
+                <MenuIcon d={ICONS.settings} />
+                Theme: {theme}
+              </button>
               <div className="ctx-sep" />
               <button className="ctx-item" onClick={logout}>
                 <MenuIcon d={ICONS.logout} />
