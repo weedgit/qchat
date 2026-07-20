@@ -7,8 +7,9 @@ import { api, asList } from "@/lib/api";
 interface Enterprise {
   id: string;
   name: string;
-  memberCount: string;
-  status: string;
+  inviteCode: string;
+  inviteActive: boolean;
+  retentionDays: number;
   createdAt: string;
 }
 
@@ -16,8 +17,9 @@ function normalize(raw: any): Enterprise {
   return {
     id: String(raw?.id ?? raw?.enterprise_id ?? ""),
     name: String(raw?.name ?? raw?.title ?? ""),
-    memberCount: String(raw?.member_count ?? raw?.members ?? "—"),
-    status: String(raw?.status ?? "active"),
+    inviteCode: String(raw?.invite_code ?? ""),
+    inviteActive: Boolean(raw?.invite_active ?? false),
+    retentionDays: Number(raw?.retention_days ?? 90),
     createdAt: String(raw?.created_at ?? raw?.createdAt ?? ""),
   };
 }
@@ -26,6 +28,8 @@ export default function EnterprisesPage() {
   const [rows, setRows] = useState<Enterprise[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -44,21 +48,67 @@ export default function EnterprisesPage() {
     load();
   }, [load]);
 
+  async function rotateInvite() {
+    setBusy("rotate");
+    setNotice(null);
+    try {
+      const body = await api<any>("/v1/admin/invite/rotate", { method: "POST", body: "{}" });
+      setNotice(`Invite rotated to ${body?.invite_code}`);
+      await load();
+    } catch (e: any) {
+      setNotice(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function setInviteActive(active: boolean) {
+    setBusy(active ? "activate" : "revoke");
+    setNotice(null);
+    try {
+      await api(`/v1/admin/invite/${active ? "activate" : "revoke"}`, {
+        method: "POST",
+        body: "{}",
+      });
+      setNotice(active ? "Invite activated." : "Invite revoked.");
+      await load();
+    } catch (e: any) {
+      setNotice(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <AdminShell>
       <h1>Enterprises</h1>
-      <div className="page-sub">Organizations registered on this server.</div>
+      <div className="page-sub">
+        Organizations, invite codes, and retention settings.
+      </div>
 
+      <div className="toolbar">
+        <button className="btn" type="button" disabled={!!busy} onClick={rotateInvite}>
+          {busy === "rotate" ? "Rotating…" : "Rotate invite"}
+        </button>
+        <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(false)}>
+          {busy === "revoke" ? "Revoking…" : "Revoke invite"}
+        </button>
+        <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(true)}>
+          {busy === "activate" ? "Activating…" : "Activate invite"}
+        </button>
+      </div>
+
+      {notice && <div className="notice">{notice}</div>}
       {error && <div className="notice">Failed to load enterprises: {error}</div>}
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="data">
           <thead>
             <tr>
-              <th>ID</th>
               <th>Name</th>
-              <th>Members</th>
-              <th>Status</th>
+              <th>Invite code</th>
+              <th>Invite</th>
+              <th>Retention (days)</th>
               <th>Created</th>
             </tr>
           </thead>
@@ -75,14 +125,14 @@ export default function EnterprisesPage() {
             )}
             {rows.map((r) => (
               <tr key={r.id}>
-                <td style={{ wordBreak: "break-all" }}>{r.id}</td>
                 <td>{r.name}</td>
-                <td>{r.memberCount}</td>
+                <td style={{ fontFamily: "monospace" }}>{r.inviteCode}</td>
                 <td>
-                  <span className={`pill ${r.status === "active" ? "ok" : "warn"}`}>
-                    {r.status}
+                  <span className={`pill ${r.inviteActive ? "ok" : "warn"}`}>
+                    {r.inviteActive ? "active" : "revoked"}
                   </span>
                 </td>
+                <td>{r.retentionDays}</td>
                 <td className="muted">{r.createdAt}</td>
               </tr>
             ))}

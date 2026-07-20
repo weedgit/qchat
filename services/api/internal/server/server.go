@@ -108,6 +108,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/admin/messages", s.auth(s.handleAdminMessages))
 	s.mux.HandleFunc("GET /v1/admin/audits", s.auth(s.handleAdminAudits))
 	s.mux.HandleFunc("POST /v1/admin/invite/rotate", s.auth(s.handleAdminRotateInvite))
+	s.mux.HandleFunc("POST /v1/admin/invite/revoke", s.auth(s.handleAdminRevokeInvite))
+	s.mux.HandleFunc("POST /v1/admin/invite/activate", s.auth(s.handleAdminActivateInvite))
 
 	// Calls (LiveKit 1:1) + push stubs
 	s.mux.HandleFunc("POST /v1/calls", s.auth(s.handleStartCall))

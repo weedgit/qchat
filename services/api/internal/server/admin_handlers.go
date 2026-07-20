@@ -307,18 +307,3 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"audits": out})
 }
 
-func (s *Server) handleAdminRotateInvite(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
-	if c == nil {
-		return
-	}
-	code := strings.ToUpper(uuid.NewString()[:8])
-	_, err := s.db.Exec(r.Context(), `UPDATE enterprises SET invite_code=$2 WHERE id=$1`, c.EnterpriseID, code)
-	if err != nil {
-		writeErr(w, 500, "rotate failed")
-		return
-	}
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "invite.rotate", "enterprise", c.EnterpriseID, "", clientIP(r), map[string]any{"invite_code": code})
-	writeJSON(w, 200, map[string]any{"invite_code": code})
-}
-
