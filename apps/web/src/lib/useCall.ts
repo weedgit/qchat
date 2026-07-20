@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ConnectionQuality,
   Room,
   RoomEvent,
   Track,
@@ -9,9 +10,24 @@ import {
   type LocalAudioTrack,
   type RemoteAudioTrack,
   type LocalTrackPublication,
+  type Participant,
   type RemoteTrack,
 } from "livekit-client";
 import { api } from "@/lib/api";
+import {
+  clearIncomingCallAlerts,
+  notifyIncomingCall,
+  ringForIncomingCall,
+} from "@/lib/callNotify";
+import {
+  DEGRADED_CALL_QUALITY_ALERT_WAIT_MS,
+  friendlyCallError,
+  isDegradedQuality,
+  qualityFromLiveKit,
+  sampleCallStats,
+  type CallQualityLevel,
+  type CallRtcStats,
+} from "@/lib/callQuality";
 
 export type CallKind = "voice" | "video";
 
@@ -30,6 +46,8 @@ export type ActiveCall = {
   kind: CallKind;
   status: "ringing" | "active";
   role: "caller" | "callee";
+  /** Remote peer display name (DM title / initiator_name / LiveKit participant name). */
+  peerName?: string;
 };
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
@@ -91,6 +109,10 @@ export function useCall(opts: {
   const [active, setActive] = useState<ActiveCall | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  /** LiveKit signal/media reconnect in progress (RoomEvent.Reconnecting). */
+  const [reconnecting, setReconnecting] = useState(false);
+  /** Wall-clock ms when media became active (in-call timer). */
+  const [connectedAt, setConnectedAt] = useState<number | null>(null);
   /** Live local mic volume 0–1 (Web Audio analyser), updated continuously while in call. */
   const [micLevel, setMicLevel] = useState(0);
   /** Remote peer audio level 0–1 — proves RTP is arriving even if speakers are silent. */
@@ -99,6 +121,12 @@ export function useCall(opts: {
   const [cameraOff, setCameraOff] = useState(false);
   /** False when Chrome blocks remote audio until a user gesture (LiveKit startAudio). */
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(true);
+  /** LiveKit ConnectionQuality for local participant (Mattermost MOS-style hint). */
+  const [connectionQuality, setConnectionQuality] = useState<CallQualityLevel>("unknown");
+  /** True after sustained poor/lost quality (DEGRADED_CALL_QUALITY_ALERT_WAIT). */
+  const [qualityDegraded, setQualityDegraded] = useState(false);
+  const [showCallStats, setShowCallStats] = useState(false);
+  const [callStats, setCallStats] = useState<CallRtcStats | null>(null);
   const [remoteVideoEl, setRemoteVideoElState] = useState<HTMLVideoElement | null>(null);
   const [localVideoEl, setLocalVideoElState] = useState<HTMLVideoElement | null>(null);
   const [remoteAudioEl, setRemoteAudioElState] = useState<HTMLAudioElement | null>(null);
@@ -115,8 +143,28 @@ export function useCall(opts: {
   const remoteVideoElRef = useRef<HTMLVideoElement | null>(null);
   const localVideoElRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioElRef = useRef<HTMLAudioElement | null>(null);
+  const incomingNotifyRef = useRef<Notification | null>(null);
+  const degradedSinceRef = useRef<number | null>(null);
   activeRef.current = active;
   micMutedRef.current = micMuted;
+
+  const clearRingAlerts = useCallback(() => {
+    clearIncomingCallAlerts(incomingNotifyRef.current);
+    incomingNotifyRef.current = null;
+  }, []);
+
+  const resetMediaUi = useCallback(() => {
+    setConnecting(false);
+    setReconnecting(false);
+    setConnectedAt(null);
+    setMicLevel(0);
+    setRemoteMicLevel(0);
+    setConnectionQuality("unknown");
+    setQualityDegraded(false);
+    setShowCallStats(false);
+    setCallStats(null);
+    degradedSinceRef.current = null;
+  }, []);
 
   const setRemoteVideoEl = useCallback((el: HTMLVideoElement | null) => {
     remoteVideoElRef.current = el;
@@ -260,6 +308,11 @@ export function useCall(opts: {
     async (url: string, token: string, kind: CallKind, callId: string) => {
       await disconnectRoom();
       setConnecting(true);
+      setReconnecting(false);
+      setConnectionQuality("unknown");
+      setQualityDegraded(false);
+      setCallStats(null);
+      degradedSinceRef.current = null;
       setError(null);
       setMicLevel(0);
       setRemoteMicLevel(0);
@@ -330,15 +383,54 @@ export function useCall(opts: {
             startMicMeter(pub.track as LocalAudioTrack);
           }
         });
-        room.on(RoomEvent.ParticipantConnected, () => {
+        room.on(RoomEvent.ParticipantConnected, (participant) => {
           hadRemoteRef.current = true;
+          const name = String(participant?.name ?? "").trim();
+          if (name) {
+            setActive((prev) =>
+              prev && prev.callId === callId && !prev.peerName
+                ? { ...prev, peerName: name }
+                : prev
+            );
+          }
           // Peer may already be publishing — bind any existing remote tracks.
           reattachRemoteMedia();
+        });
+        // LiveKit auto-reconnect (default); surface UX while signal/media recovers.
+        room.on(RoomEvent.Reconnecting, () => {
+          if (intentionalDisconnectRef.current || endingRef.current) return;
+          setReconnecting(true);
+        });
+        room.on(RoomEvent.SignalReconnecting, () => {
+          if (intentionalDisconnectRef.current || endingRef.current) return;
+          setReconnecting(true);
+        });
+        room.on(RoomEvent.Reconnected, () => {
+          if (intentionalDisconnectRef.current || endingRef.current) return;
+          setReconnecting(false);
+          setError(null);
+          reattachRemoteMedia();
+          room.startAudio().catch(() => {});
+        });
+        room.on(RoomEvent.ConnectionQualityChanged, (quality: ConnectionQuality, participant: Participant) => {
+          if (participant !== room.localParticipant) return;
+          const level = qualityFromLiveKit(quality);
+          setConnectionQuality(level);
+          if (isDegradedQuality(level)) {
+            if (degradedSinceRef.current == null) degradedSinceRef.current = Date.now();
+            else if (Date.now() - degradedSinceRef.current >= DEGRADED_CALL_QUALITY_ALERT_WAIT_MS) {
+              setQualityDegraded(true);
+            }
+          } else {
+            degradedSinceRef.current = null;
+            setQualityDegraded(false);
+          }
         });
         room.on(RoomEvent.Disconnected, () => {
           if (intentionalDisconnectRef.current || endingRef.current) return;
           const cur = activeRef.current;
           if (cur && cur.callId === callId) {
+            setReconnecting(false);
             stopMicMeter();
             setError((prev) => prev || "Media disconnected — check LiveKit (port 7880) and mic permission");
           }
@@ -353,12 +445,11 @@ export function useCall(opts: {
           const cur = activeRef.current;
           if (!cur || cur.callId !== callId) return;
           endingRef.current = true;
+          clearRingAlerts();
           setActive(null);
           setIncoming(null);
-          setConnecting(false);
-          setMicLevel(0);
-          setRemoteMicLevel(0);
           setError(null);
+          resetMediaUi();
           disconnectRoom().catch(() => {});
           hangupServer(callId).finally(() => {
             endingRef.current = false;
@@ -367,6 +458,7 @@ export function useCall(opts: {
 
         // LiveKit defaults peerConnectionTimeout/websocketTimeout to 15s — that was
         // ending answered calls at "Voice call · 15s" on slow ICE (VM / Cursor).
+        // Reconnect stays enabled (LiveKit default) for mid-call network blips.
         await withTimeout(
           room.connect(lkUrl, token, {
             peerConnectionTimeout: 60_000,
@@ -377,9 +469,20 @@ export function useCall(opts: {
         );
         if (room.remoteParticipants.size > 0) {
           hadRemoteRef.current = true;
+          room.remoteParticipants.forEach((p) => {
+            const name = String(p.name ?? "").trim();
+            if (name) {
+              setActive((prev) =>
+                prev && prev.callId === callId && !prev.peerName
+                  ? { ...prev, peerName: name }
+                  : prev
+              );
+            }
+          });
         }
         // SFU is up — leave "Setting up media…" even if mic publish is slow.
         setConnecting(false);
+        setConnectedAt(Date.now());
         // Unlock remote playback (Chrome autoplay). Best-effort after connect;
         // if it fails, UI shows "Tap to enable sound".
         try {
@@ -426,8 +529,9 @@ export function useCall(opts: {
           if (pub.track) attachTrack(pub.track, true);
         });
       } catch (e: any) {
-        const msg = e?.message || "Failed to connect media";
+        const msg = friendlyCallError(e);
         setError(msg);
+        setReconnecting(false);
         await disconnectRoom();
         // Keep the in-call overlay so the user can Hang up / retry; ending the
         // server session here caused the "auto hangup" feeling when LiveKit/WS
@@ -439,9 +543,11 @@ export function useCall(opts: {
     },
     [
       attachTrack,
+      clearRingAlerts,
       disconnectRoom,
       hangupServer,
       reattachRemoteMedia,
+      resetMediaUi,
       startMicMeter,
       startRemoteMicMeter,
       stopMicMeter,
@@ -465,13 +571,23 @@ export function useCall(opts: {
         const initiatorId = String(payload?.initiator_id ?? "");
         if (!callId || (meId && initiatorId === meId)) return;
         setError(null);
-        setIncoming({
+        const incomingCall = {
           callId,
           conversationId: String(payload?.conversation_id ?? ""),
-          kind: payload?.kind === "video" ? "video" : "voice",
+          kind: (payload?.kind === "video" ? "video" : "voice") as CallKind,
           initiatorId,
           initiatorName: String(payload?.initiator_name ?? "") || undefined,
           livekitUrl: String(payload?.livekit_url ?? "") || undefined,
+        };
+        setIncoming(incomingCall);
+        // Mattermost ringForCall + DID_NOTIFY_FOR_CALL (background tab).
+        clearRingAlerts();
+        ringForIncomingCall();
+        incomingNotifyRef.current = notifyIncomingCall({
+          callId: incomingCall.callId,
+          conversationId: incomingCall.conversationId,
+          kind: incomingCall.kind,
+          initiatorName: incomingCall.initiatorName,
         });
         return;
       }
@@ -482,14 +598,16 @@ export function useCall(opts: {
         const kind = payload?.kind === "video" ? "video" : "voice";
         const convId = String(payload?.conversation_id ?? "");
         if (!callId || !token || !url) return;
+        clearRingAlerts();
         setIncoming(null);
-        setActive({
+        setActive((prev) => ({
           callId,
           conversationId: convId,
           kind,
           status: "active",
           role: "caller",
-        });
+          peerName: prev?.peerName,
+        }));
         connectLiveKit(url, token, kind, callId).catch(() => {});
         return;
       }
@@ -497,6 +615,7 @@ export function useCall(opts: {
         const callId = String(payload?.call_id ?? payload?.id ?? "");
         const convId = String(payload?.conversation_id ?? "");
         endingRef.current = true;
+        clearRingAlerts();
         setIncoming((prev) => {
           if (!prev) return null;
           if (!callId || prev.callId === callId) return null;
@@ -509,30 +628,63 @@ export function useCall(opts: {
           if (convId && prev.conversationId === convId) return null;
           return prev;
         });
-        setConnecting(false);
-        setMicLevel(0);
-        setRemoteMicLevel(0);
+        resetMediaUi();
         setError(null);
         disconnectRoom().catch(() => {});
         endingRef.current = false;
       }
     });
-  }, [subscribe, meId, connectLiveKit, disconnectRoom]);
+  }, [subscribe, meId, connectLiveKit, disconnectRoom, clearRingAlerts, resetMediaUi]);
+
+  // Optional RTC stats while the stats panel is open.
+  useEffect(() => {
+    if (!showCallStats || !active || active.status !== "active") {
+      setCallStats(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      const stats = await sampleCallStats(roomRef.current);
+      if (!cancelled) setCallStats(stats);
+    };
+    tick();
+    const id = window.setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [showCallStats, active?.callId, active?.status]);
+
+  // Re-check degraded quality wait while still poor (ConnectionQuality may not re-fire).
+  useEffect(() => {
+    if (!active || active.status !== "active") return;
+    if (!isDegradedQuality(connectionQuality)) return;
+    const id = window.setInterval(() => {
+      if (degradedSinceRef.current == null) return;
+      if (Date.now() - degradedSinceRef.current >= DEGRADED_CALL_QUALITY_ALERT_WAIT_MS) {
+        setQualityDegraded(true);
+      }
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [active?.callId, active?.status, connectionQuality]);
 
   const startCall = useCallback(
-    async (conversationId: string, kind: CallKind) => {
+    async (conversationId: string, kind: CallKind, peerName?: string) => {
       setError(null);
       const res = await api<any>("/v1/calls", {
         method: "POST",
         body: JSON.stringify({ conversation_id: conversationId, kind }),
       });
       const callId = String(res?.call_id ?? res?.id ?? "");
+      setConnectedAt(null);
+      setReconnecting(false);
       setActive({
         callId,
         conversationId,
         kind,
         status: "ringing",
         role: "caller",
+        peerName: peerName?.trim() || undefined,
       });
       return res;
     },
@@ -545,6 +697,8 @@ export function useCall(opts: {
     const kind = incoming.kind;
     const callId = incoming.callId;
     const convId = incoming.conversationId;
+    const peerName = incoming.initiatorName?.trim() || undefined;
+    clearRingAlerts();
     const res = await api<any>(`/v1/calls/${callId}/answer`, { method: "POST" });
     const token = String(res?.livekit_token ?? "");
     const url = String(res?.livekit_url ?? incoming.livekitUrl ?? "");
@@ -555,36 +709,41 @@ export function useCall(opts: {
       kind,
       status: "active",
       role: "callee",
+      peerName,
     });
     try {
       await connectLiveKit(url, token, kind, callId);
     } catch {
       /* error shown on overlay; user can Hang up */
     }
-  }, [incoming, connectLiveKit]);
+  }, [incoming, connectLiveKit, clearRingAlerts]);
 
   const declineCall = useCallback(async () => {
     if (!incoming) return;
     const id = incoming.callId;
+    clearRingAlerts();
     setIncoming(null);
     await api(`/v1/calls/${id}/decline`, { method: "POST" }).catch(() => {});
-  }, [incoming]);
+  }, [incoming, clearRingAlerts]);
 
   const hangup = useCallback(async () => {
     const cur = activeRef.current;
     if (!cur) return;
     const id = cur.callId;
     endingRef.current = true;
+    clearRingAlerts();
     setActive(null);
     setIncoming(null);
     setError(null);
-    setConnecting(false);
-    setMicLevel(0);
-    setRemoteMicLevel(0);
+    resetMediaUi();
     await disconnectRoom();
     await hangupServer(id);
     endingRef.current = false;
-  }, [disconnectRoom, hangupServer]);
+  }, [disconnectRoom, hangupServer, clearRingAlerts, resetMediaUi]);
+
+  const toggleCallStats = useCallback(() => {
+    setShowCallStats((v) => !v);
+  }, []);
 
   const toggleMic = useCallback(async () => {
     const room = roomRef.current;
@@ -630,6 +789,12 @@ export function useCall(opts: {
     active,
     error,
     connecting,
+    reconnecting,
+    connectedAt,
+    connectionQuality,
+    qualityDegraded,
+    showCallStats,
+    callStats,
     micLevel,
     remoteMicLevel,
     micMuted,
@@ -645,5 +810,6 @@ export function useCall(opts: {
     toggleMic,
     toggleCamera,
     enableSound,
+    toggleCallStats,
   };
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -9,6 +10,9 @@ import (
 	"github.com/qchat/qchat/services/api/internal/livekit"
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
+
+// ringTimeout matches Mattermost Calls RING_LENGTH (30s) — unanswered ringing ends as missed.
+const ringTimeout = 30 * time.Second
 
 func (s *Server) livekitCfg() livekit.TokenConfig {
 	return livekit.TokenConfig{
@@ -132,6 +136,19 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.PublishToUsers(others, ws.Event{Type: "call.ring", Payload: ringPayload})
 
+	// Mattermost Calls: wake backgrounded / closed tabs (Web Push + client Notification).
+	go s.notifyCallRingPush(
+		context.Background(),
+		others,
+		req.Kind,
+		s.userDisplayName(r, c.UserID),
+		id.String(),
+		req.ConversationID,
+	)
+
+	// Mattermost RING_LENGTH: auto-end unanswered rings so caller/callee UIs clear.
+	s.scheduleRingTimeout(id.String())
+
 	writeJSON(w, 201, map[string]any{
 		"id":              id.String(),
 		"call_id":         id.String(),
@@ -143,6 +160,50 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		"initiator_id":    c.UserID,
 		"status":          "ringing",
 	})
+}
+
+func (s *Server) scheduleRingTimeout(callID string) {
+	time.AfterFunc(ringTimeout, func() {
+		s.expireMissedRing(callID)
+	})
+}
+
+// expireMissedRing ends a still-ringing session after RING_LENGTH (Mattermost-style miss).
+func (s *Server) expireMissedRing(callID string) {
+	ctx := context.Background()
+	var call callRow
+	err := s.db.QueryRow(ctx, `
+		SELECT id::text, conversation_id::text, initiator_id::text, kind, room_name, status, created_at, answered_at
+		FROM call_sessions WHERE id=$1 AND status='ringing'`, callID).
+		Scan(&call.ID, &call.ConversationID, &call.InitiatorID, &call.Kind, &call.RoomName, &call.Status, &call.CreatedAt, &call.AnsweredAt)
+	if err != nil {
+		return
+	}
+	tag, err := s.db.Exec(ctx, `
+		UPDATE call_sessions SET status='missed', ended_at=now()
+		WHERE id=$1 AND status='ringing'`, callID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return
+	}
+
+	kindLabel := "Voice"
+	if call.Kind == "video" {
+		kindLabel = "Video"
+	}
+	body := "Missed " + kindLabel + " call"
+	s.postCallSystemMessageCtx(ctx, &call, body, call.InitiatorID)
+
+	payload := map[string]any{
+		"id":              call.ID,
+		"call_id":         call.ID,
+		"kind":            call.Kind,
+		"conversation_id": call.ConversationID,
+		"initiator_id":    call.InitiatorID,
+		"status":          "missed",
+		"reason":          "timeout",
+		"by":              call.InitiatorID,
+	}
+	s.hub.PublishToUsers(s.memberIDsCtx(ctx, call.ConversationID), ws.Event{Type: "call.ended", Payload: payload})
 }
 
 type callRow struct {
@@ -170,8 +231,12 @@ func (s *Server) loadCall(r *http.Request, callID string) (*callRow, error) {
 
 // postCallSystemMessage mirrors Mattermost custom_calls posts in the timeline.
 func (s *Server) postCallSystemMessage(r *http.Request, call *callRow, body string, byUserID string) {
+	s.postCallSystemMessageCtx(r.Context(), call, body, byUserID)
+}
+
+func (s *Server) postCallSystemMessageCtx(ctx context.Context, call *callRow, body string, byUserID string) {
 	var enterpriseID string
-	_ = s.db.QueryRow(r.Context(), `SELECT enterprise_id::text FROM conversations WHERE id=$1`, call.ConversationID).Scan(&enterpriseID)
+	_ = s.db.QueryRow(ctx, `SELECT enterprise_id::text FROM conversations WHERE id=$1`, call.ConversationID).Scan(&enterpriseID)
 	if enterpriseID == "" {
 		return
 	}
@@ -179,7 +244,7 @@ func (s *Server) postCallSystemMessage(r *http.Request, call *callRow, body stri
 	clientID := "call-" + call.ID
 	var outID string
 	var seq int64
-	err := s.db.QueryRow(r.Context(), `
+	err := s.db.QueryRow(ctx, `
 		INSERT INTO messages(id, conversation_id, enterprise_id, sender_id, client_msg_id, type, body)
 		VALUES ($1,$2,$3,$4,$5,'call',$6)
 		ON CONFLICT (conversation_id, client_msg_id) DO UPDATE SET body=EXCLUDED.body
@@ -188,7 +253,7 @@ func (s *Server) postCallSystemMessage(r *http.Request, call *callRow, body stri
 	if err != nil {
 		return
 	}
-	s.hub.PublishToUsers(s.memberIDs(r, call.ConversationID), ws.Event{
+	s.hub.PublishToUsers(s.memberIDsCtx(ctx, call.ConversationID), ws.Event{
 		Type: "message.new",
 		Payload: map[string]any{
 			"id": outID, "conversation_id": call.ConversationID, "sender_id": byUserID,
