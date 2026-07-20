@@ -24,18 +24,21 @@ type Server struct {
 
 func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
 	s := &Server{cfg: cfg, db: db, hub: hub, sms: sms.NewFromEnv(), mux: http.NewServeMux()}
+	s.registerWSGauge()
 	s.routes()
 	return s
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.withCORS(s.mux)
+	return s.withCORS(s.withMetrics(s.mux))
 }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "qchat-api"})
 	})
+	// Mattermost MetricsSettings: scrape /metrics (keep off public nginx — see nginx-qchat.conf).
+	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 
 	// Auth
 	s.mux.HandleFunc("GET /v1/auth/captcha", s.handleCaptcha)

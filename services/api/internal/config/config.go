@@ -1,10 +1,14 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
+
+const DefaultJWTSecret = "dev-qchat-secret-change-me"
 
 type Config struct {
 	HTTPAddr         string
@@ -17,6 +21,7 @@ type Config struct {
 	ObjectStorageURL string
 	Bucket           string
 	MigrateOnly      bool
+	Env              string
 	// LiveKit SFU (Phase 6 voice/video). Defaults match deploy/livekit.yaml.
 	LiveKitURL       string
 	LiveKitAPIKey    string
@@ -32,12 +37,13 @@ func Load() Config {
 		HTTPAddr:         getenv("QCHAT_HTTP_ADDR", ":8080"),
 		DatabaseURL:      getenv("QCHAT_DATABASE_URL", "postgres://qchat:qchat@localhost:5432/qchat?sslmode=disable"),
 		RedisURL:         getenv("QCHAT_REDIS_URL", "redis://localhost:6379/0"),
-		JWTSecret:        getenv("QCHAT_JWT_SECRET", "dev-qchat-secret-change-me"),
+		JWTSecret:        getenv("QCHAT_JWT_SECRET", DefaultJWTSecret),
 		AccessTTL:        durationEnv("QCHAT_ACCESS_TTL", 15*time.Minute),
 		RefreshTTL:       durationEnv("QCHAT_REFRESH_TTL", 60*24*time.Hour),
 		CORSOrigin:       getenv("QCHAT_CORS_ORIGIN", "http://localhost:3000"),
 		ObjectStorageURL: getenv("QCHAT_OBJECT_STORAGE_URL", "http://localhost:9000"),
 		Bucket:           getenv("QCHAT_BUCKET", "qchat"),
+		Env:              strings.ToLower(getenv("QCHAT_ENV", "development")),
 		LiveKitURL:       getenv("LIVEKIT_URL", "ws://localhost:7880"),
 		LiveKitAPIKey:    getenv("LIVEKIT_API_KEY", "devkey"),
 		LiveKitAPISecret: getenv("LIVEKIT_API_SECRET", "secret-that-is-at-least-32-characters-long"),
@@ -45,6 +51,18 @@ func Load() Config {
 		VAPIDPrivate:     getenv("QCHAT_VAPID_PRIVATE", "bUnBIxgamtcANH9nAryWvxT0v8s4iosetHMSeOmcB7g"),
 		VAPIDSubject:     getenv("QCHAT_VAPID_SUBJECT", "mailto:admin@qchat.local"),
 	}
+}
+
+// ValidateSecrets refuses weak JWT defaults when QCHAT_ENV=production
+// (Mattermost-style ServiceSettings.EnableDeveloper / production checks).
+func (c Config) ValidateSecrets() error {
+	if c.Env != "production" {
+		return nil
+	}
+	if c.JWTSecret == "" || c.JWTSecret == DefaultJWTSecret || len(c.JWTSecret) < 32 {
+		return fmt.Errorf("QCHAT_JWT_SECRET must be a unique secret (≥32 chars); run deploy/rotate-jwt-secret.sh")
+	}
+	return nil
 }
 
 func getenv(k, def string) string {

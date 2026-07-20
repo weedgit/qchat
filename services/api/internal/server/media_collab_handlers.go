@@ -21,11 +21,15 @@ var allowedMedia = map[string]int64{
 	"image/gif":       20 << 20,
 	"image/webp":      20 << 20,
 	"application/pdf": 50 << 20,
-	"audio/webm":      10 << 20,
-	"audio/ogg":       10 << 20,
-	"audio/mpeg":      10 << 20,
-	"audio/mp4":       10 << 20,
-	"video/mp4":       200 << 20,
+	"text/plain":      5 << 20,
+	"application/msword": 50 << 20,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": 50 << 20,
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       50 << 20,
+	"audio/webm": 10 << 20,
+	"audio/ogg":  10 << 20,
+	"audio/mpeg": 10 << 20,
+	"audio/mp4":  10 << 20,
+	"video/mp4":  200 << 20,
 }
 
 func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
@@ -53,8 +57,8 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	max, ok := allowedMedia[ct]
 	if !ok {
-		// allow generic docs under 50MB
-		max = 50 << 20
+		writeErr(w, 400, "content type not allowed")
+		return
 	}
 	if hdr.Size > max {
 		writeErr(w, 400, "file too large")

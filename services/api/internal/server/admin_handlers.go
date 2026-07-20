@@ -250,9 +250,9 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
-	reason := r.URL.Query().Get("reason")
-	if reason == "" {
-		writeErr(w, 400, "reason required for message access")
+	reason := strings.TrimSpace(r.URL.Query().Get("reason"))
+	if len(reason) < 8 {
+		writeErr(w, 400, "reason required (≥8 chars) for message access")
 		return
 	}
 	userID := r.URL.Query().Get("user_id")

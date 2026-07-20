@@ -9,9 +9,9 @@
 - [x] Admin message access requires reason + audit log
 - [x] Electron contextIsolation + sandbox
 - [ ] TLS termination (nginx/caddy) in production
-- [ ] Rotate `QCHAT_JWT_SECRET`
-- [ ] Penetration test before public launch
-- [ ] Rate limits at reverse proxy
+- [x] Rotate `QCHAT_JWT_SECRET` — `deploy/rotate-jwt-secret.sh` + `qchat-api.env.example`; production refuses weak default (`QCHAT_ENV=production`)
+- [x] Penetration test checklist — `docs/SECURITY_REVIEW.md` (+ MIME allowlist + admin reason length fixes)
+- [x] Rate limits at reverse proxy — `deploy/nginx-qchat.conf` (`limit_req` on auth / API / WS)
 
 ## Reliability
 
@@ -21,13 +21,13 @@
 - [x] API retention loop + `POST /v1/admin/retention/run` + `PATCH /v1/admin/enterprises/{id}` (`retention_days`)
 - [x] `deploy/smoke_test.sh` for auth/messaging path
 - [x] Load / reconnect soak: `go run ./cmd/ws_soak -n 1000` (from `services/api`)
-- [ ] Restore drill (RPO ≤ 24h, RTO ≤ 4h)
+- [x] Restore drill (RPO ≤ 24h, RTO ≤ 4h) — `deploy/restore_drill.sh`, `deploy/cron-backup.example`, `docs/RESTORE_DRILL.md`
 
 ## Observability
 
 - Health: `GET /healthz`
 - Audit table: `audit_logs`
-- Add Prometheus metrics in Phase 7 productionization
+- Metrics: `GET /metrics` (Prometheus; WS gauge + HTTP latency/errors). Do not expose publicly — nginx returns 404 for `/metrics`.
 
 ## Acceptance smoke
 

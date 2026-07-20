@@ -23,6 +23,9 @@ func main() {
 
 	cfg := config.Load()
 	cfg.MigrateOnly = *migrateOnly
+	if err := cfg.ValidateSecrets(); err != nil {
+		log.Fatalf("config: %v", err)
+	}
 	ctx := context.Background()
 
 	pool, err := db.Connect(ctx, cfg.DatabaseURL)
