@@ -16,6 +16,7 @@ import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { Conversation, Message, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
+import { useGlobalSearch } from "@/lib/useSearch";
 
 const VOICE_MAX_SEC = 60;
 
@@ -397,6 +398,8 @@ export default function ChatPageInner() {
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [inChatSearch, setInChatSearch] = useState("");
+  const [showInChatSearch, setShowInChatSearch] = useState(false);
   const [draft, setDraft] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -562,6 +565,10 @@ export default function ChatPageInner() {
     if (!q) return chat.conversations;
     return chat.conversations.filter((c) => c.title.toLowerCase().includes(q));
   }, [chat.conversations, query]);
+
+  // Mattermost global search (users + messages) when sidebar query is long enough.
+  const globalSearch = useGlobalSearch(query);
+  const chatSearch = useGlobalSearch(inChatSearch, chat.activeId);
 
   useEffect(() => {
     const c = params.get("c");
@@ -794,6 +801,58 @@ export default function ChatPageInner() {
           )}
         </div>
         <div className="conv-list">
+          {globalSearch.active ? (
+            <div className="search-results">
+              {globalSearch.loading && <div className="muted" style={{ padding: 12 }}>Searching…</div>}
+              {globalSearch.users.length > 0 && (
+                <div className="search-section">
+                  <div className="search-section-title">People</div>
+                  {globalSearch.users.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className="search-hit"
+                      onClick={() => {
+                        chat.openDM(u.id).catch(() => {});
+                        setQuery("");
+                      }}
+                    >
+                      <Avatar name={u.displayName} size={36} />
+                      <div>
+                        <div className="conv-title">{u.displayName}</div>
+                        <div className="muted" style={{ fontSize: 12 }}>@{u.username}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {globalSearch.messages.length > 0 && (
+                <div className="search-section">
+                  <div className="search-section-title">Messages</div>
+                  {globalSearch.messages.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className="search-hit"
+                      onClick={() => {
+                        chat.openConversation(m.conversationId);
+                        setQuery("");
+                      }}
+                    >
+                      <div className="search-hit-body">{m.body}</div>
+                      <div className="muted" style={{ fontSize: 11 }}>{fmtTime(m.createdAt)}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!globalSearch.loading &&
+                globalSearch.users.length === 0 &&
+                globalSearch.messages.length === 0 && (
+                  <div className="muted" style={{ padding: 14 }}>No results</div>
+                )}
+            </div>
+          ) : (
+            <>
           {chat.loadError && (
             <div style={{ padding: 14 }}>
               <div className="error-text">{chat.loadError}</div>
@@ -828,6 +887,8 @@ export default function ChatPageInner() {
               onMarkUnread={() => chat.markConversationUnread(c.id).catch(() => {})}
             />
           ))}
+            </>
+          )}
         </div>
         <button
           type="button"
@@ -902,39 +963,96 @@ export default function ChatPageInner() {
                   </button>
                 )}
               </div>
-            ) : (
-              <div
-                className="chat-header clickable"
-                title="View details"
-                onClick={() => setShowDetails(true)}
-              >
-                <Avatar
-                  name={active.title}
-                  url={active.avatarUrl}
-                  size={38}
-                  showStatus={active.type === "dm"}
-                  online={
-                    active.peerId
-                      ? chat.presenceByUser[active.peerId]?.online ?? active.peerOnline
-                      : undefined
-                  }
+            ) : showInChatSearch ? (
+              <div className="chat-header" onClick={(e) => e.stopPropagation()}>
+                <input
+                  className="search-input"
+                  autoFocus
+                  placeholder="Search in conversation"
+                  value={inChatSearch}
+                  onChange={(e) => setInChatSearch(e.target.value)}
                 />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="title">{active.title}</div>
-                  <div className="sub">
-                    {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
-                      (active.type === "dm"
-                        ? (() => {
-                            const p = active.peerId
-                              ? chat.presenceByUser[active.peerId]
-                              : undefined;
-                            const online = p?.online ?? active.peerOnline;
-                            if (online) return "online";
-                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
-                          })()
-                        : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Close search"
+                  onClick={() => {
+                    setShowInChatSearch(false);
+                    setInChatSearch("");
+                  }}
+                >
+                  {"\u2715"}
+                </button>
+              </div>
+            ) : (
+              <div className="chat-header">
+                <div
+                  className="chat-header clickable"
+                  style={{ flex: 1, border: "none", padding: 0, minWidth: 0 }}
+                  title="View details"
+                  onClick={() => setShowDetails(true)}
+                >
+                  <Avatar
+                    name={active.title}
+                    url={active.avatarUrl}
+                    size={38}
+                    showStatus={active.type === "dm"}
+                    online={
+                      active.peerId
+                        ? chat.presenceByUser[active.peerId]?.online ?? active.peerOnline
+                        : undefined
+                    }
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="title">{active.title}</div>
+                    <div className="sub">
+                      {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
+                        (active.type === "dm"
+                          ? (() => {
+                              const p = active.peerId
+                                ? chat.presenceByUser[active.peerId]
+                                : undefined;
+                              const online = p?.online ?? active.peerOnline;
+                              if (online) return "online";
+                              return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
+                            })()
+                          : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
+                    </div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Search in chat"
+                  onClick={() => setShowInChatSearch(true)}
+                >
+                  <MenuIcon d={"M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z M21 21l-4.3-4.3"} />
+                </button>
+              </div>
+            )}
+
+            {showInChatSearch && chatSearch.active && (
+              <div className="inchat-search-results">
+                {chatSearch.loading && <div className="muted">Searching…</div>}
+                {chatSearch.messages.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className="search-hit"
+                    onClick={() => {
+                      const el = document.getElementById(`msg-${m.id}`);
+                      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      el?.classList.add("msg-flash");
+                      setTimeout(() => el?.classList.remove("msg-flash"), 1200);
+                    }}
+                  >
+                    <div className="search-hit-body">{m.body}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>{fmtTime(m.createdAt)}</div>
+                  </button>
+                ))}
+                {!chatSearch.loading && chatSearch.messages.length === 0 && (
+                  <div className="muted">No matches in this chat</div>
+                )}
               </div>
             )}
 
@@ -945,8 +1063,8 @@ export default function ChatPageInner() {
                 </div>
               )}
               {activeMessages.map((m) => (
+                <div key={m.id} id={`msg-${m.id}`}>
                 <Bubble
-                  key={m.id}
                   msg={m}
                   isGroup={!!isGroup}
                   replyPreview={previewFor(m)}
@@ -967,6 +1085,7 @@ export default function ChatPageInner() {
                       : undefined
                   }
                 />
+                </div>
               ))}
             </div>
 

@@ -1258,3 +1258,43 @@ select:focus {
 [data-theme="light"] .status-dot {
   border-color: var(--bg-panel);
 }
+
+/* Mattermost-style search results */
+.search-results { padding: 8px 0; }
+.search-section { margin-bottom: 10px; }
+.search-section-title {
+  padding: 6px 14px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  font-weight: 700;
+}
+.search-hit {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 8px 14px;
+  border-radius: 0;
+}
+.search-hit:hover { background: var(--bg-hover); }
+.search-hit-body {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.inchat-search-results {
+  max-height: 180px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  padding: 6px 0;
+}
+.msg-flash .bubble {
+  outline: 2px solid var(--accent);
+  animation: ui-pop-in 200ms ease;
+}
