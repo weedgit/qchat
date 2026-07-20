@@ -42,6 +42,7 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     active,
     error,
     connecting,
+    reconnecting,
     micLevel,
     remoteMicLevel,
     micMuted,
@@ -57,6 +58,15 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     enableSound,
     audioPlaybackOk,
   } = call;
+
+  const statusTitle =
+    active?.status === "ringing"
+      ? `Calling… (${active.kind})`
+      : reconnecting
+        ? "Reconnecting…"
+        : connecting
+          ? "Connecting…"
+          : `${active?.kind === "video" ? "Video" : "Voice"} call`;
 
   return (
     <>
@@ -96,13 +106,7 @@ export default function CallOverlay({ call }: { call: CallApi }) {
       {active && (
         <div className={`call-overlay in-call ${active.kind}`} role="dialog" aria-label="In call">
           <div className="call-overlay-card call-media-card">
-            <div className="call-overlay-title">
-              {active.status === "ringing"
-                ? `Calling… (${active.kind})`
-                : connecting
-                  ? "Connecting…"
-                  : `${active.kind === "video" ? "Video" : "Voice"} call`}
-            </div>
+            <div className="call-overlay-title">{statusTitle}</div>
             {active.kind === "video" && active.status === "active" && (
               <div className="call-videos">
                 <video
@@ -122,7 +126,11 @@ export default function CallOverlay({ call }: { call: CallApi }) {
             )}
             {active.kind === "voice" && active.status === "active" && (
               <div className="call-voice-placeholder muted">
-                {connecting ? "Setting up media…" : "Voice connected"}
+                {reconnecting
+                  ? "Reconnecting media…"
+                  : connecting
+                    ? "Setting up media…"
+                    : "Voice connected"}
               </div>
             )}
             {active.status === "active" && !connecting && (

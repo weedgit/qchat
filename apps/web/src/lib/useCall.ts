@@ -91,7 +91,9 @@ export function useCall(opts: {
   const [active, setActive] = useState<ActiveCall | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
-  /** Live local mic volume 0–1 (Web Audio analyser), updated continuously while in call. */
+  /** LiveKit signal/media reconnect in progress (RoomEvent.Reconnecting). */
+  const [reconnecting, setReconnecting] = useState(false);
+/** Live local mic volume 0–1 (Web Audio analyser), updated continuously while in call. */
   const [micLevel, setMicLevel] = useState(0);
   /** Remote peer audio level 0–1 — proves RTP is arriving even if speakers are silent. */
   const [remoteMicLevel, setRemoteMicLevel] = useState(0);
@@ -260,6 +262,7 @@ export function useCall(opts: {
     async (url: string, token: string, kind: CallKind, callId: string) => {
       await disconnectRoom();
       setConnecting(true);
+      setReconnecting(false);
       setError(null);
       setMicLevel(0);
       setRemoteMicLevel(0);
@@ -335,10 +338,27 @@ export function useCall(opts: {
           // Peer may already be publishing — bind any existing remote tracks.
           reattachRemoteMedia();
         });
+        // LiveKit auto-reconnect (default); surface UX while signal/media recovers.
+        room.on(RoomEvent.Reconnecting, () => {
+          if (intentionalDisconnectRef.current || endingRef.current) return;
+          setReconnecting(true);
+        });
+        room.on(RoomEvent.SignalReconnecting, () => {
+          if (intentionalDisconnectRef.current || endingRef.current) return;
+          setReconnecting(true);
+        });
+        room.on(RoomEvent.Reconnected, () => {
+          if (intentionalDisconnectRef.current || endingRef.current) return;
+          setReconnecting(false);
+          setError(null);
+          reattachRemoteMedia();
+          room.startAudio().catch(() => {});
+        });
         room.on(RoomEvent.Disconnected, () => {
           if (intentionalDisconnectRef.current || endingRef.current) return;
           const cur = activeRef.current;
           if (cur && cur.callId === callId) {
+            setReconnecting(false);
             stopMicMeter();
             setError((prev) => prev || "Media disconnected — check LiveKit (port 7880) and mic permission");
           }
@@ -356,6 +376,7 @@ export function useCall(opts: {
           setActive(null);
           setIncoming(null);
           setConnecting(false);
+          setReconnecting(false);
           setMicLevel(0);
           setRemoteMicLevel(0);
           setError(null);
@@ -367,6 +388,7 @@ export function useCall(opts: {
 
         // LiveKit defaults peerConnectionTimeout/websocketTimeout to 15s — that was
         // ending answered calls at "Voice call · 15s" on slow ICE (VM / Cursor).
+        // Reconnect stays enabled (LiveKit default) for mid-call network blips.
         await withTimeout(
           room.connect(lkUrl, token, {
             peerConnectionTimeout: 60_000,
@@ -428,6 +450,7 @@ export function useCall(opts: {
       } catch (e: any) {
         const msg = e?.message || "Failed to connect media";
         setError(msg);
+        setReconnecting(false);
         await disconnectRoom();
         // Keep the in-call overlay so the user can Hang up / retry; ending the
         // server session here caused the "auto hangup" feeling when LiveKit/WS
@@ -510,7 +533,8 @@ export function useCall(opts: {
           return prev;
         });
         setConnecting(false);
-        setMicLevel(0);
+        setReconnecting(false);
+            setMicLevel(0);
         setRemoteMicLevel(0);
         setError(null);
         disconnectRoom().catch(() => {});
@@ -527,6 +551,7 @@ export function useCall(opts: {
         body: JSON.stringify({ conversation_id: conversationId, kind }),
       });
       const callId = String(res?.call_id ?? res?.id ?? "");
+        setReconnecting(false);
       setActive({
         callId,
         conversationId,
@@ -579,6 +604,7 @@ export function useCall(opts: {
     setIncoming(null);
     setError(null);
     setConnecting(false);
+    setReconnecting(false);
     setMicLevel(0);
     setRemoteMicLevel(0);
     await disconnectRoom();
@@ -630,6 +656,7 @@ export function useCall(opts: {
     active,
     error,
     connecting,
+    reconnecting,
     micLevel,
     remoteMicLevel,
     micMuted,
