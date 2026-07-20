@@ -7,10 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/qchat/qchat/services/api/internal/auth"
-	"github.com/qchat/qchat/services/api/internal/livekit"
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
@@ -187,54 +185,6 @@ func (s *Server) broadcastTyping(c *ws.Client, eventType, convID string) {
 			"user_name":       name,
 		},
 	})
-}
-
-func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
-	c := claimsFrom(r)
-	var req struct {
-		ConversationID string `json:"conversation_id"`
-		Kind           string `json:"kind"` // voice|video
-	}
-	if err := decodeJSON(r, &req); err != nil || req.ConversationID == "" {
-		writeErr(w, 400, "conversation_id required")
-		return
-	}
-	if req.Kind == "" {
-		req.Kind = "voice"
-	}
-	id := uuid.New()
-	room := "qchat-" + id.String()
-	_, err := s.db.Exec(r.Context(), `
-		INSERT INTO call_sessions(id, conversation_id, initiator_id, kind, room_name, status)
-		VALUES ($1,$2,$3,$4,$5,'ringing')`, id, req.ConversationID, c.UserID, req.Kind, room)
-	if err != nil {
-		writeErr(w, 500, "create failed")
-		return
-	}
-	lk := livekit.TokenConfig{
-		URL:       s.cfg.LiveKitURL,
-		APIKey:    s.cfg.LiveKitAPIKey,
-		APISecret: s.cfg.LiveKitAPISecret,
-	}
-	var displayName string
-	_ = s.db.QueryRow(r.Context(), `SELECT display_name FROM users WHERE id=$1`, c.UserID).Scan(&displayName)
-	token, tokErr := livekit.MintJoinToken(lk, room, c.UserID, displayName, time.Hour)
-	if tokErr != nil {
-		writeErrCode(w, 503, "livekit_unavailable", "livekit not configured")
-		return
-	}
-	payload := map[string]any{
-		"id":              id.String(),
-		"room_name":       room,
-		"kind":            req.Kind,
-		"livekit_url":     lk.URL,
-		"livekit_token":   token,
-		"conversation_id": req.ConversationID,
-		"initiator_id":    c.UserID,
-		"status":          "ringing",
-	}
-	s.hub.PublishToUsers(s.memberIDs(r, req.ConversationID), ws.Event{Type: "call.ring", Payload: payload})
-	writeJSON(w, 201, payload)
 }
 
 func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
