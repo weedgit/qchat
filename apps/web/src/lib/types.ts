@@ -37,6 +37,8 @@ export interface Message {
   senderId: string;
   senderName?: string;
   content: string;
+  type?: string;
+  mediaUrl?: string;
   createdAt: string;
   mine?: boolean;
   pending?: boolean;
@@ -92,12 +94,18 @@ export function normalizeConversation(raw: any): Conversation {
 
 export function normalizeMessage(raw: any, currentUserId?: string): Message {
   const senderId = str(raw?.sender_id ?? raw?.from_user_id ?? raw?.user_id ?? raw?.senderId);
+  const type = str(raw?.type, "text") || "text";
+  const mediaUrl = str(raw?.media_url ?? raw?.mediaUrl) || undefined;
+  let content = str(raw?.body ?? raw?.content ?? raw?.text);
+  if (!content && type === "voice") content = "Voice message";
   return {
     id: str(raw?.id ?? raw?.message_id ?? raw?.client_msg_id ?? crypto.randomUUID()),
     conversationId: str(raw?.conversation_id ?? raw?.conversationId),
     senderId,
     senderName: str(raw?.sender_name ?? raw?.display_name ?? raw?.nickname) || undefined,
-    content: str(raw?.body ?? raw?.content ?? raw?.text),
+    content,
+    type,
+    mediaUrl,
     createdAt: str(raw?.created_at ?? raw?.createdAt ?? raw?.timestamp, new Date().toISOString()),
     mine: currentUserId ? senderId === currentUserId : undefined,
     clientMsgId: str(raw?.client_msg_id) || undefined,

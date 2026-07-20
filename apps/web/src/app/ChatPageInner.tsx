@@ -12,9 +12,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
-import { api, clearToken } from "@/lib/api";
+import { api, clearToken, mediaAuthURL } from "@/lib/api";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { Conversation, Message } from "@/lib/types";
+
+const VOICE_MAX_SEC = 60;
 
 function fmtTime(iso?: string): string {
   if (!iso) return "";
@@ -119,6 +121,7 @@ const ICONS = {
     "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M19.1 4.9L17 7 M7 17l-2.1 2.1",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
   mic: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M19 11a7 7 0 0 1-14 0 M12 18v4",
+  stop: "M6 6h12v12H6z",
 } as const;
 
 const QUICK_EMOJIS = [
@@ -222,8 +225,13 @@ function Bubble({
               {replyPreview}
             </div>
           )}
-          {msg.recalled && !msg.content ? (
+          {msg.recalled && !msg.content && !msg.mediaUrl ? (
             <span className="recalled-placeholder">Message recalled</span>
+          ) : msg.type === "voice" && msg.mediaUrl && !msg.recalled ? (
+            <div className="voice-msg">
+              <audio controls preload="metadata" src={mediaAuthURL(msg.mediaUrl)} />
+              <div className="voice-label">{msg.content || "Voice message"}</div>
+            </div>
           ) : (
             msg.content
           )}
@@ -291,9 +299,18 @@ export default function ChatPageInner() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [forwardIds, setForwardIds] = useState<string[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [recording, setRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const openedFromQuery = useRef<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const recordStartedRef = useRef(0);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordMaxRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const active = chat.conversations.find((c) => c.id === chat.activeId) ?? null;
   const activeMessages = chat.activeId ? chat.messages[chat.activeId] ?? [] : [];
@@ -483,10 +500,125 @@ export default function ChatPageInner() {
     }
   }
 
+  function clearRecordTimers() {
+    if (recordTimerRef.current) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+    if (recordMaxRef.current) {
+      clearTimeout(recordMaxRef.current);
+      recordMaxRef.current = null;
+    }
+  }
+
+  function stopMediaTracks() {
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+  }
+
+  function cancelRecording() {
+    clearRecordTimers();
+    const rec = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (rec && rec.state !== "inactive") {
+      rec.ondataavailable = null;
+      rec.onstop = null;
+      try {
+        rec.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    chunksRef.current = [];
+    stopMediaTracks();
+    setRecording(false);
+    setRecordSecs(0);
+  }
+
+  async function finishRecording(sendIt: boolean) {
+    const rec = mediaRecorderRef.current;
+    if (!rec) return;
+    clearRecordTimers();
+    mediaRecorderRef.current = null;
+    const durationSec = Math.max(1, Math.round((Date.now() - recordStartedRef.current) / 1000));
+    await new Promise<void>((resolve) => {
+      rec.onstop = () => resolve();
+      try {
+        rec.stop();
+      } catch {
+        resolve();
+      }
+    });
+    stopMediaTracks();
+    setRecording(false);
+    setRecordSecs(0);
+    const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+    chunksRef.current = [];
+    if (!sendIt || blob.size < 200 || !chat.activeId) return;
+    setVoiceBusy(true);
+    setSendError(null);
+    const replyId = replyTo?.id;
+    setReplyTo(null);
+    try {
+      await chat.sendVoiceMessage(chat.activeId, blob, durationSec, replyId);
+    } catch (e: any) {
+      setSendError(e.message || "Failed to send voice message");
+    } finally {
+      setVoiceBusy(false);
+    }
+  }
+
+  async function startRecording() {
+    if (!chat.activeId || recording || voiceBusy) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setSendError("Voice messages are not supported in this browser");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : "";
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      mediaRecorderRef.current = rec;
+      recordStartedRef.current = Date.now();
+      setRecordSecs(0);
+      setRecording(true);
+      setSendError(null);
+      rec.start(250);
+      recordTimerRef.current = setInterval(() => {
+        setRecordSecs(Math.floor((Date.now() - recordStartedRef.current) / 1000));
+      }, 250);
+      recordMaxRef.current = setTimeout(() => {
+        finishRecording(true).catch(() => {});
+      }, VOICE_MAX_SEC * 1000);
+    } catch {
+      stopMediaTracks();
+      setSendError("Microphone permission denied");
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      cancelRecording();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function previewFor(msg: Message): string | undefined {
     if (!msg.replyToId) return undefined;
     const target = activeMessages.find((m) => m.id === msg.replyToId);
-    return target ? `${target.senderName ?? (target.mine ? "You" : "User")}: ${target.content}` : "Reply";
+    if (!target) return "Reply";
+    const body =
+      target.type === "voice" ? target.content || "Voice message" : target.content;
+    return `${target.senderName ?? (target.mine ? "You" : "User")}: ${body}`;
   }
 
   return (
@@ -726,33 +858,69 @@ export default function ChatPageInner() {
                   </div>
                 )}
                 <div className="composer-row">
-                  <textarea
-                    ref={draftRef}
-                    rows={1}
-                    placeholder="Message"
-                    value={draft}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setDraft(value);
-                      if (!chat.activeId) return;
-                      if (value.trim()) chat.notifyTyping(chat.activeId);
-                      else chat.stopTyping(chat.activeId);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        send();
-                      }
-                    }}
-                  />
-                  {draft.trim() ? (
-                    <button className="send-btn" onClick={send} title="Send">
-                      {"\u27A4"}
-                    </button>
+                  {recording ? (
+                    <>
+                      <button
+                        type="button"
+                        className="send-btn danger"
+                        title="Cancel recording"
+                        onClick={cancelRecording}
+                      >
+                        {"\u2715"}
+                      </button>
+                      <div className="recording-pill">
+                        <span className="recording-dot" />
+                        Recording {Math.floor(recordSecs / 60)}:
+                        {(recordSecs % 60).toString().padStart(2, "0")}
+                        <span className="muted"> / 1:00</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="send-btn"
+                        title="Send voice message"
+                        disabled={voiceBusy}
+                        onClick={() => finishRecording(true)}
+                      >
+                        {"\u27A4"}
+                      </button>
+                    </>
                   ) : (
-                    <button className="send-btn" title="Record voice message">
-                      <MenuIcon d={ICONS.mic} style={{ width: 20, height: 20 }} />
-                    </button>
+                    <>
+                      <textarea
+                        ref={draftRef}
+                        rows={1}
+                        placeholder="Message"
+                        value={draft}
+                        disabled={voiceBusy}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setDraft(value);
+                          if (!chat.activeId) return;
+                          if (value.trim()) chat.notifyTyping(chat.activeId);
+                          else chat.stopTyping(chat.activeId);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            send();
+                          }
+                        }}
+                      />
+                      {draft.trim() ? (
+                        <button className="send-btn" onClick={send} title="Send" disabled={voiceBusy}>
+                          {"\u27A4"}
+                        </button>
+                      ) : (
+                        <button
+                          className="send-btn"
+                          title="Record voice message"
+                          disabled={voiceBusy || !chat.activeId}
+                          onClick={startRecording}
+                        >
+                          <MenuIcon d={ICONS.mic} style={{ width: 20, height: 20 }} />
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
