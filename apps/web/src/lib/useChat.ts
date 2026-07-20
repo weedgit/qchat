@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, asList, getToken, wsUrl } from "./api";
+import { api, asList, getToken, uploadMedia, wsUrl } from "./api";
 import {
   Conversation,
   CurrentUser,
@@ -293,7 +293,7 @@ export function useChat() {
 
     const msg = normalizeMessage(payload, meRef.current?.id);
     if (!msg.conversationId) return;
-    if (!msg.content && !msg.clientMsgId) return;
+    if (!msg.content && !msg.mediaUrl && !msg.clientMsgId) return;
 
     if (msg.senderId) clearTypingUser(msg.conversationId, msg.senderId);
 
@@ -453,6 +453,7 @@ export function useChat() {
       conversationId: convId,
       senderId: meRef.current?.id ?? "me",
       content,
+      type: "text",
       createdAt: new Date().toISOString(),
       mine: true,
       pending: true,
@@ -466,7 +467,13 @@ export function useChat() {
     setConversations((prev) =>
       prev.map((c) =>
         c.id === convId
-          ? { ...c, lastMessage: content, lastMessageAt: optimistic.createdAt }
+          ? {
+              ...c,
+              lastMessage: content,
+              lastMessageAt: optimistic.createdAt,
+              lastMessageSender: meRef.current?.nickname || meRef.current?.username,
+              lastMessageMine: true,
+            }
           : c
       )
     );
@@ -504,13 +511,137 @@ export function useChat() {
     }
   }, [stopTyping]);
 
+  function formatVoicePreview(durationSec: number): string {
+    const s = Math.max(0, Math.round(durationSec));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `Voice message (${m}:${r.toString().padStart(2, "0")})`;
+  }
+
+  const sendVoiceMessage = useCallback(
+    async (convId: string, blob: Blob, durationSec: number, replyToId?: string) => {
+      stopTyping(convId);
+      const preview = formatVoicePreview(durationSec);
+      const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tempId = clientMsgId;
+      const localUrl = URL.createObjectURL(blob);
+      const optimistic: Message = {
+        id: tempId,
+        conversationId: convId,
+        senderId: meRef.current?.id ?? "me",
+        content: preview,
+        type: "voice",
+        mediaUrl: localUrl,
+        createdAt: new Date().toISOString(),
+        mine: true,
+        pending: true,
+        clientMsgId,
+        replyToId,
+      };
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: [...(prev[convId] ?? []), optimistic],
+      }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                lastMessage: preview,
+                lastMessageAt: optimistic.createdAt,
+                lastMessageSender: meRef.current?.nickname || meRef.current?.username,
+                lastMessageMine: true,
+              }
+            : c
+        )
+      );
+
+      try {
+        const ext =
+          blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
+        const uploaded = await uploadMedia(blob, "voice", `voice.${ext}`);
+        const body = await api<any>(`/v1/conversations/${convId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: "voice",
+            body: preview,
+            media_url: uploaded.url,
+            client_msg_id: clientMsgId,
+            reply_to_id: replyToId || undefined,
+          }),
+        });
+        const saved = normalizeMessage(
+          {
+            ...body,
+            conversation_id: convId,
+            type: "voice",
+            body: body?.body ?? preview,
+            media_url: body?.media_url ?? uploaded.url,
+            sender_id: meRef.current?.id,
+          },
+          meRef.current?.id
+        );
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === tempId || m.clientMsgId === clientMsgId
+              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              : m
+          ),
+        }));
+        URL.revokeObjectURL(localUrl);
+      } catch (e: any) {
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === tempId ? { ...m, pending: false, failed: true } : m
+          ),
+        }));
+        throw e;
+      }
+    },
+    [stopTyping]
+  );
+
   const retryMessage = useCallback(async (convId: string, msg: Message) => {
     setMessages((prev) => ({
       ...prev,
       [convId]: (prev[convId] ?? []).filter((m) => m.id !== msg.id),
     }));
+    if (msg.type === "voice" && msg.mediaUrl) {
+      // Re-upload only works for blob URLs; otherwise resend existing media_url.
+      if (msg.mediaUrl.startsWith("blob:")) {
+        const res = await fetch(msg.mediaUrl);
+        const blob = await res.blob();
+        const match = msg.content.match(/\((\d+):(\d+)\)/);
+        const duration = match ? Number(match[1]) * 60 + Number(match[2]) : 1;
+        await sendVoiceMessage(convId, blob, duration, msg.replyToId);
+        return;
+      }
+      stopTyping(convId);
+      const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const body = await api<any>(`/v1/conversations/${convId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: "voice",
+          body: msg.content || "Voice message",
+          media_url: msg.mediaUrl,
+          client_msg_id: clientMsgId,
+          reply_to_id: msg.replyToId || undefined,
+        }),
+      });
+      const saved = normalizeMessage(
+        { ...body, conversation_id: convId, sender_id: meRef.current?.id },
+        meRef.current?.id
+      );
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: [...(prev[convId] ?? []), { ...saved, mine: true }],
+      }));
+      return;
+    }
     await sendMessage(convId, msg.content, msg.replyToId);
-  }, [sendMessage]);
+  }, [sendMessage, sendVoiceMessage, stopTyping]);
 
   const recallMessage = useCallback(async (messageId: string, convId: string) => {
     await api(`/v1/messages/${messageId}/recall`, { method: "POST" });
@@ -585,6 +716,7 @@ export function useChat() {
     openConversation,
     openDM,
     sendMessage,
+    sendVoiceMessage,
     retryMessage,
     recallMessage,
     forwardMessage,

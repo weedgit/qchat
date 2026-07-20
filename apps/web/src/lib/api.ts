@@ -168,3 +168,36 @@ export function wsUrl(): string {
   const base = origin.replace(/^http/, "ws");
   return `${base}/v1/ws?token=${encodeURIComponent(token)}`;
 }
+
+/** Absolute media URL with access token for <audio>/<img> tags. */
+export function mediaAuthURL(path?: string | null): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith("data:") || path.startsWith("blob:")) return path;
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    if (path.includes("/v1/media/")) {
+      const token = getToken();
+      if (token && !path.includes("token=")) {
+        return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+      }
+    }
+    return path;
+  }
+  const rel = path.startsWith("/") ? path : `/${path}`;
+  const abs = `${API_URL}${rel}`;
+  const token = getToken();
+  if (rel.startsWith("/v1/media/") && token) {
+    return `${abs}${abs.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  }
+  return abs;
+}
+
+export async function uploadMedia(
+  file: Blob,
+  kind: string,
+  filename: string
+): Promise<{ id: string; url: string; content_type: string; size: number; kind: string }> {
+  const form = new FormData();
+  form.append("file", file, filename);
+  form.append("kind", kind);
+  return api("/v1/media/upload", { method: "POST", body: form });
+}

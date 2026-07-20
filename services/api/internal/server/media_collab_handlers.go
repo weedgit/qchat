@@ -22,7 +22,9 @@ var allowedMedia = map[string]int64{
 	"image/webp":      20 << 20,
 	"application/pdf": 50 << 20,
 	"audio/webm":      10 << 20,
+	"audio/ogg":       10 << 20,
 	"audio/mpeg":      10 << 20,
+	"audio/mp4":       10 << 20,
 	"video/mp4":       200 << 20,
 }
 
@@ -45,6 +47,9 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	ct := hdr.Header.Get("Content-Type")
 	if ct == "" {
 		ct = "application/octet-stream"
+	}
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = strings.TrimSpace(ct[:i])
 	}
 	max, ok := allowedMedia[ct]
 	if !ok {
@@ -142,6 +147,12 @@ func extFor(ct, name string) string {
 		return ".mp4"
 	case "audio/mpeg":
 		return ".mp3"
+	case "audio/webm":
+		return ".webm"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/mp4":
+		return ".m4a"
 	default:
 		return ""
 	}
