@@ -158,14 +158,13 @@ func claimsFrom(r *http.Request) *auth.Claims {
 
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := s.cfg.CORSOrigin
-		if o := r.Header.Get("Origin"); o != "" {
-			// Dev: reflect localhost / private LAN origins (Mattermost AllowCorsFrom-style).
-			if isDevBrowserOrigin(o) {
-				origin = o
+		origin := corsAllowOrigin(s.cfg.CORSOrigin, r.Header.Get("Origin"))
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			if origin != "*" {
+				w.Header().Set("Vary", "Origin")
 			}
 		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS")
 		if r.Method == http.MethodOptions {
@@ -175,6 +174,35 @@ func (s *Server) withCORS(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// corsAllowOrigin picks ACAO. QCHAT_CORS_ORIGIN may be "*", one origin, or a comma list.
+func corsAllowOrigin(cfg, reqOrigin string) string {
+	cfg = strings.TrimSpace(cfg)
+	reqOrigin = strings.TrimSpace(reqOrigin)
+	if cfg == "*" || cfg == "" {
+		if reqOrigin != "" {
+			return reqOrigin
+		}
+		return "*"
+	}
+	if strings.HasPrefix(reqOrigin, "http://localhost:") || strings.HasPrefix(reqOrigin, "http://127.0.0.1:") {
+		return reqOrigin
+	}
+	for _, part := range strings.Split(cfg, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" && part == reqOrigin {
+			return reqOrigin
+		}
+	}
+	if reqOrigin == "" {
+		for _, part := range strings.Split(cfg, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				return part
+			}
+		}
+	}
+	return ""
 
 // isDevBrowserOrigin allows http(s) origins on loopback or RFC1918 hosts so
 // opening the web app via a VM LAN IP (e.g. http://192.168.x.x:3000) works.

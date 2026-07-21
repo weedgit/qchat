@@ -1,18 +1,81 @@
 {
   "name": "qchat-desktop",
+  "productName": "Qchat Desktop",
   "version": "0.1.0",
   "private": true,
   "description": "Qchat desktop shell (Electron + web client)",
+  "author": "Qchat <dev@qchat.local>",
+  "homepage": "https://github.com/qchat/qchat",
   "main": "main.js",
+  "desktopName": "qchat-desktop",
   "scripts": {
-    "start": "ELECTRON_DISABLE_SANDBOX=1 electron . --no-sandbox",
-    "start:local": "ELECTRON_DISABLE_SANDBOX=1 QCHAT_WEB_URL=http://localhost:3000 electron . --no-sandbox",
-    "start:dev": "ELECTRON_DISABLE_SANDBOX=1 QCHAT_DESKTOP_DEV=1 QCHAT_WEB_URL=http://localhost:3000 electron . --no-sandbox",
-    "start:sandbox": "electron .",
-    "start:check": "bash run.sh",
-    "pack": "electron-builder --dir"
+    "start": "bash run.sh",
+    "start:local": "QCHAT_WEB_URL=http://localhost:3000 bash run.sh",
+    "start:dev": "QCHAT_DESKTOP_DEV=1 QCHAT_WEB_URL=http://localhost:3000 bash run.sh",
+    "start:server": "QCHAT_WEB_URL=http://135.181.224.36 bash run.sh",
+    "start:sandbox": "ELECTRON_DISABLE_SANDBOX= electron .",
+    "start:headless": "xvfb-run -a bash run.sh",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux AppImage deb",
+    "dist:win": "electron-builder --win nsis",
+    "dist:mac": "electron-builder --mac dmg"
+  },
+  "build": {
+    "appId": "com.qchat.desktop",
+    "productName": "Qchat Desktop",
+    "copyright": "Copyright © Qchat",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "config.js",
+      "production.json",
+      "package.json",
+      "assets/**/*"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Network",
+      "icon": "assets/icon.png",
+      "executableName": "qchat-desktop",
+      "synopsis": "Qchat desktop client",
+      "maintainer": "Qchat <dev@qchat.local>",
+      "artifactName": "qchat-desktop-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.png",
+      "artifactName": "qchat-desktop-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Qchat Desktop"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.social-networking",
+      "artifactName": "qchat-desktop-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
   },
   "devDependencies": {
-    "electron": "^43.1.1"
+    "electron": "^43.1.1",
+    "electron-builder": "^26.0.12"
   }
 }

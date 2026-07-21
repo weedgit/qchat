@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "./api";
+import { api, asList, getToken, uploadMedia, wsUrl } from "./api";
+import { isQchatDesktop } from "./device";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
   Conversation,
@@ -138,6 +139,7 @@ export function useChat() {
 
   useEffect(() => {
     if (!("Notification" in window) || Notification.permission !== "default") return;
+    if (isQchatDesktop()) return;
 
     const requestPermission = () => {
       Notification.requestPermission().catch(() => {});
@@ -159,6 +161,17 @@ export function useChat() {
     }, 1500);
     return () => clearTimeout(t);
   }, [me]);
+
+  useEffect(() => {
+    if (!isQchatDesktop()) return;
+    const detach = window.qchatDesktop?.onOpenConversation((conversationId) => {
+      window.focus();
+      openConversation(conversationId);
+    });
+    return () => {
+      detach?.();
+    };
+  }, [openConversation]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -437,11 +450,7 @@ export function useChat() {
       if (activeIdRef.current === msg.conversationId) {
         api(`/v1/messages/${msg.id}/read`, { method: "POST" }).catch(() => {});
       }
-      if (
-        "Notification" in window &&
-        Notification.permission === "granted" &&
-        (document.hidden || activeIdRef.current !== msg.conversationId)
-      ) {
+      if (document.hidden || activeIdRef.current !== msg.conversationId) {
         const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
         const notify = loadLocalNotifyProps();
         const isMention =
@@ -456,23 +465,32 @@ export function useChat() {
         ) {
           /* skip per Mattermost notify_props */
         } else {
-        const notification = new Notification(
-          msg.senderName || conversation?.title || "New message",
-          {
-            body: msg.content,
-            tag: `qchat-${msg.conversationId}`,
-            silent: !notify.sound,
+          if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
+            window.qchatDesktop.notifyMessage({
+              title: msg.senderName || conversation?.title || "New message",
+              body: msg.content,
+              conversationId: msg.conversationId,
+              silent: !notify.sound,
+            }).catch(() => {});
+          } else if ("Notification" in window && Notification.permission === "granted") {
+            const notification = new Notification(
+              msg.senderName || conversation?.title || "New message",
+              {
+                body: msg.content,
+                tag: `qchat-${msg.conversationId}`,
+                silent: !notify.sound,
+              }
+            );
+            notification.onclick = () => {
+              window.focus();
+              setActiveId(msg.conversationId);
+              setConversations((prev) =>
+                prev.map((c) => (c.id === msg.conversationId ? { ...c, unreadCount: 0 } : c))
+              );
+              loadMessages(msg.conversationId);
+              notification.close();
+            };
           }
-        );
-        notification.onclick = () => {
-          window.focus();
-          setActiveId(msg.conversationId);
-          setConversations((prev) =>
-            prev.map((c) => (c.id === msg.conversationId ? { ...c, unreadCount: 0 } : c))
-          );
-          loadMessages(msg.conversationId);
-          notification.close();
-        };
         }
       }
     }

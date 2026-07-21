@@ -9,7 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import CallOverlay from "@/components/CallOverlay";
@@ -448,7 +448,6 @@ export default function ChatPageInner() {
   const { theme, setTheme } = useTheme();
   const [myStatus, setMyStatus] = useState<"online" | "away" | "dnd" | "offline">("online");
   const { openConversation } = chat;
-  const params = useSearchParams();
   const router = useRouter();
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -796,12 +795,13 @@ export default function ChatPageInner() {
   const chatSearch = useGlobalSearch(inChatSearch, chat.activeId);
 
   useEffect(() => {
-    const c = params.get("c");
+    // Deep-link ?c=<conversationId> without useSearchParams (avoids Suspense hang).
+    const c = new URLSearchParams(window.location.search).get("c");
     if (c && c !== openedFromQuery.current) {
       openedFromQuery.current = c;
       openConversation(c);
     }
-  }, [params, openConversation]);
+  }, [openConversation]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });

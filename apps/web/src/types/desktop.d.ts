@@ -7,6 +7,16 @@ declare global {
     version: string;
     webUrl: string;
     deviceName: string;
+    notifyMessage: (payload: {
+      title: string;
+      body?: string;
+      conversationId?: string;
+      silent?: boolean;
+    }) => Promise<boolean>;
+    showAbout: () => Promise<boolean>;
+    fetchCaptcha: () => Promise<{ captcha_id: string; challenge: string }>;
+    signalReady: () => void;
+    onOpenConversation: (handler: (conversationId: string) => void) => () => void;
   }
 
   interface Window {

@@ -12,6 +12,7 @@ export default function DesktopBootstrap() {
     if (desk?.platform) {
       document.documentElement.dataset.qchatPlatform = desk.platform;
     }
+    desk?.signalReady();
   }, []);
   return null;
 }

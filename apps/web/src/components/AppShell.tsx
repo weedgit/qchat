@@ -23,8 +23,11 @@ export default function AppShell({
   const router = useRouter();
 
   useEffect(() => {
-    if (!getToken()) router.replace("/login");
-  }, [router]);
+    if (!getToken()) {
+      // Hard navigate so Electron/static export never sits on a Suspense fallback.
+      window.location.replace("/login");
+    }
+  }, []);
 
   async function logout() {
     try {

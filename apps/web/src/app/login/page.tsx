@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
+  const [captchaStatus, setCaptchaStatus] = useState<"loading" | "ready" | "error">("loading");
   const [smsCode, setSmsCode] = useState("");
   const [smsChallengeId, setSmsChallengeId] = useState("");
   const [smsHint, setSmsHint] = useState<string | null>(null);
@@ -29,14 +30,33 @@ export default function LoginPage() {
 
   const loadCaptcha = useCallback(async () => {
     setCaptcha(null);
+    setCaptchaStatus("loading");
     try {
-      const data = await api<any>("/v1/auth/captcha");
-      setCaptcha({
-        id: String(data?.captcha_id ?? data?.id ?? ""),
-        challenge: String(data?.challenge ?? ""),
-      });
+      let data: any;
+      // In Electron, fetch captcha via main process (avoids renderer/network quirks).
+      if (typeof window !== "undefined" && window.qchatDesktop?.fetchCaptcha) {
+        data = await window.qchatDesktop.fetchCaptcha();
+      } else {
+        const ctrl = new AbortController();
+        const timer = window.setTimeout(() => ctrl.abort(), 10000);
+        data = await api<any>("/v1/auth/captcha", { signal: ctrl.signal });
+        window.clearTimeout(timer);
+      }
+      const id = String(data?.captcha_id ?? data?.id ?? "");
+      const challenge = String(data?.challenge ?? "").trim();
+      if (!id || !challenge) {
+        throw new Error("empty captcha from server");
+      }
+      setCaptcha({ id, challenge });
+      setCaptchaStatus("ready");
     } catch (e: any) {
-      setError(`Captcha unavailable: ${e.message}`);
+      setCaptcha(null);
+      setCaptchaStatus("error");
+      const msg =
+        e?.name === "AbortError"
+          ? "Captcha timed out — click the box to retry"
+          : `Captcha unavailable: ${e.message || "network error"}`;
+      setError(msg);
     }
   }, []);
 
@@ -184,11 +204,25 @@ export default function LoginPage() {
               value={captchaCode}
               onChange={(e) => setCaptchaCode(e.target.value)}
               placeholder="Enter code"
+              autoComplete="off"
               required
             />
-            <div className="captcha-placeholder" onClick={loadCaptcha} title="Click to refresh">
-              {captcha?.challenge || "…"}
-            </div>
+            <button
+              type="button"
+              className={`captcha-placeholder ${captchaStatus === "error" ? "error" : ""}`}
+              onClick={() => {
+                setError(null);
+                loadCaptcha();
+              }}
+              title="Click to refresh captcha"
+            >
+              {captchaStatus === "loading" && "…"}
+              {captchaStatus === "error" && "Retry"}
+              {captchaStatus === "ready" && (captcha?.challenge || "Retry")}
+            </button>
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Type the code shown on the right (case-insensitive). Click it to refresh.
           </div>
         </div>
 
