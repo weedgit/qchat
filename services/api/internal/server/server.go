@@ -17,11 +17,11 @@ import (
 )
 
 type Server struct {
-	cfg  config.Config
-	db   *pgxpool.Pool
-	hub  *ws.Hub
-	sms  sms.Sender
-	mux  *http.ServeMux
+	cfg config.Config
+	db  *pgxpool.Pool
+	hub *ws.Hub
+	sms sms.Sender
+	mux *http.ServeMux
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
@@ -203,6 +203,7 @@ func corsAllowOrigin(cfg, reqOrigin string) string {
 		}
 	}
 	return ""
+}
 
 // isDevBrowserOrigin allows http(s) origins on loopback or RFC1918 hosts so
 // opening the web app via a VM LAN IP (e.g. http://192.168.x.x:3000) works.
