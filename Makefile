@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down api web admin test test-api test-e2e migrate seed generate check-openapi redeploy
+.PHONY: infra-up infra-down api web admin desktop test test-api test-e2e migrate seed generate check-openapi redeploy
 
 infra-up:
 	docker compose up -d
@@ -14,6 +14,9 @@ web:
 
 admin:
 	cd apps/admin && npm run dev
+
+desktop:
+	cd apps/desktop && npm run dev
 
 migrate:
 	cd services/api && go run ./cmd/api -migrate-only
