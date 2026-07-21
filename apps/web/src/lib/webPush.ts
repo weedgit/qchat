@@ -68,7 +68,7 @@ export async function registerWebPush(): Promise<boolean> {
   return true;
 }
 
-/** Remove this origin's server subscription and browser Push subscription. */
+/** Remove this origin's Push subscription but keep the shared PWA service worker. */
 export async function unregisterWebPush(): Promise<boolean> {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return false;
   const reg = await navigator.serviceWorker.getRegistration("/");
@@ -81,7 +81,6 @@ export async function unregisterWebPush(): Promise<boolean> {
     });
   } finally {
     await sub.unsubscribe().catch(() => false);
-    await reg?.unregister().catch(() => false);
   }
   return true;
 }
@@ -98,5 +97,4 @@ export async function removePushDevice(device: PushDevice): Promise<void> {
   const reg = await navigator.serviceWorker.getRegistration("/");
   const sub = await reg?.pushManager.getSubscription();
   await sub?.unsubscribe().catch(() => false);
-  await reg?.unregister().catch(() => false);
 }

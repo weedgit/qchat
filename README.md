@@ -27,6 +27,15 @@ cd apps/admin && npm install && npm run dev
 - API: http://localhost:8080
 - Health: http://localhost:8080/healthz
 
+## Brand assets
+
+Web/PWA, admin, desktop, and mobile icons are generated from
+`branding/qchat-icon-512.png`:
+
+```bash
+./scripts/sync-brand-icons.sh
+```
+
 ## Docs
 
 See [`docs/`](docs/) for requirements, architecture decisions, implementation plans, and operational guidance.
