@@ -20,12 +20,18 @@ cd apps/web && npm install && npm run dev
 
 # Admin
 cd apps/admin && npm install && npm run dev
+
+# Desktop (starts web automatically when needed)
+cd apps/desktop && npm install && npm run dev
 ```
 
 - Web: http://localhost:3000
 - Admin: http://localhost:3001
 - API: http://localhost:8080
 - Health: http://localhost:8080/healthz
+
+Desktop development instructions for Linux and Windows 11 are in
+[`apps/desktop/README.md`](apps/desktop/README.md).
 
 ## Brand assets
 
