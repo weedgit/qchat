@@ -28,6 +28,7 @@ type WebPayload struct {
 	Body           string `json:"body"`
 	Tag            string `json:"tag"`
 	Type           string `json:"type,omitempty"` // message|call
+	Icon           string `json:"icon,omitempty"` // absolute URL only; SW cannot attach auth
 	URL            string `json:"url,omitempty"`
 	CallID         string `json:"call_id,omitempty"`
 	ConversationID string `json:"conversation_id,omitempty"`

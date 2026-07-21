@@ -177,18 +177,48 @@ func (s *Server) pushToUser(ctx context.Context, cfg push.Config, userID string,
 	}
 }
 
-// notifyPush fans out Web Push to conversation members except sender (best-effort).
-func (s *Server) notifyPush(ctx context.Context, memberIDs []string, exceptUserID, title, body, tag string) {
+// notifyMessagePush fans out Telegram-style "Sender → Recipient" message pushes
+// (Mattermost getPushNotificationMessage puts the sender in the notification title).
+func (s *Server) notifyMessagePush(ctx context.Context, convID, senderID, senderName, senderAvatar, preview string, memberIDs []string) {
 	cfg := s.pushCfg()
 	if !cfg.Enabled() {
 		return
 	}
-	p := push.WebPayload{Title: title, Body: body, Tag: tag, Type: "message"}
+	if senderName == "" {
+		senderName = "New message"
+	}
+	var convType, convTitle string
+	_ = s.db.QueryRow(ctx, `SELECT type, COALESCE(title,'') FROM conversations WHERE id=$1`, convID).
+		Scan(&convType, &convTitle)
+	// Relative /v1/media avatars need auth, which the SW cannot attach.
+	icon := ""
+	if strings.HasPrefix(senderAvatar, "http://") || strings.HasPrefix(senderAvatar, "https://") {
+		icon = senderAvatar
+	}
 	for _, uid := range memberIDs {
-		if uid == exceptUserID {
+		if uid == senderID {
 			continue
 		}
-		s.pushToUser(ctx, cfg, uid, p)
+		title := senderName
+		if convType == "dm" {
+			// Telegram web titles DMs "Sender → Recipient account".
+			var recipient string
+			_ = s.db.QueryRow(ctx, `SELECT display_name FROM users WHERE id=$1`, uid).Scan(&recipient)
+			if recipient != "" {
+				title = senderName + " → " + recipient
+			}
+		} else if convTitle != "" {
+			title = senderName + " → " + convTitle
+		}
+		s.pushToUser(ctx, cfg, uid, push.WebPayload{
+			Title:          title,
+			Body:           preview,
+			Tag:            "qchat-" + convID,
+			Type:           "message",
+			Icon:           icon,
+			URL:            "/?c=" + convID,
+			ConversationID: convID,
+		})
 	}
 }
 

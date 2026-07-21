@@ -48,6 +48,7 @@ export interface Message {
   conversationId: string;
   senderId: string;
   senderName?: string;
+  senderAvatar?: string;
   content: string;
   type?: string;
   mediaUrl?: string;
@@ -135,6 +136,7 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
     conversationId: str(raw?.conversation_id ?? raw?.conversationId),
     senderId,
     senderName: str(raw?.sender_name ?? raw?.display_name ?? raw?.nickname) || undefined,
+    senderAvatar: str(raw?.sender_avatar ?? raw?.senderAvatar) || undefined,
     content,
     type,
     mediaUrl,
