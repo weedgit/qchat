@@ -14,11 +14,14 @@ func (s *Server) handleListFriends(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), `
 		SELECT f.id::text,
 			CASE WHEN f.requester_id=$1 THEN f.addressee_id ELSE f.requester_id END::text,
-			u.username, u.display_name, u.avatar_url, f.note, f.tags, f.status,
+			u.username, u.display_name, u.avatar_url,
+			COALESCE(p.note, ''), COALESCE(p.tags, '{}'), f.status,
 			(f.addressee_id=$1 AND f.status='pending') AS incoming,
 			(f.requester_id=$1) AS outgoing
 		FROM friendships f
 		JOIN users u ON u.id = CASE WHEN f.requester_id=$1 THEN f.addressee_id ELSE f.requester_id END
+		LEFT JOIN friendship_user_preferences p
+		  ON p.friendship_id = f.id AND p.user_id = $1
 		WHERE f.enterprise_id=$2
 		  AND (f.requester_id=$1 OR f.addressee_id=$1)
 		  AND (
@@ -321,13 +324,30 @@ func (s *Server) handleFriendNote(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 400, "invalid_json", "invalid json")
 		return
 	}
-	tag, err := s.db.Exec(r.Context(), `
-		UPDATE friendships SET note=$3, tags=$4
-		WHERE id=$1 AND enterprise_id=$5 AND (requester_id=$2 OR addressee_id=$2) AND status='accepted'`,
-		id, c.UserID, req.Note, req.Tags, c.EnterpriseID)
-	if err != nil || tag.RowsAffected() == 0 {
+	if req.Tags == nil {
+		req.Tags = []string{}
+	}
+	// Viewer-scoped alias/tags (Mattermost preferences), not shared friendship columns.
+	var friendshipID string
+	err := s.db.QueryRow(r.Context(), `
+		SELECT id::text FROM friendships
+		WHERE id=$1 AND enterprise_id=$2 AND (requester_id=$3 OR addressee_id=$3) AND status='accepted'`,
+		id, c.EnterpriseID, c.UserID).Scan(&friendshipID)
+	if err != nil || friendshipID == "" {
 		writeErrCode(w, 400, "update_failed", "update failed")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true})
+	_, err = s.db.Exec(r.Context(), `
+		INSERT INTO friendship_user_preferences(friendship_id, user_id, note, tags, updated_at)
+		VALUES ($1,$2,$3,$4,now())
+		ON CONFLICT (friendship_id, user_id) DO UPDATE SET
+			note=EXCLUDED.note,
+			tags=EXCLUDED.tags,
+			updated_at=now()`,
+		friendshipID, c.UserID, req.Note, req.Tags)
+	if err != nil {
+		writeErrCode(w, 400, "update_failed", "update failed")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "note": req.Note, "tags": req.Tags})
 }

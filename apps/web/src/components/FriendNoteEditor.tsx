@@ -13,7 +13,7 @@ type Props = {
   startOpen?: boolean;
 };
 
-/** Edit friend note/alias + tags (PATCH /v1/friends/{friendship_id}). */
+/** Edit viewer-scoped friend note/alias + tags (PATCH /v1/friends/{friendship_id}). */
 export default function FriendNoteEditor({
   friendshipId,
   note,
