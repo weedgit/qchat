@@ -114,14 +114,16 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		if pid, ok := item["peer_id"].(string); ok && pid != "" {
 			item["peer_online"] = online[pid]
 		}
-		// Friend note/alias for DMs (Mattermost has no per-viewer friend notes).
+		// Per-viewer friend alias for DMs (Mattermost-style preferences).
 		if typ, _ := item["type"].(string); typ == "dm" {
 			if pid, ok := item["peer_id"].(string); ok && pid != "" {
 				var note, friendshipID string
 				var tags []string
 				_ = s.db.QueryRow(r.Context(), `
-					SELECT f.id::text, COALESCE(f.note,''), COALESCE(f.tags, '{}')
+					SELECT f.id::text, COALESCE(p.note,''), COALESCE(p.tags, '{}')
 					FROM friendships f
+					LEFT JOIN friendship_user_preferences p
+					  ON p.friendship_id = f.id AND p.user_id = $2
 					WHERE f.status='accepted' AND f.enterprise_id=$1
 					  AND ((f.requester_id=$2 AND f.addressee_id=$3)
 					    OR (f.requester_id=$3 AND f.addressee_id=$2))
