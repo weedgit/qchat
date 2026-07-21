@@ -496,6 +496,10 @@ select:focus {
 .conv-item:hover {
   background: var(--bg-hover);
 }
+.conv-item.drop-hover {
+  background: color-mix(in srgb, var(--accent, #5b9bd5) 22%, var(--bg-hover));
+  box-shadow: inset 0 0 0 2px var(--accent, #5b9bd5);
+}
 .conv-item.active {
   background: var(--bg-active);
 }
@@ -601,6 +605,24 @@ select:focus {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  position: relative;
+}
+.msg-scroll.drop-target {
+  box-shadow: inset 0 0 0 2px var(--accent, #5b9bd5);
+  background: color-mix(in srgb, var(--accent, #5b9bd5) 8%, transparent);
+}
+.msg-drop-overlay {
+  position: sticky;
+  top: 35%;
+  z-index: 4;
+  pointer-events: none;
+  text-align: center;
+  padding: 14px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-panel, #1a2332) 88%, var(--accent, #5b9bd5));
+  border: 1px dashed var(--accent, #5b9bd5);
 }
 /* keep the chat history in a narrow centered column */
 .msg-scroll > * {
@@ -1520,6 +1542,47 @@ select:focus {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.call-duration {
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+.call-quality-badge {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.call-quality-badge.excellent,
+.call-quality-badge.good {
+  color: var(--ok);
+}
+.call-quality-badge.poor {
+  color: #e6b422;
+}
+.call-quality-badge.lost {
+  color: var(--danger);
+}
+.call-quality-hint {
+  font-size: 13px;
+  line-height: 1.35;
+  color: #e6b422;
+  max-width: 28ch;
+}
+.call-stats {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  text-align: left;
+  width: 100%;
+  max-width: 220px;
+  margin-inline: auto;
+}
 .call-overlay-name {
   font-size: 20px;
   font-weight: 700;
@@ -1567,6 +1630,78 @@ select:focus {
 .call-voice-placeholder {
   padding: 28px 12px;
   font-size: 15px;
+}
+/* Continuous local mic VU (Web Audio analyser) */
+.call-mic-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+}
+.call-mic-meter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.call-mic-meter-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+}
+.call-mic-meter-bar {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--border);
+  opacity: 0.4;
+  transition: background 60ms linear, opacity 60ms linear, height 60ms linear;
+}
+.call-mic-meter-bar:nth-child(1) { height: 5px; }
+.call-mic-meter-bar:nth-child(2) { height: 8px; }
+.call-mic-meter-bar:nth-child(3) { height: 11px; }
+.call-mic-meter-bar:nth-child(4) { height: 14px; }
+.call-mic-meter-bar:nth-child(5) { height: 18px; }
+.call-mic-meter-bar.on {
+  opacity: 1;
+}
+.call-mic-meter.low .call-mic-meter-bar.on { background: var(--ok); }
+.call-mic-meter.mid .call-mic-meter-bar.on { background: #5b9bd5; }
+.call-mic-meter.hot .call-mic-meter-bar.on { background: #e6b422; }
+.call-mic-meter.muted .call-mic-meter-bar { background: var(--border); opacity: 0.35; }
+.call-mic-meter-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 3.5em;
+}
+.call-remote-hint {
+  font-size: 12px;
+  text-align: center;
+  margin-top: 4px;
+}
+.call-enable-sound {
+  margin: 8px auto 0;
+  display: block;
+}
+.call-mic-help {
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.call-mic-steps {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.call-mic-steps li {
+  margin-bottom: 6px;
+}
+.call-mic-help code {
+  font-size: 11px;
+  word-break: break-all;
+}
+.call-mic-help a {
+  color: var(--accent);
 }
 .system-row {
   justify-content: center;

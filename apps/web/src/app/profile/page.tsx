@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
-import { api, clearToken, API_URL } from "@/lib/api";
+import { api, clearToken, apiBaseUrl } from "@/lib/api";
 import {
   loadLocalNotifyProps,
   saveLocalNotifyProps,
@@ -419,7 +419,7 @@ export default function ProfilePage() {
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600 }}>API server</div>
               <div className="muted" style={{ fontSize: 12 }}>
-                {API_URL}
+                {apiBaseUrl()}
               </div>
             </div>
           </div>

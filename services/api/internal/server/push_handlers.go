@@ -64,7 +64,7 @@ func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) pushToUser(ctx context.Context, cfg push.Config, userID, title, body, tag string) {
+func (s *Server) pushToUser(ctx context.Context, cfg push.Config, userID string, p push.WebPayload) {
 	rows, err := s.db.Query(ctx, `SELECT token FROM push_devices WHERE platform='web' AND user_id=$1`, userID)
 	if err != nil {
 		return
@@ -75,7 +75,7 @@ func (s *Server) pushToUser(ctx context.Context, cfg push.Config, userID, title,
 		if rows.Scan(&token) != nil {
 			continue
 		}
-		_ = push.SendWeb(ctx, cfg, token, title, body, tag)
+		_ = push.SendWeb(ctx, cfg, token, p)
 	}
 }
 
@@ -85,10 +85,41 @@ func (s *Server) notifyPush(ctx context.Context, memberIDs []string, exceptUserI
 	if !cfg.Enabled() {
 		return
 	}
+	p := push.WebPayload{Title: title, Body: body, Tag: tag, Type: "message"}
 	for _, uid := range memberIDs {
 		if uid == exceptUserID {
 			continue
 		}
-		s.pushToUser(ctx, cfg, uid, title, body, tag)
+		s.pushToUser(ctx, cfg, uid, p)
+	}
+}
+
+// notifyCallRingPush wakes callees via Web Push (Mattermost Calls background notify).
+func (s *Server) notifyCallRingPush(ctx context.Context, userIDs []string, kind, initiatorName, callID, conversationID string) {
+	cfg := s.pushCfg()
+	if !cfg.Enabled() {
+		return
+	}
+	kindLabel := "Voice"
+	if kind == "video" {
+		kindLabel = "Video"
+	}
+	who := initiatorName
+	if who == "" {
+		who = "Someone"
+	}
+	title := "Incoming " + kindLabel + " call"
+	body := who + " is calling"
+	p := push.WebPayload{
+		Title:          title,
+		Body:           body,
+		Tag:            "qchat-call-" + callID,
+		Type:           "call",
+		URL:            "/?c=" + conversationID,
+		CallID:         callID,
+		ConversationID: conversationID,
+	}
+	for _, uid := range userIDs {
+		s.pushToUser(ctx, cfg, uid, p)
 	}
 }

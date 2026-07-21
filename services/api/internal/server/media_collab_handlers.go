@@ -32,6 +32,14 @@ var allowedMedia = map[string]int64{
 	"video/mp4":  200 << 20,
 }
 
+func (s *Server) uploadRoot() string {
+	dir := s.cfg.DataDir
+	if dir == "" {
+		dir = "data"
+	}
+	return filepath.Join(dir, "uploads")
+}
+
 func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	if err := r.ParseMultipartForm(210 << 20); err != nil {
@@ -71,9 +79,10 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	sum := sha256.Sum256(data)
 	key := filepath.Join(c.EnterpriseID, kind, uuid.NewString()+extFor(ct, hdr.Filename))
-	dir := filepath.Join("data", "uploads", filepath.Dir(key))
+	root := s.uploadRoot()
+	dir := filepath.Join(root, filepath.Dir(key))
 	_ = os.MkdirAll(dir, 0o755)
-	if err := os.WriteFile(filepath.Join("data", "uploads", key), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, key), data, 0o644); err != nil {
 		writeErr(w, 500, "store failed")
 		return
 	}
@@ -128,7 +137,7 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	full := filepath.Join("data", "uploads", filepath.FromSlash(rel))
+	full := filepath.Join(s.uploadRoot(), filepath.FromSlash(rel))
 	if _, err := os.Stat(full); err != nil {
 		writeErr(w, 404, "file not found")
 		return
