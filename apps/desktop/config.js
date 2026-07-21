@@ -1,6 +1,9 @@
 const fs = require("fs");
 const path = require("path");
 
+const DEFAULT_DEV_URL = "http://localhost:3000";
+const DEFAULT_PROD_URL = "http://135.181.224.36";
+
 /**
  * Load KEY=VALUE pairs from a .env file without overriding existing env vars.
  */
@@ -26,7 +29,42 @@ function loadEnvFile(filePath) {
   }
 }
 
-/** Resolve web UI origin: --url CLI > QCHAT_WEB_URL > .env > localhost:3000 */
+function isPackagedApp() {
+  try {
+    const { app } = require("electron");
+    return Boolean(app?.isPackaged);
+  } catch {
+    return false;
+  }
+}
+
+function readJsonWebUrl(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return "";
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return String(raw?.webUrl || raw?.QCHAT_WEB_URL || "").trim().replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function userConfigPath() {
+  try {
+    const { app } = require("electron");
+    return path.join(app.getPath("userData"), "config.json");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Resolve web UI origin.
+ * Precedence:
+ *   1. --url CLI
+ *   2. QCHAT_WEB_URL env (including values loaded from `.env`)
+ *   3. If packaged: userData/config.json → production.json → DEFAULT_PROD_URL
+ *   4. If unpackaged: DEFAULT_DEV_URL (localhost:3000)
+ */
 function resolveWebUrl() {
   loadEnvFile(path.join(__dirname, ".env"));
 
@@ -41,7 +79,27 @@ function resolveWebUrl() {
   const fromEnv = (process.env.QCHAT_WEB_URL || "").trim();
   if (fromEnv) return fromEnv.replace(/\/$/, "");
 
-  return "http://localhost:3000";
+  const packaged = isPackagedApp();
+
+  // End-user override after install (userData/config.json).
+  if (packaged) {
+    const userCfg = userConfigPath();
+    if (userCfg) {
+      const fromUser = readJsonWebUrl(userCfg);
+      if (fromUser) return fromUser;
+    }
+    const fromProduction = readJsonWebUrl(path.join(__dirname, "production.json"));
+    if (fromProduction) return fromProduction;
+    return DEFAULT_PROD_URL;
+  }
+
+  return DEFAULT_DEV_URL;
 }
 
-module.exports = { resolveWebUrl, loadEnvFile };
+module.exports = {
+  resolveWebUrl,
+  loadEnvFile,
+  isPackagedApp,
+  DEFAULT_DEV_URL,
+  DEFAULT_PROD_URL,
+};
