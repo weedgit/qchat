@@ -37,14 +37,15 @@ func (c Config) Enabled() bool {
 	return c.VAPIDPublic != "" && c.VAPIDPrivate != ""
 }
 
-// SendWeb pushes a notification to a stored Web Push subscription JSON.
-func SendWeb(ctx context.Context, cfg Config, subscriptionJSON string, p WebPayload) error {
+// SendWeb pushes a notification and returns the HTTP status from the push service.
+// Callers use 404/410 to remove expired browser subscriptions.
+func SendWeb(ctx context.Context, cfg Config, subscriptionJSON string, p WebPayload) (int, error) {
 	if !cfg.Enabled() {
-		return nil
+		return 0, nil
 	}
 	var sub webpush.Subscription
 	if err := json.Unmarshal([]byte(subscriptionJSON), &sub); err != nil {
-		return err
+		return 0, err
 	}
 	if p.Type == "" {
 		p.Type = "message"
@@ -67,11 +68,11 @@ func SendWeb(ctx context.Context, cfg Config, subscriptionJSON string, p WebPayl
 		Urgency:         webpush.UrgencyHigh,
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		log.Printf("webpush status %d", resp.StatusCode)
 	}
-	return nil
+	return resp.StatusCode, nil
 }

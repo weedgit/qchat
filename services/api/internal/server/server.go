@@ -17,11 +17,11 @@ import (
 )
 
 type Server struct {
-	cfg  config.Config
-	db   *pgxpool.Pool
-	hub  *ws.Hub
-	sms  sms.Sender
-	mux  *http.ServeMux
+	cfg config.Config
+	db  *pgxpool.Pool
+	hub *ws.Hub
+	sms sms.Sender
+	mux *http.ServeMux
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
@@ -124,6 +124,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/calls/{id}/decline", s.auth(s.handleDeclineCall))
 	s.mux.HandleFunc("POST /v1/calls/{id}/hangup", s.auth(s.handleHangupCall))
 	s.mux.HandleFunc("POST /v1/push/register", s.auth(s.handlePushRegister))
+	s.mux.HandleFunc("POST /v1/push/unregister", s.auth(s.handlePushUnregister))
+	s.mux.HandleFunc("GET /v1/push/devices", s.auth(s.handlePushDevices))
+	s.mux.HandleFunc("DELETE /v1/push/devices/{id}", s.auth(s.handlePushDeviceDelete))
 	s.mux.HandleFunc("GET /v1/push/vapid", s.handlePushVAPID)
 
 	// WebSocket
@@ -203,6 +206,7 @@ func corsAllowOrigin(cfg, reqOrigin string) string {
 		}
 	}
 	return ""
+}
 
 // isDevBrowserOrigin allows http(s) origins on loopback or RFC1918 hosts so
 // opening the web app via a VM LAN IP (e.g. http://192.168.x.x:3000) works.

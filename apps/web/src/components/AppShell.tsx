@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, clearToken, getToken } from "@/lib/api";
+import { unregisterWebPush } from "@/lib/webPush";
 
 const NAV = [
   { href: "/", label: "Chats", icon: "\u{1F4AC}" },
@@ -31,10 +32,11 @@ export default function AppShell({
 
   async function logout() {
     try {
-      await api("/v1/auth/logout", { method: "POST" });
+      await unregisterWebPush();
     } catch {
-      /* ignore network errors on logout */
+      /* stale endpoints are pruned after 404/410 */
     }
+    await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     clearToken();
     router.replace("/login");
   }

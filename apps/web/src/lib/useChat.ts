@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, asList, getToken, uploadMedia, wsUrl } from "./api";
+import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "./api";
 import { isQchatDesktop } from "./device";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
@@ -161,17 +161,6 @@ export function useChat() {
     }, 1500);
     return () => clearTimeout(t);
   }, [me]);
-
-  useEffect(() => {
-    if (!isQchatDesktop()) return;
-    const detach = window.qchatDesktop?.onOpenConversation((conversationId) => {
-      window.focus();
-      openConversation(conversationId);
-    });
-    return () => {
-      detach?.();
-    };
-  }, [openConversation]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -602,6 +591,17 @@ export function useChat() {
     },
     [loadMessages, stopTyping]
   );
+
+  useEffect(() => {
+    if (!isQchatDesktop()) return;
+    const detach = window.qchatDesktop?.onOpenConversation((conversationId) => {
+      window.focus();
+      openConversation(conversationId);
+    });
+    return () => {
+      detach?.();
+    };
+  }, [openConversation]);
 
   const openDM = useCallback(
     async (userId: string) => {
