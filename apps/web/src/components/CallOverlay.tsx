@@ -8,6 +8,68 @@ type CallApi = ReturnType<typeof useCall>;
 
 const MIC_BAR_COUNT = 5;
 
+type CallIconName =
+  | "microphone"
+  | "microphoneOff"
+  | "camera"
+  | "cameraOff"
+  | "phone"
+  | "phoneEnd"
+  | "stats";
+
+function CallIcon({ name }: { name: CallIconName }) {
+  const paths: Record<CallIconName, React.ReactNode> = {
+    microphone: (
+      <>
+        <rect x="9" y="3" width="6" height="11" rx="3" />
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" />
+      </>
+    ),
+    microphoneOff: (
+      <>
+        <path d="M9.5 4.2A3 3 0 0 1 15 6v4M5 11a7 7 0 0 0 11.8 5.1M12 18v3M9 21h6M3 3l18 18" />
+      </>
+    ),
+    camera: (
+      <>
+        <rect x="3" y="6" width="13" height="12" rx="2" />
+        <path d="m16 10 5-3v10l-5-3z" />
+      </>
+    ),
+    cameraOff: (
+      <>
+        <path d="M3 3l18 18M10.5 6H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h11a2 2 0 0 0 1.4-.6M16 10l5-3v10l-2.2-1.3" />
+      </>
+    ),
+    phone: <path d="M7.5 11.5a15 15 0 0 0 5 5l2.1-2.1a1.5 1.5 0 0 1 1.5-.36 10 10 0 0 0 3.1.5A1.8 1.8 0 0 1 21 16.35V19a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2h2.65A1.8 1.8 0 0 1 9.46 4.8a10 10 0 0 0 .5 3.1 1.5 1.5 0 0 1-.36 1.5z" />,
+    phoneEnd: (
+      <>
+        <path d="M4 15.5c4.8-4.2 11.2-4.2 16 0" />
+        <path d="m7 13-2 5M17 13l2 5" />
+      </>
+    ),
+    stats: (
+      <>
+        <path d="M5 18v-3M10 18v-6M15 18V9M20 18V5" />
+      </>
+    ),
+  };
+
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {paths[name]}
+    </svg>
+  );
+}
+
 function formatCallClock(elapsedMs: number): string {
   const sec = Math.max(0, Math.floor(elapsedMs / 1000));
   const m = Math.floor(sec / 60);
@@ -108,7 +170,10 @@ export default function CallOverlay({ call }: { call: CallApi }) {
 
       {incoming && (
         <div className="call-overlay incoming" role="dialog" aria-label="Incoming call">
-          <div className="call-overlay-card">
+          <div className="call-overlay-card call-ringing-card">
+            <div className="call-peer-avatar" aria-hidden>
+              {(incoming.initiatorName || "S").trim().charAt(0).toUpperCase()}
+            </div>
             <div className="call-overlay-title">
               Incoming {incoming.kind === "video" ? "video" : "voice"} call
             </div>
@@ -117,15 +182,23 @@ export default function CallOverlay({ call }: { call: CallApi }) {
             </div>
             {error && <div className="error-text">{error}</div>}
             <div className="call-overlay-actions">
-              <button type="button" className="btn call-decline" onClick={() => declineCall().catch(() => {})}>
-                Decline
+              <button
+                type="button"
+                className="call-control danger"
+                aria-label="Decline call"
+                title="Decline"
+                onClick={() => declineCall().catch(() => {})}
+              >
+                <CallIcon name="phoneEnd" />
               </button>
               <button
                 type="button"
-                className="btn call-answer"
+                className="call-control answer"
+                aria-label="Answer call"
+                title="Answer"
                 onClick={() => answerCall().catch(() => {})}
               >
-                Accept
+                <CallIcon name="phone" />
               </button>
             </div>
           </div>
@@ -133,9 +206,25 @@ export default function CallOverlay({ call }: { call: CallApi }) {
       )}
 
       {active && (
-        <div className={`call-overlay in-call ${active.kind}`} role="dialog" aria-label="In call">
-          <div className="call-overlay-card call-media-card">
+        <div
+          className={`call-overlay ${active.status === "ringing" ? "calling" : "in-call"} ${active.kind}`}
+          role="dialog"
+          aria-label={active.status === "ringing" ? "Calling" : "In call"}
+        >
+          <div
+            className={`call-overlay-card call-media-card ${
+              active.status === "ringing" ? "call-ringing-card" : ""
+            }`}
+          >
+            {active.status === "ringing" && (
+              <div className="call-peer-avatar calling-pulse" aria-hidden>
+                {(active.peerName || "?").trim().charAt(0).toUpperCase()}
+              </div>
+            )}
             <div className="call-overlay-title">{statusTitle}</div>
+            {active.status === "ringing" && (
+              <div className="call-overlay-name">{active.peerName || "Calling…"}</div>
+            )}
             {active.status === "active" && connectedAt != null && !connecting && (
               <CallDuration connectedAt={connectedAt} />
             )}
@@ -172,12 +261,18 @@ export default function CallOverlay({ call }: { call: CallApi }) {
               </div>
             )}
             {active.kind === "voice" && active.status === "active" && (
-              <div className="call-voice-placeholder muted">
-                {reconnecting
-                  ? "Reconnecting media…"
-                  : connecting
-                    ? "Setting up media…"
-                    : "Voice connected"}
+              <div className="call-voice-stage">
+                <div className="call-peer-avatar" aria-hidden>
+                  {(active.peerName || "?").trim().charAt(0).toUpperCase()}
+                </div>
+                <div className="call-overlay-name">{active.peerName || "Voice call"}</div>
+                <div className="call-voice-placeholder muted">
+                  {reconnecting
+                    ? "Reconnecting media…"
+                    : connecting
+                      ? "Setting up media…"
+                      : "Voice connected"}
+                </div>
               </div>
             )}
             {active.status === "active" && !connecting && (
@@ -234,21 +329,45 @@ export default function CallOverlay({ call }: { call: CallApi }) {
             <div className="call-overlay-actions">
               {active.status === "active" && (
                 <>
-                  <button type="button" className="btn-ghost" onClick={() => toggleMic().catch(() => {})}>
-                    {micMuted ? "Unmute" : "Mute"}
+                  <button
+                    type="button"
+                    className={`call-control ${micMuted ? "off" : ""}`}
+                    aria-label={micMuted ? "Unmute microphone" : "Mute microphone"}
+                    title={micMuted ? "Unmute" : "Mute"}
+                    onClick={() => toggleMic().catch(() => {})}
+                  >
+                    <CallIcon name={micMuted ? "microphoneOff" : "microphone"} />
                   </button>
                   {active.kind === "video" && (
-                    <button type="button" className="btn-ghost" onClick={() => toggleCamera().catch(() => {})}>
-                      {cameraOff ? "Camera on" : "Camera off"}
+                    <button
+                      type="button"
+                      className={`call-control ${cameraOff ? "off" : ""}`}
+                      aria-label={cameraOff ? "Turn camera on" : "Turn camera off"}
+                      title={cameraOff ? "Camera on" : "Camera off"}
+                      onClick={() => toggleCamera().catch(() => {})}
+                    >
+                      <CallIcon name={cameraOff ? "cameraOff" : "camera"} />
                     </button>
                   )}
-                  <button type="button" className="btn-ghost" onClick={() => toggleCallStats()}>
-                    {showCallStats ? "Hide stats" : "Stats"}
+                  <button
+                    type="button"
+                    className={`call-control ${showCallStats ? "active" : ""}`}
+                    aria-label={showCallStats ? "Hide call statistics" : "Show call statistics"}
+                    title={showCallStats ? "Hide stats" : "Stats"}
+                    onClick={() => toggleCallStats()}
+                  >
+                    <CallIcon name="stats" />
                   </button>
                 </>
               )}
-              <button type="button" className="btn call-decline" onClick={() => hangup().catch(() => {})}>
-                {active.status === "ringing" ? "Cancel" : "Hang up"}
+              <button
+                type="button"
+                className="call-control danger"
+                aria-label={active.status === "ringing" ? "Cancel call" : "End call"}
+                title={active.status === "ringing" ? "Cancel" : "Hang up"}
+                onClick={() => hangup().catch(() => {})}
+              >
+                <CallIcon name="phoneEnd" />
               </button>
             </div>
           </div>
