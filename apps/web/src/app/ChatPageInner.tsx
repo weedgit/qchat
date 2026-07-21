@@ -24,6 +24,7 @@ import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
 import { dataTransferHasFiles, filesFromDataTransfer } from "@/lib/fileDrop";
+import { unregisterWebPush } from "@/lib/webPush";
 
 const VOICE_MAX_SEC = 60;
 
@@ -729,10 +730,11 @@ export default function ChatPageInner() {
 
   async function logout() {
     try {
-      await api("/v1/auth/logout", { method: "POST" });
+      await unregisterWebPush();
     } catch {
-      /* ignore network errors on logout */
+      /* stale endpoints are pruned after 404/410 */
     }
+    await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     clearToken();
     router.replace("/login");
   }

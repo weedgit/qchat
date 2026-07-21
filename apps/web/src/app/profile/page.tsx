@@ -10,6 +10,12 @@ import {
   saveLocalNotifyProps,
   type NotifyProps,
 } from "@/lib/notifyProps";
+import {
+  listPushDevices,
+  removePushDevice,
+  unregisterWebPush,
+  type PushDevice,
+} from "@/lib/webPush";
 
 interface Profile {
   id: string;
@@ -42,6 +48,9 @@ export default function ProfilePage() {
     mentions_only: false,
   });
   const [notifySaved, setNotifySaved] = useState(false);
+  const [pushDevices, setPushDevices] = useState<PushDevice[]>([]);
+  const [pushDevicesBusy, setPushDevicesBusy] = useState(false);
+  const [pushDeviceError, setPushDeviceError] = useState<string | null>(null);
 
   async function uploadAvatar(file: File) {
     if (!me) return;
@@ -88,8 +97,31 @@ export default function ProfilePage() {
     }
   }
 
+  async function loadPushDevices() {
+    try {
+      setPushDevices(await listPushDevices());
+      setPushDeviceError(null);
+    } catch (e: any) {
+      setPushDeviceError(e.message || "Could not load notification devices");
+    }
+  }
+
+  async function deletePushDevice(device: PushDevice) {
+    setPushDevicesBusy(true);
+    setPushDeviceError(null);
+    try {
+      await removePushDevice(device);
+      setPushDevices((prev) => prev.filter((item) => item.id !== device.id));
+    } catch (e: any) {
+      setPushDeviceError(e.message || "Could not remove notification device");
+    } finally {
+      setPushDevicesBusy(false);
+    }
+  }
+
   useEffect(() => {
     load();
+    loadPushDevices();
     const local = loadLocalNotifyProps();
     setNotify(local);
     api<any>("/v1/me/notify_props")
@@ -341,6 +373,61 @@ export default function ProfilePage() {
 
         {me && (
           <div className="card" style={{ display: "grid", gap: 10 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 16 }}>Notification devices</h2>
+              <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+                Remove old browsers or forwarded localhost ports that should no longer receive push.
+              </div>
+            </div>
+            {pushDeviceError && <div className="error-text">{pushDeviceError}</div>}
+            {pushDevices.length === 0 && (
+              <div className="muted">No browser push subscriptions registered.</div>
+            )}
+            {pushDevices.map((device) => {
+              const isCurrentOrigin =
+                typeof window !== "undefined" && device.origin === window.location.origin;
+              return (
+                <div className="list-row" key={device.id}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>
+                      {device.device_name || "Web browser"}
+                      {isCurrentOrigin && (
+                        <span className="tag-chip" style={{ marginLeft: 8 }}>
+                          This origin
+                        </span>
+                      )}
+                    </div>
+                    <div className="muted" style={{ fontSize: 12, overflowWrap: "anywhere" }}>
+                      {device.origin || "Older registration (origin unavailable)"}
+                    </div>
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      Last registered {new Date(device.last_seen_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={pushDevicesBusy}
+                    onClick={() => deletePushDevice(device)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={pushDevicesBusy}
+              onClick={() => loadPushDevices()}
+            >
+              Refresh devices
+            </button>
+          </div>
+        )}
+
+        {me && (
+          <div className="card" style={{ display: "grid", gap: 10 }}>
             <h2 style={{ margin: 0, fontSize: 16 }}>Change phone number</h2>
             <input
               placeholder="New 11-digit phone"
@@ -433,7 +520,9 @@ export default function ProfilePage() {
             <button
               className="btn"
               style={{ background: "var(--danger)" }}
-              onClick={() => {
+              onClick={async () => {
+                await unregisterWebPush().catch(() => false);
+                await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
                 clearToken();
                 router.replace("/login");
               }}
