@@ -279,7 +279,7 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 		"id": convID, "title": title, "description": description, "announcement": announcement,
 		"public_id": publicID, "avatar_url": avatar, "mute_all": muteAll,
 		"forbid_member_friend_add": forbidFriendAdd,
-		"role": role, "owner_id": ownerID, "members": members,
+		"role":                     role, "owner_id": ownerID, "members": members,
 	})
 }
 
@@ -863,17 +863,21 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	memberIDs := s.memberIDs(r, convID)
+	var senderName, senderAvatar string
+	_ = s.db.QueryRow(r.Context(), `SELECT display_name, avatar_url FROM users WHERE id=$1`, c.UserID).
+		Scan(&senderName, &senderAvatar)
 	payload := map[string]any{
 		"id": msgID, "conversation_id": convID, "sender_id": c.UserID, "client_msg_id": req.ClientMsgID,
 		"seq": seq, "type": req.Type, "body": req.Body, "media_url": req.MediaURL, "created_at": time.Now().UTC(),
 		"mentions": req.Mentions, "mention_all": req.MentionAll,
+		"sender_name": senderName, "sender_avatar": senderAvatar,
 	}
 	s.hub.PublishToUsers(memberIDs, ws.Event{Type: "message.new", Payload: payload})
 	preview := req.Body
 	if len([]rune(preview)) > 80 {
 		preview = string([]rune(preview)[:80]) + "…"
 	}
-	go s.notifyPush(context.Background(), memberIDs, c.UserID, "New message", preview, "qchat-"+convID)
+	go s.notifyMessagePush(context.Background(), convID, c.UserID, senderName, senderAvatar, preview, memberIDs)
 	writeJSON(w, 201, payload)
 }
 

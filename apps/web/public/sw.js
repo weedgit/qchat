@@ -26,6 +26,7 @@ self.addEventListener("push", (event) => {
       await self.registration.showNotification(data.title || "Qchat", {
         body: data.body || "",
         tag: data.tag || "qchat",
+        icon: data.icon || undefined,
         renotify: true,
         data: {
           url: data.url || "/",

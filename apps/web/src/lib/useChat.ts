@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "./api";
+import { api, asList, ensureAccessToken, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
 import { isQchatDesktop } from "./device";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
@@ -454,22 +454,27 @@ export function useChat() {
         ) {
           /* skip per Mattermost notify_props */
         } else {
+          // Telegram-web style: "Sender → Recipient", sender avatar as icon.
+          const sender = msg.senderName || conversation?.title || "New message";
+          const target =
+            conversation?.type === "dm"
+              ? meRef.current?.nickname ?? ""
+              : conversation?.title ?? "";
+          const title = target ? `${sender} → ${target}` : sender;
           if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
             window.qchatDesktop.notifyMessage({
-              title: msg.senderName || conversation?.title || "New message",
+              title,
               body: msg.content,
               conversationId: msg.conversationId,
               silent: !notify.sound,
             }).catch(() => {});
           } else if ("Notification" in window && Notification.permission === "granted") {
-            const notification = new Notification(
-              msg.senderName || conversation?.title || "New message",
-              {
-                body: msg.content,
-                tag: `qchat-${msg.conversationId}`,
-                silent: !notify.sound,
-              }
-            );
+            const notification = new Notification(title, {
+              body: msg.content,
+              tag: `qchat-${msg.conversationId}`,
+              silent: !notify.sound,
+              icon: mediaAuthURL(msg.senderAvatar),
+            });
             notification.onclick = () => {
               window.focus();
               setActiveId(msg.conversationId);
