@@ -1,10 +1,12 @@
 const fs = require("fs");
 const { ipcMain, Notification } = require("electron");
+const { resolveApiUrl } = require("./config");
 const { APP_TITLE, ICON_PATH, IPC } = require("./constants");
 const { showAbout } = require("./menu");
 
 function installIpcHandlers({ focusWindow, getWindow, webUrl }) {
   let pendingConversationId = "";
+  const apiUrl = resolveApiUrl(webUrl);
 
   function openConversation(conversationId) {
     pendingConversationId = conversationId;
@@ -30,7 +32,7 @@ function installIpcHandlers({ focusWindow, getWindow, webUrl }) {
   });
 
   ipcMain.handle(IPC.fetchCaptcha, async () => {
-    const response = await fetch(`${webUrl}/v1/auth/captcha`);
+    const response = await fetch(`${apiUrl}/v1/auth/captcha`);
     if (!response.ok) throw new Error(`captcha HTTP ${response.status}`);
 
     const data = await response.json();
