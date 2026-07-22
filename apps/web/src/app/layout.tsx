@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import DesktopBootstrap from "@/components/DesktopBootstrap";
 import PwaBootstrap from "@/components/PwaBootstrap";
+import ShellConnectionBanner from "@/components/ShellConnectionBanner";
 
 export const metadata: Metadata = {
   title: "Qchat",
@@ -41,6 +42,7 @@ export default function RootLayout({
       <body>
         <PwaBootstrap />
         <DesktopBootstrap />
+        <ShellConnectionBanner />
         {children}
       </body>
     </html>

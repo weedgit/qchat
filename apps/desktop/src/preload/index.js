@@ -69,4 +69,6 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
     ipcRenderer.on(IPC.NATIVE_THEME_UPDATED, listener);
     return () => ipcRenderer.removeListener(IPC.NATIVE_THEME_UPDATED, listener);
   },
+  /** SHELL-32: main-process network probe (complements window online/offline). */
+  getNetworkOnline: () => ipcRenderer.invoke(IPC.GET_NETWORK_ONLINE),
 });

@@ -66,7 +66,7 @@
 | SHELL-29 | MM | Open conversation from deep link | navigationManager | Done | `feat-kevin-desktop-deeplink-chat` |
 | SHELL-30 | MM | Certificate error trust/deny UI | certificateStore.ts | Done | `feat-kevin-desktop-cert-dialog` |
 | SHELL-31 | MM | Theme sync with OS | themeManager.ts | Done | `feat-kevin-desktop-os-theme` |
-| SHELL-32 | MM | Offline / reconnect banner (shell) | ErrorView / isOnline | Todo | `feat-kevin-desktop-offline-banner` |
+| SHELL-32 | MM | Offline / reconnect banner (shell) | ErrorView / isOnline | Done | `feat-kevin-desktop-offline-banner` |
 | SHELL-33 | MM | Multi-server tabs | tabs / servers | Deferred | `feat-kevin-desktop-multi-server` |
 | SHELL-34 | MM | Pop-out windows | popoutManager.ts | Deferred | `feat-kevin-desktop-popout` |
 | SHELL-35 | MM | GPO / MDM enterprise config | policyConfigLoader | Deferred | `feat-kevin-desktop-gpo` |
@@ -84,9 +84,9 @@
 ### Todo backlog (implement one row = one commit)
 
 1. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-2. `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+2. `NOTI-05` attention · `AUTH-04` idle  
 
-**In progress:** next concrete work is **SHELL-32** offline banner, or **D5** signing / auto-update.
+**In progress:** next concrete work is **NOTI-05** flash/bounce on mention, or **D5** signing / auto-update.
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 
@@ -155,7 +155,7 @@ Full list across D0–D5:
 | Native notification → focus + open chat | Done | Receive message while unfocused → click notification |
 | Download save dialog | Done | Download an attachment → OS Save dialog |
 | Spellcheck | Done | Typo underline in composer |
-| Dedicated offline banner | Partial | WS reconnects in `useChat`; no Electron-specific offline banner yet |
+| Dedicated offline banner | Done | Desktop shell shows “No internet connection” / “Reconnecting…” strip; search-field reconnect hint unchanged |
 
 
 ---

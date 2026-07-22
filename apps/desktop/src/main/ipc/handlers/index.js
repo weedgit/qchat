@@ -9,6 +9,7 @@ const {
   createGetNativeThemeHandler,
   createSetNativeThemeSourceHandler,
 } = require("./theme");
+const { createGetNetworkOnlineHandler } = require("./networkStatus");
 
 /**
  * @param {object} deps
@@ -53,6 +54,7 @@ function registerIpcHandlers(deps) {
     IPC.SET_NATIVE_THEME_SOURCE,
     createSetNativeThemeSourceHandler()
   );
+  ipcMain.handle(IPC.GET_NETWORK_ONLINE, createGetNetworkOnlineHandler());
 
   ipcMain.on(IPC.RENDERER_READY, () => {
     deps.flushPendingConversation();

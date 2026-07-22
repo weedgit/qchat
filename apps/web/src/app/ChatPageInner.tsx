@@ -35,6 +35,7 @@ import {
 import { attachmentLimitError, avatarLimitError, VOICE_MAX_SEC } from "@/lib/mediaLimits";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
+import ShellConnectionBanner from "@/components/ShellConnectionBanner";
 
 /** Chat errors go to the console only — never surface as UI banners. */
 function logChatError(...args: unknown[]) {
@@ -1831,6 +1832,10 @@ export default function ChatPageInner() {
 
   return (
     <AppShell rail={false} mobilePane={mobilePane}>
+      <ShellConnectionBanner
+        reconnectOnly
+        reconnecting={!chat.connected && wsEverConnected}
+      />
       <aside className="sidebar">
         <div className="sidebar-header">
           <button

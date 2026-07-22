@@ -51,6 +51,8 @@ declare global {
         resolved: "dark" | "light";
       }) => void
     ) => () => void;
+    /** SHELL-32 — Electron net.isOnline() probe. */
+    getNetworkOnline?: () => Promise<{ online: boolean }>;
   }
 
   interface Window {

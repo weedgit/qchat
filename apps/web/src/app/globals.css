@@ -63,6 +63,34 @@ body {
   line-height: 1.45;
 }
 
+/* SHELL-32 — desktop offline / reconnect strip (fixed; does not alter .shell flex). */
+.shell-connection-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 12000;
+  padding: 7px 12px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+}
+.shell-connection-banner.offline {
+  background: var(--danger);
+  color: #fff;
+}
+.shell-connection-banner.reconnect {
+  background: #c4921a;
+  color: #1a1408;
+}
+[data-theme="light"] .shell-connection-banner.reconnect {
+  background: #e0a820;
+  color: #1a1408;
+}
+
 a {
   color: var(--accent);
   text-decoration: none;
