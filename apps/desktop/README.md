@@ -131,7 +131,10 @@ Config precedence:
 
 ## Packaging
 
-Artifacts are written to `apps/desktop/dist/`.
+Artifacts are written to `apps/desktop/dist/`. Packaged apps load
+`production.json` (`https://135.181.224.36`). The shell trusts that host’s
+TLS certificate when it is self-signed (nginx IP cert), so the installer does
+not fail with `ERR_CERT_AUTHORITY_INVALID`.
 
 ```bash
 npm run pack          # unpacked app for a fast smoke test
@@ -144,6 +147,10 @@ npm run dist          # current platform defaults
 Windows installers can be cross-built on Linux only with Wine configured.
 Building `dist:win` on Windows 11 is the supported development workflow.
 Signing and auto-update are not configured yet.
+
+After changing `production.json` or main-process security, rebuild the
+installer (`npm run dist:win`) and reinstall — an old Setup.exe still embeds
+the previous defaults.
 
 ## Desktop behavior
 

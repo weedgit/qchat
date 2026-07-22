@@ -12,6 +12,7 @@ const {
 const { applyStoredAutostart } = require("../native/autostart");
 const { registerPermissionHandler } = require("../security/permissions");
 const { allowLocalNetworkForCalls } = require("../security/localNetwork");
+const { allowSelfSignedForWebHost } = require("../security/certificates");
 const { registerDownloadHandler } = require("../services/downloads");
 const { registerIpcHandlers } = require("../ipc/handlers");
 const {
@@ -27,6 +28,8 @@ function startApp() {
   allowLocalNetworkForCalls();
 
   const webUrl = resolveWebUrl();
+  // Production nginx redirects HTTP→HTTPS with a self-signed IP cert.
+  allowSelfSignedForWebHost(webUrl);
   const isDev =
     process.env.QCHAT_DESKTOP_DEV === "1" || process.argv.includes("--dev");
   const iconPath = getIconPath();
