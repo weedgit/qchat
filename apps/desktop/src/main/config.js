@@ -78,6 +78,17 @@ function resolveStartUrl(webUrl) {
   return url.toString().replace(/\/$/, "");
 }
 
+/** API origin for main-process fetches. Mirrors apps/web apiBaseUrl. */
+function resolveApiUrl(webUrl) {
+  const fromEnv = normalizeUrl(
+    process.env.QCHAT_API_URL || process.env.NEXT_PUBLIC_API_URL || ""
+  );
+  if (fromEnv) return fromEnv;
+
+  const url = new URL(webUrl);
+  return `${url.protocol}//${url.hostname}:8080`;
+}
+
 function isDevelopment() {
   return process.argv.includes("--dev") || process.env.QCHAT_DESKTOP_DEV === "1";
 }
@@ -87,6 +98,7 @@ module.exports = {
   DEFAULT_PROD_URL,
   isDevelopment,
   loadEnvFile,
+  resolveApiUrl,
   resolveStartUrl,
   resolveWebUrl,
 };
