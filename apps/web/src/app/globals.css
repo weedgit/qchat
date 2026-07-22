@@ -2414,8 +2414,25 @@ select:focus {
   padding: 4px 12px;
   border-radius: 999px;
 }
+.call-row {
+  margin: 6px 0;
+}
+.call-bubble {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: min(280px, 75%);
+  padding: 8px 12px;
+  font-style: italic;
+}
+.msg-row.mine .call-bubble {
+  align-items: flex-end;
+}
 .call-msg {
   font-style: italic;
+  font-size: 13px;
+  line-height: 1.35;
 }
 .group-meta-edit {
   width: 100%;

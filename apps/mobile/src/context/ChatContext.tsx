@@ -56,6 +56,8 @@ type ChatContextValue = {
   ) => Promise<void>;
   markConversationRead: (convId: string) => Promise<void>;
   forwardMessage: (messageId: string, conversationIds: string[]) => Promise<void>;
+  /** Fan-out for non-chat WS events (e.g. call.*). Mirror web subscribeEvents. */
+  subscribeEvents: (handler: (type: string, payload: any) => void) => () => void;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -75,6 +77,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
   const handleIncomingRef = useRef<(raw: any) => void>(() => {});
+  const eventListenersRef = useRef(new Set<(type: string, payload: any) => void>());
 
   meRef.current = user;
   activeIdRef.current = activeId;
@@ -145,6 +148,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     (raw: any) => {
       const type = String(raw?.type ?? "");
       const payload = raw?.payload ?? raw?.data ?? raw;
+
+      // Mattermost Calls signaling → useCall (mirror web useChat).
+      if (type.startsWith("call.")) {
+        eventListenersRef.current.forEach((fn) => {
+          try {
+            fn(type, payload);
+          } catch {
+            /* ignore listener errors */
+          }
+        });
+        return;
+      }
 
       // Mirror web useChat message.recalled
       if (type === "message.recalled") {
@@ -904,6 +919,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [loadConversations, openConversation]
   );
 
+  const subscribeEvents = useCallback((handler: (type: string, payload: any) => void) => {
+    eventListenersRef.current.add(handler);
+    return () => {
+      eventListenersRef.current.delete(handler);
+    };
+  }, []);
+
   const value = useMemo(
     () => ({
       conversations,
@@ -925,6 +947,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       updateConversationPrefs,
       markConversationRead,
       forwardMessage,
+      subscribeEvents,
     }),
     [
       conversations,
@@ -946,6 +969,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       updateConversationPrefs,
       markConversationRead,
       forwardMessage,
+      subscribeEvents,
     ]
   );
 

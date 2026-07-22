@@ -21,6 +21,7 @@ import { Avatar } from "../../src/components/Avatar";
 import { ChatComposer } from "../../src/components/ChatComposer";
 import { MessageActionPopup } from "../../src/components/MessageActionPopup";
 import { useChat } from "../../src/context/ChatContext";
+import { useCallApi } from "../../src/context/CallContext";
 import { Conversation, Message, Reaction, conversationDisplayName } from "../../src/lib/types";
 import {
   nextPinnedFromScroll,
@@ -423,6 +424,7 @@ export default function ChatScreen() {
     sendMediaMessage,
     sendVoiceMessage,
   } = useChat();
+  const call = useCallApi();
   const [text, setText] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [ctxMsg, setCtxMsg] = useState<Message | null>(null);
@@ -545,6 +547,7 @@ export default function ChatScreen() {
       navigation.setOptions({
         headerShown: true,
         title: "Pinned messages",
+        headerTitleAlign: "left",
         headerLeft: () => (
           <Pressable
             onPress={() => setPinsListOpen(false)}
@@ -559,15 +562,81 @@ export default function ChatScreen() {
             />
           </Pressable>
         ),
+        headerRight: () => null,
       });
       return;
     }
+    const isDm = conversation?.type === "dm" || Boolean(conversation?.peerId);
+    const callBusy = Boolean(call.active || call.incoming);
+    const title = conversation ? conversationDisplayName(conversation) : "Chat";
     navigation.setOptions({
       headerShown: !selecting,
-      title: conversation ? conversationDisplayName(conversation) : "Chat",
+      title,
+      headerTitleAlign: "left",
+      headerTitle: () => (
+        <Text
+          numberOfLines={1}
+          style={{
+            color: "#fff",
+            fontSize: 17,
+            fontWeight: "600",
+            maxWidth: 200,
+          }}
+        >
+          {title}
+        </Text>
+      ),
       headerLeft: undefined,
+      headerRight: isDm
+        ? () => (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                marginRight: Platform.OS === "ios" ? 8 : 4,
+              }}
+            >
+              <Pressable
+                onPress={() => {
+                  if (callBusy || !conversation) return;
+                  call
+                    .startCall(conversation.id, "voice", conversationDisplayName(conversation))
+                    .catch((e) => Alert.alert("Call failed", e?.message || "Could not start call"));
+                }}
+                disabled={callBusy}
+                hitSlop={10}
+                style={{ paddingHorizontal: 8, paddingVertical: 6, opacity: callBusy ? 0.4 : 1 }}
+                accessibilityLabel="Voice call"
+              >
+                <Ionicons name="call-outline" size={22} color="#fff" />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (callBusy || !conversation) return;
+                  call
+                    .startCall(conversation.id, "video", conversationDisplayName(conversation))
+                    .catch((e) => Alert.alert("Call failed", e?.message || "Could not start call"));
+                }}
+                disabled={callBusy}
+                hitSlop={10}
+                style={{ paddingHorizontal: 8, paddingVertical: 6, opacity: callBusy ? 0.4 : 1 }}
+                accessibilityLabel="Video call"
+              >
+                <Ionicons name="videocam-outline" size={24} color="#fff" />
+              </Pressable>
+            </View>
+          )
+        : () => null,
     });
-  }, [navigation, conversation, selecting, pinsListOpen]);
+  }, [
+    navigation,
+    conversation,
+    selecting,
+    pinsListOpen,
+    call.active,
+    call.incoming,
+    call.startCall,
+  ]);
 
   useEffect(() => {
     if (pinsListOpen && pinnedList.length === 0) {

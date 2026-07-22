@@ -312,10 +312,16 @@ function Bubble({
     typeof msg.uploadProgress === "number" &&
     !!onCancelUpload;
 
+  // Align with caller (Mattermost Calls history): mine = I placed the call → right.
   if (msg.type === "call") {
     return (
-      <div className="msg-row system-row">
-        <div className="system-msg call-msg">{msg.content || "Call"}</div>
+      <div className={`msg-row call-row ${msg.mine ? "mine" : ""}`}>
+        <div className="bubble-wrap">
+          <div className="bubble call-bubble">
+            <span className="call-msg">{msg.content || "Call"}</span>
+            <span className="meta">{fmtTime(msg.createdAt)}</span>
+          </div>
+        </div>
       </div>
     );
   }

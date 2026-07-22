@@ -91,6 +91,8 @@ EXPO_PUBLIC_API_URL=https://135.181.224.36
 EXPO_PUBLIC_LIVEKIT_URL=wss://135.181.224.36:7443
 ```
 
+Voice/video calls use LiveKit + WebRTC native modules. After installing or changing those plugins, rebuild the native app (`npx expo run:android` / `run:ios`) — Metro reload alone is not enough.
+
 3. Build and install the Android dev client (needs Android SDK / Studio):
 
 ```bash

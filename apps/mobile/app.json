@@ -53,6 +53,21 @@
         {
           "photosPermission": "Allow Qchat to send photos from your library."
         }
+      ],
+      [
+        "@livekit/react-native-expo-plugin",
+        {
+          "android": {
+            "audioType": "communication"
+          }
+        }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Allow Qchat to use your camera for video calls.",
+          "microphonePermission": "Allow Qchat to use your microphone for calls."
+        }
       ]
     ],
     "experiments": {
