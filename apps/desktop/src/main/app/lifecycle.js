@@ -12,6 +12,7 @@ const {
 const { applyStoredAutostart } = require("../native/autostart");
 const { shouldStartHidden } = require("../native/hideOnStart");
 const { registerPermissionHandler } = require("../security/permissions");
+const { registerScreenshareHandler } = require("../security/screenshare");
 const { allowLocalNetworkForCalls } = require("../security/localNetwork");
 const { allowSelfSignedForWebHost } = require("../security/certificates");
 const { registerDownloadHandler } = require("../services/downloads");
@@ -92,6 +93,7 @@ function startApp() {
     }
 
     registerPermissionHandler();
+    registerScreenshareHandler();
     registerDownloadHandler(getMainWindow);
 
     registerIpcHandlers({

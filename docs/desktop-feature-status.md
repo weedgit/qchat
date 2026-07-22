@@ -25,7 +25,7 @@
 | AUTH-04 | §2.3 | Idle detection → away status bridge | UserActivityMonitor.ts | Todo | `feat-kevin-desktop-idle-status` |
 | AUTH-05 | §2.1 | Same-type session kick (`session.revoked`) | session management | Done | `feat-kevin-desktop-session-kick` |
 | CALL-01 | §2.4 | Grant mic / camera permission | permissionsManager | Done | `feat-kevin-desktop-media-permission` |
-| CALL-02 | §2.4 | Screenshare via `desktopCapturer` | callsWidgetWindow / desktopCapturer | Todo | `feat-kevin-desktop-screenshare` |
+| CALL-02 | §2.4 | Screenshare via `desktopCapturer` | callsWidgetWindow / desktopCapturer | Done | `feat-kevin-desktop-screenshare` |
 | CALL-03 | §2.4 | Separate Calls widget window | callsWidgetWindow.ts | Deferred | `feat-kevin-desktop-calls-widget` |
 | PLAT-01 | §3 | Windows NSIS installer | electron-builder / nsis | Done | `feat-kevin-desktop-win-nsis` |
 | PLAT-02 | §3 | macOS dmg installer | electron-builder / dmg | Done | `feat-kevin-desktop-mac-dmg` |
@@ -83,11 +83,10 @@
 
 ### Todo backlog (implement one row = one commit)
 
-1. `CALL-02` screenshare  
-2. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-3. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+1. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
+2. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
-**In progress:** next concrete work is **CALL-02** screenshare (or **D5** signing).
+**In progress:** next concrete work is **D5** signing / auto-update, or polish items (context menu, cert UI).
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 

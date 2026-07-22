@@ -13,6 +13,8 @@ type CallIconName =
   | "microphoneOff"
   | "camera"
   | "cameraOff"
+  | "screenShare"
+  | "screenShareOff"
   | "phone"
   | "phoneEnd"
   | "stats";
@@ -39,6 +41,17 @@ function CallIcon({ name }: { name: CallIconName }) {
     cameraOff: (
       <>
         <path d="M3 3l18 18M10.5 6H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h11a2 2 0 0 0 1.4-.6M16 10l5-3v10l-2.2-1.3" />
+      </>
+    ),
+    screenShare: (
+      <>
+        <rect x="3" y="4" width="18" height="12" rx="2" />
+        <path d="M8 20h8M12 16v4" />
+      </>
+    ),
+    screenShareOff: (
+      <>
+        <path d="M3 3l18 18M7 7H5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h11M21 13V9a2 2 0 0 0-2-2h-5M8 20h8M12 16v4" />
       </>
     ),
     phone: <path d="M7.5 11.5a15 15 0 0 0 5 5l2.1-2.1a1.5 1.5 0 0 1 1.5-.36 10 10 0 0 0 3.1.5A1.8 1.8 0 0 1 21 16.35V19a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2h2.65A1.8 1.8 0 0 1 9.46 4.8a10 10 0 0 0 .5 3.1 1.5 1.5 0 0 1-.36 1.5z" />,
@@ -137,6 +150,7 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     remoteMicLevel,
     micMuted,
     cameraOff,
+    screenSharing,
     setRemoteVideoEl,
     setLocalVideoEl,
     setRemoteAudioEl,
@@ -145,6 +159,7 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     hangup,
     toggleMic,
     toggleCamera,
+    toggleScreenShare,
     enableSound,
     toggleCallStats,
     audioPlaybackOk,
@@ -243,7 +258,7 @@ export default function CallOverlay({ call }: { call: CallApi }) {
                   : "Connection unstable — check your network or move closer to Wi‑Fi."}
               </div>
             )}
-            {active.kind === "video" && active.status === "active" && (
+            {(active.kind === "video" || screenSharing) && active.status === "active" && (
               <div className="call-videos">
                 <video
                   className="call-video remote"
@@ -351,6 +366,15 @@ export default function CallOverlay({ call }: { call: CallApi }) {
                       <CallIcon name={cameraOff ? "cameraOff" : "camera"} />
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className={`call-control ${screenSharing ? "active" : ""}`}
+                    aria-label={screenSharing ? "Stop sharing screen" : "Share screen"}
+                    title={screenSharing ? "Stop share" : "Share screen"}
+                    onClick={() => toggleScreenShare().catch(() => {})}
+                  >
+                    <CallIcon name={screenSharing ? "screenShareOff" : "screenShare"} />
+                  </button>
                   <button
                     type="button"
                     className={`call-control ${showCallStats ? "active" : ""}`}

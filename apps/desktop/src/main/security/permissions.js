@@ -5,6 +5,8 @@ const ALLOWED_PERMISSIONS = new Set([
   "notifications",
   "media",
   "mediaKeySystem",
+  // Screen / window capture (getDisplayMedia) — CALL-02.
+  "display-capture",
   // Chromium Local Network Access (wording varies by Electron/Chromium version).
   "local-network",
   "local-network-access",

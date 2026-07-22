@@ -186,6 +186,7 @@ the previous defaults.
 - Tray tooltip reflects unread / mention totals
 - Deep links: `qchat://conversation/<id>` (also `chat` / `c` / `open?conversation=`) focuses the window and opens that chat
 - Hide on start: optional tray-only launch (File / tray menu); also `--hidden`
+- Screen share in calls: `getDisplayMedia` via `desktopCapturer` / OS picker (LiveKit)
 - Native download save dialog
 - Single-instance window behavior and persisted window bounds
 - `window.qchatDesktop` preload bridge for the web client
