@@ -267,19 +267,23 @@ const ChatMessageList = memo(function ChatMessageList({
       scrollEventThrottle={32}
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfig}
-      removeClippedSubviews
-      windowSize={9}
-      maxToRenderPerBatch={8}
-      updateCellsBatchingPeriod={50}
-      initialNumToRender={14}
+      // Keep more of the list mounted so scroll-to-end can reach the real bottom
+      // (variable-height bubbles + clipped views make one-shot scrollToEnd stop short).
+      removeClippedSubviews={false}
+      windowSize={21}
+      maxToRenderPerBatch={16}
+      updateCellsBatchingPeriod={40}
+      initialNumToRender={20}
       onScrollToIndexFailed={(info) => {
+        const offset = Math.max(0, info.averageItemLength * info.index);
+        listRef.current?.scrollToOffset({ offset, animated: false });
         setTimeout(() => {
           listRef.current?.scrollToIndex({
             index: info.index,
             animated: true,
-            viewPosition: 0.35,
+            viewPosition: info.index >= list.length - 1 ? 1 : 0.35,
           });
-        }, 120);
+        }, 100);
       }}
       ListEmptyComponent={
         <Text style={styles.emptyThread}>No messages here yet…</Text>
@@ -436,6 +440,8 @@ export default function ChatScreen() {
   const [pinsListOpen, setPinsListOpen] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
   const nearBottomRef = useRef(true);
+  /** Cancels in-flight jump-to-bottom settle retries when a newer jump starts. */
+  const jumpBottomGenRef = useRef(0);
 
   const selecting = selectedIds.length > 0;
 
@@ -668,12 +674,38 @@ export default function ChatScreen() {
     (_info: { viewableItems: Array<{ index: number | null }> }) => {}
   ).current;
 
+  /** Scroll until FlatList has measured the real end (lazy rows grow contentSize). */
+  const scrollToTrueBottom = useCallback(
+    (animated: boolean) => {
+      const lastIndex = list.length - 1;
+      if (lastIndex < 0) return;
+      const gen = ++jumpBottomGenRef.current;
+      const step = (useAnim: boolean, delayMs: number) => {
+        setTimeout(() => {
+          if (gen !== jumpBottomGenRef.current) return;
+          listRef.current?.scrollToIndex({
+            index: lastIndex,
+            animated: useAnim,
+            viewPosition: 1,
+          });
+          // Second pass: contentSize often grows after bottom cells mount.
+          listRef.current?.scrollToEnd({ animated: false });
+        }, delayMs);
+      };
+      step(animated, 0);
+      step(false, 80);
+      step(false, 200);
+      step(false, 420);
+      step(false, 700);
+    },
+    [list.length]
+  );
+
   useEffect(() => {
     if (list.length === 0) return;
     if (!nearBottomRef.current) return;
-    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-    return () => clearTimeout(t);
-  }, [list.length]);
+    scrollToTrueBottom(true);
+  }, [list.length, scrollToTrueBottom]);
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
 
@@ -690,8 +722,8 @@ export default function ChatScreen() {
   const jumpToBottom = useCallback(() => {
     nearBottomRef.current = true;
     setShowJumpBottom(false);
-    listRef.current?.scrollToEnd({ animated: true });
-  }, []);
+    scrollToTrueBottom(true);
+  }, [scrollToTrueBottom]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) =>
