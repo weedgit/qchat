@@ -242,6 +242,7 @@ const ICONS = {
   select: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M8.5 12l2.5 2.5 4.5-4.5",
   trash: "M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3",
   retry: "M3 12a9 9 0 1 0 3-6.7 M6 2v4h4",
+  close: "M18 6L6 18 M6 6l12 12",
   menu: "M3 6h18 M3 12h18 M3 18h18",
   back: "M15 18l-6-6 6-6",
   pencil: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
@@ -286,6 +287,7 @@ function Bubble({
   onContextMenu,
   onReact,
   onRetry,
+  onCancelUpload,
   ctxOpen,
 }: {
   msg: Message;
@@ -298,12 +300,18 @@ function Bubble({
   onContextMenu?: (e: ReactMouseEvent) => void;
   onReact?: (emoji: string) => void;
   onRetry?: () => void;
+  onCancelUpload?: () => void;
   ctxOpen: boolean;
 }) {
   const canReact = !!onReact && !selectMode && !msg.recalled && !msg.pending && !msg.failed && !ctxOpen;
   // Recommend the message's top reaction if it has one, otherwise the default quick emoji.
   const recommendedEmoji = msg.reactions?.[0]?.emoji ?? QUICK_EMOJIS[0];
   const hasReactions = !msg.recalled && (msg.reactions?.length ?? 0) > 0;
+  const canCancelUpload =
+    !selectMode &&
+    msg.pending &&
+    typeof msg.uploadProgress === "number" &&
+    !!onCancelUpload;
 
   if (msg.type === "call") {
     return (
@@ -323,16 +331,32 @@ function Bubble({
       {msg.editedAt && !msg.recalled && <span className="edited-mark">edited </span>}
       {fmtTime(msg.createdAt)}
       {receiptMark(msg)}
+      {canCancelUpload && (
+        <button
+          type="button"
+          className="msg-action-icon"
+          title="Cancel upload"
+          aria-label="Cancel upload"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancelUpload();
+          }}
+        >
+          <MenuIcon d={ICONS.close} style={{ width: 13, height: 13 }} />
+        </button>
+      )}
       {!selectMode && msg.failed && onRetry && (
         <button
           type="button"
-          className="msg-retry-btn"
+          className="msg-action-icon"
+          title="Retry"
+          aria-label="Retry"
           onClick={(e) => {
             e.stopPropagation();
             onRetry();
           }}
         >
-          Retry
+          <MenuIcon d={ICONS.retry} style={{ width: 13, height: 13 }} />
         </button>
       )}
     </span>
@@ -1906,6 +1930,13 @@ export default function ChatPageInner() {
                   onRetry={
                     m.failed && chat.activeId
                       ? () => chat.retryMessage(chat.activeId!, m)
+                      : undefined
+                  }
+                  onCancelUpload={
+                    m.pending &&
+                    typeof m.uploadProgress === "number" &&
+                    chat.activeId
+                      ? () => chat.cancelUpload(chat.activeId!, m)
                       : undefined
                   }
                 />

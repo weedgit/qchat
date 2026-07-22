@@ -261,15 +261,19 @@ type MediaUploadResult = {
 
 /**
  * Upload via XHR so the File streams from disk (avoids fetch+FormData main-thread stalls)
- * and so callers get upload progress for large media.
+ * and so callers get upload progress for large media. Pass AbortSignal to cancel mid-upload.
  */
 export async function uploadMedia(
   file: Blob,
   kind: string,
   filename: string,
-  onProgress?: UploadProgressFn
+  onProgress?: UploadProgressFn,
+  signal?: AbortSignal
 ): Promise<MediaUploadResult> {
   await ensureAccessToken();
+  if (signal?.aborted) {
+    throw new ApiError(0, "upload aborted", null);
+  }
   const form = new FormData();
   form.append("file", file, filename);
   form.append("kind", kind);
@@ -281,12 +285,28 @@ export async function uploadMedia(
       const token = getToken();
       if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
+      const onAbort = () => {
+        xhr.abort();
+      };
+      if (signal) {
+        if (signal.aborted) {
+          reject(new ApiError(0, "upload aborted", null));
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+
+      const cleanup = () => {
+        signal?.removeEventListener("abort", onAbort);
+      };
+
       xhr.upload.onprogress = (ev) => {
         if (!onProgress || !ev.lengthComputable || ev.total <= 0) return;
         onProgress(ev.loaded, ev.total);
       };
 
       xhr.onload = () => {
+        cleanup();
         let body: unknown = null;
         const text = xhr.responseText;
         if (text) {
@@ -324,8 +344,14 @@ export async function uploadMedia(
         resolve(body as MediaUploadResult);
       };
 
-      xhr.onerror = () => reject(new ApiError(0, "network error", null));
-      xhr.onabort = () => reject(new ApiError(0, "upload aborted", null));
+      xhr.onerror = () => {
+        cleanup();
+        reject(new ApiError(0, "network error", null));
+      };
+      xhr.onabort = () => {
+        cleanup();
+        reject(new ApiError(0, "upload aborted", null));
+      };
       // Let the browser stream the File; do not read it into an ArrayBuffer first.
       xhr.send(form);
     });

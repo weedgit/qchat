@@ -1179,17 +1179,27 @@ select:focus {
 .bubble.failed {
   opacity: 0.92;
 }
-.msg-retry-btn {
-  margin-left: 6px;
-  padding: 0 4px;
-  font-size: 11px;
-  color: var(--accent);
+.msg-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 2px;
+  vertical-align: -2px;
+  color: inherit;
+  opacity: 0.75;
   background: transparent;
   border: none;
+  border-radius: 4px;
   cursor: pointer;
 }
-.msg-retry-btn:hover {
-  text-decoration: underline;
+.msg-action-icon:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--accent);
+}
+.msg-action-icon svg {
+  display: block;
 }
 .bubble.muted {
   opacity: 0.65;

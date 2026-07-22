@@ -49,6 +49,9 @@ export function useChat() {
   const lastTypingSentRef = useRef<Record<string, number>>({});
   const typingActiveRef = useRef<Record<string, boolean>>({});
   const typingIdleRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  /** In-flight media/voice uploads keyed by clientMsgId — abort to cancel. */
+  const uploadControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const cancelledUploadsRef = useRef<Set<string>>(new Set());
 
   meRef.current = me;
   activeIdRef.current = activeId;
@@ -722,6 +725,23 @@ export function useChat() {
     return `Voice message (${m}:${r.toString().padStart(2, "0")})`;
   }
 
+  const cancelUpload = useCallback((convId: string, msg: Message) => {
+    const key = msg.clientMsgId || msg.id;
+    cancelledUploadsRef.current.add(key);
+    const controller = uploadControllersRef.current.get(key);
+    if (controller) {
+      controller.abort();
+      uploadControllersRef.current.delete(key);
+    }
+    setMessages((prev) => ({
+      ...prev,
+      [convId]: (prev[convId] ?? []).filter((m) => m.id !== msg.id && m.clientMsgId !== key),
+    }));
+    if (msg.mediaUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(msg.mediaUrl);
+    }
+  }, []);
+
   const sendMediaMessage = useCallback(
     async (convId: string, file: File, replyToId?: string, caption?: string) => {
       stopTyping(convId);
@@ -733,6 +753,8 @@ export function useChat() {
         : trimmedCaption || file.name || "File";
       const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const tempId = clientMsgId;
+      const controller = new AbortController();
+      uploadControllersRef.current.set(clientMsgId, controller);
       // Lightweight preview only — full File decode freezes the tab on big photos/videos.
       let localUrl = "";
       if (isImage) {
@@ -773,6 +795,12 @@ export function useChat() {
       );
       // Yield so the optimistic bubble paints before XHR starts.
       await new Promise<void>((r) => setTimeout(r, 0));
+      if (controller.signal.aborted || cancelledUploadsRef.current.has(clientMsgId)) {
+        uploadControllersRef.current.delete(clientMsgId);
+        cancelledUploadsRef.current.delete(clientMsgId);
+        if (localUrl) URL.revokeObjectURL(localUrl);
+        return;
+      }
       try {
         let lastPct = -1;
         const uploaded = await uploadMedia(
@@ -780,6 +808,7 @@ export function useChat() {
           isImage ? "image" : "file",
           file.name || `upload.${isImage ? "jpg" : "bin"}`,
           (loaded, total) => {
+            if (cancelledUploadsRef.current.has(clientMsgId)) return;
             const pct = Math.min(1, loaded / total);
             const stepped = Math.floor(pct * 20);
             if (stepped === lastPct) return;
@@ -792,8 +821,15 @@ export function useChat() {
                   : m
               ),
             }));
-          }
+          },
+          controller.signal
         );
+        if (controller.signal.aborted || cancelledUploadsRef.current.has(clientMsgId)) {
+          uploadControllersRef.current.delete(clientMsgId);
+          cancelledUploadsRef.current.delete(clientMsgId);
+          if (localUrl) URL.revokeObjectURL(localUrl);
+          return;
+        }
         const body = await api<any>(`/v1/conversations/${convId}/messages`, {
           method: "POST",
           body: JSON.stringify({
@@ -804,6 +840,12 @@ export function useChat() {
             reply_to_id: replyToId || undefined,
           }),
         });
+        if (cancelledUploadsRef.current.has(clientMsgId)) {
+          uploadControllersRef.current.delete(clientMsgId);
+          cancelledUploadsRef.current.delete(clientMsgId);
+          if (localUrl) URL.revokeObjectURL(localUrl);
+          return;
+        }
         const saved = normalizeMessage(
           {
             ...body,
@@ -815,6 +857,8 @@ export function useChat() {
           },
           meRef.current?.id
         );
+        uploadControllersRef.current.delete(clientMsgId);
+        cancelledUploadsRef.current.delete(clientMsgId);
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
@@ -835,6 +879,22 @@ export function useChat() {
         }));
         if (localUrl) URL.revokeObjectURL(localUrl);
       } catch (e: any) {
+        uploadControllersRef.current.delete(clientMsgId);
+        const cancelled =
+          controller.signal.aborted ||
+          cancelledUploadsRef.current.has(clientMsgId) ||
+          e?.message === "upload aborted";
+        cancelledUploadsRef.current.delete(clientMsgId);
+        if (cancelled) {
+          if (localUrl) URL.revokeObjectURL(localUrl);
+          setMessages((prev) => ({
+            ...prev,
+            [convId]: (prev[convId] ?? []).filter(
+              (m) => m.id !== tempId && m.clientMsgId !== clientMsgId
+            ),
+          }));
+          return;
+        }
         const message = formatSendError(e, "Upload failed");
         console.error("[qchat] media upload failed:", message, e);
         setMessages((prev) => ({
@@ -863,6 +923,8 @@ export function useChat() {
       const preview = formatVoicePreview(durationSec);
       const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const tempId = clientMsgId;
+      const controller = new AbortController();
+      uploadControllersRef.current.set(clientMsgId, controller);
       const localUrl = URL.createObjectURL(blob);
       const optimistic: Message = {
         id: tempId,
@@ -874,6 +936,7 @@ export function useChat() {
         createdAt: new Date().toISOString(),
         mine: true,
         pending: true,
+        uploadProgress: 0,
         clientMsgId,
         replyToId,
       };
@@ -898,7 +961,33 @@ export function useChat() {
       try {
         const ext =
           blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
-        const uploaded = await uploadMedia(blob, "voice", `voice.${ext}`);
+        let lastPct = -1;
+        const uploaded = await uploadMedia(
+          blob,
+          "voice",
+          `voice.${ext}`,
+          (loaded, total) => {
+            const pct = Math.min(1, loaded / total);
+            const stepped = Math.floor(pct * 20);
+            if (stepped === lastPct) return;
+            lastPct = stepped;
+            setMessages((prev) => ({
+              ...prev,
+              [convId]: (prev[convId] ?? []).map((m) =>
+                m.id === tempId || m.clientMsgId === clientMsgId
+                  ? { ...m, uploadProgress: pct }
+                  : m
+              ),
+            }));
+          },
+          controller.signal
+        );
+        if (controller.signal.aborted || cancelledUploadsRef.current.has(clientMsgId)) {
+          uploadControllersRef.current.delete(clientMsgId);
+          cancelledUploadsRef.current.delete(clientMsgId);
+          URL.revokeObjectURL(localUrl);
+          return;
+        }
         const body = await api<any>(`/v1/conversations/${convId}/messages`, {
           method: "POST",
           body: JSON.stringify({
@@ -909,6 +998,12 @@ export function useChat() {
             reply_to_id: replyToId || undefined,
           }),
         });
+        if (cancelledUploadsRef.current.has(clientMsgId)) {
+          uploadControllersRef.current.delete(clientMsgId);
+          cancelledUploadsRef.current.delete(clientMsgId);
+          URL.revokeObjectURL(localUrl);
+          return;
+        }
         const saved = normalizeMessage(
           {
             ...body,
@@ -920,16 +1015,42 @@ export function useChat() {
           },
           meRef.current?.id
         );
+        uploadControllersRef.current.delete(clientMsgId);
+        cancelledUploadsRef.current.delete(clientMsgId);
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
             m.id === tempId || m.clientMsgId === clientMsgId
-              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              ? {
+                  ...saved,
+                  mine: true,
+                  pending: false,
+                  failed: false,
+                  uploadProgress: undefined,
+                  clientMsgId,
+                  replyToId,
+                }
               : m
           ),
         }));
         URL.revokeObjectURL(localUrl);
       } catch (e: any) {
+        uploadControllersRef.current.delete(clientMsgId);
+        const cancelled =
+          controller.signal.aborted ||
+          cancelledUploadsRef.current.has(clientMsgId) ||
+          e?.message === "upload aborted";
+        cancelledUploadsRef.current.delete(clientMsgId);
+        if (cancelled) {
+          URL.revokeObjectURL(localUrl);
+          setMessages((prev) => ({
+            ...prev,
+            [convId]: (prev[convId] ?? []).filter(
+              (m) => m.id !== tempId && m.clientMsgId !== clientMsgId
+            ),
+          }));
+          return;
+        }
         const message = formatSendError(e, "Upload failed");
         console.error("[qchat] voice upload failed:", message, e);
         setMessages((prev) => ({
@@ -940,6 +1061,7 @@ export function useChat() {
                   ...m,
                   pending: false,
                   failed: true,
+                  uploadProgress: undefined,
                   error: message,
                 }
               : m
@@ -1145,6 +1267,7 @@ export function useChat() {
     sendMediaMessage,
     sendVoiceMessage,
     retryMessage,
+    cancelUpload,
     recallMessage,
     forwardMessage,
     reactMessage,
