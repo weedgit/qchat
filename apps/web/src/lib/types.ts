@@ -188,13 +188,15 @@ export function mediaURL(path?: string | null): string | undefined {
   if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) {
     return path;
   }
-  const base =
-    process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
-    (typeof window !== "undefined"
-      ? `${window.location.protocol}//${window.location.hostname}:8080`
-      : process.env.NODE_ENV === "development"
-        ? "http://localhost:8080"
-        : "");
+  let base = "";
+  if (typeof process.env.NEXT_PUBLIC_API_URL === "string") {
+    base = process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
+    if (!base && typeof window !== "undefined") base = window.location.origin;
+  } else if (typeof window !== "undefined") {
+    base = `${window.location.protocol}//${window.location.hostname}:8080`;
+  } else {
+    base = "http://localhost:8080";
+  }
   return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
 }
 

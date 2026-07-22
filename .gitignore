@@ -17,3 +17,5 @@ deploy/qchat-api.env
 # Per-machine LiveKit/coturn output from render-media-config.sh
 deploy/generated/*
 !deploy/generated/.gitkeep
+# Self-signed / local TLS material
+deploy/certs/

@@ -307,18 +307,20 @@ export default function CallOverlay({ call }: { call: CallApi }) {
             {error && (
               error.startsWith("MIC_INSECURE_ORIGIN:") ? (
                 <div className="error-text call-mic-help">
-                  <div>Microphone needs a secure context.</div>
+                  <div>Microphone needs HTTPS (secure context).</div>
                   <ol className="call-mic-steps">
                     <li>
-                      Fastest with Cursor: open{" "}
-                      <a href="http://localhost:3000">http://localhost:3000</a> (mic allowed on
-                      localhost).
+                      Open this app over HTTPS:{" "}
+                      <a href={error.slice("MIC_INSECURE_ORIGIN:".length).replace(/^http:/, "https:")}>
+                        {error.slice("MIC_INSECURE_ORIGIN:".length).replace(/^http:/, "https:")}
+                      </a>
+                      {" "}
+                      (accept the self-signed certificate warning once).
                     </li>
                     <li>
-                      Or keep this LAN URL: in Chrome open{" "}
-                      <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>, enable
-                      it, add{" "}
-                      <code>{error.slice("MIC_INSECURE_ORIGIN:".length)}</code>, relaunch Chrome.
+                      Local only:{" "}
+                      <a href="http://localhost:3000">http://localhost:3000</a> (mic allowed on
+                      localhost without TLS).
                     </li>
                   </ol>
                 </div>
