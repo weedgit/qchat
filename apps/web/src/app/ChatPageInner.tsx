@@ -17,7 +17,8 @@ import CallOverlay from "@/components/CallOverlay";
 import FriendNoteEditor from "@/components/FriendNoteEditor";
 import GroupQr from "@/components/GroupQr";
 import MessageBody from "@/components/MessageBody";
-import { api, clearToken, mediaAuthURL } from "@/lib/api";
+import { api, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
+import { getAuthDevice } from "@/lib/device";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { useCall } from "@/lib/useCall";
 import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
@@ -88,9 +89,8 @@ function ConversationRow({
 
   return (
     <div
-      className={`conv-item ${active ? "active" : ""} ${conv.muted ? "muted-conv" : ""} ${
-        conv.favorite ? "favorited" : ""
-      } ${dropHover ? "drop-hover" : ""}`}
+      className={`conv-item ${active ? "active" : ""} ${conv.muted ? "muted-conv" : ""} ${conv.favorite ? "favorited" : ""
+        } ${dropHover ? "drop-hover" : ""}`}
       onClick={onClick}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -263,6 +263,8 @@ const ICONS = {
   phone: "M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
   video:
     "M23 7l-7 5 7 5V7z M3 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z",
+  building:
+    "M3 21h18 M5 21V7l7-4 7 4v14 M9 21v-6h6v6 M9 10h.01 M15 10h.01 M9 14h.01 M15 14h.01",
 } as const;
 
 const QUICK_EMOJIS = [
@@ -363,9 +365,8 @@ function Bubble({
   );
   return (
     <div
-      className={`msg-row ${msg.mine ? "mine" : ""} ${selectMode ? "select-mode" : ""} ${
-        selected ? "selected" : ""
-      }`}
+      className={`msg-row ${msg.mine ? "mine" : ""} ${selectMode ? "select-mode" : ""} ${selected ? "selected" : ""
+        }`}
       onClick={selectMode && selectable ? onToggleSelect : undefined}
     >
       {selectable && selectMode && (
@@ -521,6 +522,11 @@ export default function ChatPageInner() {
   const router = useRouter();
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [joinCompanyOpen, setJoinCompanyOpen] = useState(false);
+  const [joinInvite, setJoinInvite] = useState("");
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joinNotice, setJoinNotice] = useState<string | null>(null);
   /** Narrow layout: list ↔ chat (Mattermost mobile channel view). */
   const narrowLayout = useMediaQuery("(max-width: 768px)");
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
@@ -601,13 +607,13 @@ export default function ChatPageInner() {
     const specials =
       isGroup && (!q || "everyone".startsWith(q) || "all".startsWith(q))
         ? [
-            {
-              userId: "__everyone__",
-              username: "everyone",
-              displayName: "Notify everyone",
-              avatarUrl: undefined as string | undefined,
-            },
-          ]
+          {
+            userId: "__everyone__",
+            username: "everyone",
+            displayName: "Notify everyone",
+            avatarUrl: undefined as string | undefined,
+          },
+        ]
         : [];
     const people = mentionMembers.filter((m) => {
       if (!q) return true;
@@ -913,13 +919,51 @@ export default function ChatPageInner() {
     };
   }, [mainMenuOpen, composeOpen]);
 
+  async function joinCompany() {
+    const code = joinInvite.trim();
+    if (!code || joinBusy) return;
+    setJoinBusy(true);
+    setJoinError(null);
+    setJoinNotice(null);
+    try {
+      const device = await getAuthDevice();
+      const body = await api<any>("/v1/enterprises/join", {
+        method: "POST",
+        body: JSON.stringify({
+          invite_code: code,
+          device_type: device.deviceType,
+          device_name: device.deviceName,
+          device_id: device.deviceId,
+          platform: device.platform,
+        }),
+      });
+      if (body?.access_token) {
+        setTokens(String(body.access_token), String(body.refresh_token || getRefreshToken() || ""), true);
+      }
+      const name = String(body?.name || "company");
+      setJoinNotice(
+        body?.already_member ? `Already in ${name}` : `Joined ${name}`
+      );
+      setJoinInvite("");
+      await chat.reload();
+      window.setTimeout(() => {
+        setJoinCompanyOpen(false);
+        setJoinNotice(null);
+      }, 900);
+    } catch (e: any) {
+      setJoinError(e?.message || "Could not join");
+    } finally {
+      setJoinBusy(false);
+    }
+  }
+
   async function logout() {
     try {
       await unregisterWebPush();
     } catch {
       /* stale endpoints are pruned after 404/410 */
     }
-    await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
+    await api("/v1/auth/logout", { method: "POST" }).catch(() => { });
     clearToken();
     router.replace("/login");
   }
@@ -932,7 +976,7 @@ export default function ChatPageInner() {
           setMyStatus(st);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Mattermost channel info RHS: load group members when details open.
@@ -1251,9 +1295,9 @@ export default function ChatPageInner() {
       }
       if (!images.length) return false;
       if (mediaDraftRef.current?.mode === "photos") {
-        openMediaDraft(images, { append: true }).catch(() => {});
+        openMediaDraft(images, { append: true }).catch(() => { });
       } else {
-        openMediaDraft(images).catch(() => {});
+        openMediaDraft(images).catch(() => { });
       }
       return true;
     } finally {
@@ -1425,7 +1469,7 @@ export default function ChatPageInner() {
         );
       }, 250);
       recordMaxRef.current = setTimeout(() => {
-        finishRecording(true).catch(() => {});
+        finishRecording(true).catch(() => { });
       }, VOICE_MAX_SEC * 1000);
     } catch {
       stopMediaTracks();
@@ -1518,7 +1562,7 @@ export default function ChatPageInner() {
                   api("/v1/me/status", {
                     method: "PUT",
                     body: JSON.stringify({ status: next }),
-                  }).catch(() => {});
+                  }).catch(() => { });
                 }}
               >
                 <MenuIcon d={ICONS.user} />
@@ -1545,7 +1589,7 @@ export default function ChatPageInner() {
                       type="button"
                       className="search-hit"
                       onClick={() => {
-                        chat.openDM(u.id).then(() => setMobileChatOpen(true)).catch(() => {});
+                        chat.openDM(u.id).then(() => setMobileChatOpen(true)).catch(() => { });
                         setQuery("");
                       }}
                     >
@@ -1585,44 +1629,44 @@ export default function ChatPageInner() {
             </div>
           ) : (
             <>
-          {chat.loadError && (
-            <div style={{ padding: 14 }}>
-              <button className="btn-ghost" onClick={chat.reload}>
-                Retry
-              </button>
-            </div>
-          )}
-          {!chat.loadError && filtered.length === 0 && (
-            <div style={{ padding: 20 }} className="muted">
-              No conversations yet. Add a friend or create a group.
-            </div>
-          )}
-          {filtered.map((c) => (
-            <ConversationRow
-              key={c.id}
-              conv={c}
-              active={c.id === chat.activeId}
-              dropHover={dropHoverConvId === c.id}
-              typing={chat.typingByConv[c.id] ?? []}
-              online={
-                c.peerId
-                  ? chat.presenceByUser[c.peerId]?.online ?? c.peerOnline
-                  : undefined
-              }
-              onClick={() => openChat(c.id)}
-              onFavorite={() =>
-                chat.updateConversationPrefs(c.id, { favorite: !c.favorite }).catch(() => {})
-              }
-              onMute={() =>
-                chat.updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => {})
-              }
-              onMarkUnread={() => chat.markConversationUnread(c.id).catch(() => {})}
-              onDropHover={(hover) => setDropHoverConvId(hover ? c.id : null)}
-              onFilesDrop={(files) => {
-                attachDroppedFiles(c.id, files).catch(() => {});
-              }}
-            />
-          ))}
+              {chat.loadError && (
+                <div style={{ padding: 14 }}>
+                  <button className="btn-ghost" onClick={chat.reload}>
+                    Retry
+                  </button>
+                </div>
+              )}
+              {!chat.loadError && filtered.length === 0 && (
+                <div style={{ padding: 20 }} className="muted">
+                  No conversations yet. Add a friend or create a group.
+                </div>
+              )}
+              {filtered.map((c) => (
+                <ConversationRow
+                  key={c.id}
+                  conv={c}
+                  active={c.id === chat.activeId}
+                  dropHover={dropHoverConvId === c.id}
+                  typing={chat.typingByConv[c.id] ?? []}
+                  online={
+                    c.peerId
+                      ? chat.presenceByUser[c.peerId]?.online ?? c.peerOnline
+                      : undefined
+                  }
+                  onClick={() => openChat(c.id)}
+                  onFavorite={() =>
+                    chat.updateConversationPrefs(c.id, { favorite: !c.favorite }).catch(() => { })
+                  }
+                  onMute={() =>
+                    chat.updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => { })
+                  }
+                  onMarkUnread={() => chat.markConversationUnread(c.id).catch(() => { })}
+                  onDropHover={(hover) => setDropHoverConvId(hover ? c.id : null)}
+                  onFilesDrop={(files) => {
+                    attachDroppedFiles(c.id, files).catch(() => { });
+                  }}
+                />
+              ))}
             </>
           )}
         </div>
@@ -1640,6 +1684,19 @@ export default function ChatPageInner() {
         </button>
         {composeOpen && (
           <div className="popup-menu compose-menu" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="ctx-item"
+              onClick={() => {
+                setComposeOpen(false);
+                setJoinError(null);
+                setJoinNotice(null);
+                setJoinCompanyOpen(true);
+              }}
+            >
+              <MenuIcon d={ICONS.building} />
+              Join a company
+            </button>
             <Link className="ctx-item" href="/groups">
               <MenuIcon d={ICONS.users} />
               New Group
@@ -1769,13 +1826,13 @@ export default function ChatPageInner() {
                       {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
                         (active.type === "dm"
                           ? (() => {
-                              const p = active.peerId
-                                ? chat.presenceByUser[active.peerId]
-                                : undefined;
-                              const online = p?.online ?? active.peerOnline;
-                              if (online) return "online";
-                              return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
-                            })()
+                            const p = active.peerId
+                              ? chat.presenceByUser[active.peerId]
+                              : undefined;
+                            const online = p?.online ?? active.peerOnline;
+                            if (online) return "online";
+                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
+                          })()
                           : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
                     </div>
                   </div>
@@ -1855,7 +1912,7 @@ export default function ChatPageInner() {
                   className="btn-ghost"
                   style={{ flex: "none", padding: "2px 6px" }}
                   onClick={() =>
-                    chat.pinMessage(active.pinnedMessageId!, active.id, false).catch(() => {})
+                    chat.pinMessage(active.pinnedMessageId!, active.id, false).catch(() => { })
                   }
                 >
                   Unpin
@@ -1892,7 +1949,7 @@ export default function ChatPageInner() {
                 setChatDropActive(false);
                 const files = filesFromDataTransfer(e.dataTransfer);
                 if (files.length) {
-                  attachDroppedFiles(chat.activeId, files).catch(() => {});
+                  attachDroppedFiles(chat.activeId, files).catch(() => { });
                 }
               }}
             >
@@ -1905,251 +1962,251 @@ export default function ChatPageInner() {
                 </div>
               )}
               <div className="msg-scroll" ref={scrollRef}>
-              {activeMessages.length === 0 && (
-                <div className="empty-state" style={{ minHeight: 200 }}>
-                  <div className="muted">No messages here yet…</div>
-                </div>
-              )}
-              {activeMessages.map((m) => (
-                <div key={m.id} id={`msg-${m.id}`}>
-                <Bubble
-                  msg={m}
-                  isGroup={!!isGroup}
-                  replyPreview={previewFor(m)}
-                  selectMode={selectMode}
-                  selected={selectedIds.has(m.id)}
-                  selectable={!m.pending && !m.failed}
-                  onToggleSelect={() => toggleSelect(m.id)}
-                  onContextMenu={(e) => openCtxMenu(e, m)}
-                  ctxOpen={!!ctxMenu}
-                  onReact={
-                    chat.activeId
-                      ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => {})
-                      : undefined
-                  }
-                  onRetry={
-                    m.failed && chat.activeId
-                      ? () => chat.retryMessage(chat.activeId!, m)
-                      : undefined
-                  }
-                  onCancelUpload={
-                    m.pending &&
-                    typeof m.uploadProgress === "number" &&
-                    chat.activeId
-                      ? () => chat.cancelUpload(chat.activeId!, m)
-                      : undefined
-                  }
-                />
-                </div>
-              ))}
-            </div>
-<div className="composer">
-              <div className="composer-box">
-                {editingMessage ? (
-                  <div className="reply-banner edit-banner">
-                    <MenuIcon d={ICONS.edit} style={{ width: 22, height: 22 }} />
-                    <div className="reply-body">
-                      <div className="reply-name">Edit message</div>
-                      <div className="reply-text">{editingMessage.content}</div>
-                    </div>
-                    <button
-                      type="button"
-                      className="reply-close"
-                      title="Cancel edit"
-                      onClick={cancelEdit}
-                    >
-                      {"\u2715"}
-                    </button>
+                {activeMessages.length === 0 && (
+                  <div className="empty-state" style={{ minHeight: 200 }}>
+                    <div className="muted">No messages here yet…</div>
                   </div>
-                ) : replyTo ? (
-                  <div className="reply-banner">
-                    <MenuIcon d={ICONS.reply} style={{ width: 22, height: 22 }} />
-                    <div className="reply-body">
-                      <div className="reply-name">
-                        Reply to {replyTo.mine
-                          ? chat.me?.nickname || chat.me?.username || "You"
-                          : replyTo.senderName || active.title}
+                )}
+                {activeMessages.map((m) => (
+                  <div key={m.id} id={`msg-${m.id}`}>
+                    <Bubble
+                      msg={m}
+                      isGroup={!!isGroup}
+                      replyPreview={previewFor(m)}
+                      selectMode={selectMode}
+                      selected={selectedIds.has(m.id)}
+                      selectable={!m.pending && !m.failed}
+                      onToggleSelect={() => toggleSelect(m.id)}
+                      onContextMenu={(e) => openCtxMenu(e, m)}
+                      ctxOpen={!!ctxMenu}
+                      onReact={
+                        chat.activeId
+                          ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
+                          : undefined
+                      }
+                      onRetry={
+                        m.failed && chat.activeId
+                          ? () => chat.retryMessage(chat.activeId!, m)
+                          : undefined
+                      }
+                      onCancelUpload={
+                        m.pending &&
+                          typeof m.uploadProgress === "number" &&
+                          chat.activeId
+                          ? () => chat.cancelUpload(chat.activeId!, m)
+                          : undefined
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="composer">
+                <div className="composer-box">
+                  {editingMessage ? (
+                    <div className="reply-banner edit-banner">
+                      <MenuIcon d={ICONS.edit} style={{ width: 22, height: 22 }} />
+                      <div className="reply-body">
+                        <div className="reply-name">Edit message</div>
+                        <div className="reply-text">{editingMessage.content}</div>
                       </div>
-                      <div className="reply-text">{replyTo.content}</div>
-                    </div>
-                    <button
-                      type="button"
-                      className="reply-close"
-                      title="Cancel reply"
-                      onClick={() => setReplyTo(null)}
-                    >
-                      {"\u2715"}
-                    </button>
-                  </div>
-                ) : null}
-                <div className="composer-row">
-                  {recording ? (
-                    <>
                       <button
                         type="button"
-                        className="send-btn danger"
-                        title="Cancel recording"
-                        onClick={cancelRecording}
+                        className="reply-close"
+                        title="Cancel edit"
+                        onClick={cancelEdit}
                       >
                         {"\u2715"}
                       </button>
-                      <div className="recording-pill">
-                        <span className="recording-dot" />
-                        Recording {Math.floor(recordSecs / 60)}:
-                        {(recordSecs % 60).toString().padStart(2, "0")}
-                        <span className="muted"> / 1:00</span>
+                    </div>
+                  ) : replyTo ? (
+                    <div className="reply-banner">
+                      <MenuIcon d={ICONS.reply} style={{ width: 22, height: 22 }} />
+                      <div className="reply-body">
+                        <div className="reply-name">
+                          Reply to {replyTo.mine
+                            ? chat.me?.nickname || chat.me?.username || "You"
+                            : replyTo.senderName || active.title}
+                        </div>
+                        <div className="reply-text">{replyTo.content}</div>
                       </div>
                       <button
                         type="button"
-                        className="send-btn"
-                        title="Send voice message"
-                        disabled={voiceBusy}
-                        onClick={() => finishRecording(true)}
+                        className="reply-close"
+                        title="Cancel reply"
+                        onClick={() => setReplyTo(null)}
                       >
-                        {"\u27A4"}
+                        {"\u2715"}
                       </button>
-                    </>
-                  ) : (
-                    <>
-                      {mentionMenu && mentionSuggestions.length > 0 && (
-                        <div className="mention-menu" role="listbox">
-                          {mentionSuggestions.map((m, i) => (
-                            <button
-                              key={m.userId + m.username}
-                              type="button"
-                              className={`mention-option ${i === mentionMenu.index ? "active" : ""}`}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                applyMention(m.username);
-                              }}
-                            >
-                              {m.userId !== "__everyone__" && (
-                                <Avatar name={m.displayName} url={m.avatarUrl} size={28} />
-                              )}
-                              <span className="mention-option-text">
-                                <strong>@{m.username}</strong>
-                                <span className="muted">{m.displayName}</span>
-                              </span>
-                            </button>
-                          ))}
+                    </div>
+                  ) : null}
+                  <div className="composer-row">
+                    {recording ? (
+                      <>
+                        <button
+                          type="button"
+                          className="send-btn danger"
+                          title="Cancel recording"
+                          onClick={cancelRecording}
+                        >
+                          {"\u2715"}
+                        </button>
+                        <div className="recording-pill">
+                          <span className="recording-dot" />
+                          Recording {Math.floor(recordSecs / 60)}:
+                          {(recordSecs % 60).toString().padStart(2, "0")}
+                          <span className="muted"> / 1:00</span>
                         </div>
-                      )}
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept="*/*"
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const list = e.target.files ? Array.from(e.target.files) : [];
-                          e.target.value = "";
-                          if (!list.length || !chat.activeId) return;
-                          openMediaDraft(list).catch(() => {});
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="attach-btn"
-                        title="Attach file"
-                        disabled={voiceBusy || !chat.activeId}
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <MenuIcon d={ICONS.paperclip} style={{ width: 20, height: 20 }} />
-                      </button>
-                      <textarea
-                        ref={draftRef}
-                        rows={1}
-                        placeholder={isGroup ? "Message · try @name" : "Message"}
-                        value={draft}
-                        disabled={voiceBusy}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const cursor = e.target.selectionStart ?? value.length;
-                          setDraft(value);
-                          updateMentionMenu(value, cursor);
-                          if (!chat.activeId) return;
-                          if (value.trim()) chat.notifyTyping(chat.activeId);
-                          else chat.stopTyping(chat.activeId);
-                        }}
-                        onClick={(e) => {
-                          const t = e.currentTarget;
-                          updateMentionMenu(t.value, t.selectionStart ?? t.value.length);
-                        }}
-                        onPaste={onComposerPaste}
-                        onKeyDown={(e) => {
-                          if (mentionMenu && mentionSuggestions.length > 0) {
-                            if (e.key === "ArrowDown") {
-                              e.preventDefault();
-                              setMentionMenu((prev) =>
-                                prev
-                                  ? {
+                        <button
+                          type="button"
+                          className="send-btn"
+                          title="Send voice message"
+                          disabled={voiceBusy}
+                          onClick={() => finishRecording(true)}
+                        >
+                          {"\u27A4"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {mentionMenu && mentionSuggestions.length > 0 && (
+                          <div className="mention-menu" role="listbox">
+                            {mentionSuggestions.map((m, i) => (
+                              <button
+                                key={m.userId + m.username}
+                                type="button"
+                                className={`mention-option ${i === mentionMenu.index ? "active" : ""}`}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  applyMention(m.username);
+                                }}
+                              >
+                                {m.userId !== "__everyone__" && (
+                                  <Avatar name={m.displayName} url={m.avatarUrl} size={28} />
+                                )}
+                                <span className="mention-option-text">
+                                  <strong>@{m.username}</strong>
+                                  <span className="muted">{m.displayName}</span>
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          accept="*/*"
+                          style={{ display: "none" }}
+                          onChange={(e) => {
+                            const list = e.target.files ? Array.from(e.target.files) : [];
+                            e.target.value = "";
+                            if (!list.length || !chat.activeId) return;
+                            openMediaDraft(list).catch(() => { });
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="attach-btn"
+                          title="Attach file"
+                          disabled={voiceBusy || !chat.activeId}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <MenuIcon d={ICONS.paperclip} style={{ width: 20, height: 20 }} />
+                        </button>
+                        <textarea
+                          ref={draftRef}
+                          rows={1}
+                          placeholder={isGroup ? "Message · try @name" : "Message"}
+                          value={draft}
+                          disabled={voiceBusy}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            const cursor = e.target.selectionStart ?? value.length;
+                            setDraft(value);
+                            updateMentionMenu(value, cursor);
+                            if (!chat.activeId) return;
+                            if (value.trim()) chat.notifyTyping(chat.activeId);
+                            else chat.stopTyping(chat.activeId);
+                          }}
+                          onClick={(e) => {
+                            const t = e.currentTarget;
+                            updateMentionMenu(t.value, t.selectionStart ?? t.value.length);
+                          }}
+                          onPaste={onComposerPaste}
+                          onKeyDown={(e) => {
+                            if (mentionMenu && mentionSuggestions.length > 0) {
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                setMentionMenu((prev) =>
+                                  prev
+                                    ? {
                                       ...prev,
                                       index: (prev.index + 1) % mentionSuggestions.length,
                                     }
-                                  : prev
-                              );
-                              return;
-                            }
-                            if (e.key === "ArrowUp") {
-                              e.preventDefault();
-                              setMentionMenu((prev) =>
-                                prev
-                                  ? {
+                                    : prev
+                                );
+                                return;
+                              }
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                setMentionMenu((prev) =>
+                                  prev
+                                    ? {
                                       ...prev,
                                       index:
                                         (prev.index - 1 + mentionSuggestions.length) %
                                         mentionSuggestions.length,
                                     }
-                                  : prev
-                              );
-                              return;
+                                    : prev
+                                );
+                                return;
+                              }
+                              if (e.key === "Enter" || e.key === "Tab") {
+                                e.preventDefault();
+                                const pick = mentionSuggestions[mentionMenu.index];
+                                if (pick) applyMention(pick.username);
+                                return;
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setMentionMenu(null);
+                                return;
+                              }
                             }
-                            if (e.key === "Enter" || e.key === "Tab") {
+                            if (e.key === "Enter" && !e.shiftKey) {
                               e.preventDefault();
-                              const pick = mentionSuggestions[mentionMenu.index];
-                              if (pick) applyMention(pick.username);
-                              return;
+                              send();
                             }
-                            if (e.key === "Escape") {
-                              e.preventDefault();
-                              setMentionMenu(null);
-                              return;
-                            }
-                          }
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            send();
-                          }
-                        }}
-                      />
-                      {draft.trim() ? (
-                        <button
-                          className="send-btn"
-                          onClick={send}
-                          title={editingMessage ? "Save edit" : "Send"}
-                          disabled={voiceBusy}
-                        >
-                          {"\u27A4"}
-                        </button>
-                      ) : editingMessage ? (
-                        <button className="send-btn danger" onClick={cancelEdit} title="Cancel edit">
-                          {"\u2715"}
-                        </button>
-                      ) : (
-                        <button
-                          className="send-btn"
-                          title="Record voice message"
-                          disabled={voiceBusy || !chat.activeId}
-                          onClick={startRecording}
-                        >
-                          <MenuIcon d={ICONS.mic} style={{ width: 20, height: 20 }} />
-                        </button>
-                      )}
-                    </>
-                  )}
+                          }}
+                        />
+                        {draft.trim() ? (
+                          <button
+                            className="send-btn"
+                            onClick={send}
+                            title={editingMessage ? "Save edit" : "Send"}
+                            disabled={voiceBusy}
+                          >
+                            {"\u27A4"}
+                          </button>
+                        ) : editingMessage ? (
+                          <button className="send-btn danger" onClick={cancelEdit} title="Cancel edit">
+                            {"\u2715"}
+                          </button>
+                        ) : (
+                          <button
+                            className="send-btn"
+                            title="Record voice message"
+                            disabled={voiceBusy || !chat.activeId}
+                            onClick={startRecording}
+                          >
+                            <MenuIcon d={ICONS.mic} style={{ width: 20, height: 20 }} />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
             </div>
           </>
         )}
@@ -2180,7 +2237,7 @@ export default function ChatPageInner() {
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   e.target.value = "";
-                  if (f) uploadGroupAvatar(f).catch(() => {});
+                  if (f) uploadGroupAvatar(f).catch(() => { });
                 }}
               />
               <button
@@ -2271,7 +2328,7 @@ export default function ChatPageInner() {
                     type="button"
                     className="btn"
                     disabled={groupMetaBusy}
-                    onClick={() => saveGroupMeta().catch(() => {})}
+                    onClick={() => saveGroupMeta().catch(() => { })}
                   >
                     {groupMetaBusy ? "Saving…" : "Save group info"}
                   </button>
@@ -2280,7 +2337,7 @@ export default function ChatPageInner() {
                       type="checkbox"
                       checked={Boolean(groupDetails.forbid_member_friend_add)}
                       disabled={groupMetaBusy}
-                      onChange={() => toggleForbidFriendAdd().catch(() => {})}
+                      onChange={() => toggleForbidFriendAdd().catch(() => { })}
                     />
                     Forbid members adding each other as friends
                   </label>
@@ -2343,21 +2400,21 @@ export default function ChatPageInner() {
                             <button
                               type="button"
                               className="btn-ghost mute-chip"
-                              onClick={() => muteMember(m.user_id, "10m").catch(() => {})}
+                              onClick={() => muteMember(m.user_id, "10m").catch(() => { })}
                             >
                               10m
                             </button>
                             <button
                               type="button"
                               className="btn-ghost mute-chip"
-                              onClick={() => muteMember(m.user_id, "1h").catch(() => {})}
+                              onClick={() => muteMember(m.user_id, "1h").catch(() => { })}
                             >
                               1h
                             </button>
                             <button
                               type="button"
                               className="btn-ghost mute-chip"
-                              onClick={() => muteMember(m.user_id, "permanent").catch(() => {})}
+                              onClick={() => muteMember(m.user_id, "permanent").catch(() => { })}
                             >
                               Mute
                             </button>
@@ -2365,7 +2422,7 @@ export default function ChatPageInner() {
                               <button
                                 type="button"
                                 className="btn-ghost mute-chip"
-                                onClick={() => muteMember(m.user_id, "off").catch(() => {})}
+                                onClick={() => muteMember(m.user_id, "off").catch(() => { })}
                               >
                                 Unmute
                               </button>
@@ -2383,7 +2440,7 @@ export default function ChatPageInner() {
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => muteMember("", "all_off").catch(() => {})}
+                      onClick={() => muteMember("", "all_off").catch(() => { })}
                     >
                       Unmute whole group
                     </button>
@@ -2391,7 +2448,7 @@ export default function ChatPageInner() {
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => muteMember("", "all").catch(() => {})}
+                      onClick={() => muteMember("", "all").catch(() => { })}
                     >
                       Mute whole group
                     </button>
@@ -2408,7 +2465,7 @@ export default function ChatPageInner() {
               className="btn-ghost"
               style={{ marginTop: 12 }}
               onClick={() =>
-                chat.updateConversationPrefs(active.id, { muted: !active.muted }).catch(() => {})
+                chat.updateConversationPrefs(active.id, { muted: !active.muted }).catch(() => { })
               }
             >
               {active.muted ? "Unmute conversation" : "Mute conversation"}
@@ -2506,7 +2563,7 @@ export default function ChatPageInner() {
                   type="button"
                   className="emoji-btn"
                   onClick={() => {
-                    chat.reactMessage(ctxMsg.id, chat.activeId!, em).catch(() => {});
+                    chat.reactMessage(ctxMsg.id, chat.activeId!, em).catch(() => { });
                     setCtxMenu(null);
                   }}
                 >
@@ -2516,115 +2573,176 @@ export default function ChatPageInner() {
             </div>
           )}
           <div className="ctx-menu">
-          {!ctxMsg.recalled && !ctxMsg.failed && (
+            {!ctxMsg.recalled && !ctxMsg.failed && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  setEditingMessage(null);
+                  setReplyTo(ctxMsg);
+                  setCtxMenu(null);
+                }}
+              >
+                <MenuIcon d={ICONS.reply} />
+                Reply
+              </button>
+            )}
             <button
               className="ctx-item"
               onClick={() => {
-                setEditingMessage(null);
-                setReplyTo(ctxMsg);
+                copyOne(ctxMsg);
                 setCtxMenu(null);
               }}
             >
-              <MenuIcon d={ICONS.reply} />
-              Reply
+              <MenuIcon d={ICONS.copy} />
+              Copy
             </button>
-          )}
-          <button
-            className="ctx-item"
-            onClick={() => {
-              copyOne(ctxMsg);
-              setCtxMenu(null);
-            }}
-          >
-            <MenuIcon d={ICONS.copy} />
-            Copy
-          </button>
-          {!ctxMsg.recalled && !ctxMsg.failed && (
+            {!ctxMsg.recalled && !ctxMsg.failed && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  setForwardIds([ctxMsg.id]);
+                  setCtxMenu(null);
+                }}
+              >
+                <MenuIcon d={ICONS.forward} />
+                Forward
+              </button>
+            )}
             <button
               className="ctx-item"
               onClick={() => {
-                setForwardIds([ctxMsg.id]);
+                toggleSelect(ctxMsg.id);
                 setCtxMenu(null);
               }}
             >
-              <MenuIcon d={ICONS.forward} />
-              Forward
+              <MenuIcon d={ICONS.select} />
+              Select
             </button>
-          )}
-          <button
-            className="ctx-item"
-            onClick={() => {
-              toggleSelect(ctxMsg.id);
-              setCtxMenu(null);
-            }}
-          >
-            <MenuIcon d={ICONS.select} />
-            Select
-          </button>
-          {ctxMsg.failed && chat.activeId && (
-            <button
-              className="ctx-item"
-              onClick={() => {
-                chat.retryMessage(chat.activeId!, ctxMsg);
-                setCtxMenu(null);
-              }}
-            >
-              <MenuIcon d={ICONS.retry} />
-              Retry
-            </button>
-          )}
-          {ctxMsg.mine && !ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
-            <>
-              <div className="ctx-sep" />
-              {ctxMsg.type !== "voice" && ctxMsg.type !== "image" && ctxMsg.type !== "file" && (
+            {ctxMsg.failed && chat.activeId && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  chat.retryMessage(chat.activeId!, ctxMsg);
+                  setCtxMenu(null);
+                }}
+              >
+                <MenuIcon d={ICONS.retry} />
+                Retry
+              </button>
+            )}
+            {ctxMsg.mine && !ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
+              <>
+                <div className="ctx-sep" />
+                {ctxMsg.type !== "voice" && ctxMsg.type !== "image" && ctxMsg.type !== "file" && (
+                  <button
+                    className="ctx-item"
+                    onClick={() => {
+                      startEdit(ctxMsg);
+                      setCtxMenu(null);
+                    }}
+                  >
+                    <MenuIcon d={ICONS.edit} />
+                    Edit
+                  </button>
+                )}
                 <button
                   className="ctx-item"
                   onClick={() => {
-                    startEdit(ctxMsg);
+                    const pinned = active?.pinnedMessageId === ctxMsg.id;
+                    chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => { });
                     setCtxMenu(null);
                   }}
                 >
-                  <MenuIcon d={ICONS.edit} />
-                  Edit
+                  <MenuIcon d={ICONS.pin} />
+                  {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
                 </button>
-              )}
+                <button
+                  className="ctx-item danger"
+                  onClick={() => {
+                    chat.recallMessage(ctxMsg.id, chat.activeId!);
+                    setCtxMenu(null);
+                  }}
+                >
+                  <MenuIcon d={ICONS.trash} />
+                  Recall
+                </button>
+              </>
+            )}
+            {!ctxMsg.mine && !ctxMsg.recalled && chat.activeId && (
               <button
                 className="ctx-item"
                 onClick={() => {
                   const pinned = active?.pinnedMessageId === ctxMsg.id;
-                  chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => {});
+                  chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => { });
                   setCtxMenu(null);
                 }}
               >
                 <MenuIcon d={ICONS.pin} />
                 {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
               </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {joinCompanyOpen && (
+        <div
+          className="forward-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Join a company"
+          onClick={() => {
+            if (!joinBusy) {
+              setJoinCompanyOpen(false);
+              setJoinError(null);
+              setJoinNotice(null);
+            }
+          }}
+        >
+          <form
+            className="forward-modal-card"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              joinCompany().catch(() => {});
+            }}
+          >
+            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Join a company</h3>
+            <p className="muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
+              Enter the invite code from your organization admin.
+            </p>
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label htmlFor="join-invite">Invite code</label>
+              <input
+                id="join-invite"
+                value={joinInvite}
+                onChange={(e) => setJoinInvite(e.target.value.toUpperCase())}
+                placeholder="ACME2026"
+                autoFocus
+                autoComplete="off"
+                disabled={joinBusy}
+              />
+            </div>
+            {joinError && <div className="error-text">{joinError}</div>}
+            {joinNotice && <div className="muted" style={{ marginBottom: 8 }}>{joinNotice}</div>}
+            <div className="forward-modal-actions">
               <button
-                className="ctx-item danger"
+                className="btn-ghost"
+                type="button"
+                disabled={joinBusy}
                 onClick={() => {
-                  chat.recallMessage(ctxMsg.id, chat.activeId!);
-                  setCtxMenu(null);
+                  setJoinCompanyOpen(false);
+                  setJoinError(null);
+                  setJoinNotice(null);
                 }}
               >
-                <MenuIcon d={ICONS.trash} />
-                Recall
+                Cancel
               </button>
-            </>
-          )}
-          {!ctxMsg.mine && !ctxMsg.recalled && chat.activeId && (
-            <button
-              className="ctx-item"
-              onClick={() => {
-                const pinned = active?.pinnedMessageId === ctxMsg.id;
-                chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => {});
-                setCtxMenu(null);
-              }}
-            >
-              <MenuIcon d={ICONS.pin} />
-              {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
-            </button>
-          )}
-          </div>
+              <button className="btn" type="submit" disabled={joinBusy || !joinInvite.trim()}>
+                {joinBusy ? "Joining…" : "Join"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -2670,9 +2788,8 @@ export default function ChatPageInner() {
             </header>
             {mediaDraft.mode === "photos" ? (
               <div
-                className={`photo-send-preview ${
-                  mediaDraft.items.length > 1 ? "photo-send-preview-grid" : ""
-                }`}
+                className={`photo-send-preview ${mediaDraft.items.length > 1 ? "photo-send-preview-grid" : ""
+                  }`}
               >
                 {mediaDraft.items.map((it, idx) => (
                   <div key={`${it.file.name}-${idx}`} className="photo-send-thumb">
@@ -2833,7 +2950,7 @@ function ForwardPicker({
             className="btn"
             type="button"
             disabled={busy || selected.size === 0}
-            onClick={() => submit().catch(() => {})}
+            onClick={() => submit().catch(() => { })}
           >
             {busy
               ? "Sending…"

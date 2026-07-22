@@ -15,7 +15,6 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [inviteCode, setInviteCode] = useState("ACME2026");
   const [username, setUsername] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
@@ -73,7 +72,6 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({
           phone,
-          invite_code: inviteCode,
           captcha_id: captcha?.id ?? "",
           captcha: captchaCode,
         }),
@@ -110,7 +108,6 @@ export default function LoginPage() {
       const payload: Record<string, any> = {
         phone,
         password,
-        invite_code: inviteCode,
         captcha_id: captcha?.id ?? "",
         captcha: captchaCode,
         device_type: device.deviceType,
@@ -154,7 +151,11 @@ export default function LoginPage() {
         <div className="auth-title">
           {mode === "login" ? "Sign in to Qchat" : "Create your account"}
         </div>
-        <div className="auth-sub">Secure enterprise messaging</div>
+        <div className="auth-sub">
+          {mode === "login"
+            ? "Secure enterprise messaging"
+            : "After signing up, use Join a company in chat to enter with an invite code"}
+        </div>
 
         <div className="field">
           <label>Phone (11 digits)</label>
@@ -162,16 +163,6 @@ export default function LoginPage() {
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="13800000002"
-            required
-          />
-        </div>
-
-        <div className="field">
-          <label>Invite code</label>
-          <input
-            value={inviteCode}
-            onChange={(e) => setInviteCode(e.target.value)}
-            placeholder="ACME2026"
             required
           />
         </div>

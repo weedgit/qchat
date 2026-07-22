@@ -34,6 +34,8 @@ cd services/api && go run ./cmd/seed && go run ./cmd/api
 #   LIVEKIT_API_SECRET=secret-that-is-at-least-32-characters-long
 # other terminals
 cd apps/web && npm run dev
-cd apps/admin && npm run dev -p 3001
+# Admin static export (served at https://<host>/admin/ after nginx reload):
+#   cd apps/admin && NEXT_PUBLIC_API_URL= npm run build
+# Dev without nginx: make admin-dev  (http://localhost:3001/admin)
 bash deploy/smoke_test.sh
 ```
