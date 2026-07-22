@@ -1,22 +1,40 @@
 const { Menu } = require("electron");
 const { APP_TITLE } = require("../../shared/constants");
 const { showAbout } = require("./about");
+const { isAutostartEnabled, setAutostartEnabled } = require("./autostart");
 
 /**
- * @param {{ webUrl: string, isDev: boolean, getMainWindow: () => Electron.BrowserWindow | null }} opts
+ * @param {{
+ *   webUrl: string,
+ *   isDev: boolean,
+ *   getMainWindow: () => Electron.BrowserWindow | null,
+ *   onAutostartChanged?: () => void,
+ * }} opts
  */
 function buildAppMenu(opts) {
-  const { webUrl, isDev, getMainWindow } = opts;
+  const { webUrl, isDev, getMainWindow, onAutostartChanged } = opts;
   /** @type {Electron.MenuItemConstructorOptions[]} */
   const template = [];
 
   const aboutClick = () => showAbout(getMainWindow(), webUrl);
+  const autostartItem = {
+    label: "Launch at login",
+    type: "checkbox",
+    checked: isAutostartEnabled(),
+    click: (menuItem) => {
+      setAutostartEnabled(menuItem.checked);
+      onAutostartChanged?.();
+      buildAppMenu(opts);
+    },
+  };
 
   if (process.platform === "darwin") {
     template.push({
       label: APP_TITLE,
       submenu: [
         { label: `About ${APP_TITLE}`, click: aboutClick },
+        { type: "separator" },
+        autostartItem,
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -30,7 +48,11 @@ function buildAppMenu(opts) {
   } else {
     template.push({
       label: "File",
-      submenu: [{ role: "quit", label: "Quit Qchat" }],
+      submenu: [
+        autostartItem,
+        { type: "separator" },
+        { role: "quit", label: "Quit Qchat" },
+      ],
     });
   }
 

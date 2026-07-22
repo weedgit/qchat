@@ -32,7 +32,7 @@
 | NOTI-01 | MM | Native OS notification | `src/main/notifications/` | Done | `feat-kevin-desktop-native-notify` |
 | NOTI-02 | MM | Click notification → focus + open chat | navigationManager deep link | Done | `feat-kevin-desktop-notify-deeplink` |
 | NOTI-03 | MM | Dock / taskbar unread badge | badge.ts | Todo | `feat-kevin-desktop-unread-badge` |
-| NOTI-04 | MM | Tray icon unread / mention state | tray.ts + AppState | Todo | `feat-kevin-desktop-tray-badge` |
+| NOTI-04 | MM | Tray icon unread / mention state | tray.ts + AppState | Partial | `feat-kevin-desktop-tray-badge` *(desktop IPC ready; web hook later)* |
 | NOTI-05 | MM | Flash / bounce on mention (Win/mac) | notifications flash/bounce | Todo | `feat-kevin-desktop-attention` |
 | SHELL-01 | MM / §3 | Electron window loads web client | BrowserWindow / WebContentsView | Done | `feat-kevin-desktop-shell-window` |
 | SHELL-02 | MM | `contextIsolation` + no `nodeIntegration` | security defaults | Done | `feat-kevin-desktop-secure-prefs` |
@@ -56,10 +56,10 @@
 | SHELL-20 | MM | Download → OS save dialog | downloadsManager | Done | `feat-kevin-desktop-download-save` |
 | SHELL-21 | MM | Download completion notification | notifications/Download | Todo | `feat-kevin-desktop-download-notify` |
 | SHELL-22 | MM | Right-click context menu | contextMenu.ts | Todo | `feat-kevin-desktop-context-menu` |
-| SHELL-23 | MM | System tray icon | tray/tray.ts | Todo | `feat-kevin-desktop-system-tray` |
-| SHELL-24 | MM | Minimize / close to tray | minimizeToTray | Todo | `feat-kevin-desktop-close-to-tray` |
-| SHELL-25 | MM | Tray menu Show / Quit | menus/tray.ts | Todo | `feat-kevin-desktop-tray-menu` |
-| SHELL-26 | MM | Autostart on OS login | AutoLauncher.ts | Todo | `feat-kevin-desktop-autostart` |
+| SHELL-23 | MM | System tray icon | tray/tray.ts | Done | `feat-kevin-desktop-system-tray` |
+| SHELL-24 | MM | Minimize / close to tray | minimizeToTray | Done | `feat-kevin-desktop-close-to-tray` |
+| SHELL-25 | MM | Tray menu Show / Quit | menus/tray.ts | Done | `feat-kevin-desktop-tray-menu` |
+| SHELL-26 | MM | Autostart on OS login | AutoLauncher.ts | Done | `feat-kevin-desktop-autostart` |
 | SHELL-27 | MM | Hide on start (start minimized) | AutoLauncher hideOnStart | Todo | `feat-kevin-desktop-hide-on-start` |
 | SHELL-28 | MM | Protocol handler `qchat://` | mattermost:// deep links | Todo | `feat-kevin-desktop-protocol-qchat` |
 | SHELL-29 | MM | Open conversation from deep link | navigationManager | Todo | `feat-kevin-desktop-deeplink-chat` |
@@ -82,18 +82,15 @@
 
 ### Todo backlog (implement one row = one commit)
 
-1. `SHELL-23` system tray  
-2. `SHELL-24` close-to-tray  
-3. `SHELL-25` tray menu  
-4. `NOTI-04` tray unread state  
-5. `NOTI-03` dock/taskbar badge  
-6. `SHELL-26` autostart  
-7. `SHELL-28` `qchat://` protocol  
-8. `SHELL-29` deep-link open chat  
-9. `AUTH-03` `safeStorage`  
-10. `CALL-02` screenshare  
-11. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-12. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+1. `NOTI-03` dock/taskbar badge  
+2. `SHELL-28` `qchat://` protocol  
+3. `SHELL-29` deep-link open chat  
+4. `SHELL-27` hide on start  
+5. Web hook for `NOTI-04` — call `qchatDesktop.setUnreadStatus({ unread, mentions })`  
+6. `AUTH-03` `safeStorage`  
+7. `CALL-02` screenshare  
+8. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
+9. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
 ```text
 pick one Todo row

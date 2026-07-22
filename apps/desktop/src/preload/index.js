@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
   notifyMessage: (payload) => ipcRenderer.invoke(IPC.DESKTOP_NOTIFY, payload),
   showAbout: () => ipcRenderer.invoke(IPC.SHOW_ABOUT),
   fetchCaptcha: () => ipcRenderer.invoke(IPC.FETCH_CAPTCHA),
+  /**
+   * Report unread / mention totals for tray tooltip (NOTI-04).
+   * Web wiring deferred — call when conversation list totals change:
+   *   qchatDesktop.setUnreadStatus({ unread: 3, mentions: 1 })
+   */
+  setUnreadStatus: (payload) => ipcRenderer.invoke(IPC.SET_UNREAD_STATUS, payload),
   signalReady: () => ipcRenderer.send(IPC.RENDERER_READY),
   onOpenConversation: (handler) => {
     if (typeof handler !== "function") return () => {};

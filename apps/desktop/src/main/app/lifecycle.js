@@ -4,6 +4,12 @@ const { APP_TITLE } = require("../../shared/constants");
 const { getIconPath } = require("../app/configuration/paths");
 const { resolveWebUrl } = require("../app/configuration/webUrl");
 const { buildAppMenu } = require("../native/menu");
+const {
+  createSystemTray,
+  refreshTrayMenu,
+  registerTrayQuitHook,
+} = require("../native/tray");
+const { applyStoredAutostart } = require("../native/autostart");
 const { registerPermissionHandler } = require("../security/permissions");
 const { registerDownloadHandler } = require("../services/downloads");
 const { registerIpcHandlers } = require("../ipc/handlers");
@@ -27,9 +33,13 @@ function startApp() {
     return;
   }
 
+  const focus = () => focusMainWindow(() => createMainWindow({ webUrl, isDev }));
+
   app.on("second-instance", () => {
-    focusMainWindow(() => createMainWindow({ webUrl, isDev }));
+    focus();
   });
+
+  registerTrayQuitHook();
 
   app.whenReady().then(() => {
     app.setName(APP_TITLE);
@@ -43,29 +53,50 @@ function startApp() {
     registerIpcHandlers({
       webUrl,
       getMainWindow,
-      focusMainWindow: () => focusMainWindow(() => createMainWindow({ webUrl, isDev })),
+      focusMainWindow: focus,
       sendConversationToRenderer,
       flushPendingConversation,
     });
 
     process.env.QCHAT_WEB_URL_RESOLVED = webUrl;
+
+    const trayDeps = {
+      focusMainWindow: focus,
+      onAutostartChanged: () => {
+        buildAppMenu({
+          webUrl,
+          isDev,
+          getMainWindow,
+          onAutostartChanged: () => refreshTrayMenu(trayDeps),
+        });
+        refreshTrayMenu(trayDeps);
+      },
+    };
+
     buildAppMenu({
       webUrl,
       isDev,
       getMainWindow,
+      onAutostartChanged: () => refreshTrayMenu(trayDeps),
     });
     createMainWindow({ webUrl, isDev });
+    // Mattermost TrayIcon.init: icon in notification area; click focuses main window.
+    createSystemTray(trayDeps);
+    // Mattermost AutoLauncher: apply saved open-at-login preference when packaged.
+    applyStoredAutostart();
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createMainWindow({ webUrl, isDev });
       } else {
-        focusMainWindow(() => createMainWindow({ webUrl, isDev }));
+        focus();
       }
     });
   });
 
   app.on("window-all-closed", () => {
+    // With close-to-tray the window is hidden, not closed — this rarely fires.
+    // Only quit when the window was actually destroyed (no tray path).
     if (process.platform !== "darwin") app.quit();
   });
 }
