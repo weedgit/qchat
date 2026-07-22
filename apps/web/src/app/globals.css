@@ -294,6 +294,9 @@ select:focus {
   gap: 10px;
   align-items: stretch;
 }
+.captcha-input {
+  text-transform: uppercase;
+}
 .captcha-img {
   flex: none;
   width: 120px;

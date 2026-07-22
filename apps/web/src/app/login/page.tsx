@@ -201,10 +201,13 @@ export default function LoginPage() {
           <label>Captcha</label>
           <div className="captcha-row">
             <input
+              className="captcha-input"
               value={captchaCode}
-              onChange={(e) => setCaptchaCode(e.target.value)}
-              placeholder="Enter code"
+              onChange={(e) => setCaptchaCode(e.target.value.toUpperCase())}
+              placeholder="ENTER CODE"
               autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
               required
             />
             <button
@@ -220,9 +223,6 @@ export default function LoginPage() {
               {captchaStatus === "error" && "Retry"}
               {captchaStatus === "ready" && (captcha?.challenge || "Retry")}
             </button>
-          </div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-            Type the code shown on the right (case-insensitive). Click it to refresh.
           </div>
         </div>
 
