@@ -6,7 +6,10 @@ const APP_ROOT = path.resolve(__dirname, "..");
 function launchElectron(arguments = process.argv.slice(2), options = {}) {
   const electron = require("electron");
   const electronArguments = [APP_ROOT, ...arguments];
+  // Cursor/CI often set ELECTRON_RUN_AS_NODE=1; that makes Electron act like plain
+  // Node so `require("electron").app` is undefined and the shell crashes on boot.
   const environment = { ...process.env, ...options.env };
+  delete environment.ELECTRON_RUN_AS_NODE;
 
   if (
     process.platform === "linux" &&
