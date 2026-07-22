@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Qchat",
+    "slug": "qchat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "qchat",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2463dc"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.qchat.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#2463dc",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "package": "com.qchat.mobile",
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

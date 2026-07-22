@@ -34,5 +34,7 @@ for size in 16 32 48 64 128 256 512; do
 done
 cp "$SOURCE" "$ROOT/apps/desktop/assets/icon.png"
 cp "$SOURCE" "$ROOT/apps/mobile/assets/qchat-icon-512.png"
+cp "$SOURCE" "$ROOT/apps/mobile/assets/icon.png"
+magick "$SOURCE" -resize 1024x1024 -strip "$ROOT/apps/mobile/assets/adaptive-icon.png"
 
 echo "Qchat icons synced from branding/qchat-icon-512.png"
