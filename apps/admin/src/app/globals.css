@@ -62,6 +62,15 @@ select {
   outline: none;
   width: 100%;
 }
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  accent-color: var(--accent);
+}
 
 input:focus,
 textarea:focus,
@@ -186,14 +195,34 @@ select:focus {
 .remember-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   font-size: 13px;
   color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  width: fit-content;
 }
 .remember-row input[type="checkbox"] {
   width: 15px;
   height: 15px;
+  flex: none;
+  margin: 0;
   accent-color: var(--accent);
+}
+.auth-card .btn {
+  width: 100%;
+  margin-top: 4px;
+}
+.auth-card .btn-ghost {
+  flex: none;
+  background: var(--bg-panel-2);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+.auth-card .btn-ghost:hover {
+  background: var(--bg-hover);
 }
 
 /* ---------- admin layout ---------- */

@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down media api web admin desktop mobile test test-api test-e2e migrate seed generate check-openapi redeploy
+.PHONY: infra-up infra-down media api web admin admin-dev desktop mobile test test-api test-e2e migrate seed generate check-openapi redeploy
 
 infra-up:
 	./deploy/render-media-config.sh
@@ -18,6 +18,10 @@ web:
 	cd apps/web && npm run dev
 
 admin:
+	cd apps/admin && NEXT_PUBLIC_API_URL= npm run build
+	@echo "Admin static export: apps/admin/out/ → https://<host>/admin/"
+
+admin-dev:
 	cd apps/admin && npm run dev
 
 desktop:

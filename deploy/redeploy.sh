@@ -2,15 +2,17 @@
 # Pull latest changes, then rebuild and restart Qchat.
 #
 # Usage:
-#   ./deploy/redeploy.sh         # pull + rebuild API and web
-#   ./deploy/redeploy.sh --api   # pull + API only
-#   ./deploy/redeploy.sh --web   # pull + web only
+#   ./deploy/redeploy.sh           # pull + rebuild API, web, and admin
+#   ./deploy/redeploy.sh --api     # pull + API only
+#   ./deploy/redeploy.sh --web     # pull + web only
+#   ./deploy/redeploy.sh --admin   # pull + admin only
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DO_API=0
 DO_WEB=0
+DO_ADMIN=0
 ANY_TARGET=0
 
 usage() {
@@ -18,9 +20,10 @@ usage() {
 Pull latest changes, then rebuild and restart Qchat.
 
 Usage:
-  ./deploy/redeploy.sh         # pull + rebuild API and web
-  ./deploy/redeploy.sh --api   # pull + API only
-  ./deploy/redeploy.sh --web   # pull + web only
+  ./deploy/redeploy.sh           # pull + rebuild API, web, and admin
+  ./deploy/redeploy.sh --api     # pull + API only
+  ./deploy/redeploy.sh --web     # pull + web only
+  ./deploy/redeploy.sh --admin   # pull + admin only
 EOF
   exit "${1:-0}"
 }
@@ -29,15 +32,17 @@ for arg in "$@"; do
   case "$arg" in
     --api) DO_API=1; ANY_TARGET=1 ;;
     --web) DO_WEB=1; ANY_TARGET=1 ;;
+    --admin) DO_ADMIN=1; ANY_TARGET=1 ;;
     -h|--help) usage 0 ;;
     *) echo "Unknown option: $arg" >&2; usage 1 ;;
   esac
 done
 
-# Default: both API and web when no target flag is given.
+# Default: API + web + admin when no target flag is given.
 if [[ "$ANY_TARGET" -eq 0 ]]; then
   DO_API=1
   DO_WEB=1
+  DO_ADMIN=1
 fi
 
 if [[ -x /usr/local/go/bin/go ]]; then
@@ -137,6 +142,28 @@ if [[ "$DO_WEB" -eq 1 ]]; then
   fi
 fi
 
+if [[ "$DO_ADMIN" -eq 1 ]]; then
+  log "install admin deps"
+  (
+    cd "$ROOT/apps/admin"
+    npm ci
+  )
+
+  log "build admin (static export → /admin/)"
+  (
+    cd "$ROOT/apps/admin"
+    NEXT_PUBLIC_API_URL="" npm run build
+  )
+
+  log "reload nginx"
+  if command -v nginx >/dev/null 2>&1; then
+    nginx -t
+    systemctl reload nginx
+  else
+    echo "warning: nginx not found; static files are in apps/admin/out/" >&2
+  fi
+fi
+
 log "health checks"
 if [[ "$DO_API" -eq 1 ]]; then
   curl -fsS --retry 5 --retry-delay 1 --retry-connrefused \
@@ -147,6 +174,8 @@ fi
 if command -v nginx >/dev/null 2>&1; then
   curl -kfsS --retry 3 --retry-delay 1 -o /dev/null https://127.0.0.1/
   echo "Web  :443/ OK"
+  curl -kfsS --retry 3 --retry-delay 1 -o /dev/null https://127.0.0.1/admin/
+  echo "Admin :443/admin/ OK"
   curl -kfsS --retry 3 --retry-delay 1 https://127.0.0.1/healthz >/dev/null
   echo "Nginx /healthz OK"
 fi

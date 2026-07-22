@@ -1,5 +1,23 @@
+/**
+ * API origin for the admin console.
+ * - NEXT_PUBLIC_API_URL set (including "") → use it; empty means same-origin (nginx).
+ * - unset + browser → host:8080 (local `next dev` without nginx).
+ */
+export function apiBaseUrl(): string {
+  if (typeof process.env.NEXT_PUBLIC_API_URL === "string") {
+    const fromEnv = process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
+    if (fromEnv) return fromEnv;
+    if (typeof window !== "undefined") return window.location.origin;
+    return "";
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8080`;
+  }
+  return "http://localhost:8080";
+}
+
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+  typeof window !== "undefined" ? apiBaseUrl() : process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 const TOKEN_KEY = "qchat.admin.access_token";
 
@@ -40,7 +58,7 @@ export async function api<T = any>(
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}${path}`, { ...init, headers });
+  const res = await fetch(`${apiBaseUrl()}${path}`, { ...init, headers });
 
   let body: unknown = null;
   const text = await res.text();

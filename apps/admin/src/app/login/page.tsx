@@ -90,18 +90,30 @@ export default function AdminLoginPage() {
         </div>
         <div className="field">
           <label>Captcha</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={captchaCode} onChange={(e) => setCaptchaCode(e.target.value)} required />
-            <button type="button" onClick={loadCaptcha}>
+          <div className="captcha-row">
+            <input
+              value={captchaCode}
+              onChange={(e) => setCaptchaCode(e.target.value)}
+              required
+              placeholder="Enter captcha"
+            />
+            <button type="button" className="btn-ghost" onClick={loadCaptcha}>
               {captcha?.challenge || "Refresh"}
             </button>
           </div>
         </div>
-        <label>
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Remember me
+        <label className="remember-row">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+          />
+          Remember me
         </label>
-        {error && <div style={{ color: "#ff6b6b" }}>{error}</div>}
-        <button type="submit" disabled={busy}>{busy ? "…" : "Sign in"}</button>
+        {error && <div className="error-text">{error}</div>}
+        <button className="btn" type="submit" disabled={busy}>
+          {busy ? "…" : "Sign in"}
+        </button>
       </form>
     </div>
   );
