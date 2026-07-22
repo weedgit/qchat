@@ -1,29 +1,22 @@
-const { app, dialog, Menu } = require("electron");
-const { APP_TITLE } = require("./constants");
+const { Menu } = require("electron");
+const { APP_TITLE } = require("../../shared/constants");
+const { showAbout } = require("./about");
 
-function showAbout(window, webUrl) {
-  return dialog.showMessageBox(window, {
-    type: "info",
-    title: `About ${APP_TITLE}`,
-    message: APP_TITLE,
-    detail:
-      `Version: ${app.getVersion()}\n` +
-      `Platform: ${process.platform}\n` +
-      `Web URL: ${webUrl}\n\n` +
-      "Electron shell around the Qchat web client.",
-    buttons: ["OK"],
-  });
-}
-
-function installApplicationMenu({ getWindow, isDev, webUrl }) {
-  const about = () => showAbout(getWindow(), webUrl);
+/**
+ * @param {{ webUrl: string, isDev: boolean, getMainWindow: () => Electron.BrowserWindow | null }} opts
+ */
+function buildAppMenu(opts) {
+  const { webUrl, isDev, getMainWindow } = opts;
+  /** @type {Electron.MenuItemConstructorOptions[]} */
   const template = [];
+
+  const aboutClick = () => showAbout(getMainWindow(), webUrl);
 
   if (process.platform === "darwin") {
     template.push({
       label: APP_TITLE,
       submenu: [
-        { label: `About ${APP_TITLE}`, click: about },
+        { label: `About ${APP_TITLE}`, click: aboutClick },
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -77,13 +70,13 @@ function installApplicationMenu({ getWindow, isDev, webUrl }) {
         {
           label: `About ${APP_TITLE}`,
           accelerator: "CmdOrCtrl+Shift+A",
-          click: about,
+          click: aboutClick,
         },
       ],
-    },
+    }
   );
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-module.exports = { installApplicationMenu, showAbout };
+module.exports = { buildAppMenu };
