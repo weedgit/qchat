@@ -10,7 +10,7 @@ async function injectSession(page: import("@playwright/test").Page) {
       phone: "13800000002",
       password: "user12345",
       captcha_id: capBody.captcha_id,
-      captcha: capBody.challenge,
+      captcha: capBody.dev_answer,
       device_type: "web",
       device_name: "playwright",
       remember_me: true,

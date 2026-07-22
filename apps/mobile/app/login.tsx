@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -24,7 +25,7 @@ export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captchaId, setCaptchaId] = useState("");
-  const [captchaChallenge, setCaptchaChallenge] = useState("");
+  const [captchaImage, setCaptchaImage] = useState("");
   const [smsCode, setSmsCode] = useState("");
   const [smsChallengeId, setSmsChallengeId] = useState("");
   const [smsHint, setSmsHint] = useState<string | null>(null);
@@ -36,7 +37,7 @@ export default function LoginScreen() {
     try {
       const data = await api<any>("/v1/auth/captcha");
       setCaptchaId(String(data?.captcha_id ?? data?.id ?? ""));
-      setCaptchaChallenge(String(data?.challenge ?? "").trim());
+      setCaptchaImage(String(data?.image ?? "").trim());
     } catch (e: any) {
       setError(e.message || "Captcha unavailable");
     }
@@ -163,9 +164,13 @@ export default function LoginScreen() {
               placeholder="Code"
               placeholderTextColor={colors.textMuted}
             />
-            <Pressable style={styles.captchaBox} onPress={loadCaptcha}>
-              <Text style={styles.captchaText}>{captchaChallenge || "…"}</Text>
-            </Pressable>
+            <View style={styles.captchaBox} pointerEvents="none">
+              {captchaImage ? (
+                <Image source={{ uri: captchaImage }} style={styles.captchaImage} resizeMode="contain" />
+              ) : (
+                <Text style={styles.captchaText}>…</Text>
+              )}
+            </View>
           </View>
 
           {mode === "register" && (
@@ -251,13 +256,17 @@ const styles = StyleSheet.create({
   },
   captchaRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
   captchaBox: {
-    minWidth: 100,
-    backgroundColor: "#eef2ff",
+    width: 132,
+    height: 48,
+    backgroundColor: "#fff",
     borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.md,
+    overflow: "hidden",
   },
+  captchaImage: { width: 132, height: 48 },
   captchaText: { fontWeight: "700", color: colors.accent, letterSpacing: 2, fontSize: 18 },
   primaryBtn: {
     backgroundColor: colors.accent,

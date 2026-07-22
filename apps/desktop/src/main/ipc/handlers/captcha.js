@@ -17,7 +17,7 @@ function createCaptchaHandler(webUrl) {
     const data = await res.json();
     return {
       captcha_id: String(data?.captcha_id ?? data?.id ?? ""),
-      challenge: String(data?.challenge ?? ""),
+      image: String(data?.image ?? ""),
     };
   };
 }

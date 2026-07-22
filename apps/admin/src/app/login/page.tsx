@@ -6,7 +6,7 @@ import { api, setToken } from "@/lib/api";
 
 interface CaptchaState {
   id: string;
-  challenge: string;
+  image: string;
 }
 
 export default function AdminLoginPage() {
@@ -23,10 +23,12 @@ export default function AdminLoginPage() {
     setCaptcha(null);
     try {
       const data = await api<any>("/v1/auth/captcha");
-      setCaptcha({
-        id: String(data?.captcha_id ?? data?.id ?? ""),
-        challenge: String(data?.challenge ?? ""),
-      });
+      const id = String(data?.captcha_id ?? data?.id ?? "");
+      const image = String(data?.image ?? "").trim();
+      if (!id || !image.startsWith("data:image/")) {
+        throw new Error("empty captcha image");
+      }
+      setCaptcha({ id, image });
     } catch (e: any) {
       setError(`Captcha unavailable: ${e.message}`);
     }
@@ -90,10 +92,16 @@ export default function AdminLoginPage() {
               onChange={(e) => setCaptchaCode(e.target.value)}
               required
               placeholder="Enter captcha"
+              autoComplete="off"
             />
-            <button type="button" className="btn-ghost" onClick={loadCaptcha}>
-              {captcha?.challenge || "Refresh"}
-            </button>
+            <div className="captcha-image-wrap" aria-label="Captcha image">
+              {captcha?.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="captcha-image" src={captcha.image} alt="Captcha" draggable={false} />
+              ) : (
+                <span>…</span>
+              )}
+            </div>
           </div>
         </div>
         <label className="remember-row">

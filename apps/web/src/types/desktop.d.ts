@@ -16,7 +16,7 @@ declare global {
       silent?: boolean;
     }) => Promise<boolean>;
     showAbout: () => Promise<boolean>;
-    fetchCaptcha: () => Promise<{ captcha_id: string; challenge: string }>;
+    fetchCaptcha: () => Promise<{ captcha_id: string; image: string }>;
     signalReady: () => void;
     onOpenConversation: (handler: (conversationId: string) => void) => () => void;
   }

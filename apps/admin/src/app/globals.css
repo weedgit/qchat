@@ -171,26 +171,27 @@ select:focus {
 .captcha-row {
   display: flex;
   gap: 10px;
+  align-items: stretch;
 }
-.captcha-img {
+.captcha-image-wrap {
   flex: none;
-  width: 120px;
+  width: 148px;
+  min-height: 42px;
   border-radius: var(--radius);
   background: #fff;
-  cursor: pointer;
-  object-fit: contain;
-}
-.captcha-placeholder {
-  flex: none;
-  width: 120px;
-  border-radius: var(--radius);
-  background: var(--bg-panel-2);
-  color: var(--text-faint);
-  font-size: 12px;
+  border: 1px solid var(--border, #e5e7eb);
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+}
+.captcha-image {
+  width: 100%;
+  height: 42px;
+  object-fit: contain;
+  display: block;
 }
 .remember-row {
   display: flex;

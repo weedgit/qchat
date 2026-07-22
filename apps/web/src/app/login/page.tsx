@@ -7,7 +7,7 @@ import { getAuthDevice } from "@/lib/device";
 
 interface CaptchaState {
   id: string;
-  challenge: string;
+  image: string;
 }
 
 export default function LoginPage() {
@@ -42,18 +42,18 @@ export default function LoginPage() {
         window.clearTimeout(timer);
       }
       const id = String(data?.captcha_id ?? data?.id ?? "");
-      const challenge = String(data?.challenge ?? "").trim();
-      if (!id || !challenge) {
+      const image = String(data?.image ?? "").trim();
+      if (!id || !image.startsWith("data:image/")) {
         throw new Error("empty captcha from server");
       }
-      setCaptcha({ id, challenge });
+      setCaptcha({ id, image });
       setCaptchaStatus("ready");
     } catch (e: any) {
       setCaptcha(null);
       setCaptchaStatus("error");
       const msg =
         e?.name === "AbortError"
-          ? "Captcha timed out — click the box to retry"
+          ? "Captcha timed out — try again later"
           : `Captcha unavailable: ${e.message || "network error"}`;
       setError(msg);
     }
@@ -203,19 +203,19 @@ export default function LoginPage() {
               spellCheck={false}
               required
             />
-            <button
-              type="button"
-              className={`captcha-placeholder ${captchaStatus === "error" ? "error" : ""}`}
-              onClick={() => {
-                setError(null);
-                loadCaptcha();
-              }}
-              title="Click to refresh captcha"
+            <div
+              className={`captcha-image-wrap ${captchaStatus === "error" ? "error" : ""}`}
+              aria-label="Captcha image"
             >
-              {captchaStatus === "loading" && "…"}
-              {captchaStatus === "error" && "Retry"}
-              {captchaStatus === "ready" && (captcha?.challenge || "Retry")}
-            </button>
+              {captchaStatus === "loading" && <span className="captcha-image-fallback">…</span>}
+              {captchaStatus === "error" && (
+                <span className="captcha-image-fallback">Unavailable</span>
+              )}
+              {captchaStatus === "ready" && captcha?.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="captcha-image" src={captcha.image} alt="Captcha" draggable={false} />
+              ) : null}
+            </div>
           </div>
         </div>
 

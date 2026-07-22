@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ func testServer(t *testing.T) (*httptest.Server, func()) {
 	cfg := config.Load()
 	cfg.AccessTTL = time.Minute
 	cfg.RefreshTTL = time.Hour
+	cfg.Env = "test" // expose captcha dev_answer for automated tests
 	hub := ws.NewHub()
 	srv := server.New(cfg, pool, hub)
 	ts := httptest.NewServer(srv.Handler())
@@ -57,7 +59,19 @@ func captcha(t *testing.T, base string) (id, code string) {
 	defer res.Body.Close()
 	var body map[string]any
 	_ = json.NewDecoder(res.Body).Decode(&body)
-	return fmt.Sprint(body["captcha_id"]), fmt.Sprint(body["challenge"])
+	id = fmt.Sprint(body["captcha_id"])
+	code = fmt.Sprint(body["dev_answer"])
+	if id == "" || id == "<nil>" || code == "" || code == "<nil>" {
+		t.Fatalf("captcha missing id/dev_answer: %v", body)
+	}
+	img, _ := body["image"].(string)
+	if !strings.HasPrefix(img, "data:image/png;base64,") {
+		t.Fatalf("expected png data url, got %q", img)
+	}
+	if _, ok := body["challenge"]; ok {
+		t.Fatalf("plaintext challenge must not be returned: %v", body)
+	}
+	return id, code
 }
 
 func postJSON(t *testing.T, url, token string, payload any) (int, map[string]any) {

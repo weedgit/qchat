@@ -23,11 +23,21 @@ func (s *Server) handleCaptcha(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "captcha failed")
 		return
 	}
-	writeJSON(w, 200, map[string]any{
+	imageURL, err := auth.RenderCaptchaPNG(code)
+	if err != nil {
+		writeErr(w, 500, "captcha image failed")
+		return
+	}
+	resp := map[string]any{
 		"captcha_id": id.String(),
-		"challenge":  code, // MVP: return plaintext; production would return image bytes
-		"hint":       "Enter the code shown (case-insensitive)",
-	})
+		"image":      imageURL, // data:image/png;base64,… — answer never returned in prod
+		"hint":       "Enter the characters shown (case-insensitive)",
+	}
+	// Non-production only: let automated tests / local tooling solve captcha.
+	if s.cfg.Env != "production" {
+		resp["dev_answer"] = code
+	}
+	writeJSON(w, 200, resp)
 }
 
 type registerReq struct {
