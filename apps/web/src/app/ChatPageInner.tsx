@@ -620,7 +620,7 @@ export default function ChatPageInner() {
       avatar_url?: string;
     };
   } | null>(null);
-  const [memberProfile, setMemberProfile] = useState<{
+  const [dmPeerProfile, setDmPeerProfile] = useState<{
     id: string;
     username: string;
     display_name: string;
@@ -628,13 +628,9 @@ export default function ChatPageInner() {
     real_name?: string;
     signature?: string;
     region?: string;
-    is_friend?: boolean;
-    friendship_status?: string;
     online?: boolean;
     last_active_at?: string;
-    note?: string;
   } | null>(null);
-  const [memberProfileBusy, setMemberProfileBusy] = useState(false);
   /** Members available for @ autocomplete (Mattermost suggestion box). */
   const [mentionMembers, setMentionMembers] = useState<
     { userId: string; username: string; displayName: string; avatarUrl?: string }[]
@@ -840,31 +836,15 @@ export default function ChatPageInner() {
   const myGroupRole = groupDetails?.role || chat.myRole || "";
   const isGroupOwner = myGroupRole === "owner";
 
-  async function openMemberProfile(userId: string) {
+  /** Open DM with a group member and show their user detail panel. */
+  async function openMemberChat(userId: string) {
     if (!userId || userId === chat.me?.id) return;
-    setMemberProfileBusy(true);
-    setMemberProfile(null);
     try {
-      const u = await api<any>(`/v1/users/${userId}`);
-      setMemberProfile({
-        id: String(u?.id ?? userId),
-        username: String(u?.username ?? ""),
-        display_name: String(u?.display_name ?? u?.username ?? "User"),
-        avatar_url: u?.avatar_url || undefined,
-        real_name: u?.real_name != null ? String(u.real_name) : undefined,
-        signature: u?.signature != null ? String(u.signature) : undefined,
-        region: u?.region != null ? String(u.region) : undefined,
-        is_friend: Boolean(u?.is_friend),
-        friendship_status: u?.friendship_status ? String(u.friendship_status) : undefined,
-        online: Boolean(u?.online),
-        last_active_at: u?.last_active_at ? String(u.last_active_at) : undefined,
-        note: u?.note ? String(u.note) : undefined,
-      });
+      await chat.openDM(userId);
+      setMobileChatOpen(true);
+      setShowDetails(true);
     } catch (e: any) {
-      logChatError(e?.message || "Could not load user");
-      setMemberProfile(null);
-    } finally {
-      setMemberProfileBusy(false);
+      logChatError(e?.message || "Could not open chat");
     }
   }
 
@@ -1258,6 +1238,36 @@ export default function ChatPageInner() {
       cancelled = true;
     };
   }, [showDetails, active]);
+
+  // DM RHS: load peer profile (Mattermost user profile popover / RHS).
+  useEffect(() => {
+    if (!showDetails || !active || active.type !== "dm" || !active.peerId) {
+      setDmPeerProfile(null);
+      return;
+    }
+    let cancelled = false;
+    api<any>(`/v1/users/${active.peerId}`)
+      .then((u) => {
+        if (cancelled) return;
+        setDmPeerProfile({
+          id: String(u?.id ?? active.peerId),
+          username: String(u?.username ?? ""),
+          display_name: String(u?.display_name ?? u?.username ?? "User"),
+          avatar_url: u?.avatar_url || undefined,
+          real_name: u?.real_name != null ? String(u.real_name) : undefined,
+          signature: u?.signature != null ? String(u.signature) : undefined,
+          region: u?.region != null ? String(u.region) : undefined,
+          online: Boolean(u?.online),
+          last_active_at: u?.last_active_at ? String(u.last_active_at) : undefined,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setDmPeerProfile(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showDetails, active?.id, active?.type, active?.peerId]);
 
   // Prefetch group members for @ autocomplete while composing.
   useEffect(() => {
@@ -2634,7 +2644,11 @@ export default function ChatPageInner() {
           </button>
           <Avatar
             name={conversationDisplayName(active)}
-            url={groupDetails?.avatar_url || active.avatarUrl}
+            url={
+              active.type === "dm"
+                ? dmPeerProfile?.avatar_url || active.avatarUrl
+                : groupDetails?.avatar_url || active.avatarUrl
+            }
             size={96}
           />
           {canEditGroup && (
@@ -2662,6 +2676,32 @@ export default function ChatPageInner() {
             </>
           )}
           <div style={{ fontSize: 17, fontWeight: 700 }}>{conversationDisplayName(active)}</div>
+          {active.type === "dm" && dmPeerProfile && (
+            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+              @{dmPeerProfile.username}
+              {dmPeerProfile.online
+                ? " · online"
+                : dmPeerProfile.last_active_at
+                  ? ` · ${formatLastSeen(dmPeerProfile.last_active_at)}`
+                  : ""}
+            </div>
+          )}
+          {active.type === "dm" && dmPeerProfile?.signature ? (
+            <div style={{ marginTop: 10, fontSize: 13, textAlign: "center", maxWidth: 260 }}>
+              {dmPeerProfile.signature}
+            </div>
+          ) : null}
+          {active.type === "dm" && dmPeerProfile?.region ? (
+            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+              {dmPeerProfile.region}
+            </div>
+          ) : null}
+          {active.type === "dm" && dmPeerProfile?.real_name ? (
+            <div className="kv" style={{ marginTop: 10 }}>
+              <div className="k">Real name</div>
+              <div>{dmPeerProfile.real_name}</div>
+            </div>
+          ) : null}
           {active.type === "dm" && active.friendNote && (
             <div className="muted" style={{ fontSize: 13 }}>
               {active.title}
@@ -2869,13 +2909,13 @@ export default function ChatPageInner() {
                       role={isMe ? undefined : "button"}
                       tabIndex={isMe ? undefined : 0}
                       onClick={() => {
-                        if (!isMe) openMemberProfile(m.user_id).catch(() => {});
+                        if (!isMe) openMemberChat(m.user_id).catch(() => {});
                       }}
                       onKeyDown={(e) => {
                         if (isMe) return;
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          openMemberProfile(m.user_id).catch(() => {});
+                          openMemberChat(m.user_id).catch(() => {});
                         }
                       }}
                       onContextMenu={(e) => openMemberMenu(e, m)}
@@ -3241,74 +3281,6 @@ export default function ChatPageInner() {
                 Remove from group
               </button>
             )}
-        </div>
-      )}
-
-      {(memberProfile || memberProfileBusy) && (
-        <div
-          className="forward-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label="User info"
-          onClick={() => {
-            if (!memberProfileBusy) setMemberProfile(null);
-          }}
-        >
-          <div className="forward-modal-card member-profile-card" onClick={(e) => e.stopPropagation()}>
-            {memberProfileBusy && !memberProfile ? (
-              <div className="muted">Loading…</div>
-            ) : memberProfile ? (
-              <>
-                <Avatar
-                  name={memberProfile.note || memberProfile.display_name}
-                  url={memberProfile.avatar_url}
-                  size={72}
-                />
-                <div style={{ fontSize: 17, fontWeight: 700, marginTop: 10 }}>
-                  {memberProfile.note || memberProfile.display_name}
-                </div>
-                <div className="muted" style={{ fontSize: 13 }}>
-                  @{memberProfile.username}
-                  {memberProfile.online ? " · online" : ""}
-                </div>
-                {memberProfile.signature ? (
-                  <div style={{ marginTop: 10, fontSize: 13 }}>{memberProfile.signature}</div>
-                ) : null}
-                {memberProfile.region ? (
-                  <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-                    {memberProfile.region}
-                  </div>
-                ) : null}
-                {memberProfile.last_active_at && !memberProfile.online ? (
-                  <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-                    {formatLastSeen(memberProfile.last_active_at)}
-                  </div>
-                ) : null}
-                <div className="forward-modal-actions" style={{ marginTop: 16 }}>
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    onClick={() => setMemberProfile(null)}
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      const id = memberProfile.id;
-                      setMemberProfile(null);
-                      chat.openDM(id).then(() => setMobileChatOpen(true)).catch(() => {});
-                    }}
-                  >
-                    Message
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="muted">Could not load user.</div>
-            )}
-          </div>
         </div>
       )}
 

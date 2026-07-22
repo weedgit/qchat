@@ -672,7 +672,7 @@ export default function ChatScreen() {
       });
       return;
     }
-    const isDm = conversation?.type === "dm" || Boolean(conversation?.peerId);
+    const isDm = conversation?.type === "dm";
     const callBusy = Boolean(call.active || call.incoming);
     const title = conversation ? conversationDisplayName(conversation) : "Chat";
     const openChatInfo = () => {
@@ -681,7 +681,8 @@ export default function ChatScreen() {
     };
     const openTitleTarget = () => {
       if (!conversation) return;
-      // DM title → peer profile; group title → group details.
+      // DM title → peer profile; group title → group details (chat-info).
+      // Do not treat peerId alone as DM — groups also return a peer_id (first other member).
       if (isDm && conversation.peerId) {
         router.push({ pathname: "/user/[id]", params: { id: conversation.peerId } });
         return;
