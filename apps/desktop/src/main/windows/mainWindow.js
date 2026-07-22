@@ -13,7 +13,10 @@ const { attachNavigationGuards } = require("../security/navigation");
 const { getTray } = require("../native/tray");
 const { isAppQuitting } = require("../app/quitState");
 const { hasSecureSession } = require("../secureStorage");
-const { attachSessionPersistence } = require("./sessionPersistence");
+const {
+  attachSessionPersistence,
+  prepareEarlySessionBootstrap,
+} = require("./sessionPersistence");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -127,10 +130,22 @@ function createMainWindow(opts) {
     }
   });
 
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.setTitle(APP_TITLE);
-    mainWindow?.show();
-  });
+  const rememberSession = hasSecureSession(webUrl);
+  const showMainWindow = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.setTitle(APP_TITLE);
+    if (!mainWindow.isVisible()) mainWindow.show();
+  };
+
+  // With a vault session, keep the window hidden until tokens are in place and
+  // we are past any /login bounce — avoids sign-in ↔ chat ↔ reconnecting flicker.
+  if (!rememberSession) {
+    mainWindow.once("ready-to-show", showMainWindow);
+  } else {
+    mainWindow.once("ready-to-show", () => {
+      mainWindow?.setTitle(APP_TITLE);
+    });
+  }
 
   mainWindow.on("resize", saveWindowState);
   mainWindow.on("move", saveWindowState);
@@ -146,12 +161,16 @@ function createMainWindow(opts) {
   });
 
   attachNavigationGuards(mainWindow, webUrl);
-  attachSessionPersistence(mainWindow, webUrl);
+  attachSessionPersistence(mainWindow, webUrl, {
+    deferShow: rememberSession,
+    reveal: showMainWindow,
+  });
 
   mainWindow.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
       if (!isMainFrame || errorCode === -3) return;
+      showMainWindow();
       dialog.showErrorBox(
         "Qchat Desktop",
         `Could not load Qchat web UI.\n\n` +
@@ -189,7 +208,15 @@ function createMainWindow(opts) {
     mainWindow?.webContents.executeJavaScript(watchdog).catch(() => {});
   });
 
-  mainWindow.loadURL(startUrl);
+  void (async () => {
+    if (rememberSession) {
+      await prepareEarlySessionBootstrap(mainWindow.webContents, webUrl);
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await mainWindow.loadURL(startUrl);
+    }
+  })();
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
