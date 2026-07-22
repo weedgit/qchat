@@ -409,7 +409,7 @@ export default function ProfilePage() {
                 <option value="none">Nothing</option>
               </select>
             </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <label className="check-row">
               <input
                 type="checkbox"
                 checked={notify.sound}
@@ -417,7 +417,7 @@ export default function ProfilePage() {
               />
               Play notification sound
             </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <label className="check-row">
               <input
                 type="checkbox"
                 checked={notify.mentions_only}
