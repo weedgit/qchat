@@ -3,17 +3,24 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..");
-const directories = ["src/main", "src/preload", "scripts"];
+const ROOTS = ["src", "scripts"];
 
-for (const directory of directories) {
-  const directoryPath = path.join(ROOT, directory);
-  for (const entry of fs.readdirSync(directoryPath)) {
-    if (!entry.endsWith(".js")) continue;
+function walkJsFiles(directory, out = []) {
+  if (!fs.existsSync(directory)) return out;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) walkJsFiles(full, out);
+    else if (entry.isFile() && entry.name.endsWith(".js")) out.push(full);
+  }
+  return out;
+}
 
-    const result = spawnSync(process.execPath, ["--check", path.join(directoryPath, entry)], {
+for (const root of ROOTS) {
+  for (const file of walkJsFiles(path.join(ROOT, root))) {
+    const result = spawnSync(process.execPath, ["--check", file], {
       stdio: "inherit",
     });
-    if (result.status !== 0) process.exit(result.status);
+    if (result.status !== 0) process.exit(result.status ?? 1);
   }
 }
 

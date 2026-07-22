@@ -1,25 +1,17 @@
 # Qchat Desktop (Electron)
 
-Cross-platform Electron shell around the Qchat web client. The process layout
-mirrors Mattermost Desktop's separation of lifecycle, windows, permissions,
-IPC, and a narrow context-bridge preload.
+Thin shell around the web client (Mattermost-inspired **main / preload / shared**
+layout under `src/`). See `docs/architecture.md`. **D3** adds installable packages
+via `electron-builder`.
 
-## Structure
+## Layout
 
 ```text
-src/
-  main/
-    index.js          Electron lifecycle
-    window.js         BrowserWindow and navigation policy
-    session.js        permissions and downloads
-    ipc.js            native notifications and web IPC
-    menu.js           application menu and About dialog
-    config.js         development/production web URL
-  preload/
-    index.js          window.qchatDesktop bridge
-scripts/
-  dev.js              cross-platform web + desktop launcher
-  launch.js           desktop-only launcher
+src/main/       Electron main process
+src/preload/    contextBridge → window.qchatDesktop
+src/shared/     IPC channel names + constants
+assets/         icons
+production.json shipped web URL default
 ```
 
 ## Prerequisites

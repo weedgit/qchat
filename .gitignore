@@ -19,3 +19,4 @@ deploy/generated/*
 !deploy/generated/.gitkeep
 # Self-signed / local TLS material
 deploy/certs/
+.cursor/

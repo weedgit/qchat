@@ -1,224 +1,113 @@
-# Qchat Desktop — Feature Status & Verification
+# Qchat Desktop — Feature Status (one table)
 
-> Owner track: **Desktop (Electron)**  
-> Branch (at write time): `feat-kevin-desktop-UX-polish`  
-> Pattern: Mattermost-style thin Electron shell wrapping the web client (`apps/desktop`)  
-> Related docs: `requirements-en.md`, `implementation-plan.md`, `IMPLEMENTATION_STATUS.md`, `qchat-security-decisions.md`
+> **Owner:** Kevin — `apps/desktop` only (Mattermost Desktop–style Electron shell)  
+> **Sources:** `requirements-en.md` §3 (Windows/macOS), Mattermost Desktop (`mattermost/mattermost-desktop`)  
+> **Rule:** each row is **one** development unit (one commit / one branch slug). Web, API, admin, and ops work are **out of scope** for this doc.
 
----
+### Column legend
 
-## 1. Client backend requirements (context only)
-
-These items are mostly **admin/API** (not desktop-owned). Desktop only must satisfy **cross-platform login** inside the Electron shell.
-
-| # | Backend requirement | Status (from docs/code) | Desktop impact |
-|---|---|---|---|
-| 1 | Whitelist / assisted registration | Partial (admin assist exists; allowlist UI thin) | None |
-| 2 | Account suspension / ban | Done | Desktop login blocked when banned |
-| 3 | Chat history access (enterprise) | Done (reason + audit) | None |
-| 4 | Account management / password reset | Done; **password retrieve must never exist** | None |
-| 5 | Cross-platform login | Web done; desktop shell works | **Desktop ownership** |
-| 6 | Privacy / security (firewall, etc.) | Ops (`HARDENING.md`) | Package securely in D5 |
-| 7 | Hierarchical admin (terminal / sub-accounts) | Mostly done (platform / enterprise roles) | None |
-| 8 | Registration IP + geo | Done | None |
-
-### Suggested extra backend features (beyond the foundation)
-
-- MFA for administrators
-- Invite code rotation / usage limits
-- Remote session / device kill from admin
-- Retention policies / legal hold
-- Malware scan on uploads
-- Rate limits + abuse detection
-- Audit log export
-- Push / message-delivery analytics
+| Column | Meaning |
+|---|---|
+| **ID** | Stable unit id |
+| **Req** | `requirements-en.md` section, or `MM` = Mattermost Desktop shell capability |
+| **Unit** | Single feature/function — commit-sized |
+| **MM Desktop** | Mattermost Desktop concept / module to mirror |
+| **Status** | `Done` / `Partial` / `Todo` / `Deferred` |
+| **Slug** | Suggested `feat-kevin-desktop-<slug>` |
 
 ---
 
-## 2. Desktop roadmap overview
-
-| Phase | Focus | Status |
-|---|---|---|
-| **D0** | Shell bootstrap | **Done** |
-| **D1** | Dev desktop (URL + session identity) | **Done** |
-| **D2** | UX polish | **Done** |
-| **D3** | Packaging (installers) | **Done** (unsigned; signing is D5) |
-| **D4** | Native integrations (tray, autostart, …) | **Partial** |
-| **D5** | Signing & release | **Todo** |
-
-**In progress:** next concrete work is **D4** tray / autostart / protocol (or **D5** signing).
-
-> Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
-
----
-
-## 3. Features to implement (desktop-only)
-
-Full list across D0–D5:
-
-1. Electron shell loading the web client  
-2. Secure preload bridge (`contextIsolation`, no `nodeIntegration`)  
-3. Configurable production/local web URL  
-4. Desktop session identity (`device_type=desktop`)  
-5. Login / chat / WebSocket inside the window  
-6. App icon, window title, About dialog  
-7. Window state restore, native menus, shortcuts  
-8. Native notifications → focus + open conversation  
-9. Download save dialog  
-10. Windows / macOS (/ Linux) installers  
-11. System tray / minimize to tray  
-12. Autostart on login  
-13. Optional `qchat://` protocol handler  
-14. Optional secure token storage (`safeStorage`)  
-15. Code signing + auto-update  
-
----
-
-## 4. Phase detail — done / todo / verification
-
-### D0 — Shell bootstrap — Done
-
-| Feature | Status | Verification |
-|---|---|---|
-| Electron window + load web UI | Done | `cd apps/desktop && npm start` opens a window |
-| `contextIsolation`, no Node in renderer, sandbox | Done | Inspect `main.js` → `webPreferences` |
-| Narrow `preload` bridge | Done | DevTools console: `window.qchatDesktop` |
-| External / off-origin links → OS browser | Done | Click an external link in chat |
-| Failed-load error dialog | Done | Set a bad `QCHAT_WEB_URL` and start |
-
----
-
-### D1 — Dev desktop (URL + session) — Done
-
-| Feature | Status | Verification |
-|---|---|---|
-| Configurable web URL (`QCHAT_WEB_URL` / `--url` / `.env`) | Done | `QCHAT_WEB_URL=http://HOST npm start` |
-| Start at `/login` | Done | First screen is Sign in |
-| `device_type=desktop` + desktop `device_name` | Done | Network tab on `/v1/auth/login` payload |
-| Captcha via main-process IPC | Done | Captcha code appears (needs current web build or local web) |
-| Single-instance lock | Done | Start app twice → second focuses first |
-| Login + chat + WebSocket | Done | Sign in, send/receive messages |
-
-**D1 exit criteria:** login, conversation list, and realtime messaging work inside Electron against local or deployed web.
+| ID | Req | Unit | MM Desktop | Status | Slug |
+|---|---|---|---|---|---|
+| AUTH-01 | §2.1 | Captcha fetch via main-process IPC | session networking | Done | `feat-kevin-desktop-captcha-ipc` |
+| AUTH-02 | §2.1 | Send `device_type=desktop` / desktop device name | externalAPI / server view identity | Done | `feat-kevin-desktop-device-identity` |
+| AUTH-03 | §2.1 | Remember session via `safeStorage` tokens | secureStorage.ts | Todo | `feat-kevin-desktop-safe-storage` |
+| AUTH-04 | §2.3 | Idle detection → away status bridge | UserActivityMonitor.ts | Todo | `feat-kevin-desktop-idle-status` |
+| CALL-01 | §2.4 | Grant mic / camera permission | permissionsManager | Done | `feat-kevin-desktop-media-permission` |
+| CALL-02 | §2.4 | Screenshare via `desktopCapturer` | callsWidgetWindow / desktopCapturer | Todo | `feat-kevin-desktop-screenshare` |
+| CALL-03 | §2.4 | Separate Calls widget window | callsWidgetWindow.ts | Deferred | `feat-kevin-desktop-calls-widget` |
+| PLAT-01 | §3 | Windows NSIS installer | electron-builder / nsis | Done | `feat-kevin-desktop-win-nsis` |
+| PLAT-02 | §3 | macOS dmg installer | electron-builder / dmg | Done | `feat-kevin-desktop-mac-dmg` |
+| PLAT-03 | §3 | Linux AppImage + deb | AppImage / deb | Done | `feat-kevin-desktop-linux-pack` |
+| NOTI-01 | MM | Native OS notification | `src/main/notifications/` | Done | `feat-kevin-desktop-native-notify` |
+| NOTI-02 | MM | Click notification → focus + open chat | navigationManager deep link | Done | `feat-kevin-desktop-notify-deeplink` |
+| NOTI-03 | MM | Dock / taskbar unread badge | badge.ts | Todo | `feat-kevin-desktop-unread-badge` |
+| NOTI-04 | MM | Tray icon unread / mention state | tray.ts + AppState | Todo | `feat-kevin-desktop-tray-badge` |
+| NOTI-05 | MM | Flash / bounce on mention (Win/mac) | notifications flash/bounce | Todo | `feat-kevin-desktop-attention` |
+| SHELL-01 | MM / §3 | Electron window loads web client | BrowserWindow / WebContentsView | Done | `feat-kevin-desktop-shell-window` |
+| SHELL-02 | MM | `contextIsolation` + no `nodeIntegration` | security defaults | Done | `feat-kevin-desktop-secure-prefs` |
+| SHELL-03 | MM | Narrow preload bridge `qchatDesktop` | externalAPI preload | Done | `feat-kevin-desktop-preload-bridge` |
+| SHELL-04 | MM | Renderer sandbox enabled | webPreferences.sandbox | Done | `feat-kevin-desktop-renderer-sandbox` |
+| SHELL-05 | MM | Configurable web URL (`--url` / env / `.env`) | servers config | Done | `feat-kevin-desktop-web-url-config` |
+| SHELL-06 | MM | Packaged default production URL | Config / production.json | Done | `feat-kevin-desktop-prod-url` |
+| SHELL-07 | MM | End-user `userData/config.json` URL override | Config | Done | `feat-kevin-desktop-user-config` |
+| SHELL-08 | MM | Start at `/login` | navigation | Done | `feat-kevin-desktop-start-login` |
+| SHELL-09 | MM | Single-instance lock | requestSingleInstanceLock | Done | `feat-kevin-desktop-single-instance` |
+| SHELL-10 | MM | Second instance focuses existing window | app second-instance | Done | `feat-kevin-desktop-focus-existing` |
+| SHELL-11 | MM | External http(s) links → OS browser | shell.openExternal | Done | `feat-kevin-desktop-open-external` |
+| SHELL-12 | MM | Failed web load → error dialog | ErrorView | Done | `feat-kevin-desktop-load-error` |
+| SHELL-13 | MM | Persist window size / position | mainWindow bounds-info | Done | `feat-kevin-desktop-window-state` |
+| SHELL-14 | MM | App icon (window / taskbar) | assets / tray icons | Done | `feat-kevin-desktop-app-icon` |
+| SHELL-15 | MM | Window title locked to product name | mainWindow title | Done | `feat-kevin-desktop-window-title` |
+| SHELL-16 | MM | About dialog | appMenu about | Done | `feat-kevin-desktop-about` |
+| SHELL-17 | MM | Native app menu (Edit / View / Window) | `src/app/menus/` | Done | `feat-kevin-desktop-app-menu` |
+| SHELL-18 | MM | Menu reload / zoom in-out-reset | view.ts zoom | Done | `feat-kevin-desktop-zoom-menu` |
+| SHELL-19 | MM | Spellcheck in composer | spellChecker session | Done | `feat-kevin-desktop-spellcheck` |
+| SHELL-20 | MM | Download → OS save dialog | downloadsManager | Done | `feat-kevin-desktop-download-save` |
+| SHELL-21 | MM | Download completion notification | notifications/Download | Todo | `feat-kevin-desktop-download-notify` |
+| SHELL-22 | MM | Right-click context menu | contextMenu.ts | Todo | `feat-kevin-desktop-context-menu` |
+| SHELL-23 | MM | System tray icon | tray/tray.ts | Todo | `feat-kevin-desktop-system-tray` |
+| SHELL-24 | MM | Minimize / close to tray | minimizeToTray | Todo | `feat-kevin-desktop-close-to-tray` |
+| SHELL-25 | MM | Tray menu Show / Quit | menus/tray.ts | Todo | `feat-kevin-desktop-tray-menu` |
+| SHELL-26 | MM | Autostart on OS login | AutoLauncher.ts | Todo | `feat-kevin-desktop-autostart` |
+| SHELL-27 | MM | Hide on start (start minimized) | AutoLauncher hideOnStart | Todo | `feat-kevin-desktop-hide-on-start` |
+| SHELL-28 | MM | Protocol handler `qchat://` | mattermost:// deep links | Todo | `feat-kevin-desktop-protocol-qchat` |
+| SHELL-29 | MM | Open conversation from deep link | navigationManager | Todo | `feat-kevin-desktop-deeplink-chat` |
+| SHELL-30 | MM | Certificate error trust/deny UI | certificateStore.ts | Todo | `feat-kevin-desktop-cert-dialog` |
+| SHELL-31 | MM | Theme sync with OS | themeManager.ts | Todo | `feat-kevin-desktop-os-theme` |
+| SHELL-32 | MM | Offline / reconnect banner (shell) | ErrorView / isOnline | Todo | `feat-kevin-desktop-offline-banner` |
+| SHELL-33 | MM | Multi-server tabs | tabs / servers | Deferred | `feat-kevin-desktop-multi-server` |
+| SHELL-34 | MM | Pop-out windows | popoutManager.ts | Deferred | `feat-kevin-desktop-popout` |
+| SHELL-35 | MM | GPO / MDM enterprise config | policyConfigLoader | Deferred | `feat-kevin-desktop-gpo` |
+| PACK-01 | MM / §3 | electron-builder project config | packaging | Done | `feat-kevin-desktop-builder-config` |
+| PACK-02 | MM | Windows build via Wine Docker on Linux | builder:wine | Done | `feat-kevin-desktop-win-docker` |
+| PACK-03 | MM | Bundle static `apps/web/out` offline | asar extraResources | Deferred | `feat-kevin-desktop-offline-web` |
+| PACK-04 | MM | Windows Authenticode signing | code sign | Todo | `feat-kevin-desktop-win-sign` |
+| PACK-05 | MM | macOS Developer ID + notarization | notarize | Todo | `feat-kevin-desktop-mac-notarize` |
+| PACK-06 | MM | Auto-update (`electron-updater`) | updateNotifier | Todo | `feat-kevin-desktop-auto-update` |
+| PACK-07 | MM | Ship without `--no-sandbox` | production hardening | Todo | `feat-kevin-desktop-prod-sandbox` |
+| PACK-08 | MM | Crash / telemetry hooks | diagnostics | Deferred | `feat-kevin-desktop-crash-report` |
 
 ---
 
-### D2 — UX polish — Done
+### Todo backlog (implement one row = one commit)
 
-| Feature | Status | Verification |
-|---|---|---|
-| App icon | Done | Title bar / taskbar / Alt-Tab shows Qchat icon |
-| Title locked to **Qchat Desktop** | Done | Title bar text stays `Qchat Desktop` |
-| About dialog | Done | **Help → About Qchat Desktop** or `Ctrl+Shift+A` |
-| Window size/position restore | Done | Resize → quit → reopen; position restored |
-| Native menu (reload / zoom / edit) | Done | Use **View** / **Edit** menus |
-| Native notification → focus + open chat | Done | Receive message while unfocused → click notification |
-| Download save dialog | Done | Download an attachment → OS Save dialog |
-| Spellcheck | Done | Typo underline in composer |
-| Dedicated offline banner | Partial | WS reconnects in `useChat`; no Electron-specific offline banner yet |
+1. `SHELL-23` system tray  
+2. `SHELL-24` close-to-tray  
+3. `SHELL-25` tray menu  
+4. `NOTI-04` tray unread state  
+5. `NOTI-03` dock/taskbar badge  
+6. `SHELL-26` autostart  
+7. `SHELL-28` `qchat://` protocol  
+8. `SHELL-29` deep-link open chat  
+9. `AUTH-03` `safeStorage`  
+10. `CALL-02` screenshare  
+11. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
+12. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
-
----
-
-### D3 — Packaging — Done (unsigned)
-
-| Feature | Status | Verification |
-|---|---|---|
-| `electron-builder` config + scripts | Done | `apps/desktop/package.json` → `build` + `dist:*` |
-| Linux AppImage / deb | Done | `npm run dist:linux` → artifacts in `apps/desktop/dist/` |
-| Windows NSIS | Done (build on Win / wine) | `npm run dist:win` → Setup `.exe` |
-| macOS dmg | Done (build on macOS) | `npm run dist:mac` → `.dmg` |
-| Production web URL in shipped app | Done | `production.json` + packaged fallback; override via `userData/config.json` |
-| Optional offline bundle of `apps/web/out` | Deferred | Still loads remote web; local `out/` bundle later if needed |
-
-**D3 exit criteria:** installable desktop apps that talk to the production API/web (signing deferred to D5).
-
----
-
-### D4 — Desktop-native integrations — Partial
-
-| Feature | Status | Verification (when done) |
-|---|---|---|
-| Native notifications + deep-link to conversation | **Done** (in D2) | Same as D2 notification test |
-| System tray / minimize to tray | Todo | Close-to-tray; tray menu Show / Quit |
-| Autostart on OS login | Todo | Reboot → app starts |
-| Protocol handler `qchat://` | Todo | `qchat://…` opens app / conversation |
-| Secure token storage (`safeStorage`) | Todo | Tokens not stored as plain web localStorage |
-
----
-
-### D5 — Signing & release — Todo
-
-| Feature | Status | Verification (when done) |
-|---|---|---|
-| Windows Authenticode signing | Todo | No SmartScreen “unknown publisher” (or reduced) |
-| macOS Developer ID + notarization | Todo | Gatekeeper accepts the app |
-| Auto-update (`electron-updater`) | Todo | New build prompts update |
-| Production hardening (no `--no-sandbox` in ship) | Todo | Release start path without dev sandbox bypass |
-| Crash / telemetry hooks (optional) | Todo | Crash report appears in chosen service |
-
----
-
-## 5. Session / platform notes (desktop)
-
-| Requirement | Current behavior | Gap |
-|---|---|---|
-| Phone + computer concurrent | Supported (`phone` vs `desktop` buckets) | OK |
-| Same-type device kick | New desktop login revokes prior desktop session | OK |
-| Browser vs Electron | Both use `device_type=desktop` (names differ) | Browser login and Electron login kick each other |
-| Windows / macOS clients | Installers via electron-builder (D3); unsigned | **D5** signing for distribution |
-| Native store apps | Explicitly deferred in security decisions | Out of MVP |
-
----
-
-## 6. How to run (dev)
-
-```bash
-# Attach display if using Cursor/SSH/tty on Linux
-cd apps/desktop
-source ./attach-display.sh
-
-# Against deployed server
-npm run start:server
-
-# Against local web
-# terminal A: cd apps/web && npm run dev
-npm run start:local
+```text
+pick one Todo row
+→ git checkout -b <Slug>   # off master; do not merge master from agent
+→ implement only that unit in apps/desktop/
+→ ask before commit
 ```
 
-### Package (D3)
-
-```bash
-cd apps/desktop
-npm run pack          # unpacked dir under dist/
-npm run dist:linux    # AppImage + deb
-npm run dist:win      # NSIS (Windows host / wine)
-npm run dist:mac      # dmg (macOS host)
-```
-
----
-
-## 7. Suggested next steps (desktop owner)
-
-1. **D4** — tray + autostart (high user-visible value)  
-2. Decide with product: should browser + Electron share one desktop session slot?  
-3. **D5** — signing + auto-update before wide distribution  
-4. Optional: offline bundle of `apps/web/out` inside the installer  
-5. Update `IMPLEMENTATION_STATUS.md` Phase 6 to reflect D1–D3 done  
-
----
-
-## 8. Code map
+### Code map
 
 | Area | Path |
 |---|---|
 | Electron main | `apps/desktop/main.js` |
-| Preload bridge | `apps/desktop/preload.js` |
-| URL config | `apps/desktop/config.js` |
-| Shipped production URL | `apps/desktop/production.json` |
-| electron-builder | `apps/desktop/package.json` → `build` |
-| Icons | `apps/desktop/assets/` |
-| Device identity (web) | `apps/web/src/lib/device.ts` |
-| Desktop bootstrap (web) | `apps/web/src/components/DesktopBootstrap.tsx` |
-| Login device + captcha | `apps/web/src/app/login/page.tsx` |
-| Notify / open conversation | `apps/web/src/lib/useChat.ts` |
+| Preload | `apps/desktop/preload.js` |
+| URL config | `apps/desktop/config.js`, `production.json` |
+| Packager | `apps/desktop/package.json` → `build`, `dist-win.sh` |
+| Mattermost reference | `mattermost/mattermost-desktop/src/` |
