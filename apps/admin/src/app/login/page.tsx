@@ -13,7 +13,6 @@ export default function AdminLoginPage() {
   const router = useRouter();
   const [phone, setPhone] = useState("13800000001");
   const [password, setPassword] = useState("admin12345");
-  const [inviteCode, setInviteCode] = useState("ACME2026");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
   const [remember, setRemember] = useState(true);
@@ -47,7 +46,6 @@ export default function AdminLoginPage() {
         body: JSON.stringify({
           phone,
           password,
-          invite_code: inviteCode,
           captcha_id: captcha?.id ?? "",
           captcha: captchaCode,
           device_type: "web",
@@ -79,10 +77,6 @@ export default function AdminLoginPage() {
         <div className="field">
           <label>Phone</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} required />
-        </div>
-        <div className="field">
-          <label>Invite code</label>
-          <input value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} required />
         </div>
         <div className="field">
           <label>Password</label>

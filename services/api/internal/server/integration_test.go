@@ -101,7 +101,7 @@ func registerUser(t *testing.T, base, invite string) (token, refresh, userID, us
 	username = "u" + uuid.NewString()[:8]
 	phone := fmt.Sprintf("139%08d", time.Now().UnixNano()%100000000)
 	st, otpBody := postJSON(t, base+"/v1/auth/register/otp", "", map[string]any{
-		"phone": phone, "invite_code": invite, "captcha_id": cid, "captcha": code,
+		"phone": phone, "captcha_id": cid, "captcha": code,
 	})
 	if st != 200 {
 		t.Fatalf("register otp %s: %d %v", username, st, otpBody)
@@ -109,14 +109,32 @@ func registerUser(t *testing.T, base, invite string) (token, refresh, userID, us
 	cid2, code2 := captcha(t, base)
 	status, body := postJSON(t, base+"/v1/auth/register", "", map[string]any{
 		"phone": phone, "password": "user12345", "username": username,
-		"invite_code": invite, "captcha_id": cid2, "captcha": code2,
+		"captcha_id": cid2, "captcha": code2,
 		"sms_challenge_id": otpBody["challenge_id"], "sms_code": otpBody["dev_code"],
 		"device_type": "web", "device_name": "test", "device_id": "test-device-" + username,
 	})
 	if status != 201 {
 		t.Fatalf("register %s: %d %v", username, status, body)
 	}
-	return fmt.Sprint(body["access_token"]), fmt.Sprint(body["refresh_token"]), fmt.Sprint(body["user_id"]), username
+	token = fmt.Sprint(body["access_token"])
+	refresh = fmt.Sprint(body["refresh_token"])
+	userID = fmt.Sprint(body["user_id"])
+	if invite != "" {
+		st, join := postJSON(t, base+"/v1/enterprises/join", token, map[string]any{
+			"invite_code": invite,
+			"device_type": "web", "device_name": "test", "device_id": "test-device-" + username,
+		})
+		if st != 200 {
+			t.Fatalf("join %s: %d %v", username, st, join)
+		}
+		if join["access_token"] != nil {
+			token = fmt.Sprint(join["access_token"])
+		}
+		if join["refresh_token"] != nil {
+			refresh = fmt.Sprint(join["refresh_token"])
+		}
+	}
+	return token, refresh, userID, username
 }
 
 func TestTwoUserDMAndRecall(t *testing.T) {

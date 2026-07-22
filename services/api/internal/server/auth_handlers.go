@@ -48,10 +48,9 @@ type registerReq struct {
 // handleRegisterOTP sends an SMS code required before registration (JD phone verification).
 func (s *Server) handleRegisterOTP(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Phone      string `json:"phone"`
-		InviteCode string `json:"invite_code"`
-		CaptchaID  string `json:"captcha_id"`
-		Captcha    string `json:"captcha"`
+		Phone     string `json:"phone"`
+		CaptchaID string `json:"captcha_id"`
+		Captcha   string `json:"captcha"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeErr(w, 400, "invalid json")
@@ -65,25 +64,18 @@ func (s *Server) handleRegisterOTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid captcha")
 		return
 	}
-	var entID string
-	var active bool
-	err := s.db.QueryRow(r.Context(), `SELECT id::text, invite_active FROM enterprises WHERE invite_code=$1`, req.InviteCode).Scan(&entID, &active)
-	if err != nil || !active {
-		writeErr(w, 400, "invalid invite code")
-		return
-	}
 	var exists bool
-	_ = s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE enterprise_id=$1 AND phone=$2)`, entID, req.Phone).Scan(&exists)
+	_ = s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE phone=$1)`, req.Phone).Scan(&exists)
 	if exists {
 		writeErrFields(w, 409, "conflict", "phone already registered", map[string]string{"phone": "already registered"})
 		return
 	}
 	code := auth.NewCaptchaCode()
 	id := uuid.New()
-	_, err = s.db.Exec(r.Context(), `
+	_, err := s.db.Exec(r.Context(), `
 		INSERT INTO register_otp_challenges(id, phone, invite_code, code_hash, expires_at)
-		VALUES ($1,$2,$3,$4,$5)`,
-		id, req.Phone, req.InviteCode, auth.HashRefresh(strings.ToUpper(code)), time.Now().Add(10*time.Minute))
+		VALUES ($1,$2,'',$3,$4)`,
+		id, req.Phone, auth.HashRefresh(strings.ToUpper(code)), time.Now().Add(10*time.Minute))
 	if err != nil {
 		writeErr(w, 500, "challenge failed")
 		return
@@ -98,21 +90,21 @@ func (s *Server) handleRegisterOTP(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, resp)
 }
 
-func (s *Server) consumeRegisterOTP(r *http.Request, challengeID, phone, invite, code string) bool {
+func (s *Server) consumeRegisterOTP(r *http.Request, challengeID, phone, code string) bool {
 	if challengeID == "" || code == "" {
 		return false
 	}
-	var phoneDB, inviteDB, hash string
+	var phoneDB, hash string
 	var consumed bool
 	var expires time.Time
 	err := s.db.QueryRow(r.Context(), `
-		SELECT phone, invite_code, code_hash, consumed, expires_at
+		SELECT phone, code_hash, consumed, expires_at
 		FROM register_otp_challenges WHERE id=$1`, challengeID).
-		Scan(&phoneDB, &inviteDB, &hash, &consumed, &expires)
+		Scan(&phoneDB, &hash, &consumed, &expires)
 	if err != nil || consumed || time.Now().After(expires) {
 		return false
 	}
-	if phoneDB != phone || inviteDB != invite {
+	if phoneDB != phone {
 		return false
 	}
 	if hash != auth.HashRefresh(strings.ToUpper(code)) {
@@ -144,15 +136,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid captcha")
 		return
 	}
-	if !s.consumeRegisterOTP(r, req.SMSChallengeID, req.Phone, req.InviteCode, req.SMSCode) {
+	if !s.consumeRegisterOTP(r, req.SMSChallengeID, req.Phone, req.SMSCode) {
 		writeErr(w, 400, "invalid or missing SMS code")
-		return
-	}
-	var entID string
-	var active bool
-	err := s.db.QueryRow(r.Context(), `SELECT id::text, invite_active FROM enterprises WHERE invite_code=$1`, req.InviteCode).Scan(&entID, &active)
-	if err != nil || !active {
-		writeErr(w, 400, "invalid invite code")
 		return
 	}
 	hash, err := auth.HashPassword(req.Password)
@@ -162,14 +147,15 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	uid := uuid.New()
 	ip := clientIP(r)
+	// Enterprise is assigned later via invite (POST /v1/enterprises/join).
 	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO users(id, enterprise_id, phone, password_hash, username, display_name, register_ip, register_region)
-		VALUES ($1,$2,$3,$4,$5,$5,$6,$7)`,
-		uid, entID, req.Phone, hash, req.Username, ip, guessRegion(ip))
+		VALUES ($1,NULL,$2,$3,$4,$4,$5,$6)`,
+		uid, req.Phone, hash, req.Username, ip, guessRegion(ip))
 	if err != nil {
 		var phoneTaken, userTaken bool
-		_ = s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE enterprise_id=$1 AND phone=$2)`, entID, req.Phone).Scan(&phoneTaken)
-		_ = s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE enterprise_id=$1 AND username=$2)`, entID, req.Username).Scan(&userTaken)
+		_ = s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE phone=$1)`, req.Phone).Scan(&phoneTaken)
+		_ = s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE lower(username)=lower($1))`, req.Username).Scan(&userTaken)
 		fields := map[string]string{}
 		if phoneTaken {
 			fields["phone"] = "already registered"
@@ -180,11 +166,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErrFields(w, 409, "conflict", "phone or username already exists", fields)
 		return
 	}
-	s.audit(r.Context(), uid.String(), entID, "user.register", "user", uid.String(), "", ip, nil)
+	s.audit(r.Context(), uid.String(), "", "user.register", "user", uid.String(), "", ip, nil)
 	deviceID := ensureDeviceID(req.DeviceID)
 	dtype := normalizeDevice(req.DeviceType)
 	s.revokeSameTypeSessions(r, uid.String(), dtype)
-	tok, err := s.issueSession(r, uid.String(), entID, "member", dtype, req.DeviceName, deviceID, req.Platform)
+	tok, err := s.issueSession(r, uid.String(), "", "member", dtype, req.DeviceName, deviceID, req.Platform)
 	if err != nil {
 		writeErr(w, 500, "session failed")
 		return
@@ -195,7 +181,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 type loginReq struct {
 	Phone      string `json:"phone"`
 	Password   string `json:"password"`
-	InviteCode string `json:"invite_code"`
 	CaptchaID  string `json:"captcha_id"`
 	Captcha    string `json:"captcha"`
 	DeviceType string `json:"device_type"`
@@ -215,16 +200,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid captcha")
 		return
 	}
-	var uid, entID, hash, role string
+	var uid, hash, role string
 	var banned bool
+	var entNull *string
 	err := s.db.QueryRow(r.Context(), `
 		SELECT u.id::text, u.enterprise_id::text, u.password_hash, u.role, u.banned
-		FROM users u JOIN enterprises e ON e.id=u.enterprise_id
-		WHERE u.phone=$1 AND e.invite_code=$2`, req.Phone, req.InviteCode).
-		Scan(&uid, &entID, &hash, &role, &banned)
+		FROM users u
+		WHERE u.phone=$1`, req.Phone).
+		Scan(&uid, &entNull, &hash, &role, &banned)
 	if err != nil || !auth.CheckPassword(hash, req.Password) {
 		writeErr(w, 401, "invalid credentials")
 		return
+	}
+	entID := ""
+	if entNull != nil {
+		entID = *entNull
 	}
 	if banned {
 		writeErr(w, 403, "account banned")

@@ -21,7 +21,6 @@ export default function LoginScreen() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [inviteCode, setInviteCode] = useState("ACME2026");
   const [username, setUsername] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captchaId, setCaptchaId] = useState("");
@@ -60,7 +59,6 @@ export default function LoginScreen() {
         method: "POST",
         body: JSON.stringify({
           phone,
-          invite_code: inviteCode,
           captcha_id: captchaId,
           captcha: captchaCode,
         }),
@@ -91,7 +89,6 @@ export default function LoginScreen() {
       const payload: Record<string, unknown> = {
         phone,
         password,
-        invite_code: inviteCode,
         captcha_id: captchaId,
         captcha: captchaCode,
         device_type: device.deviceType,
@@ -148,7 +145,9 @@ export default function LoginScreen() {
           </View>
 
           <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="13800000002" />
-          <Field label="Invite code" value={inviteCode} onChangeText={setInviteCode} />
+          {mode === "register" && (
+            <Text style={styles.hint}>After signup, join a company with an invite code in chat.</Text>
+          )}
           {mode === "register" && (
             <Field label="Username" value={username} onChangeText={setUsername} placeholder="alice" />
           )}
