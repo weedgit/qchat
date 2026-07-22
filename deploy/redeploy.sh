@@ -55,6 +55,20 @@ log() { printf '\n==> %s\n' "$*"; }
 log "git pull"
 git -C "$ROOT" pull --ff-only
 
+ENV_FILE="$ROOT/deploy/qchat-api.env"
+ENV_EXAMPLE="$ROOT/deploy/qchat-api.env.example"
+if [[ ! -f "$ENV_FILE" ]]; then
+  if [[ -f "$ENV_EXAMPLE" ]]; then
+    log "create $ENV_FILE from example"
+    cp "$ENV_EXAMPLE" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    echo "warning: using example env; run ./deploy/rotate-jwt-secret.sh for production" >&2
+  else
+    echo "error: missing $ENV_FILE (and no example to copy)" >&2
+    exit 1
+  fi
+fi
+
 log "render LiveKit/coturn for this host"
 "$ROOT/deploy/render-media-config.sh"
 # shellcheck disable=SC1091
@@ -78,6 +92,7 @@ if [[ "$DO_API" -eq 1 ]]; then
 
   log "restart qchat-api"
   if systemctl is-enabled qchat-api >/dev/null 2>&1 || systemctl cat qchat-api >/dev/null 2>&1; then
+    systemctl reset-failed qchat-api 2>/dev/null || true
     systemctl restart qchat-api
   else
     echo "warning: qchat-api.service not installed; binary rebuilt at services/api/bin/qchat-api" >&2
@@ -86,12 +101,16 @@ if [[ "$DO_API" -eq 1 ]]; then
 fi
 
 if [[ "$DO_WEB" -eq 1 ]]; then
+  log "install web deps"
+  (
+    cd "$ROOT/apps/web"
+    npm ci
+  )
+
   log "build web (static export)"
   (
     cd "$ROOT/apps/web"
-    if [[ ! -d node_modules ]]; then
-      npm ci
-    fi
+    # Empty NEXT_PUBLIC_API_URL → same-origin via nginx :80 (not host:8080).
     NEXT_PUBLIC_API_URL="" npm run build
   )
 

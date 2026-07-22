@@ -14,6 +14,7 @@ api:
 	cd services/api && go run ./cmd/api
 
 web:
+	./deploy/render-media-config.sh
 	cd apps/web && npm run dev
 
 admin:
