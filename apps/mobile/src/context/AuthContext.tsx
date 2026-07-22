@@ -21,6 +21,12 @@ function mapMe(u: any): CurrentUser {
     username: String(u?.username ?? ""),
     nickname: String(u?.display_name ?? u?.username ?? "Me"),
     avatarUrl: u?.avatar_url || undefined,
+    realName: String(u?.real_name ?? "") || undefined,
+    age: typeof u?.age === "number" ? u.age : null,
+    region: String(u?.region ?? "") || undefined,
+    signature: String(u?.signature ?? "") || undefined,
+    profileVisibility: String(u?.profile_visibility ?? "friends"),
+    friendPrivacy: String(u?.friend_privacy ?? "approval"),
   };
 }
 

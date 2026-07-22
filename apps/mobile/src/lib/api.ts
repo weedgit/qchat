@@ -215,7 +215,7 @@ export type MediaUploadResult = {
 /** React Native FormData upload to POST /v1/media/upload (mirror web uploadMedia). */
 export async function uploadMedia(
   localUri: string,
-  kind: "image" | "file" | "voice",
+  kind: "image" | "file" | "voice" | "avatar",
   filename: string,
   mimeType = "application/octet-stream"
 ): Promise<MediaUploadResult> {

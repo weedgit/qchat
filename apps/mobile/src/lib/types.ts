@@ -4,6 +4,12 @@ export interface CurrentUser {
   username: string;
   nickname: string;
   avatarUrl?: string;
+  realName?: string;
+  age?: number | null;
+  region?: string;
+  signature?: string;
+  profileVisibility?: string;
+  friendPrivacy?: string;
 }
 
 export interface Conversation {
