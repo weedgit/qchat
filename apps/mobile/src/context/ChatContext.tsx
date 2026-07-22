@@ -9,6 +9,12 @@ import React, {
 } from "react";
 import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "../lib/api";
 import {
+  attachNotificationResponseListener,
+  ensureNotificationPermissions,
+  presentMessageNotification,
+} from "../lib/localNotify";
+import { loadLocalNotifyProps, getNotifyProps, shouldNotify, saveLocalNotifyProps, normalizeNotifyProps } from "../lib/notifyProps";
+import {
   Conversation,
   Message,
   normalizeConversation,
@@ -32,6 +38,7 @@ type ChatContextValue = {
   loadConversations: () => Promise<Conversation[]>;
   loadMessages: (convId: string) => Promise<void>;
   openConversation: (convId: string) => void;
+  closeConversation: (convId?: string) => void;
   activeId: string | null;
   sendMessage: (convId: string, content: string, replyToId?: string) => Promise<void>;
   sendMediaMessage: (
@@ -73,6 +80,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const meRef = useRef(user);
   const activeIdRef = useRef<string | null>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
   const messagesRef = useRef(messages);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,6 +90,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   meRef.current = user;
   activeIdRef.current = activeId;
+  conversationsRef.current = conversations;
   messagesRef.current = messages;
 
   const loadConversations = useCallback(async () => {
@@ -105,7 +114,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         .sort((a: Message, b: Message) => a.createdAt.localeCompare(b.createdAt));
       setMessages((prev) => ({ ...prev, [convId]: list }));
       const last = list[list.length - 1];
-      if (last && !last.mine) {
+      // Only mark read while this chat is the focused screen (not prefetch / stale active).
+      if (last && !last.mine && activeIdRef.current === convId) {
         api(`/v1/messages/${last.id}/read`, { method: "POST" }).catch(() => {});
       }
       // Keep list preview aligned with loaded history (incl. recalls).
@@ -136,6 +146,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const openConversation = useCallback(
     (convId: string) => {
+      activeIdRef.current = convId;
       setActiveId(convId);
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0, mentionCount: 0 } : c))
@@ -144,6 +155,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     },
     [loadMessages]
   );
+
+  /** Clear active chat so background WS traffic does not auto-mark as read. */
+  const closeConversation = useCallback((convId?: string) => {
+    if (convId && activeIdRef.current !== convId) return;
+    activeIdRef.current = null;
+    setActiveId(null);
+  }, []);
 
   const handleIncoming = useCallback(
     (raw: any) => {
@@ -489,6 +507,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                     c.id === activeIdRef.current || msg.mine
                       ? c.unreadCount
                       : c.unreadCount + 1,
+                  mentionCount:
+                    c.id === activeIdRef.current || msg.mine
+                      ? c.mentionCount ?? 0
+                      : (() => {
+                          const isMention =
+                            Boolean(payload?.mention_all) ||
+                            (Array.isArray(payload?.mentions) &&
+                              payload.mentions.includes(meRef.current?.id));
+                          return (c.mentionCount ?? 0) + (isMention ? 1 : 0);
+                        })(),
                 }
               : c
           )
@@ -499,6 +527,41 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         api(`/v1/messages/${msg.id}/delivered`, { method: "POST" }).catch(() => {});
         if (activeIdRef.current === msg.conversationId) {
           api(`/v1/messages/${msg.id}/read`, { method: "POST" }).catch(() => {});
+        } else {
+          const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
+          const meId = meRef.current?.id;
+          const mentionList = Array.isArray(payload?.mentions)
+            ? payload.mentions.map((x: unknown) => String(x))
+            : [];
+          const isMention =
+            Boolean(payload?.mention_all) ||
+            (Boolean(meId) && mentionList.includes(String(meId)));
+          const notify = getNotifyProps();
+          if (
+            !shouldNotify(notify, {
+              muted: conversation?.muted,
+              isMention,
+            })
+          ) {
+            return;
+          }
+          const sender = msg.senderName || conversation?.title || "New message";
+          const target =
+            conversation?.type === "dm"
+              ? meRef.current?.nickname ?? ""
+              : conversation?.title ?? "";
+          let title = target ? `${sender} → ${target}` : sender;
+          if (isMention) {
+            title = Boolean(payload?.mention_all)
+              ? `Mentioned everyone · ${title}`
+              : `Mentioned you · ${title}`;
+          }
+          presentMessageNotification({
+            conversationId: msg.conversationId,
+            title,
+            body: msg.content || "New message",
+            sound: notify.sound,
+          }).catch(() => {});
         }
       }
     },
@@ -516,6 +579,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
 
     loadConversations();
+    // Hydrate notify prefs so mention/all switcher applies to local banners.
+    loadLocalNotifyProps()
+      .then(async () => {
+        try {
+          const p = await api<any>("/v1/me/notify_props");
+          await saveLocalNotifyProps(normalizeNotifyProps(p));
+        } catch {
+          /* keep SecureStore / defaults */
+        }
+      })
+      .catch(() => {});
 
     let disposed = false;
 
@@ -1058,6 +1132,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       loadConversations,
       loadMessages,
       openConversation,
+      closeConversation,
       activeId,
       sendMessage,
       sendMediaMessage,
@@ -1081,6 +1156,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       loadConversations,
       loadMessages,
       openConversation,
+      closeConversation,
       activeId,
       sendMessage,
       sendMediaMessage,

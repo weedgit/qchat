@@ -31,6 +31,15 @@
       "expo-font",
       "expo-dev-client",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#2463dc",
+          "defaultChannel": "messages",
+          "sounds": []
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

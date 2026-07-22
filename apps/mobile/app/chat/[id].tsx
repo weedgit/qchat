@@ -558,6 +558,7 @@ export default function ChatScreen() {
     conversations,
     messages,
     openConversation,
+    closeConversation,
     sendMessage,
     recallMessage,
     forwardMessage,
@@ -718,7 +719,10 @@ export default function ChatScreen() {
     openConversation(convId);
     nearBottomRef.current = true;
     setShowJumpBottom(false);
-  }, [convId, openConversation]);
+    return () => {
+      closeConversation(convId);
+    };
+  }, [convId, openConversation, closeConversation]);
 
   useLayoutEffect(() => {
     if (pinsListOpen) {

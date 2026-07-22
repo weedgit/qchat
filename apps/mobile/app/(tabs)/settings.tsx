@@ -22,18 +22,19 @@ import { useLocale } from "../../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { api, apiBaseUrl } from "../../src/lib/api";
 import {
+  normalizeNotifyProps,
+  saveLocalNotifyProps,
+  withDesktop,
+  withMentionsOnly,
+  type NotifyProps,
+} from "../../src/lib/notifyProps";
+import {
   darkColors,
   radius,
   spacing,
   type ColorTokens,
   type ThemeMode,
 } from "../../src/theme";
-
-type NotifyProps = {
-  desktop: "all" | "mention" | "none";
-  sound: boolean;
-  mentions_only: boolean;
-};
 
 type LoginSession = {
   id: string;
@@ -126,11 +127,9 @@ export default function SettingsScreen() {
     }
     try {
       const p = await api<any>("/v1/me/notify_props");
-      setNotify({
-        desktop: p?.desktop === "mention" || p?.desktop === "none" ? p.desktop : "all",
-        sound: p?.sound !== false,
-        mentions_only: Boolean(p?.mentions_only),
-      });
+      const next = normalizeNotifyProps(p);
+      setNotify(next);
+      await saveLocalNotifyProps(next);
     } catch {
       /* keep defaults */
     }
@@ -156,6 +155,7 @@ export default function SettingsScreen() {
         method: "PUT",
         body: JSON.stringify(notify),
       });
+      await saveLocalNotifyProps(notify);
       setNotifySaved(true);
     } catch (e: any) {
       setError(e?.message || "Could not save notifications");
@@ -256,31 +256,6 @@ export default function SettingsScreen() {
     ]);
   }
 
-  function pickDesktopNotify() {
-    Alert.alert(t("settings.notifications"), undefined, [
-      {
-        text: t("settings.notifyAll"),
-        onPress: () => setNotify({ ...notify, desktop: "all" }),
-      },
-      {
-        text: t("settings.notifyMention"),
-        onPress: () => setNotify({ ...notify, desktop: "mention" }),
-      },
-      {
-        text: t("settings.notifyNone"),
-        onPress: () => setNotify({ ...notify, desktop: "none" }),
-      },
-      { text: t("common.cancel"), style: "cancel" },
-    ]);
-  }
-
-  const desktopLabel =
-    notify.desktop === "mention"
-      ? t("settings.notifyMention")
-      : notify.desktop === "none"
-        ? t("settings.notifyNone")
-        : t("settings.notifyAll");
-
   return (
     <ScrollView
       style={styles.root}
@@ -330,24 +305,41 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t("settings.notifications")}</Text>
         <Text style={styles.cardHint}>{t("settings.notificationsHint")}</Text>
-        <SelectRow
+        <DropdownSelect
           label={t("settings.desktopNotifications")}
-          value={desktopLabel}
-          onPress={pickDesktopNotify}
+          value={notify.desktop}
+          options={[
+            { value: "all" as const, label: t("settings.notifyAll") },
+            { value: "mention" as const, label: t("settings.notifyMention") },
+            { value: "none" as const, label: t("settings.notifyNone") },
+          ]}
+          onChange={(desktop) => {
+            const next = withDesktop(notify, desktop);
+            setNotify(next);
+            saveLocalNotifyProps(next).catch(() => {});
+          }}
           styles={styles}
           colors={colors}
         />
         <ToggleRow
           label={t("settings.playSound")}
           value={notify.sound}
-          onValueChange={(v) => setNotify({ ...notify, sound: v })}
+          onValueChange={(v) => {
+            const next = { ...notify, sound: v };
+            setNotify(next);
+            saveLocalNotifyProps(next).catch(() => {});
+          }}
           styles={styles}
           colors={colors}
         />
         <ToggleRow
           label={t("settings.mentionsOnly")}
           value={notify.mentions_only}
-          onValueChange={(v) => setNotify({ ...notify, mentions_only: v })}
+          onValueChange={(v) => {
+            const next = withMentionsOnly(notify, v);
+            setNotify(next);
+            saveLocalNotifyProps(next).catch(() => {});
+          }}
           styles={styles}
           colors={colors}
         />
@@ -479,32 +471,6 @@ function Field({
       />
       {hint ? <Text style={styles.fieldHint}>{hint}</Text> : null}
     </View>
-  );
-}
-
-function SelectRow({
-  label,
-  value,
-  onPress,
-  styles,
-  colors,
-}: {
-  label: string;
-  value: string;
-  onPress: () => void;
-  styles: Styles;
-  colors: ColorTokens;
-}) {
-  return (
-    <Pressable style={styles.selectRow} onPress={onPress}>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={styles.label}>{label}</Text>
-        <Text style={styles.selectValue} numberOfLines={1}>
-          {value}
-        </Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-    </Pressable>
   );
 }
 
@@ -645,13 +611,6 @@ function makeStyles(c: ColorTokens) {
     },
     inputDisabled: { color: c.textMuted },
     fieldHint: { fontSize: 11, color: c.textMuted },
-    selectRow: {
-      flexDirection: "row" as const,
-      alignItems: "center" as const,
-      gap: spacing.sm,
-      paddingVertical: 6,
-    },
-    selectValue: { color: c.text, fontSize: 15, marginTop: 2 },
     dropdown: { gap: 4 },
     dropdownTrigger: {
       flexDirection: "row" as const,

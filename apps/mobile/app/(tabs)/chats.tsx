@@ -52,7 +52,6 @@ export default function ChatsScreen() {
   const {
     conversations,
     loadConversations,
-    openConversation,
     updateConversationPrefs,
     markConversationRead,
     connected,
@@ -248,7 +247,6 @@ export default function ChatsScreen() {
                   toggleSelect(item.id);
                   return;
                 }
-                openConversation(item.id);
                 router.push(`/chat/${item.id}`);
               }}
               onLongPress={() => {
