@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent as ReactClipboardEvent,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -23,7 +24,7 @@ import { Conversation, Message, conversationDisplayName, formatLastSeen } from "
 import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
-import { dataTransferHasFiles, filesFromDataTransfer } from "@/lib/fileDrop";
+import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard } from "@/lib/fileDrop";
 import { unregisterWebPush } from "@/lib/webPush";
 
 const VOICE_MAX_SEC = 60;
@@ -378,6 +379,11 @@ function Bubble({
             <div className="media-image">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={mediaAuthURL(msg.mediaUrl)} alt={msg.content || "Photo"} />
+              {msg.content && msg.content !== "Photo" && (
+                <div className="media-caption">
+                  <MessageBody text={msg.content} />
+                </div>
+              )}
             </div>
           ) : msg.type === "file" && msg.mediaUrl && !msg.recalled ? (
             <a
@@ -456,6 +462,15 @@ export default function ChatPageInner() {
   const [inChatSearch, setInChatSearch] = useState("");
   const [showInChatSearch, setShowInChatSearch] = useState(false);
   const [draft, setDraft] = useState("");
+  /** Pending media from paste / attach / drop before send. */
+  const [mediaDraft, setMediaDraft] = useState<{
+    items: { file: File; url: string }[];
+    mode: "photos" | "files";
+    caption: string;
+    replyToId?: string;
+  } | null>(null);
+  const [mediaSending, setMediaSending] = useState(false);
+  const mediaCaptionRef = useRef<HTMLTextAreaElement>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   /** Conversation id under file drag in the sidebar list (Mattermost channel drop). */
@@ -861,14 +876,7 @@ export default function ChatPageInner() {
     if (chat.activeId !== convId) {
       chat.openConversation(convId);
     }
-    for (const file of files) {
-      try {
-        await chat.sendMediaMessage(convId, file);
-      } catch (err: any) {
-        setSendError(err?.message || "Upload failed");
-        break;
-      }
-    }
+    openMediaDraft(files);
   }
 
   async function send() {
@@ -904,6 +912,109 @@ export default function ChatPageInner() {
     } catch (e: any) {
       setSendError(e.message);
     }
+  }
+
+  function mediaDraftTitle(mode: "photos" | "files", n: number): string {
+    if (mode === "photos") {
+      return n === 1 ? "Send Photo" : `Send ${n} Photos`;
+    }
+    return n === 1 ? "Send File" : `Send ${n} files`;
+  }
+
+  function openMediaDraft(files: File[]) {
+    if (!chat.activeId || editingMessage || files.length === 0) return;
+    const mode: "photos" | "files" = files.every((f) => f.type.startsWith("image/"))
+      ? "photos"
+      : "files";
+    setMediaDraft((prev) => {
+      prev?.items.forEach((it) => URL.revokeObjectURL(it.url));
+      return {
+        items: files.map((file) => ({
+          file,
+          url: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
+        })),
+        mode,
+        caption: draft,
+        replyToId: replyTo?.id,
+      };
+    });
+    // Composer text rides along as caption / leading message.
+    setDraft("");
+    if (chat.activeId) {
+      saveDraft(chat.activeId, "");
+      chat.stopTyping(chat.activeId);
+    }
+    setReplyTo(null);
+    window.setTimeout(() => mediaCaptionRef.current?.focus(), 0);
+  }
+
+  function closeMediaDraft(opts?: { restoreCaption?: boolean }) {
+    setMediaDraft((prev) => {
+      prev?.items.forEach((it) => {
+        if (it.url) URL.revokeObjectURL(it.url);
+      });
+      if (opts?.restoreCaption && prev?.caption) {
+        setDraft(prev.caption);
+        if (chat.activeId) saveDraft(chat.activeId, prev.caption);
+      }
+      return null;
+    });
+    setMediaSending(false);
+    window.setTimeout(() => draftRef.current?.focus(), 0);
+  }
+
+  async function confirmSendMedia() {
+    if (!mediaDraft || !chat.activeId || mediaSending) return;
+    setMediaSending(true);
+    setSendError(null);
+    const { items, mode, caption, replyToId } = mediaDraft;
+    const trimmed = caption.trim();
+    try {
+      if (mode === "files" && trimmed) {
+        await chat.sendMessage(chat.activeId, trimmed, replyToId);
+      }
+      for (let i = 0; i < items.length; i++) {
+        const file = items[i].file;
+        const isFirst = i === 0;
+        const fileReply = mode === "files" && trimmed ? undefined : isFirst ? replyToId : undefined;
+        const fileCaption =
+          mode === "photos" && isFirst ? trimmed : undefined;
+        await chat.sendMediaMessage(chat.activeId, file, fileReply, fileCaption);
+      }
+      closeMediaDraft();
+    } catch (err: any) {
+      setSendError(err?.message || "Upload failed");
+      setMediaSending(false);
+    }
+  }
+
+  function onComposerPaste(e: ReactClipboardEvent<HTMLTextAreaElement>) {
+    if (!chat.activeId || recording || voiceBusy || editingMessage) return;
+    const images = imagesFromClipboard(e.clipboardData);
+    if (!images.length) return;
+    e.preventDefault();
+    openMediaDraft(images);
+  }
+
+  function removeMediaDraftItem(index: number) {
+    setMediaDraft((prev) => {
+      if (!prev) return prev;
+      const items = prev.items.slice();
+      const [removed] = items.splice(index, 1);
+      if (removed?.url) URL.revokeObjectURL(removed.url);
+      if (items.length === 0) {
+        if (prev.caption) {
+          setDraft(prev.caption);
+          if (chat.activeId) saveDraft(chat.activeId, prev.caption);
+        }
+        window.setTimeout(() => draftRef.current?.focus(), 0);
+        return null;
+      }
+      const mode: "photos" | "files" = items.every((it) => it.file.type.startsWith("image/"))
+        ? "photos"
+        : "files";
+      return { ...prev, items, mode };
+    });
   }
 
   function startEdit(msg: Message) {
@@ -1582,20 +1693,15 @@ export default function ChatPageInner() {
                       <input
                         ref={fileInputRef}
                         type="file"
+                        multiple
                         accept="image/*,.pdf,audio/*,video/mp4,application/pdf"
                         style={{ display: "none" }}
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
+                        onChange={(e) => {
+                          const list = e.target.files ? Array.from(e.target.files) : [];
                           e.target.value = "";
-                          if (!file || !chat.activeId) return;
+                          if (!list.length || !chat.activeId) return;
                           setSendError(null);
-                          const replyId = replyTo?.id;
-                          setReplyTo(null);
-                          try {
-                            await chat.sendMediaMessage(chat.activeId, file, replyId);
-                          } catch (err: any) {
-                            setSendError(err.message || "Upload failed");
-                          }
+                          openMediaDraft(list);
                         }}
                       />
                       <button
@@ -1620,6 +1726,7 @@ export default function ChatPageInner() {
                           if (value.trim()) chat.notifyTyping(chat.activeId);
                           else chat.stopTyping(chat.activeId);
                         }}
+                        onPaste={onComposerPaste}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
@@ -2145,6 +2252,113 @@ export default function ChatPageInner() {
             clearSelection();
           }}
         />
+      )}
+      {mediaDraft && (
+        <div
+          className="photo-send-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={mediaDraftTitle(mediaDraft.mode, mediaDraft.items.length)}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !mediaSending) {
+              closeMediaDraft({ restoreCaption: true });
+            }
+          }}
+        >
+          <div className="photo-send-modal">
+            <header className="photo-send-header">
+              <button
+                type="button"
+                className="photo-send-close"
+                title="Cancel"
+                disabled={mediaSending}
+                onClick={() => closeMediaDraft({ restoreCaption: true })}
+              >
+                {"\u2715"}
+              </button>
+              <h2>{mediaDraftTitle(mediaDraft.mode, mediaDraft.items.length)}</h2>
+              <span className="photo-send-header-spacer" />
+            </header>
+            {mediaDraft.mode === "photos" ? (
+              <div
+                className={`photo-send-preview ${
+                  mediaDraft.items.length > 1 ? "photo-send-preview-grid" : ""
+                }`}
+              >
+                {mediaDraft.items.map((it, idx) => (
+                  <div key={`${it.file.name}-${idx}`} className="photo-send-thumb">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={it.url} alt={it.file.name || `Photo ${idx + 1}`} />
+                    {mediaDraft.items.length > 1 && (
+                      <button
+                        type="button"
+                        className="photo-send-remove"
+                        title="Remove"
+                        disabled={mediaSending}
+                        onClick={() => removeMediaDraftItem(idx)}
+                      >
+                        {"\u2715"}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <ul className="file-send-list">
+                {mediaDraft.items.map((it, idx) => (
+                  <li key={`${it.file.name}-${idx}`} className="file-send-row">
+                    <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
+                    <span className="file-send-name" title={it.file.name}>
+                      {it.file.name || `file-${idx + 1}`}
+                    </span>
+                    <button
+                      type="button"
+                      className="photo-send-remove inline"
+                      title="Remove"
+                      disabled={mediaSending}
+                      onClick={() => removeMediaDraftItem(idx)}
+                    >
+                      {"\u2715"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="photo-send-composer">
+              <textarea
+                ref={mediaCaptionRef}
+                rows={1}
+                placeholder={
+                  mediaDraft.mode === "photos" ? "Add a caption…" : "Add a message…"
+                }
+                value={mediaDraft.caption}
+                disabled={mediaSending}
+                onChange={(e) =>
+                  setMediaDraft((prev) => (prev ? { ...prev, caption: e.target.value } : prev))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    confirmSendMedia();
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    if (!mediaSending) closeMediaDraft({ restoreCaption: true });
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="send-btn"
+                title="Send"
+                disabled={mediaSending}
+                onClick={() => confirmSendMedia()}
+              >
+                {"\u27A4"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <CallOverlay call={call} />
     </AppShell>

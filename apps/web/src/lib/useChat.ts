@@ -698,11 +698,14 @@ export function useChat() {
   }
 
   const sendMediaMessage = useCallback(
-    async (convId: string, file: File, replyToId?: string) => {
+    async (convId: string, file: File, replyToId?: string, caption?: string) => {
       stopTyping(convId);
       const isImage = file.type.startsWith("image/");
       const type = isImage ? "image" : "file";
-      const preview = isImage ? "Photo" : file.name || "File";
+      const trimmedCaption = caption?.trim() || "";
+      const preview = isImage
+        ? trimmedCaption || "Photo"
+        : trimmedCaption || file.name || "File";
       const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const tempId = clientMsgId;
       const localUrl = URL.createObjectURL(file);
