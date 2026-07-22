@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import GroupQr from "@/components/GroupQr";
+import PageHeader from "@/components/PageHeader";
 import { api, asList } from "@/lib/api";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
 import { Conversation, Friend, normalizeConversation, normalizeFriend } from "@/lib/types";
@@ -152,9 +153,9 @@ export default function GroupsPage() {
   const isAdmin = role === "owner" || role === "admin";
 
   return (
-    <AppShell>
+    <AppShell rail={false}>
       <main className="page-pane">
-        <h1>Groups</h1>
+        <PageHeader title="Groups" />
         {msg && <div className="card muted">{msg}</div>}
 
         <form className="card" onSubmit={createGroup} style={{ display: "grid", gap: 10 }}>

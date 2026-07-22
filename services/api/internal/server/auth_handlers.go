@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ type registerReq struct {
 	DeviceType     string `json:"device_type"`
 	DeviceName     string `json:"device_name"`
 	DeviceID       string `json:"device_id"`
+	Platform       string `json:"platform"`
 }
 
 // handleRegisterOTP sends an SMS code required before registration (JD phone verification).
@@ -180,10 +182,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r.Context(), uid.String(), entID, "user.register", "user", uid.String(), "", ip, nil)
 	deviceID := ensureDeviceID(req.DeviceID)
-	_, _ = s.db.Exec(r.Context(), `
-		UPDATE sessions SET revoked=TRUE
-		WHERE user_id=$1 AND device_id=$2 AND revoked=FALSE`, uid.String(), deviceID)
-	tok, err := s.issueSession(r, uid.String(), entID, "member", req.DeviceType, req.DeviceName, deviceID)
+	dtype := normalizeDevice(req.DeviceType)
+	s.revokeSameTypeSessions(r, uid.String(), dtype)
+	tok, err := s.issueSession(r, uid.String(), entID, "member", dtype, req.DeviceName, deviceID, req.Platform)
 	if err != nil {
 		writeErr(w, 500, "session failed")
 		return
@@ -200,6 +201,7 @@ type loginReq struct {
 	DeviceType string `json:"device_type"`
 	DeviceName string `json:"device_name"`
 	DeviceID   string `json:"device_id"`
+	Platform   string `json:"platform"`
 	RememberMe bool   `json:"remember_me"`
 }
 
@@ -230,11 +232,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	dtype := normalizeDevice(req.DeviceType)
 	deviceID := ensureDeviceID(req.DeviceID)
-	// Per-device session: re-login on the same device_id replaces that device only.
-	_, _ = s.db.Exec(r.Context(), `
-		UPDATE sessions SET revoked=TRUE
-		WHERE user_id=$1 AND device_id=$2 AND revoked=FALSE`, uid, deviceID)
-	tok, err := s.issueSession(r, uid, entID, role, dtype, req.DeviceName, deviceID)
+	// One session per surface: web, desktop, phone (new login replaces same type).
+	s.revokeSameTypeSessions(r, uid, dtype)
+	tok, err := s.issueSession(r, uid, entID, role, dtype, req.DeviceName, deviceID, req.Platform)
 	if err != nil {
 		writeErr(w, 500, "session failed")
 		return
@@ -254,14 +254,17 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// handleListSessions lists active login sessions keyed by device_id.
+// handleListSessions lists active login sessions with platform + IP location.
 func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	rows, err := s.db.Query(r.Context(), `
-		SELECT id::text, device_type, COALESCE(device_name,''), COALESCE(device_id,''), created_at, expires_at
+		SELECT id::text, device_type, COALESCE(device_name,''), COALESCE(device_id,''),
+		       COALESCE(platform,''), COALESCE(ip,''), COALESCE(ip_region,''),
+		       COALESCE(user_agent,''),
+		       created_at, expires_at, COALESCE(last_active_at, created_at)
 		FROM sessions
 		WHERE user_id=$1 AND revoked=FALSE AND expires_at>now()
-		ORDER BY created_at DESC`, c.UserID)
+		ORDER BY COALESCE(last_active_at, created_at) DESC`, c.UserID)
 	if err != nil {
 		writeErr(w, 500, "list failed")
 		return
@@ -269,15 +272,21 @@ func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, dtype, dname, did string
-		var created, expires time.Time
-		if rows.Scan(&id, &dtype, &dname, &did, &created, &expires) != nil {
+		var id, dtype, dname, did, platform, ip, region, ua string
+		var created, expires, lastActive time.Time
+		if rows.Scan(&id, &dtype, &dname, &did, &platform, &ip, &region, &ua, &created, &expires, &lastActive) != nil {
 			continue
 		}
+		platform = displayPlatform(platform, dname, dtype, ua)
 		out = append(out, map[string]any{
 			"id": id, "device_type": dtype, "device_name": dname, "device_id": did,
-			"current": id == c.SessionID,
-			"created_at": created.UTC(), "expires_at": expires.UTC(),
+			"platform": platform, "ip": ip, "ip_region": region,
+			"location":       formatSessionLocation(ip, region),
+			"estimated":      region != "" && region != "Local network" && region != "Unknown location",
+			"current":        id == c.SessionID,
+			"created_at":     created.UTC(),
+			"expires_at":     expires.UTC(),
+			"last_active_at": lastActive.UTC(),
 		})
 	}
 	writeJSON(w, 200, out)
@@ -380,17 +389,35 @@ func (s *Server) consumeCaptcha(r *http.Request, id, answer string) bool {
 	return tag.RowsAffected() == 1
 }
 
-func (s *Server) issueSession(r *http.Request, userID, entID, role, deviceType, deviceName, deviceID string) (map[string]any, error) {
+func (s *Server) issueSession(r *http.Request, userID, entID, role, deviceType, deviceName, deviceID, platform string) (map[string]any, error) {
 	dtype := normalizeDevice(deviceType)
 	did := ensureDeviceID(deviceID)
 	raw, hash, err := auth.NewRefreshToken()
 	if err != nil {
 		return nil, err
 	}
+	ip := clientIP(r)
+	region := resolveSessionLocation(r, ip)
+	ua := r.Header.Get("User-Agent")
+	if len(ua) > 512 {
+		ua = ua[:512]
+	}
+	plat := strings.TrimSpace(platform)
+	if plat == "" {
+		plat = strings.TrimSpace(deviceName)
+	}
+	if plat == "" {
+		plat = dtype
+	}
+	if len(plat) > 200 {
+		plat = plat[:200]
+	}
 	sid := uuid.New()
+	now := time.Now().UTC()
 	_, err = s.db.Exec(r.Context(), `
-		INSERT INTO sessions(id, user_id, device_type, device_name, device_id, refresh_hash, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`, sid, userID, dtype, deviceName, did, hash, time.Now().Add(s.cfg.RefreshTTL))
+		INSERT INTO sessions(id, user_id, device_type, device_name, device_id, refresh_hash, expires_at, ip, ip_region, platform, user_agent, last_active_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		sid, userID, dtype, deviceName, did, hash, now.Add(s.cfg.RefreshTTL), ip, region, plat, ua, now)
 	if err != nil {
 		return nil, err
 	}
@@ -411,10 +438,25 @@ func (s *Server) issueSession(r *http.Request, userID, entID, role, deviceType, 
 }
 
 func normalizeDevice(d string) string {
-	if strings.ToLower(d) == "phone" {
+	switch strings.ToLower(strings.TrimSpace(d)) {
+	case "phone", "mobile":
 		return "phone"
+	case "web", "browser":
+		return "web"
+	case "desktop", "electron", "pc":
+		return "desktop"
+	default:
+		// Legacy clients that omitted type: treat as web (browser).
+		return "web"
 	}
-	return "desktop"
+}
+
+// revokeSameTypeSessions enforces one active session per device_type (web|desktop|phone).
+func (s *Server) revokeSameTypeSessions(r *http.Request, userID, deviceType string) {
+	dtype := normalizeDevice(deviceType)
+	_, _ = s.db.Exec(r.Context(), `
+		UPDATE sessions SET revoked=TRUE
+		WHERE user_id=$1 AND device_type=$2 AND revoked=FALSE`, userID, dtype)
 }
 
 func normalizeDeviceID(id string) string {
@@ -432,11 +474,75 @@ func ensureDeviceID(id string) string {
 	return uuid.NewString()
 }
 
+// guessRegion is a coarse fallback for registration / admin (no geo lookup).
 func guessRegion(ip string) string {
-	if strings.HasPrefix(ip, "192.168.") || ip == "127.0.0.1" || ip == "::1" {
+	ip = strings.TrimSpace(ip)
+	if ip == "" {
+		return "unknown"
+	}
+	if isPrivateOrLocalIP(ip) {
 		return "local"
 	}
 	return "unknown"
+}
+
+func formatSessionLocation(ip, region string) string {
+	ip = strings.TrimSpace(ip)
+	region = strings.TrimSpace(region)
+	switch {
+	case region != "" && region != "Unknown location" && region != "Local network":
+		if ip != "" {
+			return "Approx. " + region + " · " + ip
+		}
+		return "Approx. " + region
+	case region == "Local network":
+		if ip != "" {
+			return "Local network · " + ip
+		}
+		return "Local network"
+	case ip != "":
+		return "Unknown location · " + ip
+	default:
+		return "Unknown location"
+	}
+}
+
+func isPrivateOrLocalIP(ip string) bool {
+	ip = strings.Trim(ip, "[]")
+	if ip == "127.0.0.1" || ip == "::1" || ip == "localhost" {
+		return true
+	}
+	if strings.HasPrefix(ip, "192.168.") || strings.HasPrefix(ip, "10.") {
+		return true
+	}
+	if strings.HasPrefix(ip, "172.") {
+		// 172.16.0.0 – 172.31.255.255
+		parts := strings.Split(ip, ".")
+		if len(parts) >= 2 {
+			second, err := strconv.Atoi(parts[1])
+			if err == nil && second >= 16 && second <= 31 {
+				return true
+			}
+		}
+	}
+	if strings.HasPrefix(ip, "fc") || strings.HasPrefix(ip, "fd") || strings.HasPrefix(ip, "fe80:") {
+		return true
+	}
+	return false
+}
+
+func countryLabel(code string) string {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	names := map[string]string{
+		"CN": "China", "US": "United States", "DE": "Germany", "GB": "United Kingdom",
+		"JP": "Japan", "KR": "South Korea", "SG": "Singapore", "HK": "Hong Kong",
+		"TW": "Taiwan", "AU": "Australia", "CA": "Canada", "FR": "France",
+		"IN": "India", "NL": "Netherlands", "FI": "Finland",
+	}
+	if n, ok := names[code]; ok {
+		return n
+	}
+	return code
 }
 
 func strPtr(m map[string]any, k string) *string {
@@ -493,13 +599,14 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hash := auth.HashRefresh(req.RefreshToken)
-	var sid, uid, dtype, dname, did string
+	var sid, uid, dtype, dname, did, platform string
 	var revoked bool
 	var expires time.Time
 	err := s.db.QueryRow(r.Context(), `
-		SELECT id::text, user_id::text, device_type, device_name, COALESCE(device_id,''), revoked, expires_at
+		SELECT id::text, user_id::text, device_type, device_name, COALESCE(device_id,''),
+		       COALESCE(platform,''), revoked, expires_at
 		FROM sessions WHERE refresh_hash=$1`, hash).
-		Scan(&sid, &uid, &dtype, &dname, &did, &revoked, &expires)
+		Scan(&sid, &uid, &dtype, &dname, &did, &platform, &revoked, &expires)
 	if err != nil {
 		writeErrCode(w, 401, "invalid_refresh", "invalid refresh token")
 		return
@@ -518,7 +625,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 403, "forbidden", "account unavailable")
 		return
 	}
-	tok, err := s.issueSession(r, uid, entID, role, dtype, dname, did)
+	tok, err := s.issueSession(r, uid, entID, role, dtype, dname, did, platform)
 	if err != nil {
 		writeErrCode(w, 500, "session_failed", "session failed")
 		return

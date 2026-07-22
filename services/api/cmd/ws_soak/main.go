@@ -141,7 +141,7 @@ func login(base, phone, password, invite string) (string, error) {
 	payload := map[string]any{
 		"phone": phone, "password": password, "invite_code": invite,
 		"captcha_id": capBody["captcha_id"], "captcha": capBody["challenge"],
-		"device_type": "desktop", "device_name": "ws-soak", "device_id": "ws-soak-device", "remember_me": true,
+		"device_type": "web", "device_name": "ws-soak", "device_id": "ws-soak-device", "remember_me": true,
 	}
 	body, err := postJSON(base+"/v1/auth/login", payload)
 	if err != nil {

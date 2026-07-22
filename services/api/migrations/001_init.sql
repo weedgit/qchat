@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    device_type TEXT NOT NULL, -- phone|desktop
+    device_type TEXT NOT NULL, -- web|desktop|phone (one active session per type)
     device_name TEXT NOT NULL DEFAULT '',
     refresh_hash TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,

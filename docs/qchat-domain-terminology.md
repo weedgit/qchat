@@ -19,7 +19,7 @@
 | Receipt | 回执 | Sent / delivered / read states (DMs always; groups by policy) |
 | Recall | 撤回 | Soft-delete message; admin-only notice in social groups |
 | Presence | 在线状态 | Online / away / offline visibility among friends |
-| Session / Device | 会话 / 设备 | Authenticated client; phone + desktop may coexist; same-type replacement |
+| Session / Device | 会话 / 设备 | Authenticated client; one web + one desktop + one phone may coexist; same-type replacement |
 | Platform owner | 平台终端 | Super-admin that issues enterprise admin accounts |
 | Enterprise admin | 企业管理员 | Admin scoped to one enterprise |
 | Group owner / admin | 群主 / 群管理 | Social-group moderation roles |

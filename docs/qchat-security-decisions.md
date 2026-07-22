@@ -11,7 +11,7 @@ Working defaults until the client signs a formal change order. Documented so eng
 | Auth | Phone (11-digit CN) + password; graphical CAPTCHA on login |
 | SMS OTP | Optional in MVP; phone format validated; OTP adapter stubbed |
 | Invite codes | Permanent & reusable by default; admin can revoke/rotate |
-| Sessions | Concurrent logins keyed by stable **device_id**; re-login on the same device replaces that device only. Calls route media to initiator/answerer devices. |
+| Sessions | At most **one web**, **one desktop**, and **one phone** session. Same-type login replaces the previous. Calls route media by **device_id** (initiator/answerer). |
 | Remember me | Refresh token up to 60 days |
 | Password storage | Argon2id; never recoverable/viewable |
 | Password recovery | None for end users; admin reset only |

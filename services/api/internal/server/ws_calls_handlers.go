@@ -40,6 +40,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		Send:         make(chan []byte, 64),
 	}
 	s.hub.Register(client)
+	s.touchSession(claims.SessionID)
 	go s.writePump(client)
 	// Mattermost-style presence: publish status_change when the first session connects.
 	if s.hub.ConnectionCount(claims.UserID) == 1 {

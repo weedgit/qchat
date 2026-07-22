@@ -106,7 +106,7 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      const device = getAuthDevice();
+      const device = await getAuthDevice();
       const payload: Record<string, any> = {
         phone,
         password,
@@ -116,6 +116,7 @@ export default function LoginPage() {
         device_type: device.deviceType,
         device_name: device.deviceName,
         device_id: device.deviceId,
+        platform: device.platform,
       };
       if (mode === "register") {
         payload.username = username || `user_${phone.slice(-4)}`;

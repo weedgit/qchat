@@ -151,6 +151,7 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
+		s.touchSession(claims.SessionID)
 		ctx := context.WithValue(r.Context(), claimsKey, claims)
 		next(w, r.WithContext(ctx))
 	}
@@ -257,8 +258,11 @@ func decodeJSON(r *http.Request, v any) error {
 }
 
 func clientIP(r *http.Request) string {
+	if x := r.Header.Get("X-Real-IP"); x != "" {
+		return strings.TrimSpace(x)
+	}
 	if x := r.Header.Get("X-Forwarded-For"); x != "" {
-		return strings.Split(x, ",")[0]
+		return strings.TrimSpace(strings.Split(x, ",")[0])
 	}
 	host := r.RemoteAddr
 	if i := strings.LastIndex(host, ":"); i >= 0 {

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
+import PageHeader from "@/components/PageHeader";
 import { api, clearToken, apiBaseUrl } from "@/lib/api";
 import {
   loadLocalNotifyProps,
@@ -29,6 +30,27 @@ interface Profile {
   avatar_url: string;
   profile_visibility: string;
   friend_privacy: string;
+}
+
+function formatSessionActive(iso?: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const sec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (sec < 60) return "just now";
+  if (sec < 3600) {
+    const m = Math.floor(sec / 60);
+    return `${m}m ago`;
+  }
+  if (sec < 86400) {
+    const h = Math.floor(sec / 3600);
+    return `${h}h ago`;
+  }
+  if (sec < 86400 * 7) {
+    const days = Math.floor(sec / 86400);
+    return `${days}d ago`;
+  }
+  return d.toLocaleString();
 }
 
 export default function ProfilePage() {
@@ -57,9 +79,14 @@ export default function ProfilePage() {
       device_type: string;
       device_name: string;
       device_id: string;
+      platform: string;
+      ip: string;
+      ip_region: string;
+      location: string;
       current?: boolean;
       created_at: string;
       expires_at: string;
+      last_active_at: string;
     }[]
   >([]);
   const [sessionsBusy, setSessionsBusy] = useState(false);
@@ -128,9 +155,14 @@ export default function ProfilePage() {
           device_type: String(s?.device_type ?? ""),
           device_name: String(s?.device_name ?? ""),
           device_id: String(s?.device_id ?? ""),
+          platform: String(s?.platform ?? s?.device_name ?? ""),
+          ip: String(s?.ip ?? ""),
+          ip_region: String(s?.ip_region ?? ""),
+          location: String(s?.location ?? s?.ip_region ?? s?.ip ?? ""),
           current: Boolean(s?.current),
           created_at: String(s?.created_at ?? ""),
           expires_at: String(s?.expires_at ?? ""),
+          last_active_at: String(s?.last_active_at ?? s?.created_at ?? ""),
         }))
       );
     } catch {
@@ -218,9 +250,9 @@ export default function ProfilePage() {
   }
 
   return (
-    <AppShell>
+    <AppShell rail={false}>
       <main className="page-pane">
-        <h1>Profile</h1>
+        <PageHeader title="Profile" />
 
         {error && (
           <div className="card">
@@ -427,28 +459,55 @@ export default function ProfilePage() {
             <div>
               <h2 style={{ margin: 0, fontSize: 16 }}>Login sessions</h2>
               <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
-                Each browser or desktop app has its own device id. Revoke a session to sign it out.
+                One web, one desktop, and one phone session. Location is estimated from IP.
               </div>
             </div>
             {loginSessions.length === 0 && (
               <div className="muted">No active sessions.</div>
             )}
-            {loginSessions.map((s) => (
+            {loginSessions.map((s) => {
+              const title =
+                s.platform &&
+                !["web", "desktop", "phone", "mobile", "browser"].includes(
+                  s.platform.trim().toLowerCase()
+                )
+                  ? s.platform
+                  : s.device_name && s.device_name.toLowerCase() !== "web"
+                    ? s.device_name
+                    : s.device_type === "phone"
+                      ? "Mobile"
+                      : s.device_type === "desktop"
+                        ? "Desktop"
+                        : "Web";
+              const typeHint =
+                s.device_type === "phone"
+                  ? "Mobile"
+                  : s.device_type === "desktop"
+                    ? "Desktop"
+                    : "Web";
+              return (
               <div className="list-row" key={s.id}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600 }}>
-                    {s.device_name || s.device_type || "Device"}
+                    {title}
                     {s.current && (
                       <span className="tag-chip" style={{ marginLeft: 8 }}>
                         This device
                       </span>
                     )}
                   </div>
-                  <div className="muted" style={{ fontSize: 12, overflowWrap: "anywhere" }}>
-                    {s.device_type} · {s.device_id.slice(0, 8)}…
+                  {title !== typeHint && (
+                    <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                      {typeHint} session
+                    </div>
+                  )}
+                  <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                    {s.location || "Unknown location"}
                   </div>
-                  <div className="muted" style={{ fontSize: 11 }}>
-                    Signed in {s.created_at ? new Date(s.created_at).toLocaleString() : "—"}
+                  <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                    Last active {formatSessionActive(s.last_active_at || s.created_at)}
+                    {" · "}
+                    signed in {s.created_at ? new Date(s.created_at).toLocaleString() : "—"}
                   </div>
                 </div>
                 <button
@@ -460,7 +519,8 @@ export default function ProfilePage() {
                   {s.current ? "Sign out" : "Revoke"}
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

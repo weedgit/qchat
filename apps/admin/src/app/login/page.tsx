@@ -50,8 +50,9 @@ export default function AdminLoginPage() {
           invite_code: inviteCode,
           captcha_id: captcha?.id ?? "",
           captcha: captchaCode,
-          device_type: "desktop",
+          device_type: "web",
           device_name: "admin-web",
+          platform: "Admin · Web",
           remember_me: remember,
         }),
       });

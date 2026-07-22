@@ -72,7 +72,7 @@ You do **not** need a full Android SDK on Linux for Expo Go. You only need `adb`
 
 ## Auth device
 
-Login/register send `device_type: "phone"` (web uses `desktop`).
+Login/register send `device_type: "phone"` (browser uses `web`, Electron uses `desktop`). At most one session per type.
 
 ## Tabs (随行聊-inspired)
 

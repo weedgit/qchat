@@ -4,6 +4,8 @@ declare global {
   interface QchatDesktopBridge {
     isDesktop: true;
     platform: string;
+    /** Friendly OS label e.g. "Windows 11", "Ubuntu 24.04". */
+    platformLabel?: string;
     version: string;
     webUrl: string;
     deviceName: string;

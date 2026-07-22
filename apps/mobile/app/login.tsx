@@ -87,7 +87,7 @@ export default function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
-      const device = getAuthDevice();
+      const device = await getAuthDevice();
       const payload: Record<string, unknown> = {
         phone,
         password,
@@ -96,6 +96,8 @@ export default function LoginScreen() {
         captcha: captchaCode,
         device_type: device.deviceType,
         device_name: device.deviceName,
+        device_id: device.deviceId,
+        platform: device.platform,
       };
       if (mode === "register") {
         payload.username = username || `user_${phone.slice(-4)}`;

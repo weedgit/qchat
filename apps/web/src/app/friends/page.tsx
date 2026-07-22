@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import FriendNoteEditor from "@/components/FriendNoteEditor";
+import PageHeader from "@/components/PageHeader";
 import { api, asList } from "@/lib/api";
 import { Friend, normalizeFriend } from "@/lib/types";
 
@@ -118,9 +119,9 @@ export default function FriendsPage() {
   const editing = accepted.find((f) => f.friendshipId === editingId) ?? null;
 
   return (
-    <AppShell>
+    <AppShell rail={false}>
       <main className="page-pane">
-        <h1>Friends</h1>
+        <PageHeader title="Friends" />
 
         <div className="card">
           <form className="row-inline" onSubmit={search}>
