@@ -429,6 +429,16 @@ export function useChat() {
                 c.id === activeIdRef.current || msg.mine
                   ? c.unreadCount
                   : c.unreadCount + 1,
+              mentionCount:
+                c.id === activeIdRef.current || msg.mine
+                  ? c.mentionCount ?? 0
+                  : (() => {
+                      const isMention =
+                        Boolean((payload as any)?.mention_all) ||
+                        (Array.isArray((payload as any)?.mentions) &&
+                          (payload as any).mentions.includes(meRef.current?.id));
+                      return (c.mentionCount ?? 0) + (isMention ? 1 : 0);
+                    })(),
             }
           : c
       );
@@ -460,7 +470,12 @@ export function useChat() {
             conversation?.type === "dm"
               ? meRef.current?.nickname ?? ""
               : conversation?.title ?? "";
-          const title = target ? `${sender} → ${target}` : sender;
+          let title = target ? `${sender} → ${target}` : sender;
+          if (isMention) {
+            title = Boolean((payload as any)?.mention_all)
+              ? `Mentioned everyone · ${title}`
+              : `Mentioned you · ${title}`;
+          }
           if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
             window.qchatDesktop.notifyMessage({
               title,
@@ -479,7 +494,11 @@ export function useChat() {
               window.focus();
               setActiveId(msg.conversationId);
               setConversations((prev) =>
-                prev.map((c) => (c.id === msg.conversationId ? { ...c, unreadCount: 0 } : c))
+                prev.map((c) =>
+                  c.id === msg.conversationId
+                    ? { ...c, unreadCount: 0, mentionCount: 0 }
+                    : c
+                )
               );
               loadMessages(msg.conversationId);
               notification.close();
@@ -575,7 +594,7 @@ export function useChat() {
       if (prevId && prevId !== id) stopTyping(prevId);
       setActiveId(id);
       setConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c))
+        prev.map((c) => (c.id === id ? { ...c, unreadCount: 0, mentionCount: 0 } : c))
       );
       // Group role only applies to social_group; DMs must not hit /v1/groups (404).
       const conv =

@@ -505,6 +505,15 @@ export default function ChatPageInner() {
     mute_all?: boolean;
     forbid_member_friend_add?: boolean;
   } | null>(null);
+  /** Members available for @ autocomplete (Mattermost suggestion box). */
+  const [mentionMembers, setMentionMembers] = useState<
+    { userId: string; username: string; displayName: string; avatarUrl?: string }[]
+  >([]);
+  const [mentionMenu, setMentionMenu] = useState<{
+    query: string;
+    start: number;
+    index: number;
+  } | null>(null);
   const [groupEditTitle, setGroupEditTitle] = useState("");
   const [groupEditDesc, setGroupEditDesc] = useState("");
   const [groupEditAnnounce, setGroupEditAnnounce] = useState("");
@@ -525,6 +534,61 @@ export default function ChatPageInner() {
   const active = chat.conversations.find((c) => c.id === chat.activeId) ?? null;
   const activeMessages = chat.activeId ? chat.messages[chat.activeId] ?? [] : [];
   const isGroup = active?.type === "social_group" || active?.type === "group";
+
+  const mentionSuggestions = useMemo(() => {
+    if (!mentionMenu) return [];
+    const q = mentionMenu.query.toLowerCase();
+    const specials =
+      isGroup && (!q || "everyone".startsWith(q) || "all".startsWith(q))
+        ? [
+            {
+              userId: "__everyone__",
+              username: "everyone",
+              displayName: "Notify everyone",
+              avatarUrl: undefined as string | undefined,
+            },
+          ]
+        : [];
+    const people = mentionMembers.filter((m) => {
+      if (!q) return true;
+      return (
+        m.username.toLowerCase().startsWith(q) ||
+        m.displayName.toLowerCase().includes(q)
+      );
+    });
+    return [...specials, ...people].slice(0, 8);
+  }, [mentionMenu, mentionMembers, isGroup]);
+
+  function updateMentionMenu(value: string, cursor: number) {
+    const before = value.slice(0, cursor);
+    const m = before.match(/(^|[\s([{])@([a-zA-Z0-9_]*)$/);
+    if (!m || !isGroup) {
+      setMentionMenu(null);
+      return;
+    }
+    setMentionMenu({
+      query: m[2] || "",
+      start: cursor - (m[2]?.length ?? 0) - 1,
+      index: 0,
+    });
+  }
+
+  function applyMention(username: string) {
+    if (!mentionMenu) return;
+    const el = draftRef.current;
+    const cursor = el?.selectionStart ?? draft.length;
+    const before = draft.slice(0, mentionMenu.start);
+    const after = draft.slice(cursor);
+    const insert = `@${username} `;
+    const next = before + insert + after;
+    setDraft(next);
+    setMentionMenu(null);
+    window.setTimeout(() => {
+      const pos = before.length + insert.length;
+      el?.focus();
+      el?.setSelectionRange(pos, pos);
+    }, 0);
+  }
   const mobilePane: "list" | "chat" =
     narrowLayout && mobileChatOpen && active ? "chat" : "list";
 
@@ -839,6 +903,39 @@ export default function ChatPageInner() {
       cancelled = true;
     };
   }, [showDetails, active]);
+
+  // Prefetch group members for @ autocomplete while composing.
+  useEffect(() => {
+    setMentionMenu(null);
+    if (!active || (active.type !== "social_group" && active.type !== "group")) {
+      setMentionMembers([]);
+      return;
+    }
+    let cancelled = false;
+    api<any>(`/v1/groups/${active.id}`)
+      .then((g) => {
+        if (cancelled) return;
+        const meId = chat.me?.id;
+        const list = Array.isArray(g?.members) ? g.members : [];
+        setMentionMembers(
+          list
+            .filter((m: any) => String(m?.user_id ?? "") !== meId)
+            .map((m: any) => ({
+              userId: String(m?.user_id ?? ""),
+              username: String(m?.username ?? ""),
+              displayName: String(m?.display_name ?? m?.username ?? ""),
+              avatarUrl: m?.avatar_url ? String(m.avatar_url) : undefined,
+            }))
+            .filter((m: { username: string }) => m.username)
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setMentionMembers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active?.id, active?.type, chat.me?.id]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1823,6 +1920,29 @@ export default function ChatPageInner() {
                     </>
                   ) : (
                     <>
+                      {mentionMenu && mentionSuggestions.length > 0 && (
+                        <div className="mention-menu" role="listbox">
+                          {mentionSuggestions.map((m, i) => (
+                            <button
+                              key={m.userId + m.username}
+                              type="button"
+                              className={`mention-option ${i === mentionMenu.index ? "active" : ""}`}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                applyMention(m.username);
+                              }}
+                            >
+                              {m.userId !== "__everyone__" && (
+                                <Avatar name={m.displayName} url={m.avatarUrl} size={28} />
+                              )}
+                              <span className="mention-option-text">
+                                <strong>@{m.username}</strong>
+                                <span className="muted">{m.displayName}</span>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <input
                         ref={fileInputRef}
                         type="file"
@@ -1849,18 +1969,63 @@ export default function ChatPageInner() {
                       <textarea
                         ref={draftRef}
                         rows={1}
-                        placeholder="Message"
+                        placeholder={isGroup ? "Message · try @name" : "Message"}
                         value={draft}
                         disabled={voiceBusy}
                         onChange={(e) => {
                           const value = e.target.value;
+                          const cursor = e.target.selectionStart ?? value.length;
                           setDraft(value);
+                          updateMentionMenu(value, cursor);
                           if (!chat.activeId) return;
                           if (value.trim()) chat.notifyTyping(chat.activeId);
                           else chat.stopTyping(chat.activeId);
                         }}
+                        onClick={(e) => {
+                          const t = e.currentTarget;
+                          updateMentionMenu(t.value, t.selectionStart ?? t.value.length);
+                        }}
                         onPaste={onComposerPaste}
                         onKeyDown={(e) => {
+                          if (mentionMenu && mentionSuggestions.length > 0) {
+                            if (e.key === "ArrowDown") {
+                              e.preventDefault();
+                              setMentionMenu((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      index: (prev.index + 1) % mentionSuggestions.length,
+                                    }
+                                  : prev
+                              );
+                              return;
+                            }
+                            if (e.key === "ArrowUp") {
+                              e.preventDefault();
+                              setMentionMenu((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      index:
+                                        (prev.index - 1 + mentionSuggestions.length) %
+                                        mentionSuggestions.length,
+                                    }
+                                  : prev
+                              );
+                              return;
+                            }
+                            if (e.key === "Enter" || e.key === "Tab") {
+                              e.preventDefault();
+                              const pick = mentionSuggestions[mentionMenu.index];
+                              if (pick) applyMention(pick.username);
+                              return;
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              setMentionMenu(null);
+                              return;
+                            }
+                          }
                           if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
                             send();

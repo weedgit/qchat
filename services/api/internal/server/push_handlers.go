@@ -179,7 +179,14 @@ func (s *Server) pushToUser(ctx context.Context, cfg push.Config, userID string,
 
 // notifyMessagePush fans out Telegram-style "Sender → Recipient" message pushes
 // (Mattermost getPushNotificationMessage puts the sender in the notification title).
-func (s *Server) notifyMessagePush(ctx context.Context, convID, senderID, senderName, senderAvatar, preview string, memberIDs []string) {
+// Respects conversation mute and user notify_props (desktop=mention / mentions_only).
+func (s *Server) notifyMessagePush(
+	ctx context.Context,
+	convID, senderID, senderName, senderAvatar, preview string,
+	memberIDs []string,
+	mentionIDs []string,
+	mentionAll bool,
+) {
 	cfg := s.pushCfg()
 	if !cfg.Enabled() {
 		return
@@ -195,13 +202,50 @@ func (s *Server) notifyMessagePush(ctx context.Context, convID, senderID, sender
 	if strings.HasPrefix(senderAvatar, "http://") || strings.HasPrefix(senderAvatar, "https://") {
 		icon = senderAvatar
 	}
+	mentioned := map[string]struct{}{}
+	for _, id := range mentionIDs {
+		mentioned[id] = struct{}{}
+	}
 	for _, uid := range memberIDs {
 		if uid == senderID {
 			continue
 		}
+		var muted bool
+		_ = s.db.QueryRow(ctx, `
+			SELECT muted FROM conversation_members
+			WHERE conversation_id=$1 AND user_id=$2`, convID, uid).Scan(&muted)
+		if muted {
+			continue
+		}
+		_, isMention := mentioned[uid]
+		if mentionAll {
+			isMention = true
+		}
+		var raw []byte
+		_ = s.db.QueryRow(ctx, `SELECT notify_props FROM users WHERE id=$1`, uid).Scan(&raw)
+		desktop := "all"
+		mentionsOnly := false
+		if len(raw) > 0 {
+			var props map[string]any
+			if json.Unmarshal(raw, &props) == nil {
+				if d, ok := props["desktop"].(string); ok && d != "" {
+					desktop = d
+				}
+				if m, ok := props["mentions_only"].(bool); ok {
+					mentionsOnly = m
+				}
+			}
+		}
+		if desktop == "none" {
+			continue
+		}
+		if desktop == "mention" || mentionsOnly {
+			if !isMention {
+				continue
+			}
+		}
 		title := senderName
 		if convType == "dm" {
-			// Telegram web titles DMs "Sender → Recipient account".
 			var recipient string
 			_ = s.db.QueryRow(ctx, `SELECT display_name FROM users WHERE id=$1`, uid).Scan(&recipient)
 			if recipient != "" {
@@ -210,9 +254,18 @@ func (s *Server) notifyMessagePush(ctx context.Context, convID, senderID, sender
 		} else if convTitle != "" {
 			title = senderName + " → " + convTitle
 		}
+		body := preview
+		if isMention {
+			if mentionAll {
+				title = "Mentioned everyone · " + title
+			} else {
+				title = "Mentioned you · " + title
+			}
+			body = preview
+		}
 		s.pushToUser(ctx, cfg, uid, push.WebPayload{
 			Title:          title,
-			Body:           preview,
+			Body:           body,
 			Tag:            "qchat-" + convID,
 			Type:           "message",
 			Icon:           icon,

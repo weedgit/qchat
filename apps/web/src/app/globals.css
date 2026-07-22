@@ -1212,6 +1212,43 @@ select:focus {
   display: flex;
   gap: 8px;
   align-items: flex-end;
+  position: relative;
+}
+.mention-menu {
+  position: absolute;
+  left: 44px;
+  right: 48px;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+}
+.mention-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text);
+}
+.mention-option:hover,
+.mention-option.active {
+  background: var(--bg-hover);
+}
+.mention-option-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.mention-option-text .muted {
+  font-size: 12px;
 }
 .composer textarea,
 .composer textarea:focus {

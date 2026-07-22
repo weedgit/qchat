@@ -552,7 +552,8 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		         ELSE m.body
 		       END,
 		       m.media_url, m.reply_to_id::text, m.mention_all, m.recalled, m.created_at,
-		       u.display_name, m.edited_at
+		       u.display_name, m.edited_at,
+		       COALESCE((SELECT array_agg(x::text) FROM unnest(m.mentions) AS x), '{}')
 		FROM messages m JOIN users u ON u.id=m.sender_id
 		WHERE m.conversation_id=$1 AND m.created_at >= $2
 		  AND ($3 OR m.recalled=FALSE)
@@ -570,13 +571,18 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		var created time.Time
 		var editedAt *time.Time
 		var replyPtr *string
-		_ = rows.Scan(&id, &sid, &cmid, &seq, &typ, &body, &media, &replyPtr, &mentionAll, &recalled, &created, &dname, &editedAt)
+		var mentions []string
+		_ = rows.Scan(&id, &sid, &cmid, &seq, &typ, &body, &media, &replyPtr, &mentionAll, &recalled, &created, &dname, &editedAt, &mentions)
 		if replyPtr != nil {
 			reply = *replyPtr
+		}
+		if mentions == nil {
+			mentions = []string{}
 		}
 		item := map[string]any{
 			"id": id, "sender_id": sid, "client_msg_id": cmid, "seq": seq, "type": typ,
 			"body": body, "media_url": media, "reply_to_id": reply, "mention_all": mentionAll,
+			"mentions": mentions,
 			"recalled": recalled, "created_at": created, "sender_name": dname,
 			"conversation_id": convID,
 		}
@@ -879,15 +885,15 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if len([]rune(preview)) > 80 {
 		preview = string([]rune(preview)[:80]) + "…"
 	}
-	go s.notifyMessagePush(context.Background(), convID, c.UserID, senderName, senderAvatar, preview, memberIDs)
+	go s.notifyMessagePush(context.Background(), convID, c.UserID, senderName, senderAvatar, preview, memberIDs, req.Mentions, req.MentionAll)
 	writeJSON(w, 201, payload)
 }
 
-// parseMentions mirrors Mattermost @user / @channel / @all mention extraction.
+// parseMentions mirrors Mattermost @user / @channel / @all / @everyone extraction.
 func (s *Server) parseMentions(r *http.Request, convID, enterpriseID, body string) ([]string, bool) {
-	lower := strings.ToLower(body)
-	mentionAll := strings.Contains(lower, "@all") || strings.Contains(lower, "@channel") || strings.Contains(lower, "@everyone")
-	re := regexp.MustCompile(`@([a-zA-Z0-9_]{2,32})`)
+	reAll := regexp.MustCompile(`(?i)@(?:all|channel|everyone)\b`)
+	mentionAll := reAll.MatchString(body)
+	re := regexp.MustCompile(`@([a-zA-Z0-9_]{2,32})\b`)
 	names := map[string]struct{}{}
 	for _, m := range re.FindAllStringSubmatch(body, -1) {
 		name := strings.ToLower(m[1])
