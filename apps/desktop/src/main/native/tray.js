@@ -67,9 +67,11 @@ function getTray() {
   return tray;
 }
 
-/** Register once: destroy tray before quit so icons do not linger (esp. Windows). */
+/** Register once: mark quit + destroy tray so icons do not linger (esp. Windows). */
 function registerTrayQuitHook() {
   app.on("before-quit", () => {
+    const { markAppQuitting } = require("../app/quitState");
+    markAppQuitting();
     destroySystemTray();
   });
 }

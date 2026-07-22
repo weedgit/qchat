@@ -10,6 +10,8 @@ const { IPC } = require("../../shared/ipc/channels");
 const { getPreloadPath, iconOption, getDesktopRoot } = require("../app/configuration/paths");
 const { resolveStartUrl } = require("../app/configuration/webUrl");
 const { attachNavigationGuards } = require("../security/navigation");
+const { getTray } = require("../native/tray");
+const { isAppQuitting } = require("../app/quitState");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -130,7 +132,16 @@ function createMainWindow(opts) {
 
   mainWindow.on("resize", saveWindowState);
   mainWindow.on("move", saveWindowState);
-  mainWindow.on("close", saveWindowState);
+  // Mattermost minimizeToTray: close button hides to tray instead of quitting.
+  mainWindow.on("close", (event) => {
+    saveWindowState();
+    if (isAppQuitting()) return;
+    const tray = getTray();
+    if (!tray || tray.isDestroyed()) return;
+    event.preventDefault();
+    mainWindow.blur();
+    mainWindow.hide();
+  });
 
   attachNavigationGuards(mainWindow, webUrl);
 

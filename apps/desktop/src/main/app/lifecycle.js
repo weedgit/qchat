@@ -76,6 +76,8 @@ function startApp() {
   });
 
   app.on("window-all-closed", () => {
+    // With close-to-tray the window is hidden, not closed — this rarely fires.
+    // Only quit when the window was actually destroyed (no tray path).
     if (process.platform !== "darwin") app.quit();
   });
 }
