@@ -56,7 +56,7 @@
 | SHELL-20 | MM | Download → OS save dialog | downloadsManager | Done | `feat-kevin-desktop-download-save` |
 | SHELL-21 | MM | Download completion notification | notifications/Download | Todo | `feat-kevin-desktop-download-notify` |
 | SHELL-22 | MM | Right-click context menu | contextMenu.ts | Todo | `feat-kevin-desktop-context-menu` |
-| SHELL-23 | MM | System tray icon | tray/tray.ts | Todo | `feat-kevin-desktop-system-tray` |
+| SHELL-23 | MM | System tray icon | tray/tray.ts | Done | `feat-kevin-desktop-system-tray` |
 | SHELL-24 | MM | Minimize / close to tray | minimizeToTray | Todo | `feat-kevin-desktop-close-to-tray` |
 | SHELL-25 | MM | Tray menu Show / Quit | menus/tray.ts | Todo | `feat-kevin-desktop-tray-menu` |
 | SHELL-26 | MM | Autostart on OS login | AutoLauncher.ts | Todo | `feat-kevin-desktop-autostart` |
@@ -82,18 +82,17 @@
 
 ### Todo backlog (implement one row = one commit)
 
-1. `SHELL-23` system tray  
-2. `SHELL-24` close-to-tray  
-3. `SHELL-25` tray menu  
-4. `NOTI-04` tray unread state  
-5. `NOTI-03` dock/taskbar badge  
-6. `SHELL-26` autostart  
-7. `SHELL-28` `qchat://` protocol  
-8. `SHELL-29` deep-link open chat  
-9. `AUTH-03` `safeStorage`  
-10. `CALL-02` screenshare  
-11. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-12. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+1. `SHELL-24` close-to-tray  
+2. `SHELL-25` tray menu Show / Quit  
+3. `NOTI-04` tray unread state  
+4. `NOTI-03` dock/taskbar badge  
+5. `SHELL-26` autostart  
+6. `SHELL-28` `qchat://` protocol  
+7. `SHELL-29` deep-link open chat  
+8. `AUTH-03` `safeStorage`  
+9. `CALL-02` screenshare  
+10. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
+11. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
 ```text
 pick one Todo row

@@ -4,6 +4,10 @@ const { APP_TITLE } = require("../../shared/constants");
 const { getIconPath } = require("../app/configuration/paths");
 const { resolveWebUrl } = require("../app/configuration/webUrl");
 const { buildAppMenu } = require("../native/menu");
+const {
+  createSystemTray,
+  registerTrayQuitHook,
+} = require("../native/tray");
 const { registerPermissionHandler } = require("../security/permissions");
 const { registerDownloadHandler } = require("../services/downloads");
 const { registerIpcHandlers } = require("../ipc/handlers");
@@ -27,9 +31,13 @@ function startApp() {
     return;
   }
 
+  const focus = () => focusMainWindow(() => createMainWindow({ webUrl, isDev }));
+
   app.on("second-instance", () => {
-    focusMainWindow(() => createMainWindow({ webUrl, isDev }));
+    focus();
   });
+
+  registerTrayQuitHook();
 
   app.whenReady().then(() => {
     app.setName(APP_TITLE);
@@ -43,7 +51,7 @@ function startApp() {
     registerIpcHandlers({
       webUrl,
       getMainWindow,
-      focusMainWindow: () => focusMainWindow(() => createMainWindow({ webUrl, isDev })),
+      focusMainWindow: focus,
       sendConversationToRenderer,
       flushPendingConversation,
     });
@@ -55,12 +63,14 @@ function startApp() {
       getMainWindow,
     });
     createMainWindow({ webUrl, isDev });
+    // Mattermost TrayIcon.init: icon in notification area; click focuses main window.
+    createSystemTray({ focusMainWindow: focus });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createMainWindow({ webUrl, isDev });
       } else {
-        focusMainWindow(() => createMainWindow({ webUrl, isDev }));
+        focus();
       }
     });
   });
