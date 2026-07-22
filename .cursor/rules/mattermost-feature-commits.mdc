@@ -17,7 +17,7 @@ alwaysApply: true
 When the user requests a branch, use:
 
 ```
-{feat|fix}-hitman-{web|desktop|mobile}-{kebab-feature-slug}
+{feat|fix}-kevin-{web|desktop|mobile}-{kebab-feature-slug}
 ```
 
 | Part | Values | Meaning |
@@ -33,7 +33,7 @@ Do not use vague slugs (`misc`, `updates`, `wip`) or omit the surface.
 
 ## 2. Reference Mattermost
 
-Before and while implementing, look up the matching Mattermost pattern under `mattermost/` (especially `mattermost/source/server` and `mattermost/source/webapp`).
+Before and while implementing, look up the matching Mattermost pattern under `mattermost/` (especially `mattermost/source/server` and `mattermost-desktop`).
 
 - Mirror Mattermost’s behavior, API shape, and UX placement where it fits Qchat.
 - In code comments (and commit bodies when committing), name the Mattermost concept (e.g. `status_change`, `favoriteChannel`, `notify_props`, `applyTheme`).
