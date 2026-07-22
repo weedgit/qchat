@@ -1,3 +1,11 @@
+# Requirements — Short Test Checklist
+
+> Condensed from `requirements-en.md` for cross-platform testing.  
+> Platforms: **desk** (Windows/macOS), **web**, **mobile** (iOS/Android).  
+> Admin items are **admin** (back-office web).
+
+## Client
+
 1. Register with phone + invite code (desk/web/mobile)
 2. Login with password + CAPTCHA (desk/web/mobile)
 3. Remember login / stay signed in (desk/web/mobile)
@@ -26,18 +34,21 @@
 26. Group mute (all / timed / permanent member) (desk/web/mobile)
 27. New member cannot see history before join (desk/web/mobile)
 28. Push notifications (background) (mobile)
-29. Message latency < 1s (desk/web/mobile)
+29. Message latency &lt; 1s (desk/web/mobile)
 
-Admin 
-30. Enterprise invite codes (create / rotate / revoke) (admin) 
-31. Ban / block user login (admin) 32. Reset user password (admin)
+## Admin
+
+30. Enterprise invite codes (create / rotate / revoke) (admin)
+31. Ban / block user login (admin)
+32. Reset user password (admin)
 33. View chat history (with reason / audit) (admin)
 34. Manage users / enterprises / devices (admin)
 35. View registration IP / region (admin)
 36. Audit logs for sensitive admin actions (admin)
 
-Non-functional smoke 
+## Non-functional smoke
+
 37. Encrypted transport (TLS) (desk/web/mobile)
-38. Concurrent online users (>1000) (server)
+38. Concurrent online users (&gt;1000) (server)
 39. Chat history retained ≥ 3 months (server)
 40. Backup / recovery after server failure (server)
