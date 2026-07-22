@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -11,14 +12,26 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useChat } from "../../src/context/ChatContext";
-import { conversationDisplayName } from "../../src/lib/types";
+import { Message, conversationDisplayName } from "../../src/lib/types";
 import { colors, radius, spacing } from "../../src/theme";
+
+function messageBody(item: Message): string {
+  if (item.type === "image") return item.content || "Photo";
+  if (item.type === "file") return item.content || "File";
+  if (item.type === "voice") return item.content || "Voice message";
+  if (item.mediaUrl && !item.content) {
+    if (item.type === "image") return "Photo";
+    if (item.type === "voice") return "Voice message";
+    return "File";
+  }
+  return item.content || "";
+}
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const convId = String(id);
   const navigation = useNavigation();
-  const { conversations, messages, openConversation, sendMessage } = useChat();
+  const { conversations, messages, openConversation, sendMessage, recallMessage } = useChat();
   const [text, setText] = useState("");
   const listRef = useRef<FlatList>(null);
 
@@ -51,6 +64,22 @@ export default function ChatScreen() {
     await sendMessage(convId, body);
   }
 
+  function onLongPressMessage(item: Message) {
+    if (!item.mine || item.recalled || item.pending || item.failed) return;
+    Alert.alert("Message", undefined, [
+      {
+        text: "Recall",
+        style: "destructive",
+        onPress: () => {
+          recallMessage(item.id, convId).catch((e: any) => {
+            Alert.alert("Error", e?.message || "Could not recall message");
+          });
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }
+
   return (
     <KeyboardAvoidingView
       style={styles.root}
@@ -62,21 +91,63 @@ export default function ChatScreen() {
         data={list}
         keyExtractor={(m) => m.id}
         contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          <Text style={styles.emptyThread}>No messages here yet…</Text>
+        }
         renderItem={({ item }) => {
+          // Mirror web/Mattermost delete: recalled → system status, not a bubble.
+          if (item.recalled) {
+            const label = item.mine
+              ? "You recalled a message"
+              : item.senderName
+                ? `${item.senderName} recalled a message`
+                : "Message recalled";
+            return (
+              <View style={styles.systemRow}>
+                <Text style={styles.systemText}>{label}</Text>
+              </View>
+            );
+          }
+
           const mine = Boolean(item.mine);
+          const isMedia =
+            item.type === "image" ||
+            item.type === "file" ||
+            item.type === "voice" ||
+            Boolean(item.mediaUrl);
           return (
-            <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.peerWrap]}>
+            <Pressable
+              onLongPress={() => onLongPressMessage(item)}
+              delayLongPress={350}
+              style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.peerWrap]}
+            >
               <View style={[styles.bubble, mine ? styles.mine : styles.peer]}>
                 {!mine && item.senderName ? (
                   <Text style={styles.sender}>{item.senderName}</Text>
                 ) : null}
-                <Text style={[styles.body, mine ? styles.mineText : styles.peerText]}>
-                  {item.recalled ? "消息已撤回" : item.content}
-                </Text>
-                {item.pending ? <Text style={styles.status}>发送中…</Text> : null}
-                {item.failed ? <Text style={styles.fail}>发送失败</Text> : null}
+                {isMedia ? (
+                  <Text style={[styles.mediaLabel, mine ? styles.mineText : styles.peerText]}>
+                    {item.type === "image"
+                      ? "🖼 Photo"
+                      : item.type === "voice"
+                        ? "🎤 Voice message"
+                        : "📎 File"}
+                    {item.content &&
+                    item.content !== "Photo" &&
+                    item.content !== "File" &&
+                    item.content !== "Voice message"
+                      ? `\n${item.content}`
+                      : ""}
+                  </Text>
+                ) : (
+                  <Text style={[styles.body, mine ? styles.mineText : styles.peerText]}>
+                    {messageBody(item)}
+                  </Text>
+                )}
+                {item.pending ? <Text style={styles.status}>Sending…</Text> : null}
+                {item.failed ? <Text style={styles.fail}>Failed to send</Text> : null}
               </View>
-            </View>
+            </Pressable>
           );
         }}
       />
@@ -85,12 +156,12 @@ export default function ChatScreen() {
           style={styles.input}
           value={text}
           onChangeText={setText}
-          placeholder="输入消息"
+          placeholder="Message"
           placeholderTextColor={colors.textMuted}
           multiline
         />
         <Pressable style={styles.send} onPress={onSend}>
-          <Text style={styles.sendText}>发送</Text>
+          <Text style={styles.sendText}>Send</Text>
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -99,7 +170,23 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  list: { padding: spacing.md, paddingBottom: spacing.lg },
+  list: { padding: spacing.md, paddingBottom: spacing.lg, flexGrow: 1 },
+  emptyThread: {
+    textAlign: "center",
+    color: colors.textMuted,
+    marginTop: spacing.xxl,
+    fontSize: 14,
+  },
+  systemRow: {
+    alignItems: "center",
+    marginVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  systemText: {
+    fontSize: 12,
+    color: colors.textMuted,
+    textAlign: "center",
+  },
   bubbleWrap: { marginBottom: spacing.sm, flexDirection: "row" },
   mineWrap: { justifyContent: "flex-end" },
   peerWrap: { justifyContent: "flex-start" },
@@ -117,6 +204,7 @@ const styles = StyleSheet.create({
   },
   sender: { fontSize: 11, color: colors.textMuted, marginBottom: 2 },
   body: { fontSize: 16, lineHeight: 22 },
+  mediaLabel: { fontSize: 15, lineHeight: 22 },
   mineText: { color: "#fff" },
   peerText: { color: colors.text },
   status: { fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 4 },

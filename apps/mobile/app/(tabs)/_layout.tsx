@@ -28,8 +28,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="chats"
         options={{
-          title: "消息",
-          tabBarLabel: "消息",
+          title: "Chats",
+          tabBarLabel: "Chats",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubbles-outline" size={size} color={color} />
           ),
@@ -38,8 +38,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="contacts"
         options={{
-          title: "通讯录",
-          tabBarLabel: "通讯录",
+          title: "Contacts",
+          tabBarLabel: "Contacts",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
           ),
@@ -48,8 +48,8 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="me"
         options={{
-          title: "我的",
-          tabBarLabel: "我的",
+          title: "Me",
+          tabBarLabel: "Me",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),

@@ -9,10 +9,10 @@ export default function MeScreen() {
   const { user, signOut } = useAuth();
 
   async function onLogout() {
-    Alert.alert("退出登录", "确定退出当前账号？", [
-      { text: "取消", style: "cancel" },
+    Alert.alert("Sign out", "Sign out of this account?", [
+      { text: "Cancel", style: "cancel" },
       {
-        text: "退出",
+        text: "Sign out",
         style: "destructive",
         onPress: async () => {
           await signOut();
@@ -35,11 +35,11 @@ export default function MeScreen() {
 
       <View style={styles.section}>
         <Row label="API" value={apiBaseUrl()} />
-        <Row label="用户 ID" value={user?.id || "—"} />
+        <Row label="User ID" value={user?.id || "—"} />
       </View>
 
       <Pressable style={styles.logout} onPress={onLogout}>
-        <Text style={styles.logoutText}>退出登录</Text>
+        <Text style={styles.logoutText}>Sign out</Text>
       </Pressable>
     </View>
   );

@@ -28,7 +28,20 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      "expo-dev-client",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          },
+          "ios": {
+            "networkInspector": false
+          }
+        }
+      ],
+      "./plugins/withTrustedQchatCert.js"
     ],
     "experiments": {
       "typedRoutes": true
