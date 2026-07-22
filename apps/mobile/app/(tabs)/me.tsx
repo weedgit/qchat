@@ -1,5 +1,5 @@
 /**
- * Mattermost-style profile hub (mirror web apps/web/src/app/profile/page.tsx).
+ * profile hub (mirror web apps/web/src/app/profile/page.tsx).
  * Notifications / sessions / sign-out live on the Settings tab.
  */
 import { useCallback, useEffect, useState, type ComponentProps } from "react";

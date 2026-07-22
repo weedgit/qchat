@@ -1,6 +1,5 @@
 /**
- * App settings — appearance, notifications, sessions, phone, about
- * (Mattermost Account Settings / Display → Theme).
+ * App settings — appearance, notifications, sessions, phone, about.
  */
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {

@@ -21,7 +21,7 @@ function trayTooltip() {
 }
 
 /**
- * Mattermost TrayIcon.update: tooltip (and macOS title) reflect unread / mention state.
+ * TrayIcon.update: tooltip (and macOS title) reflect unread / mention state.
  * Separate tray images deferred until assets exist; web wiring is a follow-up.
  *
  * @param {{ unread?: number, mentions?: number } | null | undefined} payload

@@ -1,6 +1,6 @@
 # Qchat Security Review Checklist
 
-Manual review before public / internet-facing use. Mirror Mattermost compliance concerns: auth abuse, tenant isolation, admin access, uploads.
+Manual review before public / internet-facing use. compliance concerns: auth abuse, tenant isolation, admin access, uploads.
 
 Run through this list on a staging host after `QCHAT_ENV=production` and a rotated JWT secret.
 

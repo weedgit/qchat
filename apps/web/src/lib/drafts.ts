@@ -1,4 +1,4 @@
-/** Mattermost-style channel drafts stored locally per conversation. */
+/** channel drafts stored locally per conversation. */
 const DRAFT_KEY = "qchat.drafts";
 
 export function loadDrafts(): Record<string, string> {

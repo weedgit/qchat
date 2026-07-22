@@ -1,4 +1,4 @@
-/** Mattermost-style user notify_props helpers. */
+/** user notify_props helpers. */
 export type NotifyProps = {
   desktop: "all" | "mention" | "none";
   sound: boolean;

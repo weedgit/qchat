@@ -14,7 +14,7 @@ function yieldToMain(): Promise<void> {
 }
 
 /**
- * Mattermost/Telegram-style: show a downscaled bitmap for large images.
+ * /Telegram-style: show a downscaled bitmap for large images.
  * Small images keep a cheap object URL. Non-images return "".
  */
 export async function makeImagePreviewUrl(file: File | Blob): Promise<string> {

@@ -1,7 +1,7 @@
 import type { Room } from "livekit-client";
 import { ConnectionQuality, Track } from "livekit-client";
 
-/** Mattermost DEGRADED_CALL_QUALITY_ALERT_WAIT — avoid flashing on brief dips. */
+/** DEGRADED_CALL_QUALITY_ALERT_WAIT — avoid flashing on brief dips. */
 export const DEGRADED_CALL_QUALITY_ALERT_WAIT_MS = 20_000;
 
 export type CallQualityLevel = "excellent" | "good" | "poor" | "lost" | "unknown";
@@ -76,7 +76,7 @@ export function friendlyCallError(err: unknown): string {
   return raw;
 }
 
-/** Best-effort RTC stats from the local mic sender (optional Mattermost-style stats). */
+/** Best-effort RTC stats from the local mic sender (optional stats). */
 export async function sampleCallStats(room: Room | null): Promise<CallRtcStats> {
   const empty: CallRtcStats = { rttMs: null, jitterMs: null, packetsLost: null, bitrateKbps: null };
   if (!room) return empty;

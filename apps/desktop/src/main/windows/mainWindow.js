@@ -151,7 +151,7 @@ function createMainWindow(opts) {
 
   mainWindow.on("resize", saveWindowState);
   mainWindow.on("move", saveWindowState);
-  // Mattermost minimizeToTray: close button hides to tray instead of quitting.
+ // minimizeToTray: close button hides to tray instead of quitting.
   mainWindow.on("close", (event) => {
     saveWindowState();
     if (isAppQuitting()) return;

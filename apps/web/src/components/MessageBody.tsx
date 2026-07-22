@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 /**
- * Lightweight Mattermost-style text formatting:
+ * Lightweight text formatting:
  * bold, italic, code, autolink, and @mentions.
  */
 export function formatMessageText(text: string): ReactNode[] {

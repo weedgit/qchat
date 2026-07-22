@@ -1,4 +1,4 @@
-/** Group invite QR payload helpers (JD join-via-QR; Mattermost has no group QR). */
+/** Group invite QR payload helpers (JD join-via-QR; has no group QR). */
 
 const JOIN_PREFIX = "qchat://join/";
 

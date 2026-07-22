@@ -149,7 +149,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const type = String(raw?.type ?? "");
       const payload = raw?.payload ?? raw?.data ?? raw;
 
-      // Mattermost Calls signaling → useCall (mirror web useChat).
+ // Calls signaling → useCall (mirror web useChat).
       if (type.startsWith("call.")) {
         eventListenersRef.current.forEach((fn) => {
           try {

@@ -87,9 +87,9 @@ function startApp() {
       onAutostartChanged: () => refreshTrayMenu(trayDeps),
     });
     createMainWindow({ webUrl, isDev });
-    // Mattermost TrayIcon.init: icon in notification area; click focuses main window.
+ // TrayIcon.init: icon in notification area; click focuses main window.
     createSystemTray(trayDeps);
-    // Mattermost AutoLauncher: apply saved open-at-login preference when packaged.
+ // AutoLauncher: apply saved open-at-login preference when packaged.
     applyStoredAutostart();
 
     app.on("activate", () => {

@@ -1,6 +1,6 @@
 # Qchat Desktop (Electron)
 
-Thin shell around the web client (Mattermost-inspired **main / preload / shared**
+Thin shell around the web client (**main / preload / shared**
 layout under `src/`). See `docs/architecture.md`. **D3** adds installable packages
 via `electron-builder`.
 

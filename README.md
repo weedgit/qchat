@@ -4,7 +4,6 @@ Secure enterprise internal messenger with a simple, focused UX.
 
 - **Web first** (Next.js) + Admin console
 - **Go** modular monolith API + WebSocket
-- Mattermost is reference-only under `../mattermost` (not a fork)
 
 ## Quick start
 

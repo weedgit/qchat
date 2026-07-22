@@ -1,5 +1,5 @@
 /**
- * Incoming-call ringtone (Mattermost ringForCall / RING_LENGTH ≈ 30s).
+ * Incoming-call ringtone (ringForCall / RING_LENGTH ≈ 30s).
  * Uses Web Audio oscillators — no asset file required.
  */
 

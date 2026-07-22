@@ -38,7 +38,7 @@ export const lightColors: ColorTokens = {
   inputBg: "#f3f4f6",
 };
 
-/** Mattermost-inspired dark tokens (Display → Theme). */
+/** Dark theme color tokens. */
 export const darkColors: ColorTokens = {
   accent: "#4a9eff",
   accentDark: "#2463dc",

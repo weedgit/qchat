@@ -8,7 +8,7 @@ import (
 )
 
 // RunRetention deletes messages older than each enterprise's retention_days
-// (Mattermost DataRetentionJob / RunDataRetention).
+// (DataRetentionJob / RunDataRetention).
 func (s *Server) RunRetention(ctx context.Context) (int64, error) {
 	tag, err := s.db.Exec(ctx, `
 		DELETE FROM messages m
@@ -57,7 +57,7 @@ func (s *Server) StartRetentionLoop(ctx context.Context, every time.Duration) {
 	}()
 }
 
-// handleAdminPatchEnterprise updates retention_days (Mattermost DataRetention policy knob).
+// handleAdminPatchEnterprise updates retention_days (DataRetention policy knob).
 func (s *Server) handleAdminPatchEnterprise(w http.ResponseWriter, r *http.Request) {
 	c := s.requireAdmin(w, r)
 	if c == nil {

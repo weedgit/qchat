@@ -1,5 +1,5 @@
 /**
- * Other-user profile (Mattermost user profile / popover).
+ * Other-user profile (user profile / popover).
  * GET /v1/users/{id} respects profile_visibility.
  */
 import { useCallback, useEffect, useState } from "react";

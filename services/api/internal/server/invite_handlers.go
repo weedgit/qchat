@@ -8,7 +8,7 @@ import (
 )
 
 // handleJoinEnterprise attaches the current user to a company via invite code
-// (Mattermost-style join team by invite; Qchat requirements: join company with invitation code).
+// (join team by invite; Qchat requirements: join company with invitation code).
 func (s *Server) handleJoinEnterprise(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	var req struct {

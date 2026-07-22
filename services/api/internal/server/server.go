@@ -39,7 +39,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "qchat-api"})
 	})
-	// Mattermost MetricsSettings: scrape /metrics (keep off public nginx — see nginx-qchat.conf).
+	// MetricsSettings: scrape /metrics (keep off public nginx — see nginx-qchat.conf).
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 
 	// Auth

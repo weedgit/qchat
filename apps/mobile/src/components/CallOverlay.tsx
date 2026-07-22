@@ -108,7 +108,7 @@ function ControlBtn({
   );
 }
 
-/** Incoming ring + in-call panel (Mattermost Calls UI placement). */
+/** Incoming ring + in-call panel (Calls UI placement). */
 export function CallOverlay({ call }: { call: CallApi }) {
   const styles = useThemedStyles(makeStyles);
   const {

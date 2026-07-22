@@ -1,7 +1,7 @@
 import { loadLocalNotifyProps } from "@/lib/notifyProps";
 import { startCallRing, stopCallRing } from "@/lib/callRing";
 
-/** Mattermost DID_NOTIFY_FOR_CALL — OS notification when tab is backgrounded. */
+/** DID_NOTIFY_FOR_CALL — OS notification when tab is backgrounded. */
 export function notifyIncomingCall(opts: {
   callId: string;
   conversationId: string;
@@ -14,7 +14,7 @@ export function notifyIncomingCall(opts: {
   const props = loadLocalNotifyProps();
   if (props.desktop === "none") return null;
 
-  // Mattermost: desktop notify only when document is hidden.
+ // : desktop notify only when document is hidden.
   if (document.visibilityState !== "hidden" && !document.hidden) return null;
 
   const who = opts.initiatorName?.trim() || "Someone";
@@ -31,7 +31,7 @@ export function notifyIncomingCall(opts: {
   return n;
 }
 
-/** Start ringtone if notify sound is enabled (Mattermost ringForCall). */
+/** Start ringtone if notify sound is enabled (ringForCall). */
 export function ringForIncomingCall(): void {
   const props = loadLocalNotifyProps();
   if (!props.sound) return;

@@ -7,7 +7,7 @@ const { readUserConfig, writeUserConfig } = require("../app/configuration/userCo
 
 /**
  * Autostart on OS login (SHELL-26).
- * Mirrors Mattermost AutoLauncher: no-op while unpackaged/dev; uses Electron
+ * AutoLauncher: no-op while unpackaged/dev; uses Electron
  * login items on win/mac and an XDG .desktop entry on Linux when packaged.
  */
 
@@ -77,7 +77,7 @@ function setAutostartEnabled(enabled) {
   writeUserConfig({ openAtLogin: next });
 
   if (!app.isPackaged) {
-    // Mattermost AutoLauncher: development mode does not touch OS autostart.
+ // AutoLauncher: development mode does not touch OS autostart.
     return false;
   }
 

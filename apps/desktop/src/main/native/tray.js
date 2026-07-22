@@ -10,7 +10,7 @@ let tray = null;
 
 function trayIconImage() {
   const root = getDesktopRoot();
-  // Prefer a small asset for the notification area (Mattermost uses 16px tray icons).
+ // Prefer a small asset for the notification area (uses 16px tray icons).
   const candidates = [
     path.join(root, "assets", "icon-16.png"),
     path.join(root, "assets", "icon-32.png"),

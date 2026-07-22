@@ -104,7 +104,7 @@ func (s *Server) handleUserLookup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"users": users})
 }
 
-// handleGetUser returns another user's profile (Mattermost user profile / popover).
+// handleGetUser returns another user's profile (user profile / popover).
 // Respects profile_visibility: public | friends. Phone is never exposed.
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
@@ -408,7 +408,7 @@ func (s *Server) handleFriendNote(w http.ResponseWriter, r *http.Request) {
 	if req.Tags == nil {
 		req.Tags = []string{}
 	}
-	// Viewer-scoped alias/tags (Mattermost preferences), not shared friendship columns.
+	// Viewer-scoped alias/tags (preferences), not shared friendship columns.
 	var friendshipID string
 	err := s.db.QueryRow(r.Context(), `
 		SELECT id::text FROM friendships

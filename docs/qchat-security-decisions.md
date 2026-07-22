@@ -5,7 +5,7 @@ Working defaults until the client signs a formal change order. Documented so eng
 | Topic | Decision |
 |---|---|
 | Project name | **Qchat** |
-| Build approach | Independent greenfield; Mattermost is reference-only (no fork, no AGPL copy) |
+| Build approach | Independent greenfield (no fork) |
 | UI style | Simple, focused messenger; collaboration controls in secondary panels |
 | First client | Responsive web + admin console |
 | Auth | Phone (11-digit CN) + password; graphical CAPTCHA on login |
@@ -31,6 +31,6 @@ Working defaults until the client signs a formal change order. Documented so eng
 
 - End-to-end encryption
 - Custom sticker packs
-- Full Mattermost boards/playbooks
+- Full boards/playbooks
 - Native mobile/desktop stores
 - Group video calling / screen share

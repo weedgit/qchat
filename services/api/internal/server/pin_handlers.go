@@ -85,7 +85,7 @@ func (s *Server) loadPinsForConversations(ctx context.Context, convIDs []string)
 	return out
 }
 
-// handlePinMessage mirrors Mattermost POST /posts/{post_id}/pin.
+// handlePinMessage POST /posts/{post_id}/pin.
 // Adds to the conversation pin set (does not remove other pins).
 func (s *Server) handlePinMessage(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
@@ -139,7 +139,7 @@ func (s *Server) handlePinMessage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleUnpinMessage mirrors Mattermost POST /posts/{post_id}/unpin.
+// handleUnpinMessage POST /posts/{post_id}/unpin.
 func (s *Server) handleUnpinMessage(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	msgID := r.PathValue("id")

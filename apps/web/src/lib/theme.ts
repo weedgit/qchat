@@ -26,7 +26,7 @@ export function applyTheme(mode: ThemeMode) {
   document.documentElement.style.colorScheme = resolved;
 }
 
-/** Mattermost-style theme preference (Display → Theme), stored locally. */
+/** Theme preference (dark / light / system), stored locally. */
 export function useTheme() {
   const [theme, setThemeState] = useState<ThemeMode>("dark");
 

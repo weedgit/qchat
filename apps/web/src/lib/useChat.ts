@@ -34,7 +34,7 @@ export function useChat() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string>("member");
   const [typingByConv, setTypingByConv] = useState<Record<string, TypingUser[]>>({});
-  /** Mattermost-style presence keyed by user id. */
+ /** presence keyed by user id. */
   const [presenceByUser, setPresenceByUser] = useState<
     Record<string, { online: boolean; lastActiveAt?: string }>
   >({});
@@ -270,7 +270,7 @@ export function useChat() {
       if (convId && userId) clearTypingUser(convId, userId);
       return;
     }
-    // Mattermost status_change equivalent.
+ // status_change equivalent.
     if (type === "presence.update" || type === "status_change") {
       const userId = String(payload?.user_id ?? "");
       if (!userId) return;
@@ -304,7 +304,7 @@ export function useChat() {
       return;
     }
 
-    // Mattermost patchChannel / team icon update → refresh list row.
+ // patchChannel / team icon update → refresh list row.
     if (type === "group.updated") {
       const convId = String(payload?.conversation_id ?? "");
       if (!convId) return;
@@ -553,7 +553,7 @@ export function useChat() {
             isMention,
           })
         ) {
-          /* skip per Mattermost notify_props */
+ /* skip per notify_props */
         } else {
           // Telegram-web style: "Sender → Recipient", sender avatar as icon.
           const sender = msg.senderName || conversation?.title || "New message";
@@ -617,7 +617,7 @@ export function useChat() {
         backoffRef.current = Math.min(backoffRef.current * 2, 15000);
         return;
       }
-      // Close any prior socket before opening a new one (Mattermost WebSocketClient reconnect).
+ // Close any prior socket before opening a new one (WebSocketClient reconnect).
       if (wsRef.current && wsRef.current.readyState < WebSocket.CLOSING) {
         try {
           wsRef.current.onclose = null;
@@ -675,7 +675,7 @@ export function useChat() {
       }
       setConnected(false);
     };
-    // Intentionally empty: keep one long-lived socket. Handlers use refs (Mattermost WS pattern).
+ // Intentionally empty: keep one long-lived socket. Handlers use refs (WS pattern).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

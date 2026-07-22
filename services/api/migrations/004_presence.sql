@@ -1,4 +1,4 @@
--- Mattermost-style presence: last_activity_at equivalent for last-seen text.
+-- presence: last_activity_at equivalent for last-seen text.
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ NOT NULL DEFAULT now();
 

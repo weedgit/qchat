@@ -102,7 +102,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 /**
- * Mattermost Calls-style 1:1 ring → answer → LiveKit media.
+ * Calls-style 1:1 ring → answer → LiveKit media.
  * Signaling via Qchat WS; media via LiveKit SFU.
  */
 export function useCall(opts: {
@@ -126,7 +126,7 @@ export function useCall(opts: {
   const [cameraOff, setCameraOff] = useState(false);
   /** False when Chrome blocks remote audio until a user gesture (LiveKit startAudio). */
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(true);
-  /** LiveKit ConnectionQuality for local participant (Mattermost MOS-style hint). */
+ /** LiveKit ConnectionQuality for local participant (MOS-style hint). */
   const [connectionQuality, setConnectionQuality] = useState<CallQualityLevel>("unknown");
   /** True after sustained poor/lost quality (DEGRADED_CALL_QUALITY_ALERT_WAIT). */
   const [qualityDegraded, setQualityDegraded] = useState(false);
@@ -227,7 +227,7 @@ export function useCall(opts: {
     };
   }
 
-  /** Continuous mic VU via LiveKit createAudioAnalyser (Mattermost-style speaking feedback). */
+ /** Continuous mic VU via LiveKit createAudioAnalyser (speaking feedback). */
   const startMicMeter = useCallback((track: LocalAudioTrack) => {
     stopMicMeter();
     try {
@@ -262,7 +262,7 @@ export function useCall(opts: {
     }
   }, [stopMicMeter, stopRemoteMicMeter]);
 
-  // Notify server so peers get call.ended (Mattermost call_end). Do not gate on
+ // Notify server so peers get call.ended (call_end). Do not gate on
   // endingRef — hangup() sets that flag before calling us to suppress media noise.
   const hangupServer = useCallback(async (callId: string) => {
     if (!callId) return;
@@ -585,7 +585,7 @@ export function useCall(opts: {
           livekitUrl: String(payload?.livekit_url ?? "") || undefined,
         };
         setIncoming(incomingCall);
-        // Mattermost ringForCall + DID_NOTIFY_FOR_CALL (background tab).
+ // ringForCall + DID_NOTIFY_FOR_CALL (background tab).
         clearRingAlerts();
         ringForIncomingCall();
         incomingNotifyRef.current = notifyIncomingCall({

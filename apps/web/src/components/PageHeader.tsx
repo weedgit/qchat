@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-/** Page title row with back control (Mattermost-style secondary screens without LHS rail). */
+/** Page title row with back control (secondary screens without LHS rail). */
 export default function PageHeader({
   title,
   backHref = "/",

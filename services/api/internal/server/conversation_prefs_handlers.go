@@ -4,7 +4,7 @@ import (
 	"net/http"
 )
 
-// handleConversationPrefs mirrors Mattermost favoriteChannel / muteChannel
+// handleConversationPrefs favoriteChannel / muteChannel
 // (notify_props) as per-member conversation preferences.
 func (s *Server) handleConversationPrefs(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
@@ -47,7 +47,7 @@ func (s *Server) handleConversationPrefs(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, 200, map[string]any{"id": convID, "favorite": favorite, "muted": muted})
 }
 
-// handleMarkUnread mirrors Mattermost setUnreadPost / mark channel unread by
+// handleMarkUnread setUnreadPost / mark channel unread by
 // rewinding last_read_seq so the conversation shows as unread again.
 func (s *Server) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)

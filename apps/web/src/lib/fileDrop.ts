@@ -1,4 +1,4 @@
-/** Mattermost file_upload-style drag helpers. */
+/** file_upload-style drag helpers. */
 
 export function dataTransferHasFiles(dt: DataTransfer | null | undefined): boolean {
   if (!dt?.types) return false;
@@ -29,7 +29,7 @@ export function clipboardImageKey(file: File | Blob): string {
 }
 
 /**
- * Images from Ctrl+V / clipboard paste (Mattermost createFileFromClipboard).
+ * Images from Ctrl+V / clipboard paste (createFileFromClipboard).
  * Prefer FileList; fall back to items. Never return the same bitmap twice
  * (Chrome often exposes the same paste via both items and files).
  */

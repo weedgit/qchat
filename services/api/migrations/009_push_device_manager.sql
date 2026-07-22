@@ -1,4 +1,4 @@
--- Mattermost-style notification device management.
+-- notification device management.
 ALTER TABLE push_devices
   ADD COLUMN IF NOT EXISTS origin TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS device_name TEXT NOT NULL DEFAULT '',

@@ -227,7 +227,7 @@ export function mediaURL(path?: string | null): string | undefined {
   return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
 }
 
-/** Mattermost-style last-online label for offline peers. */
+/** last-online label for offline peers. */
 export function formatLastSeen(iso?: string): string {
   if (!iso) return "offline";
   const d = new Date(iso);

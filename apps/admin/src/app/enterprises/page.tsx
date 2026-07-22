@@ -119,7 +119,7 @@ export default function EnterprisesPage() {
     <AdminShell>
       <h1>Enterprises</h1>
       <div className="page-sub">
-        Organizations, invite codes, and 90-day history retention (Mattermost DataRetention).
+ Organizations, invite codes, and 90-day history retention (DataRetention).
       </div>
 
       <div className="toolbar">

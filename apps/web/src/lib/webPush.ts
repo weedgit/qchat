@@ -32,7 +32,7 @@ function pushDeviceName(): string {
   return platform ? `${browserName()} on ${platform}` : browserName();
 }
 
-/** Register service worker + Web Push subscription (Mattermost-style desktop notify via push). */
+/** Register service worker + Web Push subscription (desktop notify via push). */
 export async function registerWebPush(): Promise<boolean> {
   if (typeof window === "undefined") return false;
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;

@@ -178,7 +178,7 @@ func (s *Server) pushToUser(ctx context.Context, cfg push.Config, userID string,
 }
 
 // notifyMessagePush fans out Telegram-style "Sender → Recipient" message pushes
-// (Mattermost getPushNotificationMessage puts the sender in the notification title).
+// (getPushNotificationMessage puts the sender in the notification title).
 // Respects conversation mute and user notify_props (desktop=mention / mentions_only).
 func (s *Server) notifyMessagePush(
 	ctx context.Context,
@@ -275,7 +275,7 @@ func (s *Server) notifyMessagePush(
 	}
 }
 
-// notifyCallRingPush wakes callees via Web Push (Mattermost Calls background notify).
+// notifyCallRingPush wakes callees via Web Push (Calls background notify).
 func (s *Server) notifyCallRingPush(ctx context.Context, userIDs []string, kind, initiatorName, callID, conversationID string) {
 	cfg := s.pushCfg()
 	if !cfg.Enabled() {

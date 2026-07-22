@@ -87,7 +87,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
       // If a visible Qchat tab is open, skip OS notify — WS overlay / in-tab Notification handles it.
-      // Still wake when all windows are hidden/closed (Mattermost Calls background notify).
+ // Still wake when all windows are hidden/closed (Calls background notify).
       try {
         const list = await clients.matchAll({ type: "window", includeUncontrolled: true });
         const visible = list.some((c) => c.visibilityState === "visible");

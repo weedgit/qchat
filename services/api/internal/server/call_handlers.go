@@ -11,7 +11,7 @@ import (
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
-// ringTimeout matches Mattermost Calls RING_LENGTH (30s) — unanswered ringing ends as missed.
+// ringTimeout is 30s — unanswered ringing ends as missed.
 const ringTimeout = 30 * time.Second
 
 func (s *Server) livekitCfg() livekit.TokenConfig {
@@ -36,7 +36,7 @@ func (s *Server) mintCallToken(r *http.Request, room, userID, deviceID string) (
 	return livekit.MintJoinToken(s.livekitCfg(), room, identity, s.userDisplayName(r, userID), time.Hour)
 }
 
-// handleStartCall mirrors Mattermost Calls start / call_start for DM 1:1 (LiveKit SFU).
+// handleStartCall Calls start / call_start for DM 1:1 (LiveKit SFU).
 func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	var req struct {
@@ -142,7 +142,7 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.PublishToUsers(others, ws.Event{Type: "call.ring", Payload: ringPayload})
 
-	// Mattermost Calls: wake backgrounded / closed tabs (Web Push + client Notification).
+	// Calls: wake backgrounded / closed tabs (Web Push + client Notification).
 	go s.notifyCallRingPush(
 		context.Background(),
 		others,
@@ -152,7 +152,7 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		req.ConversationID,
 	)
 
-	// Mattermost RING_LENGTH: auto-end unanswered rings so caller/callee UIs clear.
+	// Auto-end unanswered rings after ringTimeout so caller/callee UIs clear.
 	s.scheduleRingTimeout(id.String())
 
 	writeJSON(w, 201, map[string]any{
@@ -175,7 +175,7 @@ func (s *Server) scheduleRingTimeout(callID string) {
 	})
 }
 
-// expireMissedRing ends a still-ringing session after RING_LENGTH (Mattermost-style miss).
+// expireMissedRing ends a still-ringing session after ringTimeout (missed call).
 func (s *Server) expireMissedRing(callID string) {
 	ctx := context.Background()
 	var call callRow
@@ -244,7 +244,7 @@ func (s *Server) loadCall(r *http.Request, callID string) (*callRow, error) {
 	return &row, nil
 }
 
-// postCallSystemMessage mirrors Mattermost custom_calls posts in the timeline.
+// postCallSystemMessage custom_calls posts in the timeline.
 func (s *Server) postCallSystemMessage(r *http.Request, call *callRow, body string, byUserID string) {
 	s.postCallSystemMessageCtx(r.Context(), call, body, byUserID)
 }
@@ -290,7 +290,7 @@ func formatCallDuration(sec int) string {
 	return fmt.Sprintf("%dm %ds", m, s)
 }
 
-// handleAnswerCall mirrors Mattermost join / accept incoming ring.
+// handleAnswerCall join / accept incoming ring.
 func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	callID := r.PathValue("id")
@@ -385,7 +385,7 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, resp)
 }
 
-// handleDeclineCall rejects an incoming ring (Mattermost dismiss notification).
+// handleDeclineCall rejects an incoming ring (dismiss notification).
 func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	callID := r.PathValue("id")
@@ -433,7 +433,7 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, payload)
 }
 
-// handleHangupCall ends an active or ringing call (Mattermost call_end / leave).
+// handleHangupCall ends an active or ringing call (call_end / leave).
 func (s *Server) handleHangupCall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	callID := r.PathValue("id")

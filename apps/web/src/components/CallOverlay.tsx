@@ -77,7 +77,7 @@ function formatCallClock(elapsedMs: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-/** In-call elapsed timer (Mattermost Calls duration display). */
+/** In-call elapsed timer (Calls duration display). */
 function CallDuration({ connectedAt }: { connectedAt: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -120,7 +120,7 @@ function MicLevelMeter({
   );
 }
 
-/** Incoming ring overlay + in-call panel (Mattermost Calls UI placement). */
+/** Incoming ring overlay + in-call panel (Calls UI placement). */
 export default function CallOverlay({ call }: { call: CallApi }) {
   const {
     incoming,

@@ -20,7 +20,7 @@
   --drop-accent: #9b8cff;
 }
 
-/* Mattermost-inspired light theme tokens (Display → Theme). */
+/* Light theme tokens. */
 [data-theme="light"] {
   --bg: #e8eef3;
   --bg-panel: #ffffff;
@@ -507,7 +507,7 @@ select:focus {
   overflow: hidden;
 }
 
-/* Narrow: conversation list ↔ chat history (Mattermost mobile channel view). */
+/* Narrow: conversation list ↔ chat history (mobile channel view). */
 .chat-back-btn {
   display: none;
 }
@@ -1773,7 +1773,7 @@ select:focus {
   font-size: 12px;
   color: var(--text-dim);
 }
-/* Mattermost RHS behavior: preserve the center channel when space is tight. */
+/* RHS behavior: preserve the center channel when space is tight. */
 @media (max-width: 1100px) {
   .details-panel {
     position: absolute;
@@ -1908,7 +1908,7 @@ select:focus {
   border-color: var(--bg-panel);
 }
 
-/* Mattermost-style search results */
+/* search results */
 .search-results { padding: 8px 0; }
 .search-section { margin-bottom: 10px; }
 .search-section-title {
@@ -2207,7 +2207,7 @@ select:focus {
 }
 .edit-banner { color: #e6b422; }
 
-/* Mattermost Calls-style overlay */
+/* Calls-style overlay */
 .call-overlay {
   position: fixed;
   inset: 0;

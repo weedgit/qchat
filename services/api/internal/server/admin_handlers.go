@@ -124,7 +124,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"users": out})
 }
 
-// handleAdminCreateUser provisions a member without self-service SMS (Mattermost CreateUser / assisted registration).
+// handleAdminCreateUser provisions a member without self-service SMS (CreateUser / assisted registration).
 func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	c := s.requireAdmin(w, r)
 	if c == nil {

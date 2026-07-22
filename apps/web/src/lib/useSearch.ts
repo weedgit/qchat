@@ -16,7 +16,7 @@ export type SearchHitUser = {
   displayName: string;
 };
 
-/** Mattermost-style search results via GET /v1/search. */
+/** search results via GET /v1/search. */
 export function useGlobalSearch(query: string, conversationId?: string | null) {
   const [messages, setMessages] = useState<SearchHitMessage[]>([]);
   const [users, setUsers] = useState<SearchHitUser[]>([]);

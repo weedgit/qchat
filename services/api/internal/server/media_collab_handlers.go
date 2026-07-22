@@ -73,7 +73,7 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
 		ct = strings.TrimSpace(ct[:i])
 	}
-	// Avatars must be images and ≤ 100 MB (Mattermost-style profile image upload).
+	// Avatars must be images and ≤ 100 MB (profile image upload).
 	if kind == "avatar" && !strings.HasPrefix(ct, "image/") {
 		writeErr(w, 400, "avatar must be an image")
 		return
@@ -251,7 +251,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	like := "%" + q + "%"
-	// Mattermost-style post search scoped to membership; optional in-channel filter.
+	// post search scoped to membership; optional in-channel filter.
 	var messages []map[string]any
 	if convID != "" {
 		mrows, _ := s.db.Query(r.Context(), `

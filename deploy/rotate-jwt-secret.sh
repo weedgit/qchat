@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rotate QCHAT_JWT_SECRET in deploy/qchat-api.env (Mattermost-style secret rotation).
+# Rotate QCHAT_JWT_SECRET in deploy/qchat-api.env (secret rotation).
 # Invalidates all existing access/refresh tokens — expected after rotation.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

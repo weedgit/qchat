@@ -33,7 +33,7 @@ var (
 
 	wsConnections = promauto.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "qchat_ws_connections",
-		Help: "Current WebSocket connections (Mattermost-style websocket metrics)",
+ Help: "Current WebSocket connections (websocket metrics)",
 	}, func() float64 {
 		if wsGaugeFn == nil {
 			return 0

@@ -315,7 +315,7 @@ function Bubble({
     typeof msg.uploadProgress === "number" &&
     !!onCancelUpload;
 
-  // Align with caller (Mattermost Calls history): mine = I placed the call → right.
+ // Align with caller (Calls history): mine = I placed the call → right.
   if (msg.type === "call") {
     return (
       <div className={`msg-row call-row ${msg.mine ? "mine" : ""}`}>
@@ -556,7 +556,7 @@ export default function ChatPageInner() {
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinNotice, setJoinNotice] = useState<string | null>(null);
-  /** Narrow layout: list ↔ chat (Mattermost mobile channel view). */
+ /** Narrow layout: list ↔ chat (mobile channel view). */
   const narrowLayout = useMediaQuery("(max-width: 768px)");
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const wasNarrowRef = useRef(false);
@@ -582,7 +582,7 @@ export default function ChatPageInner() {
   mediaDraftRef.current = mediaDraft;
   const clipboardIngestLock = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
-  /** Conversation id under file drag in the sidebar list (Mattermost channel drop). */
+ /** Conversation id under file drag in the sidebar list (channel drop). */
   const [dropHoverConvId, setDropHoverConvId] = useState<string | null>(null);
   /** File drag over the open chat history pane. */
   const [chatDropActive, setChatDropActive] = useState(false);
@@ -633,7 +633,7 @@ export default function ChatPageInner() {
     online?: boolean;
     last_active_at?: string;
   } | null>(null);
-  /** Members available for @ autocomplete (Mattermost suggestion box). */
+ /** Members available for @ autocomplete (suggestion box). */
   const [mentionMembers, setMentionMembers] = useState<
     { userId: string; username: string; displayName: string; avatarUrl?: string }[]
   >([]);
@@ -1039,7 +1039,7 @@ export default function ChatPageInner() {
     }
   }
 
-  /** Timed speak-mute (JD 10m/1h/permanent); Mattermost channel moderation has no timed per-member mute. */
+ /** Timed speak-mute (JD 10m/1h/permanent); channel moderation has no timed per-member mute. */
   async function muteMember(userId: string, duration: string) {
     if (!active || !canEditGroup) return;
     await api(`/v1/groups/${active.id}/mute`, {
@@ -1215,7 +1215,7 @@ export default function ChatPageInner() {
       .catch(() => { });
   }, []);
 
-  // Mattermost channel info RHS: load group members when details open.
+ // channel info RHS: load group members when details open.
   useEffect(() => {
     if (!showDetails || !active || (active.type !== "social_group" && active.type !== "group")) {
       setGroupDetails(null);
@@ -1248,7 +1248,7 @@ export default function ChatPageInner() {
     };
   }, [showDetails, active]);
 
-  // DM RHS: load peer profile (Mattermost user profile popover / RHS).
+ // DM RHS: load peer profile (user profile popover / RHS).
   useEffect(() => {
     if (!showDetails || !active || active.type !== "dm" || !active.peerId) {
       setDmPeerProfile(null);
@@ -1320,7 +1320,7 @@ export default function ChatPageInner() {
     });
   }, [chat.conversations, query]);
 
-  // Mattermost global search (users + messages) when sidebar query is long enough.
+ // global search (users + messages) when sidebar query is long enough.
   const globalSearch = useGlobalSearch(query);
   const chatSearch = useGlobalSearch(inChatSearch, chat.activeId);
 
@@ -1410,7 +1410,7 @@ export default function ChatPageInner() {
     setShowJumpBottom(false);
   }, [chat.activeId]);
 
-  // Mattermost channel drafts: restore composer text when switching conversations.
+ // channel drafts: restore composer text when switching conversations.
   useEffect(() => {
     if (!chat.activeId) {
       setDraft("");
@@ -1423,7 +1423,7 @@ export default function ChatPageInner() {
     setDraft(getDraft(chat.activeId));
   }, [chat.activeId]);
 
-  // Mattermost focus_post_textbox / useTextboxFocus: focus composer so the user
+ // focus_post_textbox / useTextboxFocus: focus composer so the user
   // can type immediately after picking a DM or group in the sidebar.
   useEffect(() => {
     if (!chat.activeId || recording || voiceBusy) return;
@@ -1464,7 +1464,7 @@ export default function ChatPageInner() {
   async function send() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
-    // Mattermost edit post: reuse the composer instead of a prompt dialog.
+ // edit post: reuse the composer instead of a prompt dialog.
     if (editingMessage) {
       const id = editingMessage.id;
       if (text === editingMessage.content) {
@@ -3497,7 +3497,7 @@ export default function ChatPageInner() {
   );
 }
 
-/** Mattermost ForwardPostModal-style picker; Qchat API already accepts multiple conversation_ids. */
+/** ForwardPostModal-style picker; Qchat API already accepts multiple conversation_ids. */
 function ForwardPicker({
   conversations,
   messageCount,

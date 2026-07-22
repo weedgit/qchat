@@ -146,7 +146,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		if pid, ok := item["peer_id"].(string); ok && pid != "" {
 			item["peer_online"] = online[pid]
 		}
-		// Per-viewer friend alias for DMs (Mattermost-style preferences).
+ // Per-viewer friend alias for DMs (preferences).
 		if typ, _ := item["type"].(string); typ == "dm" {
 			if pid, ok := item["peer_id"].(string); ok && pid != "" {
 				var note, friendshipID string
@@ -267,7 +267,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"id": id.String(), "public_id": publicID})
 }
 
-// handleAddGroupMembers mirrors Mattermost AddChannelMember / invite —
+// handleAddGroupMembers AddChannelMember / invite —
 // owner or admin may add accepted friends into an existing social group.
 func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
@@ -341,7 +341,7 @@ func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "added": added, "skipped": skipped})
 }
 
-// handleRemoveGroupMember mirrors Mattermost RemoveUserFromChannel —
+// handleRemoveGroupMember RemoveUserFromChannel —
 // owner/admin kick a member. Owners may remove admins; admins may only remove members.
 // Leave/kick notices go to owners/admins only (requirements-en §8).
 func (s *Server) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request) {
@@ -454,7 +454,7 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handlePatchGroup mirrors Mattermost patchChannel / setTeamIcon for group metadata.
+// handlePatchGroup patchChannel / setTeamIcon for group metadata.
 func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
@@ -773,7 +773,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 // attachReceipts sets delivered/read on the viewer's own messages (DM receipts).
-// Prefer peer last_read_seq (Mattermost-style read watermark) plus message_receipts.
+// Prefer peer last_read_seq (read watermark) plus message_receipts.
 func (s *Server) attachReceipts(r *http.Request, msgs []map[string]any, viewerID, convID string) {
 	if len(msgs) == 0 {
 		return
@@ -1015,7 +1015,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "you are muted")
 		return
 	}
-	// Mattermost-style mention parsing from message text when client omits mentions.
+	// mention parsing from message text when client omits mentions.
 	if req.Type == "text" && len(req.Mentions) == 0 && !req.MentionAll {
 		req.Mentions, req.MentionAll = s.parseMentions(r, convID, c.EnterpriseID, req.Body)
 	}
@@ -1061,7 +1061,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, payload)
 }
 
-// parseMentions mirrors Mattermost @user / @channel / @all / @everyone extraction.
+// parseMentions @user / @channel / @all / @everyone extraction.
 func (s *Server) parseMentions(r *http.Request, convID, enterpriseID, body string) ([]string, bool) {
 	reAll := regexp.MustCompile(`(?i)@(?:all|channel|everyone)\b`)
 	mentionAll := reAll.MatchString(body)

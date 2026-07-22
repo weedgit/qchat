@@ -3,7 +3,7 @@ const { APP_TITLE } = require("../../shared/constants");
 const { isAutostartEnabled, setAutostartEnabled } = require("./autostart");
 
 /**
- * Tray context menu (SHELL-25) — Mattermost menus/tray.ts style: Show + Quit.
+ * Tray context menu (SHELL-25) — menus/tray.ts style: Show + Quit.
  * Includes Launch at login checkbox (SHELL-26).
  *
  * @param {object} deps

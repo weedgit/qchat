@@ -470,7 +470,7 @@ paths:
       security: [{ bearerAuth: [] }]
       summary: Start a 1:1 DM voice or video call (LiveKit)
       description: |
-        Mattermost Calls-style start. Creates call_sessions (ringing) and
+ Calls-style start. Creates call_sessions (ringing) and
         emits WS call.ring to the peer. DM only.
       requestBody:
         required: true

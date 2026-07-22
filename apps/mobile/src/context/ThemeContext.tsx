@@ -1,5 +1,5 @@
 /**
- * Mattermost-style theme preference (Display → Theme), stored on device.
+ * Theme preference (dark / light / system), stored on device.
  */
 import React, {
   createContext,

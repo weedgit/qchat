@@ -1,4 +1,4 @@
--- Mattermost-style user status (online|away|dnd|offline) and notify_props.
+-- user status (online|away|dnd|offline) and notify_props.
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'offline',
   ADD COLUMN IF NOT EXISTS status_text TEXT NOT NULL DEFAULT '',

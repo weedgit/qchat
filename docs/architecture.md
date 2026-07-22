@@ -1,7 +1,7 @@
 # Qchat Desktop architecture
 
-Thin Electron shell around the Qchat **web** client (`apps/web`), inspired by
-Mattermost Desktop’s main / preload / shared separation — without embedding a
+Thin Electron shell around the Qchat **web** client (`apps/web`), using a
+main / preload / shared separation — without embedding a
 local React UI (the renderer is the remote Next.js app).
 
 ## Process diagram
@@ -66,7 +66,7 @@ apps/desktop/
 └── …
 ```
 
-Empty Mattermost-style folders (tray, updater, local renderer features) are
+Empty folders (tray, updater, local renderer features) are
 **omitted** until those features exist.
 
 ## IPC data flow

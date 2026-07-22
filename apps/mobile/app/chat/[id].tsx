@@ -370,7 +370,7 @@ const ChatMessageList = memo(function ChatMessageList({
   );
 });
 
-/** Mirror web ForwardPicker / Mattermost ForwardPostModal. */
+/** Mirror web ForwardPicker / ForwardPostModal. */
 function ForwardPicker({
   conversations,
   messageCount,

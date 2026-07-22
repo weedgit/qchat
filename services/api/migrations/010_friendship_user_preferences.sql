@@ -1,4 +1,4 @@
--- Friend aliases and tags are private to the viewer (Mattermost-style preferences).
+-- Friend aliases and tags are private to the viewer (preferences).
 -- friendships.note remains the friend-request message; display aliases live here.
 CREATE TABLE IF NOT EXISTS friendship_user_preferences (
     friendship_id UUID NOT NULL REFERENCES friendships(id) ON DELETE CASCADE,

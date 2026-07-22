@@ -1,5 +1,5 @@
 /**
- * Chat details — DM profile / group info (Mattermost channel info RHS parity).
+ * Chat details — DM profile / group info (channel info RHS parity).
  * Owner/admin: Add members via POST /v1/groups/{id}/members.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -243,7 +243,7 @@ export default function ChatInfoScreen() {
     }
   }
 
-  /** Owner/admin: role + kick (Mattermost channel member menu). */
+ /** Owner/admin: role + kick (channel member menu). */
   function onMemberLongPress(m: GroupMember) {
     if (m.userId === me?.id || m.role === "owner") return;
     const buttons: {

@@ -58,7 +58,7 @@ func Load() Config {
 }
 
 // ValidateSecrets refuses weak JWT defaults when QCHAT_ENV=production
-// (Mattermost-style ServiceSettings.EnableDeveloper / production checks).
+// (ServiceSettings.EnableDeveloper / production checks).
 func (c Config) ValidateSecrets() error {
 	if c.Env != "production" {
 		return nil

@@ -46,7 +46,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.hub.Register(client)
 	s.touchSession(claims.SessionID)
 	go s.writePump(client)
-	// Mattermost-style presence: publish status_change when the first session connects.
+	// presence: publish status_change when the first session connects.
 	if s.hub.ConnectionCount(claims.UserID) == 1 {
 		s.publishPresence(claims.UserID, true)
 	}
@@ -54,7 +54,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) writePump(c *ws.Client) {
-	// Keepalive so clients behind idle proxies stay up (Mattermost WebSocket ping).
+	// Keepalive so clients behind idle proxies stay up (WebSocket ping).
 	ticker := time.NewTicker(25 * time.Second)
 	defer func() {
 		ticker.Stop()
@@ -85,7 +85,7 @@ func (s *Server) readPump(c *ws.Client) {
 		uid := c.UserID
 		s.hub.Unregister(c)
 		_ = c.Conn.Close()
-		// Only mark offline when the last session disconnects (Mattermost status_change).
+ // Only mark offline when the last session disconnects (status_change).
 		if !s.hub.IsOnline(uid) {
 			s.publishPresence(uid, false)
 		}
@@ -107,7 +107,7 @@ func (s *Server) readPump(c *ws.Client) {
 	}
 }
 
-// publishPresence mirrors Mattermost BroadcastStatus / status_change for conversation peers.
+// publishPresence BroadcastStatus / status_change for conversation peers.
 func (s *Server) publishPresence(userID string, online bool) {
 	ctx := context.Background()
 	now := time.Now().UTC()

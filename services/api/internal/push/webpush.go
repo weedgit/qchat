@@ -22,7 +22,7 @@ type Subscription struct {
 	} `json:"keys"`
 }
 
-// WebPayload is the JSON shown by apps/web/public/sw.js (Mattermost-style desktop wake).
+// WebPayload is the JSON shown by apps/web/public/sw.js (desktop wake).
 type WebPayload struct {
 	Title          string `json:"title"`
 	Body           string `json:"body"`
@@ -58,7 +58,7 @@ func SendWeb(ctx context.Context, cfg Config, subscriptionJSON string, p WebPayl
 	}
 	ttl := 60
 	if p.Type == "call" {
-		// Cover Mattermost RING_LENGTH (~30s) so a backgrounded tab can still wake.
+	// Cover ring window (~30s) so a backgrounded tab can still wake.
 		ttl = 35
 	}
 	resp, err := webpush.SendNotificationWithContext(ctx, payload, &sub, &webpush.Options{

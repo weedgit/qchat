@@ -9,7 +9,7 @@ import (
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
-// handleUpdateStatus mirrors Mattermost PUT /users/{user_id}/status.
+// handleUpdateStatus PUT /users/{user_id}/status.
 func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	var req struct {
@@ -62,7 +62,7 @@ func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"status": req.Status, "text": req.Text})
 }
 
-// handleNotifyPrefs mirrors Mattermost user notify_props preferences.
+// handleNotifyPrefs user notify_props preferences.
 func (s *Server) handleNotifyPrefs(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	if r.Method == http.MethodGet {
@@ -89,7 +89,7 @@ func (s *Server) handleNotifyPrefs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, req)
 }
 
-// handleEditMessage mirrors Mattermost PATCH post / edit post.
+// handleEditMessage PATCH post / edit post.
 func (s *Server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	msgID := r.PathValue("id")

@@ -7,7 +7,7 @@ const ENCRYPTED_FILE = "session.encrypted";
 const PLAINTEXT_FILE = "session.plaintext.json";
 
 /**
- * Mattermost-inspired token vault: encrypt with Electron safeStorage when the OS
+ * token vault: encrypt with Electron safeStorage when the OS
  * keychain/DPAPI is available; otherwise fall back to mode-0600 plaintext JSON.
  */
 

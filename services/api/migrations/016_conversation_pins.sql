@@ -1,4 +1,4 @@
--- Multiple pinned messages per conversation (Mattermost-style).
+-- Multiple pinned messages per conversation.
 -- conversations.pinned_message_id remains the newest pin for backward compatibility.
 
 CREATE TABLE IF NOT EXISTS conversation_pins (

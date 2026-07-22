@@ -22,7 +22,7 @@ export default function AppShell({
   children: React.ReactNode;
   rail?: boolean;
   className?: string;
-  /** Narrow-width list/chat switch (Mattermost mobile channel view). */
+ /** Narrow-width list/chat switch (mobile channel view). */
   mobilePane?: "list" | "chat";
 }) {
   const pathname = usePathname();
