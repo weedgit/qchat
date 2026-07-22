@@ -18,6 +18,9 @@ import {
   unregisterWebPush,
   type PushDevice,
 } from "@/lib/webPush";
+import { useLocale } from "@/lib/locale";
+import { useTheme, type ThemeMode } from "@/lib/theme";
+import type { LocaleMode } from "@qchat/i18n";
 
 interface Profile {
   id: string;
@@ -56,6 +59,8 @@ function formatSessionActive(iso?: string): string {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
+  const { locale, setLocale, t, labelLocale, labelTheme } = useLocale();
   const [me, setMe] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -258,7 +263,7 @@ export default function ProfilePage() {
   return (
     <AppShell rail={false}>
       <main className="page-pane">
-        <PageHeader title="Profile" />
+        <PageHeader title={t("menu.settings")} />
 
         {error && (
           <div className="card">
@@ -395,9 +400,44 @@ export default function ProfilePage() {
 
         {me && (
           <div className="card" style={{ display: "grid", gap: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 16 }}>Notifications</h2>
+            <h2 style={{ margin: 0, fontSize: 16 }}>{t("appearance.title")}</h2>
             <div className="muted" style={{ fontSize: 12 }}>
-              Mattermost-style desktop notify preferences
+              {t("appearance.hint")}
+            </div>
+            <label className="field">
+              <span>{t("appearance.theme")}</span>
+              <select
+                value={theme}
+                onChange={(e) => setTheme(e.target.value as ThemeMode)}
+              >
+                {(["dark", "light", "system"] as ThemeMode[]).map((mode) => (
+                  <option key={mode} value={mode}>
+                    {labelTheme(mode)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>{t("appearance.language")}</span>
+              <select
+                value={locale}
+                onChange={(e) => setLocale(e.target.value as LocaleMode)}
+              >
+                {(["en", "zh", "system"] as LocaleMode[]).map((mode) => (
+                  <option key={mode} value={mode}>
+                    {labelLocale(mode)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+
+        {me && (
+          <div className="card" style={{ display: "grid", gap: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 16 }}>{t("settings.notifications")}</h2>
+            <div className="muted" style={{ fontSize: 12 }}>
+              {t("settings.notificationsHint")}
             </div>
             <label className="field">
               <span>Desktop notifications</span>

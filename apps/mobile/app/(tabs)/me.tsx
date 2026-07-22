@@ -17,6 +17,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../src/components/Avatar";
 import { useAuth } from "../../src/context/AuthContext";
+import { useLocale } from "../../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { api, uploadMedia } from "../../src/lib/api";
 import { radius, spacing, type ColorTokens } from "../../src/theme";
@@ -54,6 +55,7 @@ function mapProfile(u: any): Profile {
 export default function MeScreen() {
   const { refreshMe } = useAuth();
   const { colors } = useTheme();
+  const { t } = useLocale();
   const styles = useThemedStyles(makeStyles);
   const [me, setMe] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -199,13 +201,13 @@ export default function MeScreen() {
 
       <View style={styles.hero}>
         <Pressable onPress={pickAvatar} disabled={saving || !me} style={styles.avatarBtn}>
-          <Avatar name={me?.display_name || "Me"} url={me?.avatar_url || undefined} size={72} />
+          <Avatar name={me?.display_name || t("me.title")} url={me?.avatar_url || undefined} size={72} />
           <View style={styles.avatarBadge}>
             <Ionicons name="camera" size={14} color="#fff" />
           </View>
         </Pressable>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.name}>{me?.display_name || "Loading…"}</Text>
+          <Text style={styles.name}>{me?.display_name || t("common.loading")}</Text>
           <Text style={styles.sub}>
             @{me?.username || "—"} · {me?.phone || "—"}
           </Text>
@@ -215,7 +217,7 @@ export default function MeScreen() {
 
       {me ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Edit profile</Text>
+          <Text style={styles.cardTitle}>{t("me.editProfile")}</Text>
           <Field label="Username" value={me.username} editable={false} hint="Set at registration" styles={styles} colors={colors} />
           <Field
             label="Phone (login ID)"
@@ -269,10 +271,10 @@ export default function MeScreen() {
             {saving ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryBtnText}>Save changes</Text>
+              <Text style={styles.primaryBtnText}>{t("common.save")}</Text>
             )}
           </Pressable>
-          {saved ? <Text style={styles.hint}>Saved</Text> : null}
+          {saved ? <Text style={styles.hint}>{t("common.saved")}</Text> : null}
         </View>
       ) : (
         <View style={styles.card}>

@@ -17,12 +17,10 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import type { LocaleMode } from "@qchat/i18n";
 import { useAuth } from "../../src/context/AuthContext";
-import {
-  themeModeLabel,
-  useTheme,
-  useThemedStyles,
-} from "../../src/context/ThemeContext";
+import { useLocale } from "../../src/context/LocaleContext";
+import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { api, apiBaseUrl } from "../../src/lib/api";
 import {
   darkColors,
@@ -78,6 +76,7 @@ function sessionTitle(s: LoginSession): string {
 export default function SettingsScreen() {
   const { user, refreshMe, signOut } = useAuth();
   const { theme, setTheme, colors } = useTheme();
+  const { t, locale, setLocale, labelLocale, labelTheme } = useLocale();
   const styles = useThemedStyles(makeStyles);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -167,31 +166,37 @@ export default function SettingsScreen() {
   }
 
   async function revokeSession(s: LoginSession) {
-    const label = s.current ? "Sign out of this device?" : "Revoke this session?";
-    Alert.alert(s.current ? "Sign out" : "Revoke session", label, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: s.current ? "Sign out" : "Revoke",
-        style: "destructive",
-        onPress: async () => {
-          setSessionsBusy(true);
-          setError(null);
-          try {
-            await api(`/v1/me/sessions/${s.id}`, { method: "DELETE" });
-            if (s.current) {
-              await signOut();
-              router.replace("/login");
-              return;
+    const label = s.current
+      ? t("settings.signOutConfirmBody")
+      : t("settings.revoke");
+    Alert.alert(
+      s.current ? t("settings.signOutConfirmTitle") : t("settings.revoke"),
+      label,
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: s.current ? t("nav.signOut") : t("settings.revoke"),
+          style: "destructive",
+          onPress: async () => {
+            setSessionsBusy(true);
+            setError(null);
+            try {
+              await api(`/v1/me/sessions/${s.id}`, { method: "DELETE" });
+              if (s.current) {
+                await signOut();
+                router.replace("/login");
+                return;
+              }
+              await loadSessions();
+            } catch (e: any) {
+              setError(e?.message || "Could not revoke session");
+            } finally {
+              setSessionsBusy(false);
             }
-            await loadSessions();
-          } catch (e: any) {
-            setError(e?.message || "Could not revoke session");
-          } finally {
-            setSessionsBusy(false);
-          }
+          },
         },
-      },
-    ]);
+      ]
+    );
   }
 
   async function requestPhoneChange() {
@@ -239,10 +244,10 @@ export default function SettingsScreen() {
   }
 
   function onLogout() {
-    Alert.alert("Sign out", "Sign out of this account?", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(t("settings.signOutConfirmTitle"), t("settings.signOutConfirmBody"), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Sign out",
+        text: t("nav.signOut"),
         style: "destructive",
         onPress: async () => {
           await signOut();
@@ -253,40 +258,51 @@ export default function SettingsScreen() {
   }
 
   function pickDesktopNotify() {
-    Alert.alert("Notifications", undefined, [
+    Alert.alert(t("settings.notifications"), undefined, [
       {
-        text: "All new messages",
+        text: t("settings.notifyAll"),
         onPress: () => setNotify({ ...notify, desktop: "all" }),
       },
       {
-        text: "Mentions only",
+        text: t("settings.notifyMention"),
         onPress: () => setNotify({ ...notify, desktop: "mention" }),
       },
       {
-        text: "Nothing",
+        text: t("settings.notifyNone"),
         onPress: () => setNotify({ ...notify, desktop: "none" }),
       },
-      { text: "Cancel", style: "cancel" },
+      { text: t("common.cancel"), style: "cancel" },
     ]);
   }
 
   function pickTheme() {
     const order: ThemeMode[] = ["dark", "light", "system"];
-    Alert.alert("Theme", "Mattermost Display → Theme", [
+    Alert.alert(t("appearance.theme"), undefined, [
       ...order.map((mode) => ({
-        text: themeModeLabel(mode) + (theme === mode ? " ✓" : ""),
+        text: labelTheme(mode) + (theme === mode ? " ✓" : ""),
         onPress: () => setTheme(mode),
       })),
-      { text: "Cancel", style: "cancel" as const },
+      { text: t("common.cancel"), style: "cancel" as const },
+    ]);
+  }
+
+  function pickLanguage() {
+    const order: LocaleMode[] = ["en", "zh", "system"];
+    Alert.alert(t("appearance.language"), undefined, [
+      ...order.map((mode) => ({
+        text: labelLocale(mode) + (locale === mode ? " ✓" : ""),
+        onPress: () => setLocale(mode),
+      })),
+      { text: t("common.cancel"), style: "cancel" as const },
     ]);
   }
 
   const desktopLabel =
     notify.desktop === "mention"
-      ? "Mentions only"
+      ? t("settings.notifyMention")
       : notify.desktop === "none"
-        ? "Nothing"
-        : "All new messages";
+        ? t("settings.notifyNone")
+        : t("settings.notifyAll");
 
   return (
     <ScrollView
@@ -300,44 +316,51 @@ export default function SettingsScreen() {
       <View style={styles.hero}>
         <Ionicons name="settings-outline" size={28} color="#fff" />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={styles.heroTitle}>Settings</Text>
+          <Text style={styles.heroTitle}>{t("settings.title")}</Text>
           <Text style={styles.heroSub}>
-            {user?.nickname || user?.username || "Account"} · notifications & security
+            {user?.nickname || user?.username || "Account"} · {t("settings.subtitle")}
           </Text>
         </View>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Appearance</Text>
-        <Text style={styles.cardHint}>Mattermost Display → Theme</Text>
+        <Text style={styles.cardTitle}>{t("appearance.title")}</Text>
+        <Text style={styles.cardHint}>{t("appearance.hint")}</Text>
         <SelectRow
-          label="Theme"
-          value={themeModeLabel(theme)}
+          label={t("appearance.theme")}
+          value={labelTheme(theme)}
           onPress={pickTheme}
+          styles={styles}
+          colors={colors}
+        />
+        <SelectRow
+          label={t("appearance.language")}
+          value={labelLocale(locale)}
+          onPress={pickLanguage}
           styles={styles}
           colors={colors}
         />
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Notifications</Text>
-        <Text style={styles.cardHint}>Mattermost-style notify preferences</Text>
+        <Text style={styles.cardTitle}>{t("settings.notifications")}</Text>
+        <Text style={styles.cardHint}>{t("settings.notificationsHint")}</Text>
         <SelectRow
-          label="Desktop notifications"
+          label={t("settings.desktopNotifications")}
           value={desktopLabel}
           onPress={pickDesktopNotify}
           styles={styles}
           colors={colors}
         />
         <ToggleRow
-          label="Play notification sound"
+          label={t("settings.playSound")}
           value={notify.sound}
           onValueChange={(v) => setNotify({ ...notify, sound: v })}
           styles={styles}
           colors={colors}
         />
         <ToggleRow
-          label="Mentions only"
+          label={t("settings.mentionsOnly")}
           value={notify.mentions_only}
           onValueChange={(v) => setNotify({ ...notify, mentions_only: v })}
           styles={styles}
@@ -347,30 +370,31 @@ export default function SettingsScreen() {
           {saving ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.primaryBtnText}>Save notifications</Text>
+            <Text style={styles.primaryBtnText}>{t("settings.saveNotifications")}</Text>
           )}
         </Pressable>
-        {notifySaved ? <Text style={styles.hint}>Saved</Text> : null}
+        {notifySaved ? <Text style={styles.hint}>{t("common.saved")}</Text> : null}
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Login sessions</Text>
-        <Text style={styles.cardHint}>
-          One web, one desktop, and one phone session. Location is estimated from IP.
-        </Text>
+        <Text style={styles.cardTitle}>{t("settings.sessions")}</Text>
+        <Text style={styles.cardHint}>{t("settings.sessionsHint")}</Text>
         {sessions.length === 0 ? (
-          <Text style={styles.muted}>No active sessions.</Text>
+          <Text style={styles.muted}>{t("settings.noSessions")}</Text>
         ) : (
           sessions.map((s) => (
             <View key={s.id} style={styles.sessionRow}>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.sessionTitle}>
                   {sessionTitle(s)}
-                  {s.current ? " · This device" : ""}
+                  {s.current ? ` · ${t("settings.thisDevice")}` : ""}
                 </Text>
-                <Text style={styles.muted}>{s.location || "Unknown location"}</Text>
+                <Text style={styles.muted}>
+                  {s.location || t("settings.unknownLocation")}
+                </Text>
                 <Text style={styles.mutedSmall}>
-                  Last active {formatSessionActive(s.last_active_at || s.created_at)}
+                  {t("settings.lastActive")}{" "}
+                  {formatSessionActive(s.last_active_at || s.created_at)}
                 </Text>
               </View>
               <Pressable
@@ -378,7 +402,9 @@ export default function SettingsScreen() {
                 disabled={sessionsBusy}
                 onPress={() => revokeSession(s)}
               >
-                <Text style={styles.ghostBtnText}>{s.current ? "Sign out" : "Revoke"}</Text>
+                <Text style={styles.ghostBtnText}>
+                  {s.current ? t("nav.signOut") : t("settings.revoke")}
+                </Text>
               </Pressable>
             </View>
           ))
@@ -386,10 +412,12 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Change phone number</Text>
-        <Text style={styles.cardHint}>Current: {phone || "—"}</Text>
+        <Text style={styles.cardTitle}>{t("settings.changePhone")}</Text>
+        <Text style={styles.cardHint}>
+          {t("settings.currentPhone")}: {phone || "—"}
+        </Text>
         <Field
-          label="New 11-digit phone"
+          label={t("settings.newPhone")}
           value={newPhone}
           onChangeText={setNewPhone}
           keyboardType="phone-pad"
@@ -403,12 +431,12 @@ export default function SettingsScreen() {
             onPress={requestPhoneChange}
             disabled={saving || newPhone.length !== 11}
           >
-            <Text style={styles.primaryBtnText}>Send SMS code</Text>
+            <Text style={styles.primaryBtnText}>{t("settings.sendSms")}</Text>
           </Pressable>
         ) : (
           <>
             <Field
-              label="Verification code"
+              label={t("settings.verifyCode")}
               value={phoneCode}
               onChangeText={setPhoneCode}
               keyboardType="number-pad"
@@ -420,7 +448,7 @@ export default function SettingsScreen() {
               onPress={confirmPhoneChange}
               disabled={saving || !phoneCode}
             >
-              <Text style={styles.primaryBtnText}>Confirm phone change</Text>
+              <Text style={styles.primaryBtnText}>{t("settings.confirmPhone")}</Text>
             </Pressable>
           </>
         )}
@@ -428,13 +456,13 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>About</Text>
-        <Text style={styles.label}>API server</Text>
+        <Text style={styles.cardTitle}>{t("settings.about")}</Text>
+        <Text style={styles.label}>{t("settings.apiServer")}</Text>
         <Text style={styles.muted}>{apiBaseUrl()}</Text>
       </View>
 
       <Pressable style={styles.logout} onPress={onLogout}>
-        <Text style={styles.logoutText}>Sign out</Text>
+        <Text style={styles.logoutText}>{t("nav.signOut")}</Text>
       </Pressable>
     </ScrollView>
   );

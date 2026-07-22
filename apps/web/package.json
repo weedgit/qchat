@@ -11,6 +11,7 @@
     "test:e2e:install": "playwright install chromium"
   },
   "dependencies": {
+    "@qchat/i18n": "file:../../packages/i18n",
     "livekit-client": "^2.20.1",
     "next": "14.2.35",
     "qrcode": "^1.5.4",

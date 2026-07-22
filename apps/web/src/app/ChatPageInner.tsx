@@ -23,6 +23,7 @@ import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { useCall } from "@/lib/useCall";
 import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
+import { useLocale } from "@/lib/locale";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
 import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard, imagesFromClipboardApi } from "@/lib/fileDrop";
@@ -544,6 +545,7 @@ export default function ChatPageInner() {
   const chat = useChat();
   const call = useCall({ meId: chat.me?.id, subscribe: chat.subscribeEvents });
   const { theme, setTheme } = useTheme();
+  const { locale, setLocale, t, labelLocale, labelTheme } = useLocale();
   const [myStatus, setMyStatus] = useState<"online" | "away" | "dnd" | "offline">("online");
   const { openConversation } = chat;
   const router = useRouter();
@@ -1836,7 +1838,7 @@ export default function ChatPageInner() {
           <button
             type="button"
             className={`icon-btn ${mainMenuOpen ? "active" : ""}`}
-            title="Menu"
+            title={t("nav.menu")}
             onClick={(e) => {
               e.stopPropagation();
               setComposeOpen(false);
@@ -1849,13 +1851,15 @@ export default function ChatPageInner() {
             <input
               className="search-input"
               placeholder={
-                chat.connected || !wsEverConnected ? "Search" : "Reconnecting\u2026"
+                chat.connected || !wsEverConnected
+                  ? t("common.search")
+                  : t("common.reconnecting")
               }
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
             {!chat.connected && wsEverConnected && (
-              <span className="spinner" aria-label="Reconnecting" />
+              <span className="spinner" aria-label={t("common.reconnecting")} />
             )}
           </div>
           {mainMenuOpen && (
@@ -1866,20 +1870,20 @@ export default function ChatPageInner() {
                   url={chat.me?.avatarUrl}
                   size={22}
                 />
-                {chat.me?.nickname || chat.me?.username || "My profile"}
+                {chat.me?.nickname || chat.me?.username || t("nav.profile")}
               </Link>
               <div className="ctx-sep" />
               <Link className="ctx-item" href="/friends">
                 <MenuIcon d={ICONS.user} />
-                Contacts
+                {t("menu.contacts")}
               </Link>
               <Link className="ctx-item" href="/groups">
                 <MenuIcon d={ICONS.users} />
-                Groups
+                {t("menu.groups")}
               </Link>
               <Link className="ctx-item" href="/profile">
                 <MenuIcon d={ICONS.settings} />
-                Settings
+                {t("menu.settings")}
               </Link>
               <button
                 className="ctx-item"
@@ -1890,7 +1894,18 @@ export default function ChatPageInner() {
                 }}
               >
                 <MenuIcon d={ICONS.settings} />
-                Theme: {theme}
+                {t("menu.theme")}: {labelTheme(theme)}
+              </button>
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  const order = ["en", "zh", "system"] as const;
+                  const i = order.indexOf(locale);
+                  setLocale(order[(i + 1) % order.length]);
+                }}
+              >
+                <MenuIcon d={ICONS.settings} />
+                {t("menu.language")}: {labelLocale(locale)}
               </button>
               <button
                 className="ctx-item"
@@ -1906,12 +1921,19 @@ export default function ChatPageInner() {
                 }}
               >
                 <MenuIcon d={ICONS.user} />
-                Status: {myStatus}
+                {t("status.label")}:{" "}
+                {myStatus === "online"
+                  ? t("status.online")
+                  : myStatus === "away"
+                    ? t("status.away")
+                    : myStatus === "dnd"
+                      ? t("status.dnd")
+                      : t("status.offline")}
               </button>
               <div className="ctx-sep" />
               <button className="ctx-item" onClick={logout}>
                 <MenuIcon d={ICONS.logout} />
-                Log Out
+                {t("nav.logOut")}
               </button>
             </div>
           )}
@@ -2034,15 +2056,15 @@ export default function ChatPageInner() {
               }}
             >
               <MenuIcon d={ICONS.building} />
-              Join a company
+              {t("menu.joinCompany")}
             </button>
             <Link className="ctx-item" href="/groups">
               <MenuIcon d={ICONS.users} />
-              New Group
+              {t("menu.newGroup")}
             </Link>
             <Link className="ctx-item" href="/friends">
               <MenuIcon d={ICONS.user} />
-              New Private Chat
+              {t("menu.newPrivateChat")}
             </Link>
           </div>
         )}

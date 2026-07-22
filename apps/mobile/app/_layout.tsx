@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { AuthProvider } from "../src/context/AuthContext";
 import { CallProvider } from "../src/context/CallContext";
 import { ChatProvider } from "../src/context/ChatContext";
+import { LocaleProvider, useLocale } from "../src/context/LocaleContext";
 import { ThemeProvider, useTheme } from "../src/context/ThemeContext";
 
 // Required before any LiveKit Room / WebRTC usage.
@@ -11,9 +12,9 @@ registerGlobals();
 
 function RootNavigator() {
   const { colors } = useTheme();
+  const { t } = useLocale();
   return (
     <>
-      {/* Headers use headerBlue; keep light icons (Mattermost-style). */}
       <StatusBar style="light" />
       <Stack
         screenOptions={{
@@ -26,9 +27,9 @@ function RootNavigator() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="chat/[id]" options={{ title: "Chat" }} />
-        <Stack.Screen name="chat-info/[id]" options={{ title: "Chat info" }} />
-        <Stack.Screen name="user/[id]" options={{ title: "User info" }} />
+        <Stack.Screen name="chat/[id]" options={{ title: t("nav.chats") }} />
+        <Stack.Screen name="chat-info/[id]" options={{ title: t("menu.settings") }} />
+        <Stack.Screen name="user/[id]" options={{ title: t("nav.me") }} />
       </Stack>
     </>
   );
@@ -37,13 +38,15 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <ChatProvider>
-          <CallProvider>
-            <RootNavigator />
-          </CallProvider>
-        </ChatProvider>
-      </AuthProvider>
+      <LocaleProvider>
+        <AuthProvider>
+          <ChatProvider>
+            <CallProvider>
+              <RootNavigator />
+            </CallProvider>
+          </ChatProvider>
+        </AuthProvider>
+      </LocaleProvider>
     </ThemeProvider>
   );
 }

@@ -4,6 +4,20 @@ const { showAbout } = require("./about");
 const { isAutostartEnabled, setAutostartEnabled } = require("./autostart");
 
 /**
+ * Apply language preference in the loaded web client (localStorage qchat.locale).
+ * @param {() => Electron.BrowserWindow | null} getMainWindow
+ * @param {"en"|"zh"|"system"} mode
+ */
+function setWebLocale(getMainWindow, mode) {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+  const js = `(function(){try{localStorage.setItem('qchat.locale',${JSON.stringify(
+    mode
+  )});window.dispatchEvent(new Event('qchat-locale-change'));}catch(e){}})();`;
+  win.webContents.executeJavaScript(js).catch(() => {});
+}
+
+/**
  * @param {{
  *   webUrl: string,
  *   isDev: boolean,
@@ -79,6 +93,24 @@ function buildAppMenu(opts) {
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
+        { type: "separator" },
+        {
+          label: "Language",
+          submenu: [
+            {
+              label: "English",
+              click: () => setWebLocale(getMainWindow, "en"),
+            },
+            {
+              label: "简体中文",
+              click: () => setWebLocale(getMainWindow, "zh"),
+            },
+            {
+              label: "System",
+              click: () => setWebLocale(getMainWindow, "system"),
+            },
+          ],
+        },
         ...(isDev ? [{ type: "separator" }, { role: "toggleDevTools" }] : []),
       ],
     },

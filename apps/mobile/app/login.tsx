@@ -15,12 +15,14 @@ import { Redirect, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, api } from "../src/lib/api";
 import { getAuthDevice, useAuth } from "../src/context/AuthContext";
+import { useLocale } from "../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../src/theme";
 
 export default function LoginScreen() {
   const { signedIn, ready, signIn } = useAuth();
   const { colors } = useTheme();
+  const { t } = useLocale();
   const styles = useThemedStyles(makeStyles);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [phone, setPhone] = useState("");
@@ -128,7 +130,7 @@ export default function LoginScreen() {
     <View style={styles.root}>
       <View style={styles.hero}>
         <SafeAreaView edges={["top"]}>
-          <Text style={styles.brand}>Qchat</Text>
+          <Text style={styles.brand}>{t("app.name")}</Text>
           <Text style={styles.heroSub}>Enterprise messaging</Text>
         </SafeAreaView>
       </View>
@@ -139,25 +141,50 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={styles.sheetInner} keyboardShouldPersistTaps="handled">
           <View style={styles.modeRow}>
             <Pressable onPress={() => setMode("login")} style={styles.modeBtn}>
-              <Text style={[styles.modeText, mode === "login" && styles.modeActive]}>Sign in</Text>
+              <Text style={[styles.modeText, mode === "login" && styles.modeActive]}>
+                {t("login.title")}
+              </Text>
             </Pressable>
             <Pressable onPress={() => setMode("register")} style={styles.modeBtn}>
               <Text style={[styles.modeText, mode === "register" && styles.modeActive]}>
-                Register
+                {t("login.register")}
               </Text>
             </Pressable>
           </View>
 
-          <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="13800000002" styles={styles} colors={colors} />
+          <Field
+            label={t("login.phone")}
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            placeholder="13800000002"
+            styles={styles}
+            colors={colors}
+          />
           {mode === "register" && (
             <Text style={styles.hint}>After signup, join a company with an invite code in chat.</Text>
           )}
           {mode === "register" && (
-            <Field label="Username" value={username} onChangeText={setUsername} placeholder="alice" styles={styles} colors={colors} />
+            <Field
+              label={t("login.username")}
+              value={username}
+              onChangeText={setUsername}
+              placeholder="alice"
+              styles={styles}
+              colors={colors}
+            />
           )}
-          <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry placeholder="at least 8 chars" styles={styles} colors={colors} />
+          <Field
+            label={t("login.password")}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            placeholder="at least 8 chars"
+            styles={styles}
+            colors={colors}
+          />
 
-          <Text style={styles.label}>Captcha</Text>
+          <Text style={styles.label}>{t("login.captcha")}</Text>
           <View style={styles.captchaRow}>
             <TextInput
               style={[styles.input, { flex: 1 }]}
@@ -194,12 +221,12 @@ export default function LoginScreen() {
                 {smsBusy ? (
                   <ActivityIndicator color={colors.accent} />
                 ) : (
-                  <Text style={styles.secondaryBtnText}>Send SMS code</Text>
+                  <Text style={styles.secondaryBtnText}>{t("login.sendCode")}</Text>
                 )}
               </Pressable>
               {smsHint ? <Text style={styles.hint}>{smsHint}</Text> : null}
               <Field
-                label="SMS code"
+                label={t("login.smsCode")}
                 value={smsCode}
                 onChangeText={setSmsCode}
                 keyboardType="number-pad"
@@ -220,7 +247,9 @@ export default function LoginScreen() {
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryBtnText}>{mode === "login" ? "Sign in" : "Create account"}</Text>
+              <Text style={styles.primaryBtnText}>
+                {mode === "login" ? t("login.submitLogin") : t("login.submitRegister")}
+              </Text>
             )}
           </Pressable>
         </ScrollView>
