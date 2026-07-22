@@ -161,12 +161,20 @@ async function refreshAccess(): Promise<boolean> {
           }
         }
         if (!res.ok) {
-          clearToken();
+          // Only drop the session on an explicit auth rejection — not on HTML/proxy noise.
+          if (res.status === 401 || res.status === 403) {
+            clearToken();
+          }
           return false;
         }
-        setTokens(String(body.access_token), String(body.refresh_token ?? ""), remembered());
+        setTokens(
+          String(body.access_token),
+          String(body.refresh_token ?? getRefreshToken() ?? ""),
+          remembered()
+        );
         return true;
       } catch {
+        // Transient network / TLS blip — keep tokens so splash can retry.
         return false;
       } finally {
         refreshPromise = null;
@@ -233,8 +241,11 @@ export async function api<T = any>(
   if (res.status === 401 && !_retried && !path.startsWith("/v1/auth/")) {
     const ok = await refreshAccess();
     if (ok) return api<T>(path, init, true);
-    clearToken();
-    redirectLogin();
+    // refreshAccess clears tokens only on explicit 401/403. If tokens remain,
+    // this was likely a transient failure — don't hard-navigate to login.
+    if (!getToken()) {
+      redirectLogin();
+    }
   }
 
   if (!res.ok) {
@@ -363,8 +374,9 @@ export async function uploadMedia(
                 doUpload(true).then(resolve, reject);
                 return;
               }
-              clearToken();
-              redirectLogin();
+              if (!getToken()) {
+                redirectLogin();
+              }
               reject(new ApiError(401, "unauthorized", body));
             })
             .catch(reject);

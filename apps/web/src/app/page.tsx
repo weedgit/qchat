@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ChatPageInner from "./ChatPageInner";
 import LoadingSplash from "@/components/LoadingSplash";
-import { getToken, restoreDesktopSession } from "@/lib/api";
+import { ensureAccessToken, getToken, restoreDesktopSession } from "@/lib/api";
 
 /**
  * Auth gate before chat UI.
- * Avoid Suspense+useSearchParams on the root page — that stays on a loading
- * fallback forever in Electron/static export when the client bundle is slow or fails.
+ * Stay on LoadingSplash ("Starting Qchat") until tokens are restored and usable —
+ * never mount chat with a dead session (that flashes Reconnecting → /login).
  */
 export default function ChatPage() {
   const router = useRouter();
@@ -18,12 +18,22 @@ export default function ChatPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const ok = (await restoreDesktopSession()) || Boolean(getToken());
+      await restoreDesktopSession();
       if (cancelled) return;
-      if (!ok) {
+
+      if (!getToken()) {
         router.replace("/login");
         return;
       }
+
+      const ok = await ensureAccessToken();
+      if (cancelled) return;
+
+      if (!ok || !getToken()) {
+        router.replace("/login");
+        return;
+      }
+
       setState("ready");
     })();
     return () => {

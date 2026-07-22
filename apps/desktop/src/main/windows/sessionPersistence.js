@@ -32,13 +32,13 @@ function buildDocumentStartScript(session) {
 
 /**
  * Install a document-start script so tokens exist before React auth gates run.
- * Prevents / → /login → / flicker on remembered sessions.
  * @param {Electron.WebContents} wc
  * @param {string} webUrl
+ * @param {{ accessToken: string, refreshToken?: string } | null} [session]
  */
-async function prepareEarlySessionBootstrap(wc, webUrl) {
-  const session = getSecureSession(webUrl);
-  if (!session?.accessToken) return false;
+async function prepareEarlySessionBootstrap(wc, webUrl, session = null) {
+  const tokens = session || getSecureSession(webUrl);
+  if (!tokens?.accessToken) return false;
   try {
     try {
       wc.debugger.attach("1.3");
@@ -49,7 +49,7 @@ async function prepareEarlySessionBootstrap(wc, webUrl) {
     }
     await wc.debugger.sendCommand("Page.enable");
     await wc.debugger.sendCommand("Page.addScriptToEvaluateOnNewDocument", {
-      source: buildDocumentStartScript(session),
+      source: buildDocumentStartScript(tokens),
     });
     return true;
   } catch (err) {
@@ -95,7 +95,7 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
   const injectFromVault = async ({ allowRedirect = false } = {}) => {
     const session = getSecureSession(webUrl);
     if (!session?.accessToken) return false;
-    suppressClearUntil = Date.now() + 5000;
+    suppressClearUntil = Date.now() + 8000;
     const redirect = allowRedirect
       ? `
           var path = location.pathname || "/";
@@ -152,15 +152,38 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
     try {
       const snap = await readPageAuth();
       const access = String(snap?.access || "").trim();
+      const refresh = String(snap?.refresh || "").trim();
       const remember = snap?.remember === "1";
+      const path = String(snap?.path || "/");
+      const onLogin = path === "/login" || path.startsWith("/login/");
+
       if (remember && access) {
+        const prev = getSecureSession(webUrl);
+        // Never wipe a stored refresh token with an empty scrape.
         setSecureSession(webUrl, {
           accessToken: access,
-          refreshToken: String(snap?.refresh || ""),
+          refreshToken: refresh || prev?.refreshToken || "",
         });
         return;
       }
-      if (!access && Date.now() > suppressClearUntil) {
+
+      // Page still wants remember but lost tokens — restore from vault (do not clear).
+      if (remember && !access && hasSecureSession(webUrl)) {
+        await injectFromVault({ allowRedirect: onLogin });
+        return;
+      }
+
+      // Explicit sign-out / session-only: remember flag cleared.
+      if (!access && snap?.remember === "0") {
+        clearSecureSession(webUrl);
+        return;
+      }
+      if (
+        !access &&
+        onLogin &&
+        snap?.remember !== "1" &&
+        Date.now() > suppressClearUntil
+      ) {
         clearSecureSession(webUrl);
       }
     } catch (err) {
@@ -173,7 +196,7 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
 
   const settleRememberedSession = async () => {
     if (!deferShow || revealed || wc.isDestroyed()) return;
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + 10000;
     while (Date.now() < deadline && !wc.isDestroyed() && !revealed) {
       await injectFromVault({ allowRedirect: false });
       let snap;
@@ -187,15 +210,26 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
       const access = String(snap?.access || "").trim();
       const onLogin = path === "/login" || path.startsWith("/login/");
 
-      if (access && !onLogin) {
-        await sleep(50);
+      // Stay hidden on splash ("Starting Qchat") / login bounce — match web UX.
+      const onSplash =
+        !onLogin &&
+        (path === "/" || path === "") &&
+        !access;
+
+      if (access && !onLogin && !onSplash) {
+        await sleep(80);
+        reveal();
+        return;
+      }
+      if (access && (path === "/" || path === "")) {
+        // Tokens ready on home — reveal even while chat is still connecting.
+        await sleep(80);
         reveal();
         return;
       }
       if (onLogin && hasSecureSession(webUrl)) {
-        // Auth gate raced ahead; bounce while still hidden.
         await injectFromVault({ allowRedirect: true });
-        await sleep(120);
+        await sleep(150);
         continue;
       }
       await sleep(50);
@@ -223,7 +257,7 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
   });
 
   if (deferShow) {
-    setTimeout(() => reveal(), 10000);
+    setTimeout(() => reveal(), 12000);
   }
 }
 

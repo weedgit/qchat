@@ -8,7 +8,6 @@ const {
 } = require("../../shared/constants");
 const { IPC } = require("../../shared/ipc/channels");
 const { getPreloadPath, iconOption, getDesktopRoot } = require("../app/configuration/paths");
-const { resolveStartUrl } = require("../app/configuration/webUrl");
 const { attachNavigationGuards } = require("../security/navigation");
 const { getTray } = require("../native/tray");
 const { isAppQuitting } = require("../app/quitState");
@@ -17,6 +16,7 @@ const {
   attachSessionPersistence,
   prepareEarlySessionBootstrap,
 } = require("./sessionPersistence");
+const { ensureVaultSessionFresh } = require("./sessionValidate");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -88,7 +88,6 @@ function flushPendingConversation() {
  */
 function createMainWindow(opts) {
   const { webUrl, isDev } = opts;
-  const startUrl = resolveStartUrl(webUrl, { hasSession: hasSecureSession(webUrl) });
   const saved = loadWindowState();
   const icon = iconOption();
   let appVersion = "0.1.0";
@@ -96,6 +95,13 @@ function createMainWindow(opts) {
     appVersion = require(path.join(getDesktopRoot(), "package.json")).version;
   } catch {
     /* keep default */
+  }
+
+  let webOrigin = webUrl;
+  try {
+    webOrigin = new URL(webUrl).origin;
+  } catch {
+    webOrigin = String(webUrl).replace(/\/$/, "");
   }
 
   mainWindow = new BrowserWindow({
@@ -130,22 +136,18 @@ function createMainWindow(opts) {
     }
   });
 
-  const rememberSession = hasSecureSession(webUrl);
+  /** @type {boolean} */
+  let showOnReady = false;
   const showMainWindow = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.setTitle(APP_TITLE);
     if (!mainWindow.isVisible()) mainWindow.show();
   };
 
-  // With a vault session, keep the window hidden until tokens are in place and
-  // we are past any /login bounce — avoids sign-in ↔ chat ↔ reconnecting flicker.
-  if (!rememberSession) {
-    mainWindow.once("ready-to-show", showMainWindow);
-  } else {
-    mainWindow.once("ready-to-show", () => {
-      mainWindow?.setTitle(APP_TITLE);
-    });
-  }
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.setTitle(APP_TITLE);
+    if (showOnReady) showMainWindow();
+  });
 
   mainWindow.on("resize", saveWindowState);
   mainWindow.on("move", saveWindowState);
@@ -161,10 +163,6 @@ function createMainWindow(opts) {
   });
 
   attachNavigationGuards(mainWindow, webUrl);
-  attachSessionPersistence(mainWindow, webUrl, {
-    deferShow: rememberSession,
-    reveal: showMainWindow,
-  });
 
   mainWindow.webContents.on(
     "did-fail-load",
@@ -195,13 +193,17 @@ function createMainWindow(opts) {
           var path = location.pathname || "/";
           if (path !== "/" && path !== "") return;
           var text = (document.body && document.body.innerText || "").trim();
-          if (text !== "Loading…" && text !== "Loading...") return;
+          if (text !== "Loading…" && text !== "Loading..." && text.indexOf("Starting Qchat") === -1) return;
           setTimeout(function () {
             var still = (document.body && document.body.innerText || "").trim();
-            if (still === "Loading…" || still === "Loading...") {
+            if (
+              still === "Loading…" ||
+              still === "Loading..." ||
+              still.indexOf("Starting Qchat") !== -1
+            ) {
               location.replace("/login");
             }
-          }, 2500);
+          }, 4000);
         } catch (e) {}
       })();
     `;
@@ -209,12 +211,30 @@ function createMainWindow(opts) {
   });
 
   void (async () => {
-    if (rememberSession) {
-      await prepareEarlySessionBootstrap(mainWindow.webContents, webUrl);
+    // Refresh/validate vault before first paint so chat never mounts with a dead token
+    // (that path shows Reconnecting then hard-navigates to /login).
+    const fresh = hasSecureSession(webUrl)
+      ? await ensureVaultSessionFresh(webUrl)
+      : null;
+    const remembered = Boolean(fresh?.accessToken);
+
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    attachSessionPersistence(mainWindow, webUrl, {
+      deferShow: remembered,
+      reveal: showMainWindow,
+    });
+
+    if (remembered) {
+      await prepareEarlySessionBootstrap(mainWindow.webContents, webUrl, fresh);
+      await mainWindow.loadURL(`${webOrigin}/`);
+      return;
     }
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      await mainWindow.loadURL(startUrl);
-    }
+
+    // No usable session — open login directly (same as web: splash only while checking).
+    showOnReady = true;
+    await mainWindow.loadURL(`${webOrigin}/login`);
+    showMainWindow();
   })();
 
   mainWindow.on("closed", () => {
