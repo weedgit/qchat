@@ -3,6 +3,7 @@ const path = require("path");
 const { Tray, nativeImage, app } = require("electron");
 const { APP_TITLE } = require("../../shared/constants");
 const { getDesktopRoot, getIconPath } = require("../app/configuration/paths");
+const { buildTrayMenu } = require("./trayMenu");
 
 /** @type {Electron.Tray | null} */
 let tray = null;
@@ -24,8 +25,8 @@ function trayIconImage() {
 }
 
 /**
- * Create the system tray icon (SHELL-23).
- * Click focuses / shows the main window. Context menu is SHELL-25.
+ * Create the system tray icon (SHELL-23) + Show/Quit menu (SHELL-25).
+ * Click focuses / shows the main window.
  *
  * @param {object} deps
  * @param {() => void} deps.focusMainWindow
@@ -43,12 +44,19 @@ function createSystemTray(deps) {
   tray.setToolTip(APP_TITLE);
   tray.setTitle?.(APP_TITLE);
 
+  // Mattermost menus/tray.ts: context menu with show + quit.
+  const menu = buildTrayMenu({ focusMainWindow: deps.focusMainWindow });
+  tray.setContextMenu(menu);
+
   const onClick = () => {
     deps.focusMainWindow();
   };
   tray.on("click", onClick);
   // Some Linux DEs only emit double-click for restore.
   tray.on("double-click", onClick);
+  tray.on("right-click", () => {
+    tray?.popUpContextMenu(menu);
+  });
 
   return tray;
 }
