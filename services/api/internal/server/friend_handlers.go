@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/qchat/qchat/services/api/internal/ws"
@@ -101,6 +102,86 @@ func (s *Server) handleUserLookup(w http.ResponseWriter, r *http.Request) {
 		users = []map[string]any{}
 	}
 	writeJSON(w, 200, map[string]any{"users": users})
+}
+
+// handleGetUser returns another user's profile (Mattermost user profile / popover).
+// Respects profile_visibility: public | friends. Phone is never exposed.
+func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	targetID := strings.TrimSpace(r.PathValue("id"))
+	if targetID == "" {
+		writeErrCode(w, 400, "invalid_request", "user id required")
+		return
+	}
+	if targetID == c.UserID {
+		s.handleMe(w, r)
+		return
+	}
+
+	var username, display, realName, region, sig, avatar, vis, fp string
+	var age *int
+	var lastActive *time.Time
+	var banned bool
+	err := s.db.QueryRow(r.Context(), `
+		SELECT username, display_name, COALESCE(real_name,''), age, COALESCE(region,''),
+		       COALESCE(signature,''), COALESCE(avatar_url,''),
+		       COALESCE(profile_visibility,'friends'), COALESCE(friend_privacy,'approval'),
+		       banned, last_active_at
+		FROM users
+		WHERE id=$1 AND enterprise_id=$2`, targetID, c.EnterpriseID).
+		Scan(&username, &display, &realName, &age, &region, &sig, &avatar, &vis, &fp, &banned, &lastActive)
+	if err != nil || banned {
+		writeErrCode(w, 404, "not_found", "user not found")
+		return
+	}
+
+	var friendshipID, friendshipStatus string
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT id::text, status FROM friendships
+		WHERE enterprise_id=$1
+		  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
+		ORDER BY created_at DESC LIMIT 1`, c.EnterpriseID, c.UserID, targetID).
+		Scan(&friendshipID, &friendshipStatus)
+
+	isFriend := friendshipStatus == "accepted"
+	canViewFull := vis == "public" || isFriend
+
+	var note string
+	var tags []string
+	if friendshipID != "" {
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT COALESCE(note,''), COALESCE(tags, '{}')
+			FROM friendship_user_preferences
+			WHERE friendship_id=$1 AND user_id=$2`, friendshipID, c.UserID).Scan(&note, &tags)
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+
+	out := map[string]any{
+		"id":               targetID,
+		"username":         username,
+		"display_name":     display,
+		"avatar_url":       avatar,
+		"friend_privacy":   fp,
+		"profile_visibility": vis,
+		"friendship_id":    friendshipID,
+		"friendship_status": friendshipStatus,
+		"is_friend":        isFriend,
+		"online":           s.hub.OnlineUserIDs([]string{targetID})[targetID],
+		"note":             note,
+		"tags":             tags,
+	}
+	if lastActive != nil {
+		out["last_active_at"] = lastActive.UTC()
+	}
+	if canViewFull {
+		out["real_name"] = realName
+		out["age"] = age
+		out["region"] = region
+		out["signature"] = sig
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) friendshipBlocked(r *http.Request, a, b, ent string) bool {

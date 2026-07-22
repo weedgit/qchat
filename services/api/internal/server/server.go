@@ -64,6 +64,7 @@ func (s *Server) routes() {
 	// Friends
 	s.mux.HandleFunc("GET /v1/friends", s.auth(s.handleListFriends))
 	s.mux.HandleFunc("GET /v1/users/lookup", s.auth(s.handleUserLookup))
+	s.mux.HandleFunc("GET /v1/users/{id}", s.auth(s.handleGetUser))
 	s.mux.HandleFunc("POST /v1/friends/request", s.auth(s.handleFriendRequest))
 	s.mux.HandleFunc("POST /v1/friends/{id}/accept", s.auth(s.handleFriendAccept))
 	s.mux.HandleFunc("POST /v1/friends/{id}/reject", s.auth(s.handleFriendReject))
@@ -83,6 +84,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/groups", s.auth(s.handleCreateGroup))
 	s.mux.HandleFunc("POST /v1/groups/join", s.auth(s.handleJoinGroup))
 	s.mux.HandleFunc("POST /v1/groups/{id}/approve", s.auth(s.handleApproveJoin))
+	s.mux.HandleFunc("POST /v1/groups/{id}/members", s.auth(s.handleAddGroupMembers))
 	s.mux.HandleFunc("POST /v1/groups/{id}/mute", s.auth(s.handleMuteMember))
 	s.mux.HandleFunc("POST /v1/groups/{id}/admins", s.auth(s.handleAppointAdmin))
 	s.mux.HandleFunc("GET /v1/conversations/{id}/messages", s.auth(s.handleListMessages))

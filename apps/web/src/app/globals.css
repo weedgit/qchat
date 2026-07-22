@@ -1318,6 +1318,61 @@ select:focus {
   color: var(--text);
 }
 
+/* In-bubble reply quote (WhatsApp / Telegram style) */
+.reply-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border-left: 3px solid;
+  max-width: 100%;
+  min-width: 0;
+  cursor: pointer;
+}
+.reply-preview:hover {
+  filter: brightness(0.97);
+}
+.reply-preview.mine:hover {
+  filter: brightness(1.08);
+}
+.reply-preview.peer {
+  background: rgba(36, 99, 220, 0.08);
+  border-left-color: var(--accent);
+}
+.reply-preview.mine {
+  background: rgba(255, 255, 255, 0.18);
+  border-left-color: #fff;
+}
+.reply-preview-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reply-preview.peer .reply-preview-name {
+  color: var(--accent);
+}
+.reply-preview.mine .reply-preview-name {
+  color: #fff;
+}
+.reply-preview-text {
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reply-preview.peer .reply-preview-text {
+  color: var(--text-dim);
+}
+.reply-preview.mine .reply-preview-text {
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .composer {
   flex: none;
   padding: 10px 16px 16px;

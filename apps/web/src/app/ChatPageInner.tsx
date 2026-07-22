@@ -286,11 +286,12 @@ function Bubble({
   onReact,
   onRetry,
   onCancelUpload,
+  onReplyPreviewClick,
   ctxOpen,
 }: {
   msg: Message;
   isGroup: boolean;
-  replyPreview?: string;
+  replyPreview?: { name: string; body: string };
   selectMode: boolean;
   selected: boolean;
   selectable: boolean;
@@ -300,6 +301,7 @@ function Bubble({
   onReact?: (emoji: string) => void;
   onRetry?: () => void;
   onCancelUpload?: () => void;
+  onReplyPreviewClick?: (replyToId: string) => void;
   ctxOpen: boolean;
 }) {
   const canReact = !!onReact && !selectMode && !msg.recalled && !msg.pending && !msg.failed && !ctxOpen;
@@ -410,9 +412,26 @@ function Bubble({
           {!msg.mine && isGroup && msg.senderName && (
             <div className="sender">{msg.senderName}</div>
           )}
-          {replyPreview && !msg.recalled && (
-            <div className="muted" style={{ fontSize: 11, marginBottom: 4, borderLeft: "2px solid #888", paddingLeft: 6 }}>
-              {replyPreview}
+          {replyPreview && !msg.recalled && msg.replyToId && (
+            <div
+              className={`reply-preview ${msg.mine ? "mine" : "peer"}`}
+              role="button"
+              tabIndex={0}
+              title="Go to original message"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!selectMode) onReplyPreviewClick?.(msg.replyToId!);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!selectMode) onReplyPreviewClick?.(msg.replyToId!);
+                }
+              }}
+            >
+              <div className="reply-preview-name">{replyPreview.name}</div>
+              <div className="reply-preview-text">{replyPreview.body}</div>
             </div>
           )}
           {msg.recalled && !msg.content && !msg.mediaUrl ? (
@@ -584,6 +603,12 @@ export default function ChatPageInner() {
     mute_all?: boolean;
     forbid_member_friend_add?: boolean;
   } | null>(null);
+  const [addMembersOpen, setAddMembersOpen] = useState(false);
+  const [addMemberFriends, setAddMemberFriends] = useState<
+    { user_id: string; username: string; display_name: string; avatar_url?: string }[]
+  >([]);
+  const [addMemberPicked, setAddMemberPicked] = useState<Set<string>>(new Set());
+  const [addMembersBusy, setAddMembersBusy] = useState(false);
   /** Members available for @ autocomplete (Mattermost suggestion box). */
   const [mentionMembers, setMentionMembers] = useState<
     { userId: string; username: string; displayName: string; avatarUrl?: string }[]
@@ -786,6 +811,51 @@ export default function ChatPageInner() {
       groupDetails?.role === "admin" ||
       chat.myRole === "owner" ||
       chat.myRole === "admin");
+
+  async function openAddMembers() {
+    if (!active || !canEditGroup) return;
+    setAddMembersBusy(true);
+    try {
+      const body = await api<any>("/v1/friends");
+      const list = (Array.isArray(body?.friends) ? body.friends : Array.isArray(body) ? body : [])
+        .filter((f: any) => String(f?.status ?? "accepted") === "accepted")
+        .map((f: any) => ({
+          user_id: String(f?.user_id ?? f?.friend_id ?? f?.id ?? ""),
+          username: String(f?.username ?? ""),
+          display_name: String(f?.display_name ?? f?.username ?? "Friend"),
+          avatar_url: f?.avatar_url || undefined,
+        }))
+        .filter((f: { user_id: string }) => f.user_id);
+      const memberIds = new Set((groupDetails?.members ?? []).map((m) => m.user_id));
+      setAddMemberFriends(list.filter((f: { user_id: string }) => !memberIds.has(f.user_id)));
+      setAddMemberPicked(new Set());
+      setAddMembersOpen(true);
+    } catch (e: any) {
+      logChatError(e?.message || "Could not load friends");
+    } finally {
+      setAddMembersBusy(false);
+    }
+  }
+
+  async function confirmAddMembers() {
+    if (!active || addMemberPicked.size === 0) {
+      setAddMembersOpen(false);
+      return;
+    }
+    setAddMembersBusy(true);
+    try {
+      await api(`/v1/groups/${active.id}/members`, {
+        method: "POST",
+        body: JSON.stringify({ member_ids: [...addMemberPicked] }),
+      });
+      setAddMembersOpen(false);
+      await reloadGroupDetails();
+    } catch (e: any) {
+      logChatError(e?.message || "Could not add members");
+    } finally {
+      setAddMembersBusy(false);
+    }
+  }
 
   async function uploadGroupAvatar(file: File) {
     if (!active || !canEditGroup) return;
@@ -1604,13 +1674,16 @@ export default function ChatPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function previewFor(msg: Message): string | undefined {
+  function previewFor(msg: Message): { name: string; body: string } | undefined {
     if (!msg.replyToId) return undefined;
     const target = activeMessages.find((m) => m.id === msg.replyToId);
-    if (!target) return "Reply";
+    if (!target) return { name: "Reply", body: "Original message" };
     const body =
-      target.type === "voice" ? target.content || "Voice message" : target.content;
-    return `${target.senderName ?? (target.mine ? "You" : "User")}: ${body}`;
+      target.type === "voice" ? target.content || "Voice message" : target.content || "Message";
+    return {
+      name: target.senderName ?? (target.mine ? "You" : "User"),
+      body,
+    };
   }
 
   return (
@@ -2143,6 +2216,7 @@ export default function ChatPageInner() {
                             onToggleSelect={() => toggleSelect(m.id)}
                             onContextMenu={(e) => openCtxMenu(e, m)}
                             ctxOpen={!!ctxMenu && ctxMenu.msgId === m.id}
+                            onReplyPreviewClick={(replyToId) => jumpToPinnedId(replyToId)}
                             onReact={
                               chat.activeId
                                 ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
@@ -2172,6 +2246,7 @@ export default function ChatPageInner() {
                             onToggleSelect={() => toggleSelect(m.id)}
                             onContextMenu={(e) => openCtxMenu(e, m)}
                             ctxOpen={!!ctxMenu}
+                            onReplyPreviewClick={(replyToId) => jumpToPinnedId(replyToId)}
                             onReact={
                               chat.activeId
                                 ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
@@ -2582,9 +2657,78 @@ export default function ChatPageInner() {
                 </div>
               )}
               <div className="details-members">
-                <div className="k" style={{ marginBottom: 8 }}>
-                  Members ({groupDetails.members.length})
+                <div
+                  className="k"
+                  style={{
+                    marginBottom: 8,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <span>Members ({groupDetails.members.length})</span>
+                  {canEditGroup && (
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      style={{ padding: "2px 8px" }}
+                      disabled={addMembersBusy}
+                      onClick={() => openAddMembers().catch(() => {})}
+                    >
+                      Add members
+                    </button>
+                  )}
                 </div>
+                {addMembersOpen && (
+                  <div className="card" style={{ marginBottom: 12, padding: 10, display: "grid", gap: 8 }}>
+                    <div style={{ fontWeight: 600 }}>Add friends to this group</div>
+                    {addMemberFriends.length === 0 ? (
+                      <div className="muted">No friends left to add.</div>
+                    ) : (
+                      addMemberFriends.map((f) => {
+                        const on = addMemberPicked.has(f.user_id);
+                        return (
+                          <label key={f.user_id} className="check-row" style={{ gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => {
+                                setAddMemberPicked((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(f.user_id)) next.delete(f.user_id);
+                                  else next.add(f.user_id);
+                                  return next;
+                                });
+                              }}
+                            />
+                            <Avatar name={f.display_name} url={f.avatar_url} size={24} />
+                            <span>
+                              {f.display_name}{" "}
+                              <span className="muted">@{f.username}</span>
+                            </span>
+                          </label>
+                        );
+                      })
+                    )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={addMembersBusy || addMemberPicked.size === 0}
+                        onClick={() => confirmAddMembers().catch(() => {})}
+                      >
+                        {addMembersBusy ? "Adding…" : `Add (${addMemberPicked.size})`}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={() => setAddMembersOpen(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {groupDetails.members.map((m) => {
                   const mutedUntil = m.mute_until ? new Date(m.mute_until) : null;
                   const isMuted =

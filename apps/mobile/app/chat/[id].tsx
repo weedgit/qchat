@@ -15,7 +15,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, useNavigation } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
 import { ChatComposer } from "../../src/components/ChatComposer";
@@ -109,12 +109,19 @@ function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
   );
 }
 
+type ReplyPreview = { name: string; body: string };
+
 type ChatMessageRowProps = {
   item: Message;
   selected: boolean;
   pinned: boolean;
+  highlighted: boolean;
+  /** Show sender name above peer bubbles (groups only — DMs omit it). */
+  showSender: boolean;
+  replyPreview?: ReplyPreview | null;
   onPress: (item: Message) => void;
   onLongPress: (item: Message) => void;
+  onPressReply?: (replyToId: string) => void;
 };
 
 /** Memoized row — keeps FlatList from re-rendering every bubble on parent updates. */
@@ -122,13 +129,17 @@ const ChatMessageRow = memo(function ChatMessageRow({
   item,
   selected,
   pinned,
+  highlighted,
+  showSender,
+  replyPreview,
   onPress,
   onLongPress,
+  onPressReply,
 }: ChatMessageRowProps) {
   if (item.recalled) {
     const label = item.mine
       ? "You recalled a message"
-      : item.senderName
+      : showSender && item.senderName
         ? `${item.senderName} recalled a message`
         : "Message recalled";
     return (
@@ -162,6 +173,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
           styles.bubble,
           mine ? styles.mine : styles.peer,
           selected && (mine ? styles.mineSelected : styles.peerSelected),
+          highlighted && styles.bubbleHighlighted,
         ]}
       >
         {selected ? (
@@ -169,8 +181,33 @@ const ChatMessageRow = memo(function ChatMessageRow({
             <Ionicons name="checkmark" size={12} color="#fff" />
           </View>
         ) : null}
-        {!mine && item.senderName ? (
+        {showSender && !mine && item.senderName ? (
           <Text style={styles.sender}>{item.senderName}</Text>
+        ) : null}
+        {replyPreview && item.replyToId ? (
+          <Pressable
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              onPressReply?.(item.replyToId!);
+            }}
+            style={[styles.replyQuote, mine ? styles.replyQuoteMine : styles.replyQuotePeer]}
+          >
+            <View style={[styles.replyBar, mine ? styles.replyBarMine : styles.replyBarPeer]} />
+            <View style={styles.replyQuoteBody}>
+              <Text
+                style={[styles.replyName, mine ? styles.replyNameMine : styles.replyNamePeer]}
+                numberOfLines={1}
+              >
+                {replyPreview.name}
+              </Text>
+              <Text
+                style={[styles.replySnippet, mine ? styles.replySnippetMine : styles.replySnippetPeer]}
+                numberOfLines={2}
+              >
+                {replyPreview.body}
+              </Text>
+            </View>
+          </Pressable>
         ) : null}
         {isMedia ? (
           <MediaBody item={item} mine={mine} />
@@ -216,10 +253,25 @@ const ChatMessageRow = memo(function ChatMessageRow({
   );
 });
 
+function replyPreviewFor(
+  msg: Message,
+  byId: Map<string, Message>
+): ReplyPreview | null {
+  if (!msg.replyToId) return null;
+  const target = byId.get(msg.replyToId);
+  if (!target) return { name: "Reply", body: "Original message" };
+  return {
+    name: target.mine ? "You" : target.senderName || "User",
+    body: messageBody(target) || "Message",
+  };
+}
+
 type ChatMessageListProps = {
   list: Message[];
   selectedSet: Set<string>;
   pinnedIdSet: Set<string>;
+  highlightedId?: string | null;
+  showSender: boolean;
   listRef: RefObject<FlatList<Message> | null>;
   onScroll: (e: any) => void;
   onViewableItemsChanged: (info: {
@@ -228,31 +280,49 @@ type ChatMessageListProps = {
   viewabilityConfig: { itemVisiblePercentThreshold: number };
   onPressMessage: (item: Message) => void;
   onLongPressMessage: (item: Message) => void;
+  onPressReply?: (replyToId: string) => void;
 };
 
 const ChatMessageList = memo(function ChatMessageList({
   list,
   selectedSet,
   pinnedIdSet,
+  highlightedId,
+  showSender,
   listRef,
   onScroll,
   onViewableItemsChanged,
   viewabilityConfig,
   onPressMessage,
   onLongPressMessage,
+  onPressReply,
 }: ChatMessageListProps) {
   const keyExtractor = useCallback((m: Message) => m.id, []);
+  const byId = useMemo(() => new Map(list.map((m) => [m.id, m])), [list]);
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
       <ChatMessageRow
         item={item}
         selected={selectedSet.has(item.id)}
         pinned={pinnedIdSet.has(item.id)}
+        highlighted={highlightedId === item.id}
+        showSender={showSender}
+        replyPreview={replyPreviewFor(item, byId)}
         onPress={onPressMessage}
         onLongPress={onLongPressMessage}
+        onPressReply={onPressReply}
       />
     ),
-    [selectedSet, pinnedIdSet, onPressMessage, onLongPressMessage]
+    [
+      selectedSet,
+      pinnedIdSet,
+      highlightedId,
+      showSender,
+      byId,
+      onPressMessage,
+      onLongPressMessage,
+      onPressReply,
+    ]
   );
 
   return (
@@ -261,7 +331,7 @@ const ChatMessageList = memo(function ChatMessageList({
       data={list}
       keyExtractor={keyExtractor}
       renderItem={renderItem}
-      extraData={selectedSet}
+      extraData={`${selectedSet.size}:${highlightedId ?? ""}`}
       contentContainerStyle={styles.list}
       onScroll={onScroll}
       scrollEventThrottle={32}
@@ -438,10 +508,12 @@ export default function ChatScreen() {
   const [showJumpBottom, setShowJumpBottom] = useState(false);
   const [barPin, setBarPin] = useState<PinnedMessage | null>(null);
   const [pinsListOpen, setPinsListOpen] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const listRef = useRef<FlatList<Message>>(null);
   const nearBottomRef = useRef(true);
   /** Cancels in-flight jump-to-bottom settle retries when a newer jump starts. */
   const jumpBottomGenRef = useRef(0);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selecting = selectedIds.length > 0;
 
@@ -449,6 +521,8 @@ export default function ChatScreen() {
     () => conversations.find((c) => c.id === convId) ?? null,
     [conversations, convId]
   );
+  const isGroup =
+    conversation?.type === "social_group" || conversation?.type === "group";
   const list = messages[convId] ?? [];
 
   const selectedMsgs = useMemo(
@@ -518,20 +592,46 @@ export default function ChatScreen() {
     });
   }, [convId, pinnedList.map((p) => p.id).join(",")]);
 
-  const jumpToPinnedId = useCallback(
-    (id: string, opts?: { syncBar?: boolean }) => {
+  const jumpToMessageId = useCallback(
+    (id: string, opts?: { syncBar?: boolean; missingTitle?: string }) => {
       const index = list.findIndex((m) => m.id === id);
       if (index < 0) {
-        Alert.alert("Pinned message", "Message is not loaded in this view yet.");
+        Alert.alert(
+          opts?.missingTitle ?? "Message",
+          "Message is not loaded in this view yet."
+        );
         return;
       }
       listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.35 });
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      setHighlightedId(id);
+      highlightTimerRef.current = setTimeout(() => setHighlightedId(null), 1600);
       if (opts?.syncBar !== false) {
         setTimeout(() => syncBarFromIndices(index), 350);
       }
     },
     [list, syncBarFromIndices]
   );
+
+  const jumpToPinnedId = useCallback(
+    (id: string, opts?: { syncBar?: boolean }) => {
+      jumpToMessageId(id, { ...opts, missingTitle: "Pinned message" });
+    },
+    [jumpToMessageId]
+  );
+
+  const onPressReply = useCallback(
+    (replyToId: string) => {
+      jumpToMessageId(replyToId, { missingTitle: "Reply" });
+    },
+    [jumpToMessageId]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
 
   const jumpToPinned = useCallback(() => {
     const target = barPin ?? pinnedList[pinnedList.length - 1];
@@ -575,33 +675,48 @@ export default function ChatScreen() {
     const isDm = conversation?.type === "dm" || Boolean(conversation?.peerId);
     const callBusy = Boolean(call.active || call.incoming);
     const title = conversation ? conversationDisplayName(conversation) : "Chat";
+    const openChatInfo = () => {
+      if (!conversation) return;
+      router.push({ pathname: "/chat-info/[id]", params: { id: conversation.id } });
+    };
+    const openTitleTarget = () => {
+      if (!conversation) return;
+      // DM title → peer profile; group title → group details.
+      if (isDm && conversation.peerId) {
+        router.push({ pathname: "/user/[id]", params: { id: conversation.peerId } });
+        return;
+      }
+      openChatInfo();
+    };
     navigation.setOptions({
       headerShown: !selecting,
       title,
       headerTitleAlign: "left",
       headerTitle: () => (
-        <Text
-          numberOfLines={1}
-          style={{
-            color: "#fff",
-            fontSize: 17,
-            fontWeight: "600",
-            maxWidth: 200,
-          }}
-        >
-          {title}
-        </Text>
+        <Pressable onPress={openTitleTarget} hitSlop={6} style={{ maxWidth: 180 }}>
+          <Text
+            numberOfLines={1}
+            style={{
+              color: "#fff",
+              fontSize: 17,
+              fontWeight: "600",
+            }}
+          >
+            {title}
+          </Text>
+        </Pressable>
       ),
       headerLeft: undefined,
-      headerRight: isDm
-        ? () => (
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                marginRight: Platform.OS === "ios" ? 8 : 4,
-              }}
-            >
+      headerRight: () => (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginRight: Platform.OS === "ios" ? 8 : 4,
+          }}
+        >
+          {isDm ? (
+            <>
               <Pressable
                 onPress={() => {
                   if (callBusy || !conversation) return;
@@ -630,9 +745,18 @@ export default function ChatScreen() {
               >
                 <Ionicons name="videocam-outline" size={24} color="#fff" />
               </Pressable>
-            </View>
-          )
-        : () => null,
+            </>
+          ) : null}
+          <Pressable
+            onPress={openChatInfo}
+            hitSlop={10}
+            style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+            accessibilityLabel="Chat info"
+          >
+            <Ionicons name="ellipsis-horizontal" size={22} color="#fff" />
+          </Pressable>
+        </View>
+      ),
     });
   }, [
     navigation,
@@ -871,12 +995,15 @@ export default function ChatScreen() {
           list={pinnedThreadMessages}
           selectedSet={emptySelectedSet}
           pinnedIdSet={pinnedIdSet}
+          highlightedId={highlightedId}
+          showSender={isGroup}
           listRef={listRef}
           onScroll={noopScroll}
           onViewableItemsChanged={noopViewable}
           viewabilityConfig={viewabilityConfig}
           onPressMessage={onPressMessage}
           onLongPressMessage={onLongPressMessage}
+          onPressReply={onPressReply}
         />
         <Modal
           visible={Boolean(ctxMsg)}
@@ -990,12 +1117,15 @@ export default function ChatScreen() {
           list={list}
           selectedSet={selectedSet}
           pinnedIdSet={pinnedIdSet}
+          highlightedId={highlightedId}
+          showSender={isGroup}
           listRef={listRef}
           onScroll={onListScroll}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           onPressMessage={onPressMessage}
           onLongPressMessage={onLongPressMessage}
+          onPressReply={onPressReply}
         />
         {showJumpBottom ? (
           <Pressable
@@ -1209,6 +1339,10 @@ const styles = StyleSheet.create({
   },
   mineSelected: { backgroundColor: "#1a4fb8" },
   peerSelected: { backgroundColor: "#e8f0fe", borderColor: colors.accent },
+  bubbleHighlighted: {
+    borderWidth: 2,
+    borderColor: colors.accent,
+  },
   checkBadge: {
     position: "absolute",
     top: -6,
@@ -1225,6 +1359,25 @@ const styles = StyleSheet.create({
   checkMine: { left: -6 },
   checkPeer: { right: -6 },
   sender: { fontSize: 12, fontWeight: "600", color: colors.accent, marginBottom: 2 },
+  replyQuote: {
+    flexDirection: "row",
+    borderRadius: 8,
+    marginBottom: 6,
+    overflow: "hidden",
+    alignSelf: "stretch",
+  },
+  replyQuoteMine: { backgroundColor: "rgba(255,255,255,0.18)" },
+  replyQuotePeer: { backgroundColor: "rgba(36,99,220,0.08)" },
+  replyBar: { width: 3 },
+  replyBarMine: { backgroundColor: "#fff" },
+  replyBarPeer: { backgroundColor: colors.accent },
+  replyQuoteBody: { flex: 1, paddingVertical: 6, paddingHorizontal: 8, minWidth: 0 },
+  replyName: { fontSize: 13, fontWeight: "700", marginBottom: 2 },
+  replyNameMine: { color: "#fff" },
+  replyNamePeer: { color: colors.accent },
+  replySnippet: { fontSize: 13, lineHeight: 17 },
+  replySnippetMine: { color: "rgba(255,255,255,0.9)" },
+  replySnippetPeer: { color: colors.textSecondary },
   body: { fontSize: 16, lineHeight: 22 },
   mineText: { color: "#fff" },
   peerText: { color: colors.text },

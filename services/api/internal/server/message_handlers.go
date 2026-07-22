@@ -267,6 +267,80 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"id": id.String(), "public_id": publicID})
 }
 
+// handleAddGroupMembers mirrors Mattermost AddChannelMember / invite —
+// owner or admin may add accepted friends into an existing social group.
+func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+	if !s.isGroupAdmin(r, convID, c.UserID) {
+		writeErrCode(w, 403, "forbidden", "only owners and admins can add members")
+		return
+	}
+	var req struct {
+		MemberIDs []string `json:"member_ids"`
+	}
+	if err := decodeJSON(r, &req); err != nil || len(req.MemberIDs) == 0 {
+		writeErrCode(w, 400, "invalid_request", "member_ids required")
+		return
+	}
+	var ent, typ string
+	err := s.db.QueryRow(r.Context(), `
+		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+
+	added := make([]string, 0)
+	skipped := make([]string, 0)
+	for _, mid := range req.MemberIDs {
+		mid = strings.TrimSpace(mid)
+		if mid == "" || mid == c.UserID {
+			continue
+		}
+		var okFriend bool
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT EXISTS(
+				SELECT 1 FROM friendships
+				WHERE status='accepted' AND enterprise_id=$1
+				  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
+			)`, c.EnterpriseID, c.UserID, mid).Scan(&okFriend)
+		if !okFriend {
+			skipped = append(skipped, mid)
+			continue
+		}
+		// Promote pending join requests; insert new members otherwise.
+		tag, err := s.db.Exec(r.Context(), `
+			UPDATE conversation_members
+			SET role='member', history_visible_from=now(), joined_at=now()
+			WHERE conversation_id=$1 AND user_id=$2 AND role='pending'`, convID, mid)
+		if err == nil && tag.RowsAffected() > 0 {
+			added = append(added, mid)
+			continue
+		}
+		tag, err = s.db.Exec(r.Context(), `
+			INSERT INTO conversation_members(conversation_id, user_id, role, history_visible_from)
+			VALUES ($1,$2,'member', now())
+			ON CONFLICT (conversation_id, user_id) DO NOTHING`, convID, mid)
+		if err != nil || tag.RowsAffected() == 0 {
+			skipped = append(skipped, mid)
+			continue
+		}
+		added = append(added, mid)
+	}
+
+	if len(added) > 0 {
+		s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
+			Type: "group.updated",
+			Payload: map[string]any{
+				"conversation_id": convID,
+				"added_member_ids": added,
+			},
+		})
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "added": added, "skipped": skipped})
+}
+
 func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
