@@ -18,6 +18,7 @@ const { allowSelfSignedForWebHost } = require("../security/certificates");
 const { registerThemeSync } = require("../native/theme");
 const { startIdleMonitor } = require("../native/idleMonitor");
 const { registerDownloadHandler } = require("../services/downloads");
+const { registerAutoUpdater } = require("../services/autoUpdate");
 const { registerIpcHandlers } = require("../ipc/handlers");
 const {
   getMainWindow,
@@ -111,6 +112,8 @@ function startApp() {
 
     // AUTH-04: system idle → renderer (web bridges to away/online).
     startIdleMonitor({ getMainWindow });
+    // PACK-06: electron-updater (packaged + updateUrl only).
+    registerAutoUpdater({ getMainWindow });
 
     process.env.QCHAT_WEB_URL_RESOLVED = webUrl;
 

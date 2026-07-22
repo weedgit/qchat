@@ -173,7 +173,9 @@ npm run dist          # current platform defaults
 
 Windows installers can be cross-built on Linux only with Wine configured.
 Building `dist:win` on Windows 11 is the supported development workflow.
-Signing and auto-update are not configured yet.
+Signing is not configured yet. Auto-update is scaffolded: set `updateUrl` in
+`production.json` / `userData/config.json` or `QCHAT_UPDATE_URL` to a generic
+electron-builder feed, then ship installs that host `latest*.yml` + artifacts.
 
 After changing `production.json` or main-process security, rebuild the
 installer (`npm run dist:win`) and reinstall — an old Setup.exe still embeds
@@ -183,6 +185,7 @@ the previous defaults.
 
 - `contextIsolation`, renderer sandbox, `app.enableSandbox()`, and no renderer Node integration
 - Packaged builds never honor `QCHAT_DESKTOP_NO_SANDBOX` (dev/VM `--no-sandbox` only)
+- Auto-update via `electron-updater` when `updateUrl` / `QCHAT_UPDATE_URL` is set (Help → Check for Updates)
 - Remember me: tokens via Electron `safeStorage` (`userData/secure/`); app opens `/` when a session exists; logout clears the vault
 - Origin-scoped permissions and external navigation checks
 - Certificate errors: trust / deny dialog (persisted); configured web host stays auto-trusted

@@ -75,7 +75,7 @@
 | PACK-03 | MM | Bundle static `apps/web/out` offline | asar extraResources | Deferred | `feat-kevin-desktop-offline-web` |
 | PACK-04 | MM | Windows Authenticode signing | code sign | Todo | `feat-kevin-desktop-win-sign` |
 | PACK-05 | MM | macOS Developer ID + notarization | notarize | Todo | `feat-kevin-desktop-mac-notarize` |
-| PACK-06 | MM | Auto-update (`electron-updater`) | updateNotifier | Todo | `feat-kevin-desktop-auto-update` |
+| PACK-06 | MM | Auto-update (`electron-updater`) | updateNotifier | Done | `feat-kevin-desktop-auto-update` |
 | PACK-07 | MM | Ship without `--no-sandbox` | production hardening | Done | `feat-kevin-desktop-prod-sandbox` |
 | PACK-08 | MM | Crash / telemetry hooks | diagnostics | Deferred | `feat-kevin-desktop-crash-report` |
 
@@ -83,9 +83,9 @@
 
 ### Todo backlog (implement one row = one commit)
 
-1. `PACK-04`–`PACK-06` signing + auto-update  
+1. `PACK-04`–`PACK-05` Windows / macOS signing (needs certificates)  
 
-**In progress:** next concrete work is **PACK-06** auto-update scaffold, or signing when certs are available.
+**In progress:** next concrete work is code signing when certs are available.
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 
@@ -194,7 +194,7 @@ Full list across D0–D5:
 |---|---|---|
 | Windows Authenticode signing | Todo | No SmartScreen “unknown publisher” (or reduced) |
 | macOS Developer ID + notarization | Todo | Gatekeeper accepts the app |
-| Auto-update (`electron-updater`) | Todo | New build prompts update |
+| Auto-update (`electron-updater`) | Done | Packaged + `updateUrl` / `QCHAT_UPDATE_URL`; Help → Check for Updates; no-op when URL empty or unpackaged |
 | Production hardening (no `--no-sandbox` in ship) | Done | `app.enableSandbox()`; packaged ignores `QCHAT_DESKTOP_NO_SANDBOX`; Linux afterPack setuid on `chrome-sandbox`; `--no-sandbox` remains explicit dev/VM only |
 | Crash / telemetry hooks (optional) | Todo | Crash report appears in chosen service |
 

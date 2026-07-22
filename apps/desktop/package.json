@@ -44,10 +44,15 @@
     },
     "protocols": {
       "name": "Qchat",
-      "schemes": ["qchat"]
+      "schemes": [
+        "qchat"
+      ]
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Network",
       "icon": "assets/icon.png",
       "executableName": "qchat-desktop",
@@ -56,7 +61,9 @@
       "artifactName": "qchat-desktop-${version}-${arch}.${ext}"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "assets/icon.png",
       "artifactName": "qchat-desktop-Setup-${version}.${ext}"
     },
@@ -68,20 +75,33 @@
       "shortcutName": "Qchat Desktop"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "assets/icon.png",
       "category": "public.app-category.social-networking",
       "artifactName": "qchat-desktop-${version}-${arch}.${ext}"
     },
     "dmg": {
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     }
   },
   "devDependencies": {
     "electron": "^43.1.1",
     "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

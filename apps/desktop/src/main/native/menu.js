@@ -1,6 +1,7 @@
 const { Menu } = require("electron");
 const { APP_TITLE } = require("../../shared/constants");
 const { showAbout } = require("./about");
+const { getAutoUpdateApi } = require("../services/autoUpdate");
 const {
   isAutostartEnabled,
   setAutostartEnabled,
@@ -118,6 +119,15 @@ function buildAppMenu(opts) {
     {
       label: "Help",
       submenu: [
+        {
+          label: "Check for Updates…",
+          click: () => {
+            getAutoUpdateApi()
+              .checkForUpdates({ manual: true })
+              .catch(() => {});
+          },
+        },
+        { type: "separator" },
         {
           label: `About ${APP_TITLE}`,
           accelerator: "CmdOrCtrl+Shift+A",
