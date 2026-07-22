@@ -17,6 +17,7 @@ const {
   prepareEarlySessionBootstrap,
 } = require("./sessionPersistence");
 const { ensureVaultSessionFresh } = require("./sessionValidate");
+const { attachContextMenu } = require("../native/contextMenu");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -174,6 +175,8 @@ function createMainWindow(opts) {
   });
 
   attachNavigationGuards(mainWindow, webUrl, { onDeepLink });
+  // SHELL-22: native edit/link/image/spellcheck menu; gated so web chat menus still work.
+  attachContextMenu(mainWindow);
 
   mainWindow.webContents.on(
     "did-fail-load",

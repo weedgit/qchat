@@ -182,6 +182,7 @@ the previous defaults.
 - Remember me: tokens via Electron `safeStorage` (`userData/secure/`); app opens `/` when a session exists; logout clears the vault
 - Origin-scoped permissions and external navigation checks
 - Certificate errors: trust / deny dialog (persisted); configured web host stays auto-trusted
+- Right-click: cut/copy/paste, links, images, spellcheck (gated so web chat menus still work)
 - Native notifications that focus the target conversation
 - Dock / taskbar unread badge (mentions count or unread dot) via `setUnreadStatus`
 - Tray tooltip reflects unread / mention totals
