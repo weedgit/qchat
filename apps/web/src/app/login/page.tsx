@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ApiError, api, setTokens } from "@/lib/api";
+import { ApiError, api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
 import { getAuthDevice } from "@/lib/device";
 
 interface CaptchaState {
@@ -26,6 +26,23 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ok = (await restoreDesktopSession()) || Boolean(getToken());
+      if (cancelled) return;
+      if (ok) {
+        router.replace("/");
+        return;
+      }
+      setCheckingSession(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const loadCaptcha = useCallback(async () => {
     setCaptcha(null);
@@ -60,8 +77,9 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    if (checkingSession) return;
     loadCaptcha();
-  }, [loadCaptcha]);
+  }, [loadCaptcha, checkingSession]);
 
   async function sendRegisterOTP() {
     setSmsBusy(true);
@@ -142,6 +160,18 @@ export default function LoginPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (checkingSession) {
+    return (
+      <div className="auth-wrap">
+        <div className="auth-card">
+          <div className="auth-logo">Q</div>
+          <div className="auth-title">Signing you in…</div>
+          <div className="auth-sub">Restoring saved session</div>
+        </div>
+      </div>
+    );
   }
 
   return (

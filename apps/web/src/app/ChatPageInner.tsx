@@ -540,6 +540,11 @@ export default function ChatPageInner() {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const wasNarrowRef = useRef(false);
   const [query, setQuery] = useState("");
+  /** Only show "Reconnecting" after a prior successful WS connect (avoid boot flicker). */
+  const [wsEverConnected, setWsEverConnected] = useState(false);
+  useEffect(() => {
+    if (chat.connected) setWsEverConnected(true);
+  }, [chat.connected]);
   const [inChatSearch, setInChatSearch] = useState("");
   const [showInChatSearch, setShowInChatSearch] = useState(false);
   const [draft, setDraft] = useState("");
@@ -1627,11 +1632,15 @@ export default function ChatPageInner() {
           <div className="search-wrap">
             <input
               className="search-input"
-              placeholder={chat.connected ? "Search" : "Reconnecting\u2026"}
+              placeholder={
+                chat.connected || !wsEverConnected ? "Search" : "Reconnecting\u2026"
+              }
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            {!chat.connected && <span className="spinner" aria-label="Reconnecting" />}
+            {!chat.connected && wsEverConnected && (
+              <span className="spinner" aria-label="Reconnecting" />
+            )}
           </div>
           {mainMenuOpen && (
             <div className="popup-menu main-menu" onClick={(e) => e.stopPropagation()}>

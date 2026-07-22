@@ -21,7 +21,7 @@
 |---|---|---|---|---|---|
 | AUTH-01 | §2.1 | Captcha fetch via main-process IPC | session networking | Done | `feat-kevin-desktop-captcha-ipc` |
 | AUTH-02 | §2.1 | Send `device_type=desktop` / desktop device name | externalAPI / server view identity | Done | `feat-kevin-desktop-device-identity` |
-| AUTH-03 | §2.1 | Remember session via `safeStorage` tokens | secureStorage.ts | Todo | `feat-kevin-desktop-safe-storage` |
+| AUTH-03 | §2.1 | Remember session via `safeStorage` tokens | secureStorage.ts | Done | `feat-kevin-desktop-safe-storage` |
 | AUTH-04 | §2.3 | Idle detection → away status bridge | UserActivityMonitor.ts | Todo | `feat-kevin-desktop-idle-status` |
 | CALL-01 | §2.4 | Grant mic / camera permission | permissionsManager | Done | `feat-kevin-desktop-media-permission` |
 | CALL-02 | §2.4 | Screenshare via `desktopCapturer` | callsWidgetWindow / desktopCapturer | Todo | `feat-kevin-desktop-screenshare` |
@@ -87,10 +87,9 @@
 3. `SHELL-29` deep-link open chat  
 4. `SHELL-27` hide on start  
 5. Web hook for `NOTI-04` — call `qchatDesktop.setUnreadStatus({ unread, mentions })`  
-6. `AUTH-03` `safeStorage`  
-7. `CALL-02` screenshare  
-8. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-9. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+6. `CALL-02` screenshare  
+7. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
+8. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
 **In progress:** next concrete work is **D4** tray / autostart / protocol (or **D5** signing).
 
@@ -115,7 +114,7 @@ Full list across D0–D5:
 11. System tray / minimize to tray  
 12. Autostart on login  
 13. Optional `qchat://` protocol handler  
-14. Optional secure token storage (`safeStorage`)  
+14. Secure token storage (`safeStorage`) — Done  
 15. Code signing + auto-update  
 
 ---
@@ -189,7 +188,7 @@ Full list across D0–D5:
 | System tray / minimize to tray | Todo | Close-to-tray; tray menu Show / Quit |
 | Autostart on OS login | Todo | Reboot → app starts |
 | Protocol handler `qchat://` | Todo | `qchat://…` opens app / conversation |
-| Secure token storage (`safeStorage`) | Todo | Tokens not stored as plain web localStorage |
+| Secure token storage (`safeStorage`) | **Done** | Tokens encrypted in `userData/secure/` via Electron `safeStorage`; desktop opens `/` when a session exists |
 
 ---
 

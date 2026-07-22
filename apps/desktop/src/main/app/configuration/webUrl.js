@@ -99,18 +99,21 @@ function resolveWebUrl() {
   return DEFAULT_DEV_URL;
 }
 
-/** Prefer /login so we don't land on the Suspense "Loading…" home page unauthenticated. */
-function resolveStartUrl(base) {
+/**
+ * Start at app root. The web auth gate sends unsigned users to /login.
+ * Always forcing /login broke "remember me" when tokens already lived in
+ * Chromium localStorage (typical for start:server / packaged remote web).
+ */
+function resolveStartUrl(base, opts = {}) {
+  void opts; // hasSession reserved; root load + inject handles restore
   try {
     const u = new URL(base);
-    if (!u.pathname || u.pathname === "/") {
-      u.pathname = "/login";
+    if (!u.pathname || u.pathname === "/" || u.pathname === "/login") {
+      return `${u.origin}/`;
     }
-    return u.toString().replace(/\/$/, "") === `${u.origin}/login`
-      ? `${u.origin}/login`
-      : u.toString();
+    return u.toString();
   } catch {
-    return String(base).replace(/\/$/, "") + "/login";
+    return String(base).replace(/\/$/, "") + "/";
   }
 }
 

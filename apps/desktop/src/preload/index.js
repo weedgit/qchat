@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const os = require("os");
+const { IPC } = require("../shared/ipc/channels");
 
 function argumentValue(name) {
   const prefix = `--${name}=`;
@@ -33,14 +34,6 @@ function platformLabel() {
   return `${plat} (${release})`;
 }
 
-const IPC = Object.freeze({
-  fetchCaptcha: "qchat:fetch-captcha",
-  notify: "qchat:desktop-notify",
-  openConversation: "qchat:open-conversation",
-  rendererReady: "qchat:renderer-ready",
-  showAbout: "qchat:show-about",
-});
-
 const osLabel = platformLabel();
 
 contextBridge.exposeInMainWorld("qchatDesktop", {
@@ -50,14 +43,20 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
   version: argumentValue("qchat-version"),
   webUrl: argumentValue("qchat-web-url"),
   deviceName: `Qchat Desktop (${osLabel})`,
-  notifyMessage: (payload) => ipcRenderer.invoke(IPC.notify, payload),
-  showAbout: () => ipcRenderer.invoke(IPC.showAbout),
-  fetchCaptcha: () => ipcRenderer.invoke(IPC.fetchCaptcha),
-  signalReady: () => ipcRenderer.send(IPC.rendererReady),
+  notifyMessage: (payload) => ipcRenderer.invoke(IPC.DESKTOP_NOTIFY, payload),
+  showAbout: () => ipcRenderer.invoke(IPC.SHOW_ABOUT),
+  fetchCaptcha: () => ipcRenderer.invoke(IPC.FETCH_CAPTCHA),
+  setUnreadStatus: (payload) => ipcRenderer.invoke(IPC.SET_UNREAD_STATUS, payload),
+  signalReady: () => ipcRenderer.send(IPC.RENDERER_READY),
   onOpenConversation: (handler) => {
     if (typeof handler !== "function") return () => {};
     const listener = (_event, conversationId) => handler(conversationId);
     ipcRenderer.on(IPC.OPEN_CONVERSATION, listener);
     return () => ipcRenderer.removeListener(IPC.OPEN_CONVERSATION, listener);
   },
+  /** OS-backed encrypted session tokens (AUTH-03). */
+  secureSessionAvailable: () => ipcRenderer.invoke(IPC.SECURE_SESSION_AVAILABLE),
+  getSecureSession: () => ipcRenderer.invoke(IPC.SECURE_SESSION_GET),
+  setSecureSession: (tokens) => ipcRenderer.invoke(IPC.SECURE_SESSION_SET, tokens),
+  clearSecureSession: () => ipcRenderer.invoke(IPC.SECURE_SESSION_CLEAR),
 });

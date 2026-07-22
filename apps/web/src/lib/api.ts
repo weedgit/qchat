@@ -24,6 +24,42 @@ const ACCESS_KEY = "qchat.access_token";
 const REFRESH_KEY = "qchat.refresh_token";
 const REMEMBER_KEY = "qchat.remember";
 
+function desktopBridge(): Window["qchatDesktop"] | undefined {
+  if (typeof window === "undefined") return undefined;
+  return window.qchatDesktop;
+}
+
+function applyTokensLocal(access: string, refresh: string, remember: boolean) {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+  sessionStorage.removeItem(ACCESS_KEY);
+  sessionStorage.removeItem(REFRESH_KEY);
+  const s = storage(remember);
+  s.setItem(ACCESS_KEY, access);
+  if (refresh) s.setItem(REFRESH_KEY, refresh);
+  localStorage.setItem(REMEMBER_KEY, remember ? "1" : "0");
+}
+
+/**
+ * Hydrate tokens from Electron safeStorage (AUTH-03). Call before auth gates.
+ * Returns true when an access token is available afterward.
+ */
+export async function restoreDesktopSession(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (getToken()) return true;
+  const desk = desktopBridge();
+  if (!desk?.getSecureSession) return false;
+  try {
+    const session = await desk.getSecureSession();
+    const access = String(session?.accessToken || "").trim();
+    if (!access) return false;
+    applyTokensLocal(access, String(session?.refreshToken || ""), true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(ACCESS_KEY) ?? sessionStorage.getItem(ACCESS_KEY);
@@ -39,14 +75,14 @@ function storage(remember: boolean): Storage {
 }
 
 export function setTokens(access: string, refresh: string, remember: boolean) {
-  localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  sessionStorage.removeItem(ACCESS_KEY);
-  sessionStorage.removeItem(REFRESH_KEY);
-  const s = storage(remember);
-  s.setItem(ACCESS_KEY, access);
-  if (refresh) s.setItem(REFRESH_KEY, refresh);
-  localStorage.setItem(REMEMBER_KEY, remember ? "1" : "0");
+  applyTokensLocal(access, refresh, remember);
+  const desk = desktopBridge();
+  if (!desk?.setSecureSession) return;
+  if (remember) {
+    void desk.setSecureSession({ accessToken: access, refreshToken: refresh || "" }).catch(() => {});
+  } else if (desk.clearSecureSession) {
+    void desk.clearSecureSession().catch(() => {});
+  }
 }
 
 /** @deprecated use setTokens */
@@ -60,6 +96,10 @@ export function clearToken() {
   sessionStorage.removeItem(ACCESS_KEY);
   sessionStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(REMEMBER_KEY);
+  const desk = desktopBridge();
+  if (desk?.clearSecureSession) {
+    void desk.clearSecureSession().catch(() => {});
+  }
 }
 
 function remembered(): boolean {
@@ -121,12 +161,20 @@ async function refreshAccess(): Promise<boolean> {
           }
         }
         if (!res.ok) {
-          clearToken();
+          // Only drop the session on an explicit auth rejection — not on HTML/proxy noise.
+          if (res.status === 401 || res.status === 403) {
+            clearToken();
+          }
           return false;
         }
-        setTokens(String(body.access_token), String(body.refresh_token ?? ""), remembered());
+        setTokens(
+          String(body.access_token),
+          String(body.refresh_token ?? getRefreshToken() ?? ""),
+          remembered()
+        );
         return true;
       } catch {
+        // Transient network / TLS blip — keep tokens so splash can retry.
         return false;
       } finally {
         refreshPromise = null;
@@ -193,8 +241,11 @@ export async function api<T = any>(
   if (res.status === 401 && !_retried && !path.startsWith("/v1/auth/")) {
     const ok = await refreshAccess();
     if (ok) return api<T>(path, init, true);
-    clearToken();
-    redirectLogin();
+    // refreshAccess clears tokens only on explicit 401/403. If tokens remain,
+    // this was likely a transient failure — don't hard-navigate to login.
+    if (!getToken()) {
+      redirectLogin();
+    }
   }
 
   if (!res.ok) {
@@ -323,8 +374,9 @@ export async function uploadMedia(
                 doUpload(true).then(resolve, reject);
                 return;
               }
-              clearToken();
-              redirectLogin();
+              if (!getToken()) {
+                redirectLogin();
+              }
               reject(new ApiError(401, "unauthorized", body));
             })
             .catch(reject);
