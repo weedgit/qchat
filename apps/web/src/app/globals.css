@@ -354,6 +354,7 @@ select:focus {
 /* ---------- main layout ---------- */
 
 .shell {
+  position: relative;
   display: flex;
   height: 100vh;
   overflow: hidden;
@@ -1191,6 +1192,18 @@ select:focus {
 .details-panel .kv .k {
   font-size: 12px;
   color: var(--text-dim);
+}
+/* Mattermost RHS behavior: preserve the center channel when space is tight. */
+@media (max-width: 1100px) {
+  .details-panel {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(320px, 100%);
+    box-shadow: -12px 0 28px rgba(0, 0, 0, 0.22);
+  }
 }
 
 /* ---------- simple pages (friends / profile) ---------- */

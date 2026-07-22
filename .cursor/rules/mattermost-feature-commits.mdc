@@ -1,15 +1,20 @@
 ---
-description: Branch naming, Mattermost refs, per-feature commits, no Cursor co-author
+description: Mattermost refs; no auto branch/commit; naming + commit style only when asked
 alwaysApply: true
 ---
 
 # Qchat implementation workflow
 
-Whenever implementing a feature or meaningful change in this project, follow **all** of these steps.
+## 0. Do not create branches or commits unless asked
 
-## 0. Branch naming (always, before coding)
+- **Never** create, switch, rename, or delete git branches on your own.
+- **Never** create commits (including `commit-tree` / soft-reset workflows) unless the user explicitly asks to commit.
+- Stay on the user's current branch. Implement changes as uncommitted work unless they request otherwise.
+- If a named branch or commit would help, suggest the name/message and wait for approval.
 
-Create or switch to a branch whose name encodes **type + owner + surface + topic**:
+## 1. Branch naming (only when the user asks for a branch)
+
+When the user requests a branch, use:
 
 ```
 {feat|fix}-hitman-{web|desktop|mobile}-{kebab-feature-slug}
@@ -18,45 +23,29 @@ Create or switch to a branch whose name encodes **type + owner + surface + topic
 | Part | Values | Meaning |
 |---|---|---|
 | type | `feat` or `fix` | New capability vs bugfix |
-| owner | `hitman` | Your handle (keep stable) |
-| surface | `web` / `desktop` / `mobile` | Primary client touched (API-only → pick the client that consumes it, usually `web`) |
-| slug | lowercase kebab-case | Short feature contents |
+| owner | `hitman` | Keep stable |
+| surface | `web` / `desktop` / `mobile` | Primary client (API-only → usually `web`) |
+| slug | lowercase kebab-case | Short feature theme |
 
-Examples:
+Examples: `feat-hitman-web-social-group-gaps`, `fix-hitman-web-composer-edit`, `feat-hitman-desktop-electron-shell`.
 
-```
-feat-hitman-web-social-group-gaps
-feat-hitman-web-message-polish
-fix-hitman-web-composer-edit
-feat-hitman-desktop-electron-shell
-feat-hitman-mobile-push-register
-```
+Do not use vague slugs (`misc`, `updates`, `wip`) or omit the surface.
 
-Rules:
-
-- **Always** branch off the current integration branch (usually `master`) **before** writing code.
-- One branch may contain several related commits, but the branch slug should describe the **batch theme**.
-- Do **not** use vague names (`misc`, `updates`, `wip`) or omit the surface (`feat-hitman-foo` is invalid).
-- If work spans web + API, still use `web` (or the primary UX surface). Use `desktop` / `mobile` only when that app is the main deliverable.
-
-```bash
-git checkout master && git pull
-git checkout -b feat-hitman-web-<slug>
-```
-
-## 1. Reference Mattermost
+## 2. Reference Mattermost
 
 Before and while implementing, look up the matching Mattermost pattern under `mattermost/` (especially `mattermost/source/server` and `mattermost/source/webapp`).
 
-- Mirror Mattermost’s **behavior, API shape, and UX placement** where it fits Qchat.
-- In code comments and commit bodies, name the Mattermost concept (e.g. `status_change`, `favoriteChannel`, `notify_props`, `applyTheme`).
+- Mirror Mattermost’s behavior, API shape, and UX placement where it fits Qchat.
+- In code comments (and commit bodies when committing), name the Mattermost concept (e.g. `status_change`, `favoriteChannel`, `notify_props`, `applyTheme`).
 - Prefer adapting Mattermost’s approach over inventing a parallel design.
 
-## 2. One commit per feature
+## 3. Commits (only when the user asks)
 
-- Split work into discrete features; **commit each feature separately** when it is complete and working.
-- Do not batch unrelated features into one commit.
-- Commit message style: short `feat:` / `fix:` subject; body explains *why* and the Mattermost reference.
+When asked to commit:
+
+- Prefer one discrete feature per commit; do not batch unrelated work.
+- Message style: short `feat:` / `fix:` subject; body explains *why* and the Mattermost reference.
+- Never include `Co-authored-by: Cursor` or any Cursor agent trailer. If the environment injects it, use `git commit-tree` after `git write-tree`, then `git reset --soft`, and verify with `git log -1 --format='%B'`.
 
 Example:
 
@@ -66,20 +55,3 @@ feat: add online and last-seen presence
 Mirror Mattermost status_change / last_activity_at: broadcast presence
 on WS connect/disconnect, show status dots and last-seen on DMs.
 ```
-
-## 3. Never add Cursor as co-author
-
-- Commits must **not** include `Co-authored-by: Cursor` or any Cursor agent trailer.
-- The environment may inject that trailer on `git commit` / `git commit --amend`. Bypass it by creating commits with `git commit-tree` after `git add` + `git write-tree`, then `git reset --soft <newsha>`.
-- After every commit, verify with `git log -1 --format='%B'` that no Cursor co-author line is present; rewrite if it is.
-
-```bash
-git add <paths>
-TREE=$(git write-tree)
-PARENT=$(git rev-parse HEAD)
-NEW=$(printf '%s\n' 'feat: subject' '' 'Body with Mattermost reference.' | git commit-tree "$TREE" -p "$PARENT")
-git reset --soft "$NEW"
-git log -1 --format='%B'   # must not mention Cursor
-```
-
-For the first commit on an orphan/empty repo, omit `-p "$PARENT"`.
