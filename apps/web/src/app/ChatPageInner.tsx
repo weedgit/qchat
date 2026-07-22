@@ -56,7 +56,6 @@ function ConversationRow({
   onClick,
   onFavorite,
   onMute,
-  onMarkUnread,
   onDropHover,
   onFilesDrop,
 }: {
@@ -68,7 +67,6 @@ function ConversationRow({
   onClick: () => void;
   onFavorite: () => void;
   onMute: () => void;
-  onMarkUnread: () => void;
   onDropHover?: (hover: boolean) => void;
   onFilesDrop?: (files: File[]) => void;
 }) {
@@ -191,16 +189,6 @@ function ConversationRow({
             <MenuIcon d={conv.muted ? ICONS.unmute : ICONS.mute} />
             {conv.muted ? "Unmute" : "Mute"}
           </button>
-          <button
-            className="ctx-item"
-            onClick={() => {
-              onMarkUnread();
-              setMenu(null);
-            }}
-          >
-            <MenuIcon d={ICONS.markUnread} />
-            Mark as unread
-          </button>
         </div>
       )}
     </div>
@@ -259,7 +247,6 @@ const ICONS = {
   pin: "M12 17v5 M9 10.76V3h6v7.76L19 14v1H5v-1l4-3.24z",
   mute: "M11 5L6 9H2v6h4l5 4V5z M23 9l-6 6 M17 9l6 6",
   unmute: "M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14",
-  markUnread: "M4 4h16v12H5.17L4 17.17V4z",
   phone: "M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
   video:
     "M23 7l-7 5 7 5V7z M3 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z",
@@ -586,6 +573,8 @@ export default function ChatPageInner() {
   const [groupMetaBusy, setGroupMetaBusy] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef(true);
+  const [showJumpBottom, setShowJumpBottom] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const groupAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -1069,8 +1058,24 @@ export default function ChatPageInner() {
   }, [openConversation]);
 
   useEffect(() => {
+    if (!nearBottomRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [activeMessages.length, chat.activeId]);
+
+  function updateJumpBottomVisibility() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const near = distance < 80;
+    nearBottomRef.current = near;
+    setShowJumpBottom(!near && el.scrollHeight > el.clientHeight + 40);
+  }
+
+  function jumpToBottom() {
+    nearBottomRef.current = true;
+    setShowJumpBottom(false);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -1660,7 +1665,6 @@ export default function ChatPageInner() {
                   onMute={() =>
                     chat.updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => { })
                   }
-                  onMarkUnread={() => chat.markConversationUnread(c.id).catch(() => { })}
                   onDropHover={(hover) => setDropHoverConvId(hover ? c.id : null)}
                   onFilesDrop={(files) => {
                     attachDroppedFiles(c.id, files).catch(() => { });
@@ -1961,44 +1965,61 @@ export default function ChatPageInner() {
                   </div>
                 </div>
               )}
-              <div className="msg-scroll" ref={scrollRef}>
-                {activeMessages.length === 0 && (
-                  <div className="empty-state" style={{ minHeight: 200 }}>
-                    <div className="muted">No messages here yet…</div>
-                  </div>
-                )}
-                {activeMessages.map((m) => (
-                  <div key={m.id} id={`msg-${m.id}`}>
-                    <Bubble
-                      msg={m}
-                      isGroup={!!isGroup}
-                      replyPreview={previewFor(m)}
-                      selectMode={selectMode}
-                      selected={selectedIds.has(m.id)}
-                      selectable={!m.pending && !m.failed}
-                      onToggleSelect={() => toggleSelect(m.id)}
-                      onContextMenu={(e) => openCtxMenu(e, m)}
-                      ctxOpen={!!ctxMenu}
-                      onReact={
-                        chat.activeId
-                          ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
-                          : undefined
-                      }
-                      onRetry={
-                        m.failed && chat.activeId
-                          ? () => chat.retryMessage(chat.activeId!, m)
-                          : undefined
-                      }
-                      onCancelUpload={
-                        m.pending &&
-                          typeof m.uploadProgress === "number" &&
+              <div className="msg-scroll-wrap">
+                <div
+                  className="msg-scroll"
+                  ref={scrollRef}
+                  onScroll={updateJumpBottomVisibility}
+                >
+                  {activeMessages.length === 0 && (
+                    <div className="empty-state" style={{ minHeight: 200 }}>
+                      <div className="muted">No messages here yet…</div>
+                    </div>
+                  )}
+                  {activeMessages.map((m) => (
+                    <div key={m.id} id={`msg-${m.id}`}>
+                      <Bubble
+                        msg={m}
+                        isGroup={!!isGroup}
+                        replyPreview={previewFor(m)}
+                        selectMode={selectMode}
+                        selected={selectedIds.has(m.id)}
+                        selectable={!m.pending && !m.failed}
+                        onToggleSelect={() => toggleSelect(m.id)}
+                        onContextMenu={(e) => openCtxMenu(e, m)}
+                        ctxOpen={!!ctxMenu}
+                        onReact={
                           chat.activeId
-                          ? () => chat.cancelUpload(chat.activeId!, m)
-                          : undefined
-                      }
-                    />
-                  </div>
-                ))}
+                            ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
+                            : undefined
+                        }
+                        onRetry={
+                          m.failed && chat.activeId
+                            ? () => chat.retryMessage(chat.activeId!, m)
+                            : undefined
+                        }
+                        onCancelUpload={
+                          m.pending &&
+                            typeof m.uploadProgress === "number" &&
+                            chat.activeId
+                            ? () => chat.cancelUpload(chat.activeId!, m)
+                            : undefined
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+                {showJumpBottom && (
+                  <button
+                    type="button"
+                    className="jump-bottom-btn"
+                    title="Scroll to bottom"
+                    aria-label="Scroll to bottom"
+                    onClick={jumpToBottom}
+                  >
+                    <MenuIcon d={ICONS.back} style={{ width: 18, height: 18, transform: "rotate(-90deg)" }} />
+                  </button>
+                )}
               </div>
               <div className="composer">
                 <div className="composer-box">

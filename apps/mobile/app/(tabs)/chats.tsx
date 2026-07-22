@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useNavigation } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
 import { useChat } from "../../src/context/ChatContext";
 import { Conversation, conversationDisplayName } from "../../src/lib/types";
@@ -44,11 +45,13 @@ function previewText(c: Conversation): string {
 
 export default function ChatsScreen() {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
   const {
     conversations,
     loadConversations,
     openConversation,
     updateConversationPrefs,
+    markConversationRead,
     connected,
     loadError,
   } = useChat();
@@ -117,10 +120,19 @@ export default function ChatsScreen() {
     clearSelection();
   }, [allSelectedMuted, selectedIds, updateConversationPrefs, clearSelection]);
 
+  const applyMarkRead = useCallback(async () => {
+    await Promise.all(
+      selectedIds.map((id) => markConversationRead(id).catch(() => {}))
+    );
+    clearSelection();
+  }, [selectedIds, markConversationRead, clearSelection]);
+
+  const anyUnread = selectedConvs.some((c) => c.unreadCount > 0);
+
   return (
     <View style={styles.root}>
       {selecting ? (
-        <View style={styles.actionBar}>
+        <View style={[styles.actionBar, { paddingTop: insets.top + 10 }]}>
           <Pressable
             style={styles.actionBtn}
             onPress={clearSelection}
@@ -155,6 +167,16 @@ export default function ChatsScreen() {
               color="#fff"
             />
           </Pressable>
+          {anyUnread ? (
+            <Pressable
+              style={styles.actionBtn}
+              onPress={applyMarkRead}
+              hitSlop={8}
+              accessibilityLabel="Mark as read"
+            >
+              <Ionicons name="mail-open-outline" size={22} color="#fff" />
+            </Pressable>
+          ) : null}
         </View>
       ) : (
         <View style={styles.searchWrap}>
@@ -272,7 +294,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 10,
+    paddingBottom: 10,
     backgroundColor: colors.headerBlue,
     minHeight: 52,
   },

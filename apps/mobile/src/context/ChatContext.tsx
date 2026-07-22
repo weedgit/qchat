@@ -40,6 +40,8 @@ type ChatContextValue = {
     convId: string,
     prefs: { favorite?: boolean; muted?: boolean }
   ) => Promise<void>;
+  markConversationRead: (convId: string) => Promise<void>;
+  forwardMessage: (messageId: string, conversationIds: string[]) => Promise<void>;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -206,9 +208,40 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (type === "message.read") {
+        const id = String(payload?.id ?? "");
+        const convId = String(payload?.conversation_id ?? "");
+        const seq = Number(payload?.seq);
+        if (!id || !convId) return;
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) => {
+            if (m.id === id) return { ...m, read: true, delivered: true };
+            if (m.mine && Number.isFinite(seq) && typeof m.seq === "number" && m.seq <= seq) {
+              return { ...m, read: true, delivered: true };
+            }
+            return m;
+          }),
+        }));
+        return;
+      }
+
+      if (type === "message.delivered") {
+        const id = String(payload?.id ?? "");
+        const convId = String(payload?.conversation_id ?? "");
+        if (!id || !convId) return;
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === id ? { ...m, delivered: true } : m
+          ),
+        }));
+        return;
+      }
+
       if (!type.includes("message")) return;
-      // Ignore delivery/read receipts that aren't full message payloads
-      if (type === "message.read" || type === "message.delivered" || type === "message.removed") {
+      // Ignore other non-content message events
+      if (type === "message.removed") {
         return;
       }
 
@@ -480,6 +513,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // Mirror web forwardMessage (POST /v1/messages/{id}/forward).
+  const forwardMessage = useCallback(
+    async (messageId: string, conversationIds: string[]) => {
+      await api(`/v1/messages/${messageId}/forward`, {
+        method: "POST",
+        body: JSON.stringify({ conversation_ids: conversationIds }),
+      });
+      await loadConversations();
+    },
+    [loadConversations]
+  );
+
+  const markConversationRead = useCallback(async (convId: string) => {
+    setConversations((prev) =>
+      prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0, mentionCount: 0 } : c))
+    );
+    const list = messagesRef.current[convId] ?? [];
+    const lastPeer = [...list].reverse().find((m) => !m.mine && !m.recalled);
+    if (lastPeer?.id) {
+      await api(`/v1/messages/${lastPeer.id}/read`, { method: "POST" }).catch(() => {});
+    }
+  }, []);
+
   const openDM = useCallback(
     async (userId: string) => {
       const res = await api<any>("/v1/conversations/dm", {
@@ -509,6 +565,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       openDM,
       recallMessage,
       updateConversationPrefs,
+      markConversationRead,
+      forwardMessage,
     }),
     [
       conversations,
@@ -523,6 +581,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       openDM,
       recallMessage,
       updateConversationPrefs,
+      markConversationRead,
+      forwardMessage,
     ]
   );
 

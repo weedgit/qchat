@@ -1233,15 +1233,6 @@ export function useChat() {
     []
   );
 
-  const markConversationUnread = useCallback(async (convId: string) => {
-    const res = await api<any>(`/v1/conversations/${convId}/unread`, { method: "POST" });
-    const unread = Number(res?.unread_count) || 1;
-    setConversations((prev) =>
-      prev.map((c) => (c.id === convId ? { ...c, unreadCount: Math.max(1, unread) } : c))
-    );
-    if (activeIdRef.current === convId) setActiveId(null);
-  }, []);
-
   const subscribeEvents = useCallback((handler: (type: string, payload: any) => void) => {
     eventListenersRef.current.add(handler);
     return () => {
@@ -1274,7 +1265,6 @@ export function useChat() {
     pinMessage,
     editMessage,
     updateConversationPrefs,
-    markConversationUnread,
     reload: loadConversations,
     subscribeEvents,
   };
