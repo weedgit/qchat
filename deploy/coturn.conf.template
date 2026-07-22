@@ -1,0 +1,17 @@
+# Rendered by deploy/render-media-config.sh — do not edit generated output.
+listening-port=3478
+fingerprint
+lt-cred-mech
+user=__TURN_USER__:__TURN_PASS__
+realm=qchat.local
+no-cli
+no-tls
+no-dtls
+# Relay range must not overlap LiveKit rtc port_range (50000–50100).
+min-port=49160
+max-port=49200
+listening-ip=0.0.0.0
+relay-ip=0.0.0.0
+external-ip=__QCHAT_HOST__
+log-file=stdout
+simple-log

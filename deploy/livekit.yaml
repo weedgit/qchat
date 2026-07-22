@@ -1,25 +1,6 @@
-# Local LiveKit SFU (Phase 6 calls). Keys match API LIVEKIT_* defaults.
-# TURN host must be the same browser-reachable LAN IP as node_ip / LIVEKIT_NODE_IP.
-# Do not inject malformed stun: URLs (causes "ICE server parsing failed: Invalid port").
-port: 7880
-rtc:
-  tcp_port: 7881
-  port_range_start: 50000
-  port_range_end: 50100
-  use_external_ip: false
-  # Must be an IP the *browser* can reach (not 127.0.0.1 when Chrome is on
-  # Windows and LiveKit is in a Linux VM). Override via compose --node-ip.
-  node_ip: 192.168.91.136
-  enable_loopback_candidate: false
-  # External coturn (see deploy/coturn.conf) — Mattermost-style TURN for NAT.
-  turn_servers:
-    - host: 192.168.91.136
-      port: 3478
-      protocol: udp
-      username: qchat
-      credential: qchatturnsecret
-keys:
-  # Must be ≥32 chars for LiveKit secrets
-  devkey: secret-that-is-at-least-32-characters-long
-logging:
-  level: info
+# LiveKit / coturn configs are generated per machine — do not hand-edit IPs here.
+# Run: ./deploy/render-media-config.sh
+# Or:  ./deploy/up-media.sh
+#
+# Templates: livekit.yaml.template, coturn.conf.template
+# Output:    generated/livekit.yaml, generated/coturn.conf, generated/media.env

@@ -1,0 +1,25 @@
+# Rendered by deploy/render-media-config.sh — do not edit generated output.
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+  node_ip: __QCHAT_HOST__
+  enable_loopback_candidate: __ENABLE_LOOPBACK__
+  # Coturn TURN (see deploy/coturn.conf.template). TCP helps when UDP is blocked.
+  turn_servers:
+    - host: __QCHAT_HOST__
+      port: 3478
+      protocol: udp
+      username: __TURN_USER__
+      credential: __TURN_PASS__
+    - host: __QCHAT_HOST__
+      port: 3478
+      protocol: tcp
+      username: __TURN_USER__
+      credential: __TURN_PASS__
+keys:
+  __LIVEKIT_API_KEY__: __LIVEKIT_API_SECRET__
+logging:
+  level: info

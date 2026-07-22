@@ -55,6 +55,19 @@ log() { printf '\n==> %s\n' "$*"; }
 log "git pull"
 git -C "$ROOT" pull --ff-only
 
+log "render LiveKit/coturn for this host"
+"$ROOT/deploy/render-media-config.sh"
+# shellcheck disable=SC1091
+set -a
+# shellcheck source=/dev/null
+source "$ROOT/deploy/generated/media.env"
+set +a
+if (cd "$ROOT" && docker compose up -d livekit coturn); then
+  echo "LiveKit: ${LIVEKIT_URL}"
+else
+  echo "warning: could not start livekit/coturn (is Docker running?)" >&2
+fi
+
 if [[ "$DO_API" -eq 1 ]]; then
   log "build API"
   mkdir -p "$ROOT/services/api/bin"

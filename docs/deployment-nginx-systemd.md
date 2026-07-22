@@ -31,10 +31,24 @@ the repository is elsewhere, update the paths in:
 
 ## 1. Start the infrastructure
 
+LiveKit/coturn configs are generated per machine (no hardcoded IPs in git).
+On each host (laptop, LAN VM, or VPS), render then start:
+
 ```bash
 cd /root/qchat
-docker compose up -d postgres redis minio nats
+# Auto-detect this machine's browser-reachable IP, or pass --host PUBLIC_IP
+./deploy/render-media-config.sh
+# optional override: ./deploy/render-media-config.sh --host 203.0.113.10
+
+set -a && source deploy/generated/media.env && set +a
+docker compose up -d postgres redis minio nats livekit coturn
+
+# Or media only:
+# ./deploy/up-media.sh
 ```
+
+`deploy/generated/media.env` sets `LIVEKIT_URL` / `LIVEKIT_NODE_IP` for this host.
+The API unit loads that file automatically (see `deploy/qchat-api.service`).
 
 ## 2. Configure the API
 

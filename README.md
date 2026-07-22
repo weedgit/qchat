@@ -9,10 +9,12 @@ Secure enterprise internal messenger with a simple, focused UX.
 ## Quick start
 
 ```bash
-# Infra
-docker compose up -d postgres redis minio nats
+# Infra (auto-renders LiveKit/coturn for this machine's IP)
+make infra-up
+# or: ./deploy/render-media-config.sh && set -a && source deploy/generated/media.env && set +a && docker compose up -d
 
-# API
+# API (systemd loads deploy/generated/media.env; for go run:)
+set -a && source deploy/generated/media.env && set +a
 cd services/api && go run ./cmd/api
 
 # Web

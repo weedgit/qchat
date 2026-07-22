@@ -1,10 +1,14 @@
-.PHONY: infra-up infra-down api web admin desktop test test-api test-e2e migrate seed generate check-openapi redeploy
+.PHONY: infra-up infra-down media api web admin desktop test test-api test-e2e migrate seed generate check-openapi redeploy
 
 infra-up:
-	docker compose up -d
+	./deploy/render-media-config.sh
+	set -a; . ./deploy/generated/media.env; set +a; docker compose up -d
 
 infra-down:
 	docker compose down
+
+media:
+	./deploy/up-media.sh
 
 api:
 	cd services/api && go run ./cmd/api
