@@ -188,7 +188,7 @@ Full list across D0–D5:
 
 ---
 
-### D5 — Signing & release — Todo
+### D5 — Signing & release — Done (credentials optional)
 
 | Feature | Status | Verification (when done) |
 |---|---|---|
