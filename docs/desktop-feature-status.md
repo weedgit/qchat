@@ -64,7 +64,7 @@
 | SHELL-27 | MM | Hide on start (start minimized) | AutoLauncher hideOnStart | Done | `feat-kevin-desktop-hide-on-start` |
 | SHELL-28 | MM | Protocol handler `qchat://` | mattermost:// deep links | Done | `feat-kevin-desktop-protocol-qchat` |
 | SHELL-29 | MM | Open conversation from deep link | navigationManager | Done | `feat-kevin-desktop-deeplink-chat` |
-| SHELL-30 | MM | Certificate error trust/deny UI | certificateStore.ts | Todo | `feat-kevin-desktop-cert-dialog` |
+| SHELL-30 | MM | Certificate error trust/deny UI | certificateStore.ts | Done | `feat-kevin-desktop-cert-dialog` |
 | SHELL-31 | MM | Theme sync with OS | themeManager.ts | Todo | `feat-kevin-desktop-os-theme` |
 | SHELL-32 | MM | Offline / reconnect banner (shell) | ErrorView / isOnline | Todo | `feat-kevin-desktop-offline-banner` |
 | SHELL-33 | MM | Multi-server tabs | tabs / servers | Deferred | `feat-kevin-desktop-multi-server` |
@@ -84,7 +84,7 @@
 ### Todo backlog (implement one row = one commit)
 
 1. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-2. `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+2. `SHELL-22` context menu · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
 **In progress:** next concrete work is **SHELL-22** context menu, or **D5** signing / auto-update.
 

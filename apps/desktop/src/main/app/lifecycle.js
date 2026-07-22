@@ -36,7 +36,8 @@ function startApp() {
 
   const webUrl = resolveWebUrl();
   // Production nginx redirects HTTP→HTTPS with a self-signed IP cert.
-  allowSelfSignedForWebHost(webUrl);
+  // Other origins get SHELL-30 trust/deny UI (persisted in userData/certificate.json).
+  allowSelfSignedForWebHost({ webUrl, getMainWindow });
   const isDev =
     process.env.QCHAT_DESKTOP_DEV === "1" || process.argv.includes("--dev");
   const iconPath = getIconPath();
