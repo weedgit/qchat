@@ -39,6 +39,7 @@ func (s *Server) handleJoinEnterprise(w http.ResponseWriter, r *http.Request) {
 	already := current != nil && *current != ""
 	same := already && *current == entID
 	if same {
+		_ = s.addUserToEnterpriseDefaultChat(r.Context(), entID, c.UserID)
 		writeJSON(w, 200, map[string]any{
 			"ok": true, "enterprise_id": entID, "name": name, "already_member": true,
 		})
@@ -48,6 +49,10 @@ func (s *Server) handleJoinEnterprise(w http.ResponseWriter, r *http.Request) {
 	_, err = s.db.Exec(r.Context(), `UPDATE users SET enterprise_id=$2 WHERE id=$1`, c.UserID, entID)
 	if err != nil {
 		writeErr(w, 500, "join failed")
+		return
+	}
+	if err := s.addUserToEnterpriseDefaultChat(r.Context(), entID, c.UserID); err != nil {
+		writeErr(w, 500, "join chat failed")
 		return
 	}
 	action := "enterprise.join"

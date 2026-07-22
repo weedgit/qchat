@@ -32,6 +32,8 @@ export interface Conversation {
   muted?: boolean;
   /** My membership role in this conversation (owner|admin|member). */
   role?: string;
+  /** Company-wide default internal chat. */
+  isEnterpriseDefault?: boolean;
   pinnedMessageId?: string;
   pinnedMessage?: string;
   /** All pins for this conversation, ordered by seq ascending (top→bottom). */
@@ -54,6 +56,12 @@ export interface Reaction {
   users?: ReactionUser[];
 }
 
+export interface ReceiptUser {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -73,6 +81,10 @@ export interface Message {
   replyToId?: string;
   delivered?: boolean;
   read?: boolean;
+  readBy?: ReceiptUser[];
+  unreadBy?: ReceiptUser[];
+  readCount?: number;
+  memberCount?: number;
   editedAt?: string;
   reactions?: Reaction[];
 }
@@ -125,6 +137,7 @@ export function normalizeConversation(raw: any): Conversation {
     favorite: Boolean(raw?.favorite),
     muted: Boolean(raw?.muted),
     role: str(raw?.role) || undefined,
+    isEnterpriseDefault: Boolean(raw?.is_enterprise_default),
     pinnedMessageId: str(raw?.pinned_message_id) || undefined,
     pinnedMessage: str(raw?.pinned_message) || undefined,
     pinnedMessages: (() => {
@@ -177,6 +190,22 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
     replyToId: str(raw?.reply_to_id) || undefined,
     delivered: Boolean(raw?.delivered),
     read: Boolean(raw?.read),
+    readBy: Array.isArray(raw?.read_by)
+      ? raw.read_by.map((u: any) => ({
+          userId: str(u?.user_id ?? u?.id),
+          displayName: str(u?.display_name ?? u?.name, "User"),
+          avatarUrl: str(u?.avatar_url) || undefined,
+        }))
+      : undefined,
+    unreadBy: Array.isArray(raw?.unread_by)
+      ? raw.unread_by.map((u: any) => ({
+          userId: str(u?.user_id ?? u?.id),
+          displayName: str(u?.display_name ?? u?.name, "User"),
+          avatarUrl: str(u?.avatar_url) || undefined,
+        }))
+      : undefined,
+    readCount: typeof raw?.read_count === "number" ? raw.read_count : undefined,
+    memberCount: typeof raw?.member_count === "number" ? raw.member_count : undefined,
     editedAt: str(raw?.edited_at ?? raw?.editedAt) || undefined,
     reactions: Array.isArray(raw?.reactions)
       ? raw.reactions.map((r: any) => ({

@@ -24,6 +24,8 @@ export interface Conversation {
   muted?: boolean;
   pinnedMessageId?: string;
   pinnedMessage?: string;
+  /** Company-wide default internal chat. */
+  isEnterpriseDefault?: boolean;
   /** All pins for this conversation, ordered by seq ascending (top→bottom). */
   pinnedMessages?: { id: string; body: string; type?: string; seq?: number }[];
   /** Viewer-only friend alias (note). */
@@ -43,6 +45,12 @@ export interface Reaction {
   count: number;
   mine: boolean;
   users: Reactor[];
+}
+
+export interface ReceiptUser {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
 }
 
 export interface Message {
@@ -70,6 +78,10 @@ export interface Message {
   replyToId?: string;
   delivered?: boolean;
   read?: boolean;
+  readBy?: ReceiptUser[];
+  unreadBy?: ReceiptUser[];
+  readCount?: number;
+  memberCount?: number;
   reactions?: Reaction[];
   editedAt?: string;
   mentions?: string[];
@@ -119,6 +131,7 @@ export function normalizeConversation(raw: any): Conversation {
     peerLastActiveAt: str(raw?.peer_last_active_at) || undefined,
     favorite: Boolean(raw?.favorite),
     muted: Boolean(raw?.muted),
+    isEnterpriseDefault: Boolean(raw?.is_enterprise_default),
     pinnedMessageId: str(raw?.pinned_message_id) || undefined,
     pinnedMessage: str(raw?.pinned_message) || undefined,
     pinnedMessages: (() => {
@@ -173,6 +186,22 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
     replyToId: str(raw?.reply_to_id) || undefined,
     delivered: Boolean(raw?.delivered),
     read: Boolean(raw?.read),
+    readBy: Array.isArray(raw?.read_by)
+      ? raw.read_by.map((u: any) => ({
+          userId: str(u?.user_id ?? u?.id),
+          displayName: str(u?.display_name ?? u?.name, "User"),
+          avatarUrl: str(u?.avatar_url) || undefined,
+        }))
+      : undefined,
+    unreadBy: Array.isArray(raw?.unread_by)
+      ? raw.unread_by.map((u: any) => ({
+          userId: str(u?.user_id ?? u?.id),
+          displayName: str(u?.display_name ?? u?.name, "User"),
+          avatarUrl: str(u?.avatar_url) || undefined,
+        }))
+      : undefined,
+    readCount: typeof raw?.read_count === "number" ? raw.read_count : undefined,
+    memberCount: typeof raw?.member_count === "number" ? raw.member_count : undefined,
     editedAt: str(raw?.edited_at ?? raw?.editedAt) || undefined,
     mentions: Array.isArray(raw?.mentions) ? raw.mentions.map(String) : undefined,
     mentionAll: Boolean(raw?.mention_all ?? raw?.mentionAll),

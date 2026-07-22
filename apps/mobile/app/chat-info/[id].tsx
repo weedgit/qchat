@@ -67,7 +67,7 @@ function formatLastSeen(iso?: string): string {
 export default function ChatInfoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const convId = String(id);
-  const { conversations, updateConversationPrefs, loadConversations } = useChat();
+  const { conversations, updateConversationPrefs, loadConversations, leaveGroup } = useChat();
   const { user: me } = useAuth();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -241,6 +241,25 @@ export default function ChatInfoScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function confirmLeaveGroup() {
+    Alert.alert("Leave group", "Leave this group?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: () => {
+          setBusy(true);
+          leaveGroup(convId)
+            .then(() => {
+              router.replace("/(tabs)/chats");
+            })
+            .catch((e: any) => Alert.alert("Error", e?.message || "Could not leave group"))
+            .finally(() => setBusy(false));
+        },
+      },
+    ]);
   }
 
  /** Owner/admin: role + kick (channel member menu). */
@@ -474,6 +493,16 @@ export default function ChatInfoScreen() {
               </>
             ) : null}
 
+            {isGroup && group && !isOwner ? (
+              <Pressable
+                style={styles.leaveBtn}
+                onPress={confirmLeaveGroup}
+                disabled={busy}
+              >
+                <Text style={styles.leaveBtnText}>Leave group</Text>
+              </Pressable>
+            ) : null}
+
             <View style={styles.card}>
               <InfoLine label="Type" value={conversation.type} />
               <InfoLine label="Conversation ID" value={conversation.id} />
@@ -605,6 +634,15 @@ function makeStyles(c: ColorTokens) {
     paddingVertical: 14,
   },
   addMembersText: { color: "#fff", fontWeight: "700" as const, fontSize: 16 },
+  leaveBtn: {
+    backgroundColor: c.surface,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    alignItems: "center" as const,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.danger,
+  },
+  leaveBtnText: { color: c.danger, fontWeight: "700" as const, fontSize: 16 },
   card: {
     backgroundColor: c.surface,
     borderRadius: radius.md,

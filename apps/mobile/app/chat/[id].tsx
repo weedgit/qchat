@@ -60,13 +60,55 @@ function fmtTime(iso: string): string {
 }
 
 /** Ionicons receipts — Unicode ✓ ignores color on Android and looks blue-on-blue. */
-function ReceiptIcons({ msg }: { msg: Message }) {
+function showGroupReceiptDetails(msg: Message) {
+  if (msg.memberCount == null || msg.memberCount <= 0) return;
+  const n = msg.readCount ?? msg.readBy?.length ?? 0;
+  const readNames =
+    (msg.readBy?.length ?? 0) === 0
+      ? "Nobody yet"
+      : msg.readBy!.map((u) => u.displayName).join("\n");
+  const unreadNames =
+    (msg.unreadBy?.length ?? 0) === 0
+      ? "Everyone"
+      : msg.unreadBy!.map((u) => u.displayName).join("\n");
+  Alert.alert(`${n}/${msg.memberCount} read`, `Read\n${readNames}\n\nUnread\n${unreadNames}`);
+}
+
+function ReceiptIcons({
+  msg,
+  onPressGroupReceipt,
+}: {
+  msg: Message;
+  onPressGroupReceipt?: () => void;
+}) {
   if (!msg.mine || msg.recalled) return null;
   if (msg.pending) {
     return <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.75)" />;
   }
   if (msg.failed) {
     return <Ionicons name="alert-circle" size={12} color="#fecaca" />;
+  }
+  if (msg.memberCount != null && msg.memberCount > 0) {
+    const n = msg.readCount ?? msg.readBy?.length ?? 0;
+    const label = (
+      <Text style={receiptCountStyle}>
+        {n}/{msg.memberCount}
+      </Text>
+    );
+    if (onPressGroupReceipt) {
+      return (
+        <Pressable
+          onPress={(e) => {
+            e?.stopPropagation?.();
+            onPressGroupReceipt();
+          }}
+          hitSlop={8}
+        >
+          {label}
+        </Pressable>
+      );
+    }
+    return label;
   }
   const tint = msg.read ? "#fff" : "rgba(255,255,255,0.7)";
   return (
@@ -77,6 +119,12 @@ function ReceiptIcons({ msg }: { msg: Message }) {
     />
   );
 }
+
+const receiptCountStyle = {
+  fontSize: 11,
+  fontWeight: "500" as const,
+  color: "rgba(255,255,255,0.88)",
+};
 
 function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
   const { colors } = useTheme();
@@ -253,7 +301,16 @@ const ChatMessageRow = memo(function ChatMessageRow({
               {time}
             </Text>
           ) : null}
-          {mine ? <ReceiptIcons msg={item} /> : null}
+          {mine ? (
+            <ReceiptIcons
+              msg={item}
+              onPressGroupReceipt={
+                item.memberCount != null && item.memberCount > 0
+                  ? () => showGroupReceiptDetails(item)
+                  : undefined
+              }
+            />
+          ) : null}
         </View>
       </View>
     </Pressable>

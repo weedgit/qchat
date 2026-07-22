@@ -76,6 +76,7 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 		writeErr(w, 409, "create failed")
 		return
 	}
+	adminUserID := ""
 	if req.AdminPhone != "" && req.AdminPassword != "" {
 		if err := auth.ValidatePassword(req.AdminPassword); err != nil {
 			writeErr(w, 400, err.Error())
@@ -86,9 +87,17 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 		if uname == "" {
 			uname = "admin_" + req.InviteCode
 		}
-		_, _ = s.db.Exec(r.Context(), `
-			INSERT INTO users(enterprise_id, phone, password_hash, username, display_name, role)
-			VALUES ($1,$2,$3,$4,$4,'enterprise_admin')`, id, req.AdminPhone, hash, uname)
+		uid := uuid.New()
+		_, err = s.db.Exec(r.Context(), `
+			INSERT INTO users(id, enterprise_id, phone, password_hash, username, display_name, role)
+			VALUES ($1,$2,$3,$4,$5,$5,'enterprise_admin')`, uid, id, req.AdminPhone, hash, uname)
+		if err == nil {
+			adminUserID = uid.String()
+		}
+	}
+	if _, err := s.ensureEnterpriseDefaultChat(r.Context(), id.String(), adminUserID); err != nil {
+		writeErr(w, 500, "default chat failed")
+		return
 	}
 	s.audit(r.Context(), c.UserID, id.String(), "enterprise.create", "enterprise", id.String(), "", clientIP(r), nil)
 	writeJSON(w, 201, map[string]any{"id": id.String(), "invite_code": req.InviteCode})
@@ -180,6 +189,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 409, "phone or username already exists")
 		return
 	}
+	_ = s.addUserToEnterpriseDefaultChat(r.Context(), c.EnterpriseID, uid.String())
 	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.create", "user", uid.String(), "assisted registration", ip, map[string]any{"role": role})
 	writeJSON(w, 201, map[string]any{
 		"id": uid.String(), "phone": req.Phone, "username": req.Username, "display_name": display, "role": role,

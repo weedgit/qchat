@@ -17,7 +17,7 @@ Working defaults until the client signs a formal change order. Documented so eng
 | Password recovery | None for end users; admin reset only |
 | Encryption | TLS in transit + encryption at rest for DB/files; not E2EE (admin inspection required) |
 | Admin message access | Role-gated, reason required, immutable audit |
-| Read receipts | Full sent/delivered/read for DMs; group receipts optional/light |
+| Read receipts | Full sent/delivered/read for DMs; per-member read/unread lists for groups when the conversation is opened |
 | Retention | Default 90 days minimum, configurable per enterprise |
 | Avatar max | Soft-cap 5 MB processed; reject absurd 100 MB uploads with clear error (client asked 100 MB — product defaults to sensible limit with config override) |
 | Attachments | Images jpg/png/gif/webp ≤ 20 MB; docs ≤ 50 MB; video ≤ 200 MB; voice ≤ 60 s |

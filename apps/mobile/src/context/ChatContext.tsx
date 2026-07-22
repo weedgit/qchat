@@ -56,6 +56,7 @@ type ChatContextValue = {
   ) => Promise<void>;
   markConversationRead: (convId: string) => Promise<void>;
   forwardMessage: (messageId: string, conversationIds: string[]) => Promise<void>;
+  leaveGroup: (conversationId: string) => Promise<void>;
   /** Fan-out for non-chat WS events (e.g. call.*). Mirror web subscribeEvents. */
   subscribeEvents: (handler: (type: string, payload: any) => void) => () => void;
 };
@@ -348,18 +349,62 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (type === "message.read") {
         const id = String(payload?.id ?? "");
         const convId = String(payload?.conversation_id ?? "");
+        const by = String(payload?.by ?? "");
         const seq = Number(payload?.seq);
         if (!id || !convId) return;
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) => {
-            if (m.id === id) return { ...m, read: true, delivered: true };
-            if (m.mine && Number.isFinite(seq) && typeof m.seq === "number" && m.seq <= seq) {
-              return { ...m, read: true, delivered: true };
+            if (!m.mine) return m;
+            const hit =
+              m.id === id ||
+              (Number.isFinite(seq) && seq > 0 && typeof m.seq === "number" && m.seq <= seq);
+            if (!hit) return m;
+            let readBy = m.readBy ? [...m.readBy] : [];
+            let unreadBy = m.unreadBy ? [...m.unreadBy] : [];
+            if (by) {
+              const already = readBy.some((u) => u.userId === by);
+              if (!already) {
+                const fromUnread = unreadBy.find((u) => u.userId === by);
+                if (fromUnread) {
+                  readBy = [...readBy, fromUnread];
+                  unreadBy = unreadBy.filter((u) => u.userId !== by);
+                } else {
+                  readBy = [...readBy, { userId: by, displayName: "User" }];
+                }
+              }
             }
-            return m;
+            const memberCount = m.memberCount ?? readBy.length + unreadBy.length;
+            const readCount = readBy.length;
+            const allRead = memberCount > 0 && readCount >= memberCount;
+            const hasLists = Boolean(m.readBy || m.unreadBy);
+            return {
+              ...m,
+              delivered: true,
+              read: hasLists ? allRead : true,
+              readBy: hasLists ? readBy : m.readBy,
+              unreadBy: hasLists ? unreadBy : m.unreadBy,
+              readCount: hasLists ? readCount : m.readCount,
+            };
           }),
         }));
+        return;
+      }
+
+      if (type === "group.member_removed") {
+        const convId = String(payload?.conversation_id ?? "");
+        const removed = String(payload?.removed_user_id ?? "");
+        const meId = meRef.current?.id;
+        if (!convId) return;
+        if (removed && meId && removed === meId) {
+          setConversations((prev) => prev.filter((c) => c.id !== convId));
+          setActiveId((cur) => (cur === convId ? null : cur));
+          setMessages((prev) => {
+            const next = { ...prev };
+            delete next[convId];
+            return next;
+          });
+        }
         return;
       }
 
@@ -971,6 +1016,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const leaveGroup = useCallback(async (conversationId: string) => {
+    await api(`/v1/groups/${conversationId}/leave`, { method: "POST" });
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    setActiveId((cur) => (cur === conversationId ? null : cur));
+    setMessages((prev) => {
+      const next = { ...prev };
+      delete next[conversationId];
+      return next;
+    });
+  }, []);
+
   const openDM = useCallback(
     async (userId: string) => {
       const res = await api<any>("/v1/conversations/dm", {
@@ -1014,6 +1070,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       updateConversationPrefs,
       markConversationRead,
       forwardMessage,
+      leaveGroup,
       subscribeEvents,
     }),
     [
@@ -1036,6 +1093,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       updateConversationPrefs,
       markConversationRead,
       forwardMessage,
+      leaveGroup,
       subscribeEvents,
     ]
   );

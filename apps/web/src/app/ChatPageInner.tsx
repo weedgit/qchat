@@ -206,6 +206,10 @@ function receiptMark(msg: Message): string {
   if (msg.pending) return " \u23F3";
   if (msg.failed) return " !";
   if (!msg.mine || msg.recalled) return "";
+  if (msg.memberCount != null && msg.memberCount > 0) {
+    const n = msg.readCount ?? msg.readBy?.length ?? 0;
+    return ` ${n}/${msg.memberCount}`;
+  }
   if (msg.read) return " \u2713\u2713";
   return " \u2713";
 }
@@ -305,6 +309,7 @@ function Bubble({
   onReplyPreviewClick?: (replyToId: string) => void;
   ctxOpen: boolean;
 }) {
+  const [receiptOpen, setReceiptOpen] = useState(false);
   const canReact = !!onReact && !selectMode && !msg.recalled && !msg.pending && !msg.failed && !ctxOpen;
   // Recommend the message's top reaction if it has one, otherwise the default quick emoji.
   const recommendedEmoji = msg.reactions?.[0]?.emoji ?? QUICK_EMOJIS[0];
@@ -530,6 +535,52 @@ function Bubble({
             meta
           )}
         </div>
+        {msg.mine &&
+          isGroup &&
+          !msg.recalled &&
+          !msg.pending &&
+          msg.memberCount != null &&
+          msg.memberCount > 0 && (
+            <button
+              type="button"
+              className="receipt-detail-toggle"
+              onClick={(e) => {
+                e.stopPropagation();
+                setReceiptOpen((v) => !v);
+              }}
+            >
+              {(msg.readCount ?? 0)}/{msg.memberCount} read
+              {receiptOpen ? " ▴" : " ▾"}
+            </button>
+          )}
+        {receiptOpen && msg.mine && isGroup && (
+          <div className="receipt-detail">
+            <div className="receipt-col">
+              <div className="receipt-col-title">Read</div>
+              {(msg.readBy?.length ?? 0) === 0 ? (
+                <div className="muted">Nobody yet</div>
+              ) : (
+                msg.readBy!.map((u) => (
+                  <div key={u.userId} className="receipt-user">
+                    {u.displayName}
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="receipt-col">
+              <div className="receipt-col-title">Unread</div>
+              {(msg.unreadBy?.length ?? 0) === 0 ? (
+                <div className="muted">Everyone</div>
+              ) : (
+                msg.unreadBy!.map((u) => (
+                  <div key={u.userId} className="receipt-user">
+                    {u.displayName}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -904,6 +955,18 @@ export default function ChatPageInner() {
       await reloadGroupDetails();
     } catch (e: any) {
       logChatError(e?.message || "Could not remove member");
+    }
+  }
+
+  async function leaveGroup() {
+    if (!active) return;
+    if (!window.confirm("Leave this group?")) return;
+    try {
+      await chat.leaveGroup(active.id);
+      setShowDetails(false);
+      setGroupDetails(null);
+    } catch (e: any) {
+      logChatError(e?.message || "Could not leave group");
     }
   }
 
@@ -3027,6 +3090,16 @@ export default function ChatPageInner() {
               <Link className="btn-ghost" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
                 More group settings
               </Link>
+              {!isGroupOwner && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  style={{ marginTop: 8, color: "var(--danger, #dc2626)" }}
+                  onClick={() => leaveGroup()}
+                >
+                  Leave group
+                </button>
+              )}
             </>
           )}
           {active.muted != null && (

@@ -59,7 +59,8 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		           ELSE ''
 		         END,
 		         ''
-		       )
+		       ),
+		       COALESCE(conv.is_enterprise_default, FALSE)
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
 		WHERE cm.user_id=$1 AND conv.enterprise_id=$2 AND cm.role <> 'pending'
@@ -77,11 +78,11 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	for rows.Next() {
 		var id, typ, title, avatar, publicID, role, lastBody, lastSenderID, lastSenderName, peerID, peerName, peerAvatar string
 		var lastRead, unread, mentionUnread int64
-		var favorite, muted bool
+		var favorite, muted, isEnterpriseDefault bool
 		var lastAt, peerLastActive *time.Time
 		var pinnedID *string
 		var pinnedBody string
-		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &mentionUnread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt, &pinnedID, &pinnedBody); err != nil {
+		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &mentionUnread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt, &pinnedID, &pinnedBody, &isEnterpriseDefault); err != nil {
 			continue
 		}
 		if title == "" && typ == "dm" && peerName != "" {
@@ -99,6 +100,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			"unread_count": unread, "mention_count": mentionUnread, "peer_name": peerName,
 			"last_message_sender": lastSenderName, "last_message_mine": lastSenderID == c.UserID,
 			"favorite": favorite, "muted": muted,
+			"is_enterprise_default": isEnterpriseDefault,
 		}
 		if peerID != "" {
 			item["peer_id"] = peerID
@@ -404,20 +406,66 @@ func (s *Server) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
+// handleLeaveGroup lets a member/admin voluntarily leave a social group (requirements-en §8).
+// Owners cannot leave without transferring ownership. Notices go to owners/admins only.
+func (s *Server) handleLeaveGroup(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+
+	var ent, typ string
+	err := s.db.QueryRow(r.Context(), `
+		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+
+	role := s.memberRole(r, convID, c.UserID)
+	if role == "" || role == "pending" {
+		writeErrCode(w, 404, "not_found", "not a member")
+		return
+	}
+	if role == "owner" {
+		writeErrCode(w, 403, "forbidden", "owner cannot leave; transfer ownership first")
+		return
+	}
+
+	tag, err := s.db.Exec(r.Context(), `
+		DELETE FROM conversation_members
+		WHERE conversation_id=$1 AND user_id=$2 AND role IN ('member','admin')`, convID, c.UserID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErrCode(w, 404, "not_found", "not a member")
+		return
+	}
+
+	payload := map[string]any{
+		"conversation_id": convID,
+		"removed_user_id": c.UserID,
+		"removed_by":      c.UserID,
+		"left":            true,
+	}
+	s.hub.PublishToUsers([]string{c.UserID}, ws.Event{Type: "group.member_removed", Payload: payload})
+	s.hub.PublishToUsers(s.adminIDs(r, convID), ws.Event{Type: "group.member_removed", Payload: payload})
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
 func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
 	var title, description, announcement, publicID, avatar, role, ownerID string
-	var muteAll, forbidFriendAdd bool
+	var muteAll, forbidFriendAdd, isEnterpriseDefault bool
 	err := s.db.QueryRow(r.Context(), `
 		SELECT conv.title, COALESCE(conv.description,''), COALESCE(conv.announcement,''),
 		       COALESCE(conv.public_id,''), COALESCE(conv.avatar_url,''),
-		       conv.mute_all, COALESCE(conv.forbid_member_friend_add, FALSE), cm.role, conv.owner_id::text
+		       conv.mute_all, COALESCE(conv.forbid_member_friend_add, FALSE),
+		       COALESCE(conv.is_enterprise_default, FALSE),
+		       cm.role, conv.owner_id::text
 		FROM conversations conv
 		JOIN conversation_members cm ON cm.conversation_id=conv.id AND cm.user_id=$2
 		WHERE conv.id=$1 AND conv.enterprise_id=$3 AND conv.type='social_group' AND cm.role <> 'pending'`,
 		convID, c.UserID, c.EnterpriseID).Scan(
-		&title, &description, &announcement, &publicID, &avatar, &muteAll, &forbidFriendAdd, &role, &ownerID)
+		&title, &description, &announcement, &publicID, &avatar, &muteAll, &forbidFriendAdd,
+		&isEnterpriseDefault, &role, &ownerID)
 	if err != nil {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
@@ -450,6 +498,7 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 		"id": convID, "title": title, "description": description, "announcement": announcement,
 		"public_id": publicID, "avatar_url": avatar, "mute_all": muteAll,
 		"forbid_member_friend_add": forbidFriendAdd,
+		"is_enterprise_default":    isEnterpriseDefault,
 		"role":                     role, "owner_id": ownerID, "members": members,
 	})
 }
@@ -772,12 +821,73 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"messages": out})
 }
 
-// attachReceipts sets delivered/read on the viewer's own messages (DM receipts).
-// Prefer peer last_read_seq (read watermark) plus message_receipts.
+// attachReceipts sets delivered/read on the viewer's own messages.
+// DMs use peer watermark + message_receipts; social groups attach per-member read_by/unread_by.
 func (s *Server) attachReceipts(r *http.Request, msgs []map[string]any, viewerID, convID string) {
 	if len(msgs) == 0 {
 		return
 	}
+	var convType string
+	_ = s.db.QueryRow(r.Context(), `SELECT type FROM conversations WHERE id=$1`, convID).Scan(&convType)
+
+	type memberRead struct {
+		ID     string
+		Name   string
+		Avatar string
+		Seq    int64
+	}
+
+	if convType == "social_group" {
+		rows, err := s.db.Query(r.Context(), `
+			SELECT u.id::text, COALESCE(NULLIF(u.display_name,''), u.username), COALESCE(u.avatar_url,''), cm.last_read_seq
+			FROM conversation_members cm
+			JOIN users u ON u.id=cm.user_id
+			WHERE cm.conversation_id=$1 AND cm.role <> 'pending' AND cm.user_id<>$2`,
+			convID, viewerID)
+		var members []memberRead
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var m memberRead
+				if rows.Scan(&m.ID, &m.Name, &m.Avatar, &m.Seq) == nil {
+					members = append(members, m)
+				}
+			}
+		}
+		memberCount := len(members)
+		for _, msg := range msgs {
+			sid, _ := msg["sender_id"].(string)
+			if sid != viewerID {
+				continue
+			}
+			seq := msgSeq(msg)
+			var readBy, unreadBy []map[string]any
+			for _, m := range members {
+				item := map[string]any{
+					"user_id": m.ID, "display_name": m.Name, "avatar_url": m.Avatar,
+				}
+				if seq > 0 && m.Seq >= seq {
+					readBy = append(readBy, item)
+				} else {
+					unreadBy = append(unreadBy, item)
+				}
+			}
+			if readBy == nil {
+				readBy = []map[string]any{}
+			}
+			if unreadBy == nil {
+				unreadBy = []map[string]any{}
+			}
+			msg["read_by"] = readBy
+			msg["unread_by"] = unreadBy
+			msg["read_count"] = len(readBy)
+			msg["member_count"] = memberCount
+			msg["read"] = memberCount > 0 && len(readBy) == memberCount
+			msg["delivered"] = len(readBy) > 0 || memberCount == 0
+		}
+		return
+	}
+
 	var peerReadSeq int64
 	_ = s.db.QueryRow(r.Context(), `
 		SELECT COALESCE(MAX(last_read_seq), 0)
@@ -821,22 +931,24 @@ func (s *Server) attachReceipts(r *http.Request, msgs []map[string]any, viewerID
 			continue
 		}
 		id, _ := m["id"].(string)
-		seq, _ := m["seq"].(int64)
-		// JSON numbers from earlier scan may be int64 already in the map
-		if seq == 0 {
-			switch v := m["seq"].(type) {
-			case int64:
-				seq = v
-			case int:
-				seq = int64(v)
-			case float64:
-				seq = int64(v)
-			}
-		}
+		seq := msgSeq(m)
 		isRead := read[id] || (seq > 0 && seq <= peerReadSeq)
 		isDelivered := delivered[id] || isRead
 		m["delivered"] = isDelivered
 		m["read"] = isRead
+	}
+}
+
+func msgSeq(m map[string]any) int64 {
+	switch v := m["seq"].(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	default:
+		return 0
 	}
 }
 
