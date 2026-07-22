@@ -573,6 +573,7 @@ export function useChat() {
               body: msg.content,
               conversationId: msg.conversationId,
               silent: !notify.sound,
+              mention: isMention,
             }).catch(() => {});
           } else if ("Notification" in window && Notification.permission === "granted") {
             const notification = new Notification(title, {

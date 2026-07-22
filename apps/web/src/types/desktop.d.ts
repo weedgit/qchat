@@ -19,6 +19,8 @@ declare global {
       body?: string;
       conversationId?: string;
       silent?: boolean;
+      /** NOTI-05 — flash taskbar / bounce Dock when true. */
+      mention?: boolean;
     }) => Promise<boolean>;
     showAbout: () => Promise<boolean>;
     fetchCaptcha: () => Promise<{ captcha_id: string; image: string }>;

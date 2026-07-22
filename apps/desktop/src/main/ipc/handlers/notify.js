@@ -2,11 +2,13 @@ const fs = require("fs");
 const { Notification } = require("electron");
 const { APP_TITLE } = require("../../../shared/constants");
 const { getIconPath } = require("../../app/configuration/paths");
+const { requestWindowAttention } = require("../../native/attention");
 
 /**
  * @param {object} deps
  * @param {() => void} deps.focusMainWindow
  * @param {(id: string) => void} deps.sendConversationToRenderer
+ * @param {() => Electron.BrowserWindow | null} [deps.getMainWindow]
  */
 function createNotifyHandler(deps) {
   return async (_event, payload) => {
@@ -16,7 +18,13 @@ function createNotifyHandler(deps) {
     const title = String(payload.title || APP_TITLE);
     const body = String(payload.body || "");
     const conversationId = String(payload.conversationId || "");
+    const isMention = Boolean(payload.mention || payload.attention);
     const iconPath = getIconPath();
+
+    // NOTI-05: flash / bounce for mentions even if OS notification is blocked later.
+    if (isMention && typeof deps.getMainWindow === "function") {
+      requestWindowAttention(deps.getMainWindow, { mention: true });
+    }
 
     const notification = new Notification({
       title,
@@ -27,6 +35,11 @@ function createNotifyHandler(deps) {
     notification.on("click", () => {
       deps.focusMainWindow();
       deps.sendConversationToRenderer(conversationId);
+    });
+    notification.on("show", () => {
+      if (isMention && typeof deps.getMainWindow === "function") {
+        requestWindowAttention(deps.getMainWindow, { mention: true });
+      }
     });
     notification.show();
     return true;

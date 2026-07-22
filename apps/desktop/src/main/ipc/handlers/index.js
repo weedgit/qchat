@@ -25,6 +25,7 @@ function registerIpcHandlers(deps) {
     createNotifyHandler({
       focusMainWindow: deps.focusMainWindow,
       sendConversationToRenderer: deps.sendConversationToRenderer,
+      getMainWindow: deps.getMainWindow,
     })
   );
 

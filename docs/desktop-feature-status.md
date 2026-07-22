@@ -34,7 +34,7 @@
 | NOTI-02 | MM | Click notification → focus + open chat | navigationManager deep link | Done | `feat-kevin-desktop-notify-deeplink` |
 | NOTI-03 | MM | Dock / taskbar unread badge | badge.ts | Done | `feat-kevin-desktop-unread-badge` |
 | NOTI-04 | MM | Tray icon unread / mention state | tray.ts + AppState | Done | `feat-kevin-desktop-tray-badge` *(tooltip/title + web totals; custom tray images later)* |
-| NOTI-05 | MM | Flash / bounce on mention (Win/mac) | notifications flash/bounce | Todo | `feat-kevin-desktop-attention` |
+| NOTI-05 | MM | Flash / bounce on mention (Win/mac) | notifications flash/bounce | Done | `feat-kevin-desktop-attention` |
 | SHELL-01 | MM / §3 | Electron window loads web client | BrowserWindow / WebContentsView | Done | `feat-kevin-desktop-shell-window` |
 | SHELL-02 | MM | `contextIsolation` + no `nodeIntegration` | security defaults | Done | `feat-kevin-desktop-secure-prefs` |
 | SHELL-03 | MM | Narrow preload bridge `qchatDesktop` | externalAPI preload | Done | `feat-kevin-desktop-preload-bridge` |
@@ -84,9 +84,9 @@
 ### Todo backlog (implement one row = one commit)
 
 1. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-2. `NOTI-05` attention · `AUTH-04` idle  
+2. `AUTH-04` idle  
 
-**In progress:** next concrete work is **NOTI-05** flash/bounce on mention, or **D5** signing / auto-update.
+**In progress:** next concrete work is **AUTH-04** idle → away, or **D5** signing / auto-update.
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 
