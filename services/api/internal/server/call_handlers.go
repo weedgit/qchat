@@ -28,8 +28,12 @@ func (s *Server) userDisplayName(r *http.Request, userID string) string {
 	return name
 }
 
-func (s *Server) mintCallToken(r *http.Request, room, userID string) (string, error) {
-	return livekit.MintJoinToken(s.livekitCfg(), room, userID, s.userDisplayName(r, userID), time.Hour)
+func (s *Server) mintCallToken(r *http.Request, room, userID, deviceID string) (string, error) {
+	identity := userID
+	if deviceID != "" {
+		identity = userID + ":" + deviceID
+	}
+	return livekit.MintJoinToken(s.livekitCfg(), room, identity, s.userDisplayName(r, userID), time.Hour)
 }
 
 // handleStartCall mirrors Mattermost Calls start / call_start for DM 1:1 (LiveKit SFU).
@@ -100,15 +104,16 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 
 	id := uuid.New()
 	room := "qchat-" + id.String()
+	initiatorDevice := c.DeviceID
 	_, err := s.db.Exec(r.Context(), `
-		INSERT INTO call_sessions(id, conversation_id, initiator_id, kind, room_name, status)
-		VALUES ($1,$2,$3,$4,$5,'ringing')`, id, req.ConversationID, c.UserID, req.Kind, room)
+		INSERT INTO call_sessions(id, conversation_id, initiator_id, initiator_device_id, kind, room_name, status)
+		VALUES ($1,$2,$3,$4,$5,$6,'ringing')`, id, req.ConversationID, c.UserID, initiatorDevice, req.Kind, room)
 	if err != nil {
 		writeErrCode(w, 500, "create_failed", "create failed")
 		return
 	}
 
-	token, tokErr := s.mintCallToken(r, room, c.UserID)
+	token, tokErr := s.mintCallToken(r, room, c.UserID, initiatorDevice)
 	if tokErr != nil {
 		writeErrCode(w, 503, "livekit_unavailable", "token mint failed")
 		return
@@ -124,6 +129,7 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		"conversation_id": req.ConversationID,
 		"initiator_id":    c.UserID,
 		"initiator_name":  s.userDisplayName(r, c.UserID),
+		"initiator_device_id": initiatorDevice,
 		"status":          "ringing",
 		"by":              c.UserID,
 	}
@@ -158,6 +164,7 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		"livekit_token":   token,
 		"conversation_id": req.ConversationID,
 		"initiator_id":    c.UserID,
+		"initiator_device_id": initiatorDevice,
 		"status":          "ringing",
 	})
 }
@@ -173,9 +180,12 @@ func (s *Server) expireMissedRing(callID string) {
 	ctx := context.Background()
 	var call callRow
 	err := s.db.QueryRow(ctx, `
-		SELECT id::text, conversation_id::text, initiator_id::text, kind, room_name, status, created_at, answered_at
+		SELECT id::text, conversation_id::text, initiator_id::text,
+		       COALESCE(initiator_device_id,''), COALESCE(answerer_device_id,''),
+		       kind, room_name, status, created_at, answered_at
 		FROM call_sessions WHERE id=$1 AND status='ringing'`, callID).
-		Scan(&call.ID, &call.ConversationID, &call.InitiatorID, &call.Kind, &call.RoomName, &call.Status, &call.CreatedAt, &call.AnsweredAt)
+		Scan(&call.ID, &call.ConversationID, &call.InitiatorID, &call.InitiatorDeviceID, &call.AnswererDeviceID,
+			&call.Kind, &call.RoomName, &call.Status, &call.CreatedAt, &call.AnsweredAt)
 	if err != nil {
 		return
 	}
@@ -207,22 +217,27 @@ func (s *Server) expireMissedRing(callID string) {
 }
 
 type callRow struct {
-	ID             string
-	ConversationID string
-	InitiatorID    string
-	Kind           string
-	RoomName       string
-	Status         string
-	CreatedAt      time.Time
-	AnsweredAt     *time.Time
+	ID                string
+	ConversationID    string
+	InitiatorID       string
+	InitiatorDeviceID string
+	AnswererDeviceID  string
+	Kind              string
+	RoomName          string
+	Status            string
+	CreatedAt         time.Time
+	AnsweredAt        *time.Time
 }
 
 func (s *Server) loadCall(r *http.Request, callID string) (*callRow, error) {
 	var row callRow
 	err := s.db.QueryRow(r.Context(), `
-		SELECT id::text, conversation_id::text, initiator_id::text, kind, room_name, status, created_at, answered_at
+		SELECT id::text, conversation_id::text, initiator_id::text,
+		       COALESCE(initiator_device_id,''), COALESCE(answerer_device_id,''),
+		       kind, room_name, status, created_at, answered_at
 		FROM call_sessions WHERE id=$1`, callID).
-		Scan(&row.ID, &row.ConversationID, &row.InitiatorID, &row.Kind, &row.RoomName, &row.Status, &row.CreatedAt, &row.AnsweredAt)
+		Scan(&row.ID, &row.ConversationID, &row.InitiatorID, &row.InitiatorDeviceID, &row.AnswererDeviceID,
+			&row.Kind, &row.RoomName, &row.Status, &row.CreatedAt, &row.AnsweredAt)
 	if err != nil {
 		return nil, err
 	}
@@ -299,18 +314,21 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tag, err := s.db.Exec(r.Context(), `
-		UPDATE call_sessions SET status='active', answered_at=now() WHERE id=$1 AND status='ringing'`, callID)
+		UPDATE call_sessions
+		SET status='active', answered_at=now(), answerer_device_id=$2
+		WHERE id=$1 AND status='ringing'`, callID, c.DeviceID)
 	if err != nil || tag.RowsAffected() == 0 {
 		writeErrCode(w, 409, "invalid_state", "call is not ringing")
 		return
 	}
+	call.AnswererDeviceID = c.DeviceID
 
-	calleeTok, err := s.mintCallToken(r, call.RoomName, c.UserID)
+	calleeTok, err := s.mintCallToken(r, call.RoomName, c.UserID, c.DeviceID)
 	if err != nil {
 		writeErrCode(w, 503, "livekit_unavailable", "token mint failed")
 		return
 	}
-	callerTok, err := s.mintCallToken(r, call.RoomName, call.InitiatorID)
+	callerTok, err := s.mintCallToken(r, call.RoomName, call.InitiatorID, call.InitiatorDeviceID)
 	if err != nil {
 		writeErrCode(w, 503, "livekit_unavailable", "token mint failed")
 		return
@@ -324,6 +342,8 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 		"livekit_url":     s.cfg.LiveKitURL,
 		"conversation_id": call.ConversationID,
 		"initiator_id":    call.InitiatorID,
+		"initiator_device_id": call.InitiatorDeviceID,
+		"answerer_device_id":  c.DeviceID,
 		"status":          "active",
 		"by":              c.UserID,
 	}
@@ -332,7 +352,20 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 		callerPayload[k] = v
 	}
 	callerPayload["livekit_token"] = callerTok
-	s.hub.PublishToUsers([]string{call.InitiatorID}, ws.Event{Type: "call.answered", Payload: callerPayload})
+	// Media + live UI only on the device that started the call.
+	s.hub.PublishToUserDevice(call.InitiatorID, call.InitiatorDeviceID, ws.Event{
+		Type: "call.answered", Payload: callerPayload,
+	})
+
+	// Clear ringing UI on the callee's other devices (answered here).
+	taken := map[string]any{}
+	for k, v := range base {
+		taken[k] = v
+	}
+	taken["reason"] = "answered_elsewhere"
+	s.hub.PublishToUserExceptDevice(c.UserID, c.DeviceID, ws.Event{
+		Type: "call.taken", Payload: taken,
+	})
 
 	others := []string{}
 	for _, m := range s.memberIDs(r, call.ConversationID) {

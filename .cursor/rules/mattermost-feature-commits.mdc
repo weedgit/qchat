@@ -1,16 +1,19 @@
 ---
-description: Mattermost refs; no auto branch/commit; naming + commit style only when asked
+description: Mattermost refs; never auto-branch or auto-commit — only when user explicitly asks
 alwaysApply: true
 ---
 
 # Qchat implementation workflow
 
-## 0. Do not create branches or commits unless asked
+## 0. Never create branches or commits yourself
 
-- **Never** create, switch, rename, or delete git branches on your own.
-- **Never** create commits (including `commit-tree` / soft-reset workflows) unless the user explicitly asks to commit.
-- Stay on the user's current branch. Implement changes as uncommitted work unless they request otherwise.
-- If a named branch or commit would help, suggest the name/message and wait for approval.
+The agent must **not** manage git history or branches on its own.
+
+- **Do not** create, switch, rename, delete, or reset branches (`git checkout -b`, `git switch -c`, stash-and-branch, etc.) unless the user explicitly asks.
+- **Do not** create commits of any kind (`git commit`, `commit-tree`, amend, soft-reset commit workflows) unless the user explicitly asks to commit.
+- **Do not** treat “implement a feature” as permission to branch or commit. Stay on the current branch and leave changes uncommitted.
+- Suggest a branch name or commit message only when helpful; **wait for the user to approve** before running those git commands.
+- User phrases like “commit this” / “make a branch” are required. Vague asks (“ship it”, “finish up”) are **not** commit/branch permission.
 
 ## 1. Branch naming (only when the user asks for a branch)
 
@@ -22,7 +25,7 @@ When the user requests a branch, use:
 
 | Part | Values | Meaning |
 |---|---|---|
-| type | `feat` or `fix` | New capability vs bugfix |
+| type | `feat` or `fix` | New capability vs bug fix |
 | owner | `hitman` | Keep stable |
 | surface | `web` / `desktop` / `mobile` | Primary client (API-only → usually `web`) |
 | slug | lowercase kebab-case | Short feature theme |

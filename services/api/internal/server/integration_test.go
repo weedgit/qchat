@@ -111,7 +111,7 @@ func registerUser(t *testing.T, base, invite string) (token, refresh, userID, us
 		"phone": phone, "password": "user12345", "username": username,
 		"invite_code": invite, "captcha_id": cid2, "captcha": code2,
 		"sms_challenge_id": otpBody["challenge_id"], "sms_code": otpBody["dev_code"],
-		"device_type": "web", "device_name": "test",
+		"device_type": "web", "device_name": "test", "device_id": "test-device-" + username,
 	})
 	if status != 201 {
 		t.Fatalf("register %s: %d %v", username, status, body)

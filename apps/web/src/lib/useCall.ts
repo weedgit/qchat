@@ -603,6 +603,9 @@ export function useCall(opts: {
         const kind = payload?.kind === "video" ? "video" : "voice";
         const convId = String(payload?.conversation_id ?? "");
         if (!callId || !token || !url) return;
+        // Only the tab that started this call joins media (same device_id may have multiple tabs).
+        const local = activeRef.current;
+        if (!local || local.role !== "caller" || local.callId !== callId) return;
         clearRingAlerts();
         setIncoming(null);
         setActive((prev) => ({
@@ -614,6 +617,19 @@ export function useCall(opts: {
           peerName: prev?.peerName,
         }));
         connectLiveKit(url, token, kind, callId).catch(() => {});
+        return;
+      }
+      if (type === "call.taken") {
+        // Another device of this user answered — clear local ring UI only.
+        const callId = String(payload?.call_id ?? payload?.id ?? "");
+        const convId = String(payload?.conversation_id ?? "");
+        clearRingAlerts();
+        setIncoming((prev) => {
+          if (!prev) return null;
+          if (!callId || prev.callId === callId) return null;
+          if (convId && prev.conversationId === convId) return null;
+          return prev;
+        });
         return;
       }
       if (type === "call.ended") {

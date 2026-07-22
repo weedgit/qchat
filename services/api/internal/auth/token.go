@@ -17,16 +17,18 @@ type Claims struct {
 	Role         string `json:"role"`
 	SessionID    string `json:"sid"`
 	DeviceType   string `json:"dtype"`
+	DeviceID     string `json:"did,omitempty"`
 	jwt.RegisteredClaims
 }
 
-func IssueAccess(secret string, ttl time.Duration, userID, enterpriseID, role, sessionID, deviceType string) (string, error) {
+func IssueAccess(secret string, ttl time.Duration, userID, enterpriseID, role, sessionID, deviceType, deviceID string) (string, error) {
 	claims := Claims{
 		UserID:       userID,
 		EnterpriseID: enterpriseID,
 		Role:         role,
 		SessionID:    sessionID,
 		DeviceType:   deviceType,
+		DeviceID:     deviceID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

@@ -51,6 +51,18 @@ export default function ProfilePage() {
   const [pushDevices, setPushDevices] = useState<PushDevice[]>([]);
   const [pushDevicesBusy, setPushDevicesBusy] = useState(false);
   const [pushDeviceError, setPushDeviceError] = useState<string | null>(null);
+  const [loginSessions, setLoginSessions] = useState<
+    {
+      id: string;
+      device_type: string;
+      device_name: string;
+      device_id: string;
+      current?: boolean;
+      created_at: string;
+      expires_at: string;
+    }[]
+  >([]);
+  const [sessionsBusy, setSessionsBusy] = useState(false);
 
   async function uploadAvatar(file: File) {
     if (!me) return;
@@ -106,6 +118,44 @@ export default function ProfilePage() {
     }
   }
 
+  async function loadLoginSessions() {
+    try {
+      const rows = await api<any>("/v1/me/sessions");
+      const list = Array.isArray(rows) ? rows : [];
+      setLoginSessions(
+        list.map((s: any) => ({
+          id: String(s?.id ?? ""),
+          device_type: String(s?.device_type ?? ""),
+          device_name: String(s?.device_name ?? ""),
+          device_id: String(s?.device_id ?? ""),
+          current: Boolean(s?.current),
+          created_at: String(s?.created_at ?? ""),
+          expires_at: String(s?.expires_at ?? ""),
+        }))
+      );
+    } catch {
+      setLoginSessions([]);
+    }
+  }
+
+  async function revokeLoginSession(id: string, isCurrent: boolean) {
+    setSessionsBusy(true);
+    setError(null);
+    try {
+      await api(`/v1/me/sessions/${id}`, { method: "DELETE" });
+      if (isCurrent) {
+        clearToken();
+        router.replace("/login");
+        return;
+      }
+      await loadLoginSessions();
+    } catch (e: any) {
+      setError(e.message || "Could not revoke session");
+    } finally {
+      setSessionsBusy(false);
+    }
+  }
+
   async function deletePushDevice(device: PushDevice) {
     setPushDevicesBusy(true);
     setPushDeviceError(null);
@@ -122,6 +172,7 @@ export default function ProfilePage() {
   useEffect(() => {
     load();
     loadPushDevices();
+    loadLoginSessions();
     const local = loadLocalNotifyProps();
     setNotify(local);
     api<any>("/v1/me/notify_props")
@@ -368,6 +419,48 @@ export default function ProfilePage() {
               </button>
               {notifySaved && <span className="muted">Saved</span>}
             </div>
+          </div>
+        )}
+
+        {me && (
+          <div className="card" style={{ display: "grid", gap: 10 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 16 }}>Login sessions</h2>
+              <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+                Each browser or desktop app has its own device id. Revoke a session to sign it out.
+              </div>
+            </div>
+            {loginSessions.length === 0 && (
+              <div className="muted">No active sessions.</div>
+            )}
+            {loginSessions.map((s) => (
+              <div className="list-row" key={s.id}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>
+                    {s.device_name || s.device_type || "Device"}
+                    {s.current && (
+                      <span className="tag-chip" style={{ marginLeft: 8 }}>
+                        This device
+                      </span>
+                    )}
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, overflowWrap: "anywhere" }}>
+                    {s.device_type} · {s.device_id.slice(0, 8)}…
+                  </div>
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    Signed in {s.created_at ? new Date(s.created_at).toLocaleString() : "—"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={sessionsBusy}
+                  onClick={() => revokeLoginSession(s.id, Boolean(s.current))}
+                >
+                  {s.current ? "Sign out" : "Revoke"}
+                </button>
+              </div>
+            ))}
           </div>
         )}
 

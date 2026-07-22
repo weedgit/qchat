@@ -35,6 +35,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		UserID:       claims.UserID,
 		EnterpriseID: claims.EnterpriseID,
 		SessionID:    claims.SessionID,
+		DeviceID:     claims.DeviceID,
 		Conn:         conn,
 		Send:         make(chan []byte, 64),
 	}

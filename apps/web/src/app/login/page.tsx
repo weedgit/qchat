@@ -115,6 +115,7 @@ export default function LoginPage() {
         captcha: captchaCode,
         device_type: device.deviceType,
         device_name: device.deviceName,
+        device_id: device.deviceId,
       };
       if (mode === "register") {
         payload.username = username || `user_${phone.slice(-4)}`;

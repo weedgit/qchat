@@ -40,6 +40,7 @@ type registerReq struct {
 	SMSCode        string `json:"sms_code"`
 	DeviceType     string `json:"device_type"`
 	DeviceName     string `json:"device_name"`
+	DeviceID       string `json:"device_id"`
 }
 
 // handleRegisterOTP sends an SMS code required before registration (JD phone verification).
@@ -178,7 +179,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r.Context(), uid.String(), entID, "user.register", "user", uid.String(), "", ip, nil)
-	tok, err := s.issueSession(r, uid.String(), entID, "member", req.DeviceType, req.DeviceName)
+	deviceID := ensureDeviceID(req.DeviceID)
+	_, _ = s.db.Exec(r.Context(), `
+		UPDATE sessions SET revoked=TRUE
+		WHERE user_id=$1 AND device_id=$2 AND revoked=FALSE`, uid.String(), deviceID)
+	tok, err := s.issueSession(r, uid.String(), entID, "member", req.DeviceType, req.DeviceName, deviceID)
 	if err != nil {
 		writeErr(w, 500, "session failed")
 		return
@@ -194,6 +199,7 @@ type loginReq struct {
 	Captcha    string `json:"captcha"`
 	DeviceType string `json:"device_type"`
 	DeviceName string `json:"device_name"`
+	DeviceID   string `json:"device_id"`
 	RememberMe bool   `json:"remember_me"`
 }
 
@@ -223,9 +229,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dtype := normalizeDevice(req.DeviceType)
-	// Same-type device replacement
-	_, _ = s.db.Exec(r.Context(), `UPDATE sessions SET revoked=TRUE WHERE user_id=$1 AND device_type=$2 AND revoked=FALSE`, uid, dtype)
-	tok, err := s.issueSession(r, uid, entID, role, dtype, req.DeviceName)
+	deviceID := ensureDeviceID(req.DeviceID)
+	// Per-device session: re-login on the same device_id replaces that device only.
+	_, _ = s.db.Exec(r.Context(), `
+		UPDATE sessions SET revoked=TRUE
+		WHERE user_id=$1 AND device_id=$2 AND revoked=FALSE`, uid, deviceID)
+	tok, err := s.issueSession(r, uid, entID, role, dtype, req.DeviceName, deviceID)
 	if err != nil {
 		writeErr(w, 500, "session failed")
 		return
@@ -233,7 +242,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !req.RememberMe {
 		tok["refresh_token"] = ""
 	}
-	s.audit(r.Context(), uid, entID, "user.login", "user", uid, "", clientIP(r), map[string]any{"device": dtype})
+	s.audit(r.Context(), uid, entID, "user.login", "user", uid, "", clientIP(r), map[string]any{
+		"device": dtype, "device_id": deviceID,
+	})
 	writeJSON(w, 200, tok)
 }
 
@@ -241,6 +252,49 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	_, _ = s.db.Exec(r.Context(), `UPDATE sessions SET revoked=TRUE WHERE id=$1`, c.SessionID)
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// handleListSessions lists active login sessions keyed by device_id.
+func (s *Server) handleListSessions(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	rows, err := s.db.Query(r.Context(), `
+		SELECT id::text, device_type, COALESCE(device_name,''), COALESCE(device_id,''), created_at, expires_at
+		FROM sessions
+		WHERE user_id=$1 AND revoked=FALSE AND expires_at>now()
+		ORDER BY created_at DESC`, c.UserID)
+	if err != nil {
+		writeErr(w, 500, "list failed")
+		return
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var id, dtype, dname, did string
+		var created, expires time.Time
+		if rows.Scan(&id, &dtype, &dname, &did, &created, &expires) != nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"id": id, "device_type": dtype, "device_name": dname, "device_id": did,
+			"current": id == c.SessionID,
+			"created_at": created.UTC(), "expires_at": expires.UTC(),
+		})
+	}
+	writeJSON(w, 200, out)
+}
+
+// handleRevokeSession revokes another (or current) session by id for this user.
+func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	sid := r.PathValue("id")
+	tag, err := s.db.Exec(r.Context(), `
+		UPDATE sessions SET revoked=TRUE
+		WHERE id=$1 AND user_id=$2 AND revoked=FALSE`, sid, c.UserID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErr(w, 404, "session not found")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "id": sid})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -326,20 +380,21 @@ func (s *Server) consumeCaptcha(r *http.Request, id, answer string) bool {
 	return tag.RowsAffected() == 1
 }
 
-func (s *Server) issueSession(r *http.Request, userID, entID, role, deviceType, deviceName string) (map[string]any, error) {
+func (s *Server) issueSession(r *http.Request, userID, entID, role, deviceType, deviceName, deviceID string) (map[string]any, error) {
 	dtype := normalizeDevice(deviceType)
+	did := ensureDeviceID(deviceID)
 	raw, hash, err := auth.NewRefreshToken()
 	if err != nil {
 		return nil, err
 	}
 	sid := uuid.New()
 	_, err = s.db.Exec(r.Context(), `
-		INSERT INTO sessions(id, user_id, device_type, device_name, refresh_hash, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6)`, sid, userID, dtype, deviceName, hash, time.Now().Add(s.cfg.RefreshTTL))
+		INSERT INTO sessions(id, user_id, device_type, device_name, device_id, refresh_hash, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`, sid, userID, dtype, deviceName, did, hash, time.Now().Add(s.cfg.RefreshTTL))
 	if err != nil {
 		return nil, err
 	}
-	access, err := auth.IssueAccess(s.cfg.JWTSecret, s.cfg.AccessTTL, userID, entID, role, sid.String(), dtype)
+	access, err := auth.IssueAccess(s.cfg.JWTSecret, s.cfg.AccessTTL, userID, entID, role, sid.String(), dtype, did)
 	if err != nil {
 		return nil, err
 	}
@@ -351,6 +406,7 @@ func (s *Server) issueSession(r *http.Request, userID, entID, role, deviceType, 
 		"user_id":       userID,
 		"enterprise_id": entID,
 		"role":          role,
+		"device_id":     did,
 	}, nil
 }
 
@@ -359,6 +415,21 @@ func normalizeDevice(d string) string {
 		return "phone"
 	}
 	return "desktop"
+}
+
+func normalizeDeviceID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) > 128 {
+		return id[:128]
+	}
+	return id
+}
+
+func ensureDeviceID(id string) string {
+	if n := normalizeDeviceID(id); n != "" {
+		return n
+	}
+	return uuid.NewString()
 }
 
 func guessRegion(ip string) string {
@@ -422,13 +493,13 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hash := auth.HashRefresh(req.RefreshToken)
-	var sid, uid, dtype, dname string
+	var sid, uid, dtype, dname, did string
 	var revoked bool
 	var expires time.Time
 	err := s.db.QueryRow(r.Context(), `
-		SELECT id::text, user_id::text, device_type, device_name, revoked, expires_at
+		SELECT id::text, user_id::text, device_type, device_name, COALESCE(device_id,''), revoked, expires_at
 		FROM sessions WHERE refresh_hash=$1`, hash).
-		Scan(&sid, &uid, &dtype, &dname, &revoked, &expires)
+		Scan(&sid, &uid, &dtype, &dname, &did, &revoked, &expires)
 	if err != nil {
 		writeErrCode(w, 401, "invalid_refresh", "invalid refresh token")
 		return
@@ -447,14 +518,11 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 403, "forbidden", "account unavailable")
 		return
 	}
-	tok, err := s.issueSession(r, uid, entID, role, dtype, dname)
+	tok, err := s.issueSession(r, uid, entID, role, dtype, dname, did)
 	if err != nil {
 		writeErrCode(w, 500, "session_failed", "session failed")
 		return
 	}
-	newSID, _ := tok["user_id"] // keep issueSession as-is; link rotation below via refresh lookup
-	_ = newSID
-	// Mark old session rotated; store replaced_by if we can find new session by refresh hash
 	newHash := auth.HashRefresh(tok["refresh_token"].(string))
 	var newID string
 	_ = s.db.QueryRow(r.Context(), `SELECT id::text FROM sessions WHERE refresh_hash=$1`, newHash).Scan(&newID)

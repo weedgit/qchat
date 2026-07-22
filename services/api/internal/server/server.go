@@ -49,6 +49,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /v1/auth/refresh", s.handleRefresh)
 	s.mux.HandleFunc("POST /v1/auth/logout", s.auth(s.handleLogout))
+	s.mux.HandleFunc("GET /v1/me/sessions", s.auth(s.handleListSessions))
+	s.mux.HandleFunc("DELETE /v1/me/sessions/{id}", s.auth(s.handleRevokeSession))
 	s.mux.HandleFunc("GET /v1/me", s.auth(s.handleMe))
 	s.mux.HandleFunc("PATCH /v1/me", s.auth(s.handleUpdateMe))
 	s.mux.HandleFunc("PUT /v1/me/status", s.auth(s.handleUpdateStatus))

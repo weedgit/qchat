@@ -13,11 +13,12 @@ type Event struct {
 }
 
 type Client struct {
-	UserID         string
-	EnterpriseID   string
-	SessionID      string
-	Conn           *websocket.Conn
-	Send           chan []byte
+	UserID       string
+	EnterpriseID string
+	SessionID    string
+	DeviceID     string
+	Conn         *websocket.Conn
+	Send         chan []byte
 }
 
 type Hub struct {
@@ -50,13 +51,25 @@ func (h *Hub) Unregister(c *Client) {
 	close(c.Send)
 }
 
-func (h *Hub) PublishToUsers(userIDs []string, ev Event) {
-	b, err := json.Marshal(ev)
-	if err != nil {
-		return
+func (h *Hub) publishLocked(targets []*Client, b []byte) {
+	seen := map[*Client]struct{}{}
+	for _, c := range targets {
+		if c == nil {
+			continue
+		}
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		select {
+		case c.Send <- b:
+		default:
+		}
 	}
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+}
+
+func (h *Hub) clientsForUsers(userIDs []string) []*Client {
+	out := make([]*Client, 0)
 	seen := map[*Client]struct{}{}
 	for _, uid := range userIDs {
 		for c := range h.clients[uid] {
@@ -64,12 +77,68 @@ func (h *Hub) PublishToUsers(userIDs []string, ev Event) {
 				continue
 			}
 			seen[c] = struct{}{}
-			select {
-			case c.Send <- b:
-			default:
-			}
+			out = append(out, c)
 		}
 	}
+	return out
+}
+
+func (h *Hub) PublishToUsers(userIDs []string, ev Event) {
+	b, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	h.publishLocked(h.clientsForUsers(userIDs), b)
+}
+
+// PublishToUserDevice sends only to WS clients for userID with matching deviceID.
+// Empty deviceID falls back to all of that user's connections (legacy tokens).
+func (h *Hub) PublishToUserDevice(userID, deviceID string, ev Event) {
+	b, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var targets []*Client
+	for c := range h.clients[userID] {
+		if deviceID == "" || c.DeviceID == "" || c.DeviceID == deviceID {
+			targets = append(targets, c)
+		}
+	}
+	// Prefer exact device match when any client has DeviceID set.
+	if deviceID != "" {
+		exact := make([]*Client, 0, len(targets))
+		for _, c := range targets {
+			if c.DeviceID == deviceID {
+				exact = append(exact, c)
+			}
+		}
+		if len(exact) > 0 {
+			targets = exact
+		}
+	}
+	h.publishLocked(targets, b)
+}
+
+// PublishToUserExceptDevice notifies other devices of the same user (e.g. call answered elsewhere).
+func (h *Hub) PublishToUserExceptDevice(userID, deviceID string, ev Event) {
+	b, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var targets []*Client
+	for c := range h.clients[userID] {
+		if deviceID != "" && c.DeviceID == deviceID {
+			continue
+		}
+		targets = append(targets, c)
+	}
+	h.publishLocked(targets, b)
 }
 
 func (h *Hub) OnlineUserIDs(ids []string) map[string]bool {
