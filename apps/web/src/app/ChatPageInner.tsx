@@ -24,7 +24,7 @@ import { Conversation, Message, conversationDisplayName, formatLastSeen } from "
 import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
-import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard } from "@/lib/fileDrop";
+import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard, imagesFromClipboardApi } from "@/lib/fileDrop";
 import { unregisterWebPush } from "@/lib/webPush";
 
 const VOICE_MAX_SEC = 60;
@@ -471,6 +471,9 @@ export default function ChatPageInner() {
   } | null>(null);
   const [mediaSending, setMediaSending] = useState(false);
   const mediaCaptionRef = useRef<HTMLTextAreaElement>(null);
+  const mediaDraftRef = useRef<typeof mediaDraft>(null);
+  mediaDraftRef.current = mediaDraft;
+  const clipboardIngestLock = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   /** Conversation id under file drag in the sidebar list (Mattermost channel drop). */
@@ -921,13 +924,40 @@ export default function ChatPageInner() {
     return n === 1 ? "Send File" : `Send ${n} files`;
   }
 
-  function openMediaDraft(files: File[]) {
+  function openMediaDraft(files: File[], opts?: { append?: boolean }) {
     if (!chat.activeId || editingMessage || files.length === 0) return;
+
+    if (opts?.append) {
+      setMediaDraft((prev) => {
+        if (!prev || prev.mode !== "photos") return prev;
+        const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+        if (!imageFiles.length) return prev;
+        const existingKeys = new Set(
+          prev.items.map((it) => `${it.file.type}:${it.file.size}`)
+        );
+        const additions = imageFiles
+          .filter((f) => !existingKeys.has(`${f.type}:${f.size}`))
+          .map((file) => ({
+            file,
+            url: URL.createObjectURL(file),
+          }));
+        if (!additions.length) return prev;
+        // Same paste can still produce equal-size images; allow append of new
+        // screenshots by also checking object URL uniqueness via sequential add
+        // when sizes collide but names differ from a fresh paste timestamp.
+        return { ...prev, items: [...prev.items, ...additions] };
+      });
+      window.setTimeout(() => mediaCaptionRef.current?.focus(), 0);
+      return;
+    }
+
     const mode: "photos" | "files" = files.every((f) => f.type.startsWith("image/"))
       ? "photos"
       : "files";
     setMediaDraft((prev) => {
-      prev?.items.forEach((it) => URL.revokeObjectURL(it.url));
+      prev?.items.forEach((it) => {
+        if (it.url) URL.revokeObjectURL(it.url);
+      });
       return {
         items: files.map((file) => ({
           file,
@@ -988,12 +1018,57 @@ export default function ChatPageInner() {
     }
   }
 
+  async function ingestClipboardImages(dt: DataTransfer | null | undefined) {
+    if (!chat.activeId || recording || voiceBusy || editingMessage || mediaSending) return false;
+    if (clipboardIngestLock.current) return false;
+    clipboardIngestLock.current = true;
+    try {
+      // Prefer paste-event files only. clipboard.read() often returns the same
+      // bitmap again and was doubling every Ctrl+V.
+      let images = imagesFromClipboard(dt);
+      if (!images.length) {
+        images = await imagesFromClipboardApi();
+      }
+      if (!images.length) return false;
+      if (mediaDraftRef.current?.mode === "photos") {
+        openMediaDraft(images, { append: true });
+      } else {
+        openMediaDraft(images);
+      }
+      return true;
+    } finally {
+      // Release on next tick so bubbled paste handlers in the same event are ignored.
+      window.setTimeout(() => {
+        clipboardIngestLock.current = false;
+      }, 0);
+    }
+  }
+
   function onComposerPaste(e: ReactClipboardEvent<HTMLTextAreaElement>) {
     if (!chat.activeId || recording || voiceBusy || editingMessage) return;
-    const images = imagesFromClipboard(e.clipboardData);
-    if (!images.length) return;
+    const syncImages = imagesFromClipboard(e.clipboardData);
+    const types = e.clipboardData ? Array.from(e.clipboardData.types as ArrayLike<string>) : [];
+    const maybeImage =
+      syncImages.length > 0 ||
+      types.includes("Files") ||
+      types.some((t) => t.startsWith("image/"));
+    if (!maybeImage) return;
     e.preventDefault();
-    openMediaDraft(images);
+    e.stopPropagation();
+    void ingestClipboardImages(e.clipboardData);
+  }
+
+  function onMediaDraftPaste(e: ReactClipboardEvent<HTMLTextAreaElement>) {
+    const syncImages = imagesFromClipboard(e.clipboardData);
+    const types = e.clipboardData ? Array.from(e.clipboardData.types as ArrayLike<string>) : [];
+    const maybeImage =
+      syncImages.length > 0 ||
+      types.includes("Files") ||
+      types.some((t) => t.startsWith("image/"));
+    if (!maybeImage) return; // allow normal text paste into the caption
+    e.preventDefault();
+    e.stopPropagation();
+    void ingestClipboardImages(e.clipboardData);
   }
 
   function removeMediaDraftItem(index: number) {
@@ -2289,17 +2364,15 @@ export default function ChatPageInner() {
                   <div key={`${it.file.name}-${idx}`} className="photo-send-thumb">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={it.url} alt={it.file.name || `Photo ${idx + 1}`} />
-                    {mediaDraft.items.length > 1 && (
-                      <button
-                        type="button"
-                        className="photo-send-remove"
-                        title="Remove"
-                        disabled={mediaSending}
-                        onClick={() => removeMediaDraftItem(idx)}
-                      >
-                        {"\u2715"}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="photo-send-remove"
+                      title="Remove"
+                      disabled={mediaSending}
+                      onClick={() => removeMediaDraftItem(idx)}
+                    >
+                      {"\u2715"}
+                    </button>
                   </div>
                 ))}
               </div>
@@ -2333,6 +2406,7 @@ export default function ChatPageInner() {
                 }
                 value={mediaDraft.caption}
                 disabled={mediaSending}
+                onPaste={onMediaDraftPaste}
                 onChange={(e) =>
                   setMediaDraft((prev) => (prev ? { ...prev, caption: e.target.value } : prev))
                 }

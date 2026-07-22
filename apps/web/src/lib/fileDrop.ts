@@ -22,23 +22,73 @@ export function filesFromDataTransfer(dt: DataTransfer): File[] {
   return files;
 }
 
-/** Images from Ctrl+V / clipboard paste (Mattermost createFileFromClipboard). */
+/** Content fingerprint — name is ignored (browsers reuse image.png). */
+export function clipboardImageKey(file: File | Blob): string {
+  const type = file.type || "image/png";
+  return `${type}:${file.size}`;
+}
+
+/**
+ * Images from Ctrl+V / clipboard paste (Mattermost createFileFromClipboard).
+ * Prefer FileList; fall back to items. Never return the same bitmap twice
+ * (Chrome often exposes the same paste via both items and files).
+ */
 export function imagesFromClipboard(dt: DataTransfer | null | undefined): File[] {
   if (!dt) return [];
+  const seen = new Set<string>();
   const out: File[] = [];
+  let seq = 0;
+
+  const pushBlob = (blob: File | Blob | null) => {
+    if (!blob) return;
+    const type = blob.type || "image/png";
+    if (!type.startsWith("image/")) return;
+    const key = clipboardImageKey(blob);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const ext = type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+    const name = `clipboard-${Date.now()}-${seq++}.${ext}`;
+    out.push(blob instanceof File ? new File([blob], name, { type }) : new File([blob], name, { type }));
+  };
+
+  // FileList first — usually the complete set when pasting multiple files from Explorer.
+  const files = Array.from(dt.files || []);
+  if (files.length) {
+    files.forEach((f) => pushBlob(f));
+    return out;
+  }
+
   const items = dt.items ? Array.from(dt.items) : [];
   for (const item of items) {
-    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
-    const blob = item.getAsFile();
-    if (!blob) continue;
-    const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
-    const name =
-      blob.name && blob.name !== "image.png"
-        ? blob.name
-        : `clipboard-${Date.now()}.${ext}`;
-    out.push(new File([blob], name, { type: blob.type || "image/png" }));
+    if (item.kind !== "file") continue;
+    pushBlob(item.getAsFile());
   }
-  if (out.length) return out;
-  // Fallback: some browsers only expose Files on paste.
-  return Array.from(dt.files || []).filter((f) => f.type.startsWith("image/"));
+  return out;
+}
+
+/**
+ * Async clipboard read — only as a fallback when the paste event has no files.
+ * Do not merge with paste-event files (same image, different wrapper → duplicates).
+ */
+export async function imagesFromClipboardApi(): Promise<File[]> {
+  if (typeof navigator === "undefined" || !navigator.clipboard?.read) return [];
+  try {
+    const items = await navigator.clipboard.read();
+    const seen = new Set<string>();
+    const out: File[] = [];
+    let seq = 0;
+    for (const item of items) {
+      const imageType = item.types.find((t) => t.startsWith("image/"));
+      if (!imageType) continue;
+      const blob = await item.getType(imageType);
+      const key = clipboardImageKey(blob);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const ext = imageType.split("/")[1]?.replace("jpeg", "jpg") || "png";
+      out.push(new File([blob], `clipboard-${Date.now()}-${seq++}.${ext}`, { type: imageType }));
+    }
+    return out;
+  } catch {
+    return [];
+  }
 }
