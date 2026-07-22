@@ -932,19 +932,12 @@ export default function ChatPageInner() {
         if (!prev || prev.mode !== "photos") return prev;
         const imageFiles = files.filter((f) => f.type.startsWith("image/"));
         if (!imageFiles.length) return prev;
-        const existingKeys = new Set(
-          prev.items.map((it) => `${it.file.type}:${it.file.size}`)
-        );
-        const additions = imageFiles
-          .filter((f) => !existingKeys.has(`${f.type}:${f.size}`))
-          .map((file) => ({
-            file,
-            url: URL.createObjectURL(file),
-          }));
-        if (!additions.length) return prev;
-        // Same paste can still produce equal-size images; allow append of new
-        // screenshots by also checking object URL uniqueness via sequential add
-        // when sizes collide but names differ from a fresh paste timestamp.
+        // Each Ctrl+V appends again even when the clipboard image is identical
+        // (same type/size). Deduping only happens inside a single paste event.
+        const additions = imageFiles.map((file) => ({
+          file,
+          url: URL.createObjectURL(file),
+        }));
         return { ...prev, items: [...prev.items, ...additions] };
       });
       window.setTimeout(() => mediaCaptionRef.current?.focus(), 0);
