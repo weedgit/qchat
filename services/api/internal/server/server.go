@@ -155,6 +155,10 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
+		if sessionAccessRevoked(claims.SessionID) {
+			writeErr(w, http.StatusUnauthorized, "session revoked")
+			return
+		}
 		s.touchSession(claims.SessionID)
 		ctx := context.WithValue(r.Context(), claimsKey, claims)
 		next(w, r.WithContext(ctx))

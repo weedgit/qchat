@@ -23,6 +23,7 @@
 | AUTH-02 | §2.1 | Send `device_type=desktop` / desktop device name | externalAPI / server view identity | Done | `feat-kevin-desktop-device-identity` |
 | AUTH-03 | §2.1 | Remember session via `safeStorage` tokens | secureStorage.ts | Done | `feat-kevin-desktop-safe-storage` |
 | AUTH-04 | §2.3 | Idle detection → away status bridge | UserActivityMonitor.ts | Todo | `feat-kevin-desktop-idle-status` |
+| AUTH-05 | §2.1 | Same-type session kick (`session.revoked`) | session management | Done | `feat-kevin-desktop-session-kick` |
 | CALL-01 | §2.4 | Grant mic / camera permission | permissionsManager | Done | `feat-kevin-desktop-media-permission` |
 | CALL-02 | §2.4 | Screenshare via `desktopCapturer` | callsWidgetWindow / desktopCapturer | Todo | `feat-kevin-desktop-screenshare` |
 | CALL-03 | §2.4 | Separate Calls widget window | callsWidgetWindow.ts | Deferred | `feat-kevin-desktop-calls-widget` |
@@ -208,9 +209,9 @@ Full list across D0–D5:
 
 | Requirement | Current behavior | Gap |
 |---|---|---|
-| Phone + computer concurrent | Supported (`phone` vs `desktop` buckets) | OK |
-| Same-type device kick | New desktop login revokes prior desktop session | OK |
-| Browser vs Electron | `web` vs `desktop` device_type (one each + one phone) | Login as web and Electron; second web login kicks first |
+| Phone + computer concurrent | Supported (`phone` vs `desktop` buckets) | OK — both may stay signed in |
+| Same-type device kick | New login of that type revokes prior session, pushes `session.revoked`, closes WS | OK |
+| Browser vs Electron | Separate `web` and `desktop` — both can stay; second of the same type kicks the first | OK |
 | Windows / macOS clients | Installers via electron-builder (D3); unsigned | **D5** signing for distribution |
 | Native store apps | Explicitly deferred in security decisions | Out of MVP |
 

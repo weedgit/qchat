@@ -206,7 +206,20 @@ func (s *Server) handleAdminBan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Banned {
+		rows, qerr := s.db.Query(r.Context(), `
+			SELECT id::text FROM sessions WHERE user_id=$1 AND revoked=FALSE`, uid)
+		ids := make([]string, 0)
+		if qerr == nil {
+			for rows.Next() {
+				var id string
+				if rows.Scan(&id) == nil && id != "" {
+					ids = append(ids, id)
+				}
+			}
+			rows.Close()
+		}
 		_, _ = s.db.Exec(r.Context(), `UPDATE sessions SET revoked=TRUE WHERE user_id=$1`, uid)
+		s.kickRevokedSessions(ids, "banned")
 	}
 	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.ban", "user", uid, req.Reason, clientIP(r), map[string]any{"banned": req.Banned})
 	writeJSON(w, 200, map[string]any{"ok": true})

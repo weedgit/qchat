@@ -2,7 +2,9 @@ package ws
 
 import (
 	"encoding/json"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -171,4 +173,45 @@ func (h *Hub) TotalConnections() int {
 		n += len(m)
 	}
 	return n
+}
+
+// KickSessions notifies matching clients then closes their sockets (same-type login / admin revoke).
+func (h *Hub) KickSessions(sessionIDs []string, ev Event) {
+	if len(sessionIDs) == 0 {
+		return
+	}
+	want := make(map[string]struct{}, len(sessionIDs))
+	for _, id := range sessionIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			want[id] = struct{}{}
+		}
+	}
+	if len(want) == 0 {
+		return
+	}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	victims := make([]*Client, 0)
+	for _, m := range h.clients {
+		for c := range m {
+			if _, ok := want[c.SessionID]; ok {
+				victims = append(victims, c)
+			}
+		}
+	}
+	h.mu.RUnlock()
+	for _, c := range victims {
+		select {
+		case c.Send <- b:
+		default:
+		}
+		go func(cl *Client) {
+			time.Sleep(80 * time.Millisecond)
+			_ = cl.Conn.Close()
+		}(c)
+	}
 }
