@@ -1,5 +1,6 @@
 /**
- * Mattermost-style profile / settings hub (mirror web apps/web/src/app/profile/page.tsx).
+ * Mattermost-style profile hub (mirror web apps/web/src/app/profile/page.tsx).
+ * Notifications / sessions / sign-out live on the Settings tab.
  */
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
@@ -9,17 +10,15 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import { Avatar } from "../../src/components/Avatar";
 import { useAuth } from "../../src/context/AuthContext";
-import { api, apiBaseUrl, uploadMedia } from "../../src/lib/api";
+import { api, uploadMedia } from "../../src/lib/api";
 import { colors, radius, spacing } from "../../src/theme";
 
 type Profile = {
@@ -35,49 +34,6 @@ type Profile = {
   profile_visibility: string;
   friend_privacy: string;
 };
-
-type NotifyProps = {
-  desktop: "all" | "mention" | "none";
-  sound: boolean;
-  mentions_only: boolean;
-};
-
-type LoginSession = {
-  id: string;
-  device_type: string;
-  device_name: string;
-  platform: string;
-  location: string;
-  current?: boolean;
-  created_at: string;
-  last_active_at: string;
-};
-
-function formatSessionActive(iso?: string): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  const sec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
-  if (sec < 60) return "just now";
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
-  if (sec < 86400 * 7) return `${Math.floor(sec / 86400)}d ago`;
-  return d.toLocaleString();
-}
-
-function sessionTitle(s: LoginSession): string {
-  const platform = s.platform.trim();
-  if (
-    platform &&
-    !["web", "desktop", "phone", "mobile", "browser"].includes(platform.toLowerCase())
-  ) {
-    return platform;
-  }
-  if (s.device_name && s.device_name.toLowerCase() !== "web") return s.device_name;
-  if (s.device_type === "phone") return "Mobile";
-  if (s.device_type === "desktop") return "Desktop";
-  return "Web";
-}
 
 function mapProfile(u: any): Profile {
   return {
@@ -96,45 +52,12 @@ function mapProfile(u: any): Profile {
 }
 
 export default function MeScreen() {
-  const { refreshMe, signOut } = useAuth();
+  const { refreshMe } = useAuth();
   const [me, setMe] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [notify, setNotify] = useState<NotifyProps>({
-    desktop: "all",
-    sound: true,
-    mentions_only: false,
-  });
-  const [notifySaved, setNotifySaved] = useState(false);
-  const [sessions, setSessions] = useState<LoginSession[]>([]);
-  const [sessionsBusy, setSessionsBusy] = useState(false);
-  const [newPhone, setNewPhone] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [challengeId, setChallengeId] = useState("");
-  const [phoneHint, setPhoneHint] = useState<string | null>(null);
-
-  const loadSessions = useCallback(async () => {
-    try {
-      const rows = await api<any>("/v1/me/sessions");
-      const list = Array.isArray(rows) ? rows : [];
-      setSessions(
-        list.map((s: any) => ({
-          id: String(s?.id ?? ""),
-          device_type: String(s?.device_type ?? ""),
-          device_name: String(s?.device_name ?? ""),
-          platform: String(s?.platform ?? s?.device_name ?? ""),
-          location: String(s?.location ?? s?.ip_region ?? s?.ip ?? ""),
-          current: Boolean(s?.current),
-          created_at: String(s?.created_at ?? ""),
-          last_active_at: String(s?.last_active_at ?? s?.created_at ?? ""),
-        }))
-      );
-    } catch {
-      setSessions([]);
-    }
-  }, []);
 
   const load = useCallback(async () => {
     setError(null);
@@ -145,18 +68,7 @@ export default function MeScreen() {
     } catch (e: any) {
       setError(e?.message || "Could not load profile");
     }
-    try {
-      const p = await api<any>("/v1/me/notify_props");
-      setNotify({
-        desktop: p?.desktop === "mention" || p?.desktop === "none" ? p.desktop : "all",
-        sound: p?.sound !== false,
-        mentions_only: Boolean(p?.mentions_only),
-      });
-    } catch {
-      /* keep defaults */
-    }
-    await loadSessions();
-  }, [loadSessions, refreshMe]);
+  }, [refreshMe]);
 
   useEffect(() => {
     load();
@@ -231,109 +143,6 @@ export default function MeScreen() {
     }
   }
 
-  async function onSaveNotify() {
-    setSaving(true);
-    setNotifySaved(false);
-    setError(null);
-    try {
-      await api("/v1/me/notify_props", {
-        method: "PUT",
-        body: JSON.stringify(notify),
-      });
-      setNotifySaved(true);
-    } catch (e: any) {
-      setError(e?.message || "Could not save notifications");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function revokeSession(s: LoginSession) {
-    const label = s.current ? "Sign out of this device?" : "Revoke this session?";
-    Alert.alert(s.current ? "Sign out" : "Revoke session", label, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: s.current ? "Sign out" : "Revoke",
-        style: "destructive",
-        onPress: async () => {
-          setSessionsBusy(true);
-          setError(null);
-          try {
-            await api(`/v1/me/sessions/${s.id}`, { method: "DELETE" });
-            if (s.current) {
-              await signOut();
-              router.replace("/login");
-              return;
-            }
-            await loadSessions();
-          } catch (e: any) {
-            setError(e?.message || "Could not revoke session");
-          } finally {
-            setSessionsBusy(false);
-          }
-        },
-      },
-    ]);
-  }
-
-  async function requestPhoneChange() {
-    if (newPhone.length !== 11) return;
-    setSaving(true);
-    setPhoneHint(null);
-    try {
-      const res = await api<any>("/v1/me/phone/request", {
-        method: "POST",
-        body: JSON.stringify({ new_phone: newPhone }),
-      });
-      setChallengeId(String(res?.challenge_id ?? ""));
-      setPhoneHint(
-        res?.dev_code
-          ? `SMS sent (dev code: ${res.dev_code})`
-          : "SMS code sent. Enter it below."
-      );
-    } catch (e: any) {
-      setPhoneHint(e?.message || "Could not send SMS");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function confirmPhoneChange() {
-    if (!me || !phoneCode) return;
-    setSaving(true);
-    setPhoneHint(null);
-    try {
-      const res = await api<any>("/v1/me/phone/confirm", {
-        method: "POST",
-        body: JSON.stringify({ challenge_id: challengeId, code: phoneCode }),
-      });
-      setMe({ ...me, phone: String(res?.phone ?? newPhone) });
-      setChallengeId("");
-      setPhoneCode("");
-      setNewPhone("");
-      setPhoneHint("Phone updated.");
-      await refreshMe();
-    } catch (e: any) {
-      setPhoneHint(e?.message || "Could not confirm phone");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function onLogout() {
-    Alert.alert("Sign out", "Sign out of this account?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign out",
-        style: "destructive",
-        onPress: async () => {
-          await signOut();
-          router.replace("/login");
-        },
-      },
-    ]);
-  }
-
   function pickVisibility() {
     if (!me) return;
     Alert.alert("Profile visibility", undefined, [
@@ -368,24 +177,6 @@ export default function MeScreen() {
     ]);
   }
 
-  function pickDesktopNotify() {
-    Alert.alert("Notifications", undefined, [
-      {
-        text: "All new messages",
-        onPress: () => setNotify({ ...notify, desktop: "all" }),
-      },
-      {
-        text: "Mentions only",
-        onPress: () => setNotify({ ...notify, desktop: "mention" }),
-      },
-      {
-        text: "Nothing",
-        onPress: () => setNotify({ ...notify, desktop: "none" }),
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }
-
   const visibilityLabel =
     me?.profile_visibility === "public" ? "Public" : "Friends only";
   const friendLabel =
@@ -394,12 +185,6 @@ export default function MeScreen() {
       : me?.friend_privacy === "closed"
         ? "Nobody can add me"
         : "Need my approval";
-  const desktopLabel =
-    notify.desktop === "mention"
-      ? "Mentions only"
-      : notify.desktop === "none"
-        ? "Nothing"
-        : "All new messages";
 
   return (
     <ScrollView
@@ -430,7 +215,12 @@ export default function MeScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Edit profile</Text>
           <Field label="Username" value={me.username} editable={false} hint="Set at registration" />
-          <Field label="Phone (login ID)" value={me.phone} editable={false} hint="Change with SMS below" />
+          <Field
+            label="Phone (login ID)"
+            value={me.phone}
+            editable={false}
+            hint="Change in Settings"
+          />
           <Field
             label="Display name"
             value={me.display_name}
@@ -475,110 +265,6 @@ export default function MeScreen() {
           <ActivityIndicator color={colors.accent} />
         </View>
       )}
-
-      {me ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Notifications</Text>
-          <Text style={styles.cardHint}>Mattermost-style notify preferences</Text>
-          <SelectRow label="Desktop notifications" value={desktopLabel} onPress={pickDesktopNotify} />
-          <ToggleRow
-            label="Play notification sound"
-            value={notify.sound}
-            onValueChange={(v) => setNotify({ ...notify, sound: v })}
-          />
-          <ToggleRow
-            label="Mentions only"
-            value={notify.mentions_only}
-            onValueChange={(v) => setNotify({ ...notify, mentions_only: v })}
-          />
-          <Pressable style={styles.primaryBtn} onPress={onSaveNotify} disabled={saving}>
-            <Text style={styles.primaryBtnText}>Save notifications</Text>
-          </Pressable>
-          {notifySaved ? <Text style={styles.hint}>Saved</Text> : null}
-        </View>
-      ) : null}
-
-      {me ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Login sessions</Text>
-          <Text style={styles.cardHint}>
-            One web, one desktop, and one phone session. Location is estimated from IP.
-          </Text>
-          {sessions.length === 0 ? (
-            <Text style={styles.muted}>No active sessions.</Text>
-          ) : (
-            sessions.map((s) => (
-              <View key={s.id} style={styles.sessionRow}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.sessionTitle}>
-                    {sessionTitle(s)}
-                    {s.current ? " · This device" : ""}
-                  </Text>
-                  <Text style={styles.muted}>{s.location || "Unknown location"}</Text>
-                  <Text style={styles.mutedSmall}>
-                    Last active {formatSessionActive(s.last_active_at || s.created_at)}
-                  </Text>
-                </View>
-                <Pressable
-                  style={styles.ghostBtn}
-                  disabled={sessionsBusy}
-                  onPress={() => revokeSession(s)}
-                >
-                  <Text style={styles.ghostBtnText}>{s.current ? "Sign out" : "Revoke"}</Text>
-                </Pressable>
-              </View>
-            ))
-          )}
-        </View>
-      ) : null}
-
-      {me ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Change phone number</Text>
-          <Field
-            label="New 11-digit phone"
-            value={newPhone}
-            onChangeText={setNewPhone}
-            keyboardType="phone-pad"
-            maxLength={11}
-          />
-          {!challengeId ? (
-            <Pressable
-              style={[styles.primaryBtn, newPhone.length !== 11 && styles.btnDisabled]}
-              onPress={requestPhoneChange}
-              disabled={saving || newPhone.length !== 11}
-            >
-              <Text style={styles.primaryBtnText}>Send SMS code</Text>
-            </Pressable>
-          ) : (
-            <>
-              <Field
-                label="Verification code"
-                value={phoneCode}
-                onChangeText={setPhoneCode}
-                keyboardType="number-pad"
-              />
-              <Pressable
-                style={[styles.primaryBtn, !phoneCode && styles.btnDisabled]}
-                onPress={confirmPhoneChange}
-                disabled={saving || !phoneCode}
-              >
-                <Text style={styles.primaryBtnText}>Confirm phone change</Text>
-              </Pressable>
-            </>
-          )}
-          {phoneHint ? <Text style={styles.hint}>{phoneHint}</Text> : null}
-        </View>
-      ) : null}
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>API server</Text>
-        <Text style={styles.muted}>{apiBaseUrl()}</Text>
-      </View>
-
-      <Pressable style={styles.logout} onPress={onLogout}>
-        <Text style={styles.logoutText}>Sign out</Text>
-      </Pressable>
     </ScrollView>
   );
 }
@@ -628,28 +314,6 @@ function SelectRow({
   );
 }
 
-function ToggleRow({
-  label,
-  value,
-  onValueChange,
-}: {
-  label: string;
-  value: boolean;
-  onValueChange: (v: boolean) => void;
-}) {
-  return (
-    <View style={styles.toggleRow}>
-      <Text style={styles.toggleLabel}>{label}</Text>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: colors.border, true: colors.accent }}
-        thumbColor="#fff"
-      />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
@@ -692,7 +356,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
-  cardHint: { fontSize: 12, color: colors.textMuted, marginTop: -4 },
   field: { gap: 4 },
   label: { color: colors.textSecondary, fontSize: 13, fontWeight: "500" },
   input: {
@@ -712,14 +375,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   selectValue: { color: colors.text, fontSize: 15, marginTop: 2 },
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md,
-    paddingVertical: 4,
-  },
-  toggleLabel: { flex: 1, color: colors.text, fontSize: 15 },
   primaryBtn: {
     backgroundColor: colors.accent,
     borderRadius: radius.sm,
@@ -727,32 +382,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 4,
   },
-  btnDisabled: { opacity: 0.45 },
   primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   hint: { color: colors.textSecondary, fontSize: 13 },
-  muted: { color: colors.textSecondary, fontSize: 13 },
-  mutedSmall: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
-  sessionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  sessionTitle: { fontWeight: "600", color: colors.text, fontSize: 14 },
-  ghostBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
-    backgroundColor: colors.inputBg,
-  },
-  ghostBtnText: { color: colors.accent, fontWeight: "600", fontSize: 13 },
-  logout: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  logoutText: { color: colors.danger, fontWeight: "600", fontSize: 16 },
 });
