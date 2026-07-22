@@ -85,6 +85,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/groups/join", s.auth(s.handleJoinGroup))
 	s.mux.HandleFunc("POST /v1/groups/{id}/approve", s.auth(s.handleApproveJoin))
 	s.mux.HandleFunc("POST /v1/groups/{id}/members", s.auth(s.handleAddGroupMembers))
+	s.mux.HandleFunc("DELETE /v1/groups/{id}/members/{userId}", s.auth(s.handleRemoveGroupMember))
 	s.mux.HandleFunc("POST /v1/groups/{id}/mute", s.auth(s.handleMuteMember))
 	s.mux.HandleFunc("POST /v1/groups/{id}/admins", s.auth(s.handleAppointAdmin))
 	s.mux.HandleFunc("GET /v1/conversations/{id}/messages", s.auth(s.handleListMessages))

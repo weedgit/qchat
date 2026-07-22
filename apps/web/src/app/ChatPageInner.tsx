@@ -609,6 +609,32 @@ export default function ChatPageInner() {
   >([]);
   const [addMemberPicked, setAddMemberPicked] = useState<Set<string>>(new Set());
   const [addMembersBusy, setAddMembersBusy] = useState(false);
+  const [memberMenu, setMemberMenu] = useState<{
+    x: number;
+    y: number;
+    member: {
+      user_id: string;
+      display_name: string;
+      username: string;
+      role: string;
+      avatar_url?: string;
+    };
+  } | null>(null);
+  const [memberProfile, setMemberProfile] = useState<{
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+    real_name?: string;
+    signature?: string;
+    region?: string;
+    is_friend?: boolean;
+    friendship_status?: string;
+    online?: boolean;
+    last_active_at?: string;
+    note?: string;
+  } | null>(null);
+  const [memberProfileBusy, setMemberProfileBusy] = useState(false);
   /** Members available for @ autocomplete (Mattermost suggestion box). */
   const [mentionMembers, setMentionMembers] = useState<
     { userId: string; username: string; displayName: string; avatarUrl?: string }[]
@@ -811,6 +837,86 @@ export default function ChatPageInner() {
       groupDetails?.role === "admin" ||
       chat.myRole === "owner" ||
       chat.myRole === "admin");
+  const myGroupRole = groupDetails?.role || chat.myRole || "";
+  const isGroupOwner = myGroupRole === "owner";
+
+  async function openMemberProfile(userId: string) {
+    if (!userId || userId === chat.me?.id) return;
+    setMemberProfileBusy(true);
+    setMemberProfile(null);
+    try {
+      const u = await api<any>(`/v1/users/${userId}`);
+      setMemberProfile({
+        id: String(u?.id ?? userId),
+        username: String(u?.username ?? ""),
+        display_name: String(u?.display_name ?? u?.username ?? "User"),
+        avatar_url: u?.avatar_url || undefined,
+        real_name: u?.real_name != null ? String(u.real_name) : undefined,
+        signature: u?.signature != null ? String(u.signature) : undefined,
+        region: u?.region != null ? String(u.region) : undefined,
+        is_friend: Boolean(u?.is_friend),
+        friendship_status: u?.friendship_status ? String(u.friendship_status) : undefined,
+        online: Boolean(u?.online),
+        last_active_at: u?.last_active_at ? String(u.last_active_at) : undefined,
+        note: u?.note ? String(u.note) : undefined,
+      });
+    } catch (e: any) {
+      logChatError(e?.message || "Could not load user");
+      setMemberProfile(null);
+    } finally {
+      setMemberProfileBusy(false);
+    }
+  }
+
+  function openMemberMenu(
+    e: ReactMouseEvent,
+    member: {
+      user_id: string;
+      display_name: string;
+      username: string;
+      role: string;
+      avatar_url?: string;
+    }
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (member.user_id === chat.me?.id) return;
+    if (member.role === "owner") return;
+    const canPromote = isGroupOwner && (member.role === "member" || member.role === "admin");
+    const canRemove =
+      canEditGroup &&
+      member.role !== "owner" &&
+      !(myGroupRole === "admin" && member.role === "admin");
+    if (!canPromote && !canRemove) return;
+    const MENU_W = 200;
+    const MENU_H = 140;
+    const x = Math.min(Math.max(e.clientX, 8), window.innerWidth - MENU_W - 8);
+    const y = Math.min(Math.max(e.clientY, 8), window.innerHeight - MENU_H - 8);
+    setMemberMenu({ x, y, member });
+  }
+
+  async function setMemberAdminRole(userId: string, role: "admin" | "member") {
+    if (!active) return;
+    try {
+      await api(`/v1/groups/${active.id}/admins`, {
+        method: "POST",
+        body: JSON.stringify({ user_id: userId, role }),
+      });
+      await reloadGroupDetails();
+    } catch (e: any) {
+      logChatError(e?.message || "Could not update role");
+    }
+  }
+
+  async function removeGroupMember(userId: string) {
+    if (!active) return;
+    try {
+      await api(`/v1/groups/${active.id}/members/${userId}`, { method: "DELETE" });
+      await reloadGroupDetails();
+    } catch (e: any) {
+      logChatError(e?.message || "Could not remove member");
+    }
+  }
 
   async function openAddMembers() {
     if (!active || !canEditGroup) return;
@@ -1014,6 +1120,26 @@ export default function ChatPageInner() {
       window.removeEventListener("resize", close);
     };
   }, [ctxMenu]);
+
+  useEffect(() => {
+    if (!memberMenu) return;
+    const close = () => setMemberMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [memberMenu]);
 
   async function copyOne(msg: Message) {
     try {
@@ -2735,11 +2861,31 @@ export default function ChatPageInner() {
                     mutedUntil != null && !Number.isNaN(mutedUntil.getTime()) && mutedUntil.getTime() > Date.now();
                   const permanentMute =
                     mutedUntil != null && mutedUntil.getUTCFullYear() >= 9999;
+                  const isMe = m.user_id === chat.me?.id;
                   return (
-                    <div key={m.user_id} className="details-member details-member-admin">
+                    <div
+                      key={m.user_id}
+                      className={`details-member details-member-admin${isMe ? " is-me" : " is-clickable"}`}
+                      role={isMe ? undefined : "button"}
+                      tabIndex={isMe ? undefined : 0}
+                      onClick={() => {
+                        if (!isMe) openMemberProfile(m.user_id).catch(() => {});
+                      }}
+                      onKeyDown={(e) => {
+                        if (isMe) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openMemberProfile(m.user_id).catch(() => {});
+                        }
+                      }}
+                      onContextMenu={(e) => openMemberMenu(e, m)}
+                    >
                       <Avatar name={m.display_name} url={m.avatar_url} size={28} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600 }}>{m.display_name}</div>
+                        <div style={{ fontWeight: 600 }}>
+                          {m.display_name}
+                          {isMe ? <span className="member-me-badge">me</span> : null}
+                        </div>
                         <div className="muted" style={{ fontSize: 12 }}>
                           @{m.username} · {m.role}
                           {isMuted
@@ -2748,8 +2894,12 @@ export default function ChatPageInner() {
                               : ` · muted until ${mutedUntil!.toLocaleString()}`
                             : ""}
                         </div>
-                        {canEditGroup && m.role !== "owner" && (
-                          <div className="mute-actions">
+                        {canEditGroup && m.role !== "owner" && !isMe && (
+                          <div
+                            className="mute-actions"
+                            onClick={(e) => e.stopPropagation()}
+                            onContextMenu={(e) => e.stopPropagation()}
+                          >
                             <button
                               type="button"
                               className="btn-ghost mute-chip"
@@ -3035,6 +3185,128 @@ export default function ChatPageInner() {
                 <MenuIcon d={ICONS.pin} />
                 {pinnedIdSet.has(ctxMsg.id) ? "Unpin" : "Pin"}
               </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {memberMenu && (
+        <div
+          className="ctx-menu"
+          style={{ left: memberMenu.x, top: memberMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {isGroupOwner && memberMenu.member.role === "member" && (
+            <button
+              type="button"
+              className="ctx-item"
+              onClick={() => {
+                const id = memberMenu.member.user_id;
+                setMemberMenu(null);
+                setMemberAdminRole(id, "admin").catch(() => {});
+              }}
+            >
+              Promote to admin
+            </button>
+          )}
+          {isGroupOwner && memberMenu.member.role === "admin" && (
+            <button
+              type="button"
+              className="ctx-item"
+              onClick={() => {
+                const id = memberMenu.member.user_id;
+                setMemberMenu(null);
+                setMemberAdminRole(id, "member").catch(() => {});
+              }}
+            >
+              Remove admin role
+            </button>
+          )}
+          {canEditGroup &&
+            memberMenu.member.role !== "owner" &&
+            !(myGroupRole === "admin" && memberMenu.member.role === "admin") && (
+              <button
+                type="button"
+                className="ctx-item danger"
+                onClick={() => {
+                  const id = memberMenu.member.user_id;
+                  const name = memberMenu.member.display_name;
+                  setMemberMenu(null);
+                  if (window.confirm(`Remove ${name} from this group?`)) {
+                    removeGroupMember(id).catch(() => {});
+                  }
+                }}
+              >
+                Remove from group
+              </button>
+            )}
+        </div>
+      )}
+
+      {(memberProfile || memberProfileBusy) && (
+        <div
+          className="forward-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="User info"
+          onClick={() => {
+            if (!memberProfileBusy) setMemberProfile(null);
+          }}
+        >
+          <div className="forward-modal-card member-profile-card" onClick={(e) => e.stopPropagation()}>
+            {memberProfileBusy && !memberProfile ? (
+              <div className="muted">Loading…</div>
+            ) : memberProfile ? (
+              <>
+                <Avatar
+                  name={memberProfile.note || memberProfile.display_name}
+                  url={memberProfile.avatar_url}
+                  size={72}
+                />
+                <div style={{ fontSize: 17, fontWeight: 700, marginTop: 10 }}>
+                  {memberProfile.note || memberProfile.display_name}
+                </div>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  @{memberProfile.username}
+                  {memberProfile.online ? " · online" : ""}
+                </div>
+                {memberProfile.signature ? (
+                  <div style={{ marginTop: 10, fontSize: 13 }}>{memberProfile.signature}</div>
+                ) : null}
+                {memberProfile.region ? (
+                  <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                    {memberProfile.region}
+                  </div>
+                ) : null}
+                {memberProfile.last_active_at && !memberProfile.online ? (
+                  <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                    {formatLastSeen(memberProfile.last_active_at)}
+                  </div>
+                ) : null}
+                <div className="forward-modal-actions" style={{ marginTop: 16 }}>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => setMemberProfile(null)}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      const id = memberProfile.id;
+                      setMemberProfile(null);
+                      chat.openDM(id).then(() => setMobileChatOpen(true)).catch(() => {});
+                    }}
+                  >
+                    Message
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="muted">Could not load user.</div>
             )}
           </div>
         </div>

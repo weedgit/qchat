@@ -19,6 +19,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { Avatar } from "../../src/components/Avatar";
+import { useAuth } from "../../src/context/AuthContext";
 import { useChat } from "../../src/context/ChatContext";
 import { api, asList } from "../../src/lib/api";
 import {
@@ -66,6 +67,7 @@ export default function ChatInfoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const convId = String(id);
   const { conversations, updateConversationPrefs, loadConversations } = useChat();
+  const { user: me } = useAuth();
   const conversation = useMemo(
     () => conversations.find((c) => c.id === convId) ?? null,
     [conversations, convId]
@@ -238,14 +240,18 @@ export default function ChatInfoScreen() {
     }
   }
 
-  /** Owner-only: appoint/demote admins (Mattermost channel roles / POST …/admins). */
+  /** Owner/admin: role + kick (Mattermost channel member menu). */
   function onMemberLongPress(m: GroupMember) {
-    if (!isOwner || m.role === "owner") return;
-    const makeAdmin = m.role !== "admin";
-    const label = makeAdmin ? "Make admin" : "Remove admin";
-    Alert.alert(m.displayName, `@${m.username} · ${m.role}`, [
-      {
-        text: label,
+    if (m.userId === me?.id || m.role === "owner") return;
+    const buttons: {
+      text: string;
+      style?: "cancel" | "destructive" | "default";
+      onPress?: () => void;
+    }[] = [];
+    if (isOwner && (m.role === "member" || m.role === "admin")) {
+      const makeAdmin = m.role !== "admin";
+      buttons.push({
+        text: makeAdmin ? "Promote to admin" : "Remove admin role",
         onPress: () => {
           setBusy(true);
           api(`/v1/groups/${convId}/admins`, {
@@ -259,9 +265,36 @@ export default function ChatInfoScreen() {
             .catch((e: any) => Alert.alert("Error", e?.message || "Could not update role"))
             .finally(() => setBusy(false));
         },
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+      });
+    }
+    const canRemove =
+      canManageGroup &&
+      !(group?.role === "admin" && m.role === "admin");
+    if (canRemove) {
+      buttons.push({
+        text: "Remove from group",
+        style: "destructive",
+        onPress: () => {
+          Alert.alert("Remove member", `Remove ${m.displayName} from this group?`, [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Remove",
+              style: "destructive",
+              onPress: () => {
+                setBusy(true);
+                api(`/v1/groups/${convId}/members/${m.userId}`, { method: "DELETE" })
+                  .then(() => loadGroup())
+                  .catch((e: any) => Alert.alert("Error", e?.message || "Could not remove"))
+                  .finally(() => setBusy(false));
+              },
+            },
+          ]);
+        },
+      });
+    }
+    if (buttons.length === 0) return;
+    buttons.push({ text: "Cancel", style: "cancel" });
+    Alert.alert(m.displayName, `@${m.username} · ${m.role}`, buttons);
   }
 
   const title = conversation
@@ -400,30 +433,40 @@ export default function ChatInfoScreen() {
                       </Pressable>
                     ) : null}
                   </View>
-                  {group.members.map((m) => (
-                    <Pressable
-                      key={m.userId}
-                      style={styles.memberRow}
-                      onPress={() =>
-                        router.push({ pathname: "/user/[id]", params: { id: m.userId } })
-                      }
-                      onLongPress={() => onMemberLongPress(m)}
-                      delayLongPress={350}
-                    >
-                      <Avatar name={m.displayName} url={m.avatarUrl} size={40} />
-                      <View style={{ flex: 1, minWidth: 0 }}>
-                        <Text style={styles.memberName} numberOfLines={1}>
-                          {m.displayName}
-                        </Text>
-                        <Text style={styles.memberMeta}>
-                          @{m.username}
-                          {m.role !== "member" ? ` · ${m.role}` : ""}
-                          {m.muteUntil ? " · muted" : ""}
-                        </Text>
-                      </View>
-                      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                    </Pressable>
-                  ))}
+                  {group.members.map((m) => {
+                    const isMe = m.userId === me?.id;
+                    return (
+                      <Pressable
+                        key={m.userId}
+                        style={styles.memberRow}
+                        disabled={isMe}
+                        onPress={() => {
+                          if (isMe) return;
+                          router.push({ pathname: "/user/[id]", params: { id: m.userId } });
+                        }}
+                        onLongPress={() => onMemberLongPress(m)}
+                        delayLongPress={350}
+                      >
+                        <Avatar name={m.displayName} url={m.avatarUrl} size={40} />
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <View style={styles.memberNameRow}>
+                            <Text style={styles.memberName} numberOfLines={1}>
+                              {m.displayName}
+                            </Text>
+                            {isMe ? <Text style={styles.meBadge}>me</Text> : null}
+                          </View>
+                          <Text style={styles.memberMeta}>
+                            @{m.username}
+                            {m.role !== "member" ? ` · ${m.role}` : ""}
+                            {m.muteUntil ? " · muted" : ""}
+                          </Text>
+                        </View>
+                        {!isMe ? (
+                          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </>
             ) : null}
@@ -602,7 +645,18 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  memberName: { fontSize: 15, fontWeight: "600", color: colors.text },
+  memberName: { fontSize: 15, fontWeight: "600", color: colors.text, flexShrink: 1 },
+  memberNameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  meBadge: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.accent,
+    backgroundColor: "rgba(36,99,220,0.12)",
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
   memberMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   link: { color: colors.accent, fontWeight: "600", fontSize: 15 },
   modalRoot: { flex: 1, backgroundColor: colors.bg, paddingTop: 56 },

@@ -341,6 +341,69 @@ func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true, "added": added, "skipped": skipped})
 }
 
+// handleRemoveGroupMember mirrors Mattermost RemoveUserFromChannel —
+// owner/admin kick a member. Owners may remove admins; admins may only remove members.
+// Leave/kick notices go to owners/admins only (requirements-en §8).
+func (s *Server) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+	targetID := strings.TrimSpace(r.PathValue("userId"))
+	if targetID == "" {
+		writeErrCode(w, 400, "invalid_request", "user id required")
+		return
+	}
+	if targetID == c.UserID {
+		writeErrCode(w, 400, "invalid_request", "use leave to remove yourself")
+		return
+	}
+
+	var ent, typ string
+	err := s.db.QueryRow(r.Context(), `
+		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+
+	actorRole := s.memberRole(r, convID, c.UserID)
+	if actorRole != "owner" && actorRole != "admin" {
+		writeErrCode(w, 403, "forbidden", "only owners and admins can remove members")
+		return
+	}
+	targetRole := s.memberRole(r, convID, targetID)
+	if targetRole == "" || targetRole == "pending" {
+		writeErrCode(w, 404, "not_found", "member not found")
+		return
+	}
+	if targetRole == "owner" {
+		writeErrCode(w, 403, "forbidden", "cannot remove the owner")
+		return
+	}
+	if actorRole == "admin" && targetRole == "admin" {
+		writeErrCode(w, 403, "forbidden", "admins cannot remove other admins")
+		return
+	}
+
+	tag, err := s.db.Exec(r.Context(), `
+		DELETE FROM conversation_members
+		WHERE conversation_id=$1 AND user_id=$2 AND role IN ('member','admin')`, convID, targetID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErrCode(w, 404, "not_found", "member not found")
+		return
+	}
+
+	payload := map[string]any{
+		"conversation_id":   convID,
+		"removed_user_id":   targetID,
+		"removed_by":        c.UserID,
+	}
+	// Notify removed user so their client drops the conversation.
+	s.hub.PublishToUsers([]string{targetID}, ws.Event{Type: "group.member_removed", Payload: payload})
+	// Owners/admins see the removal; ordinary members stay silent (requirements-en).
+	s.hub.PublishToUsers(s.adminIDs(r, convID), ws.Event{Type: "group.member_removed", Payload: payload})
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
 func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")

@@ -2054,6 +2054,36 @@ select:focus {
   gap: 10px;
   padding: 6px 0;
 }
+.details-member.is-clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  margin: 0 -6px;
+  padding: 6px;
+}
+.details-member.is-clickable:hover {
+  background: var(--bg-hover);
+}
+.details-member.is-me {
+  cursor: default;
+}
+.member-me-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+  color: var(--accent);
+  background: rgba(36, 99, 220, 0.15);
+}
+.member-profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 280px;
+}
 .details-member-admin {
   align-items: flex-start;
 }
