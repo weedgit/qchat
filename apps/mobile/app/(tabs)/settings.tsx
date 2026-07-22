@@ -274,28 +274,6 @@ export default function SettingsScreen() {
     ]);
   }
 
-  function pickTheme() {
-    const order: ThemeMode[] = ["dark", "light", "system"];
-    Alert.alert(t("appearance.theme"), undefined, [
-      ...order.map((mode) => ({
-        text: labelTheme(mode) + (theme === mode ? " ✓" : ""),
-        onPress: () => setTheme(mode),
-      })),
-      { text: t("common.cancel"), style: "cancel" as const },
-    ]);
-  }
-
-  function pickLanguage() {
-    const order: LocaleMode[] = ["en", "zh", "system"];
-    Alert.alert(t("appearance.language"), undefined, [
-      ...order.map((mode) => ({
-        text: labelLocale(mode) + (locale === mode ? " ✓" : ""),
-        onPress: () => setLocale(mode),
-      })),
-      { text: t("common.cancel"), style: "cancel" as const },
-    ]);
-  }
-
   const desktopLabel =
     notify.desktop === "mention"
       ? t("settings.notifyMention")
@@ -325,17 +303,25 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t("appearance.title")}</Text>
         <Text style={styles.cardHint}>{t("appearance.hint")}</Text>
-        <SelectRow
+        <DropdownSelect
           label={t("appearance.theme")}
-          value={labelTheme(theme)}
-          onPress={pickTheme}
+          value={theme}
+          options={(["dark", "light", "system"] as ThemeMode[]).map((mode) => ({
+            value: mode,
+            label: labelTheme(mode),
+          }))}
+          onChange={setTheme}
           styles={styles}
           colors={colors}
         />
-        <SelectRow
+        <DropdownSelect
           label={t("appearance.language")}
-          value={labelLocale(locale)}
-          onPress={pickLanguage}
+          value={locale}
+          options={(["en", "zh", "system"] as LocaleMode[]).map((mode) => ({
+            value: mode,
+            label: labelLocale(mode),
+          }))}
+          onChange={setLocale}
           styles={styles}
           colors={colors}
         />
@@ -522,6 +508,76 @@ function SelectRow({
   );
 }
 
+function DropdownSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  styles,
+  colors,
+}: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  styles: Styles;
+  colors: ColorTokens;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = options.find((o) => o.value === value)?.label ?? value;
+  return (
+    <View style={styles.dropdown}>
+      <Text style={styles.label}>{label}</Text>
+      <Pressable
+        style={styles.dropdownTrigger}
+        onPress={() => setOpen((o) => !o)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+      >
+        <Text style={styles.dropdownTriggerText} numberOfLines={1}>
+          {current}
+        </Text>
+        <Ionicons
+          name={open ? "chevron-up" : "chevron-down"}
+          size={18}
+          color={colors.textMuted}
+        />
+      </Pressable>
+      {open ? (
+        <View style={styles.dropdownMenu}>
+          {options.map((opt, index) => {
+            const selected = opt.value === value;
+            return (
+              <Pressable
+                key={opt.value}
+                style={[
+                  styles.dropdownOption,
+                  index > 0 && styles.dropdownOptionDivider,
+                  selected && styles.dropdownOptionActive,
+                ]}
+                onPress={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+              >
+                <Text
+                  style={[styles.dropdownOptionText, selected && styles.dropdownOptionTextActive]}
+                  numberOfLines={1}
+                >
+                  {opt.label}
+                </Text>
+                {selected ? (
+                  <Ionicons name="checkmark" size={18} color={colors.accent} />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function ToggleRow({
   label,
   value,
@@ -596,6 +652,42 @@ function makeStyles(c: ColorTokens) {
       paddingVertical: 6,
     },
     selectValue: { color: c.text, fontSize: 15, marginTop: 2 },
+    dropdown: { gap: 4 },
+    dropdownTrigger: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: spacing.sm,
+      backgroundColor: c.inputBg,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+    },
+    dropdownTriggerText: { flex: 1, color: c.text, fontSize: 15 },
+    dropdownMenu: {
+      backgroundColor: c.inputBg,
+      borderRadius: radius.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      overflow: "hidden" as const,
+    },
+    dropdownOption: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 12,
+    },
+    dropdownOptionDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.border,
+    },
+    dropdownOptionActive: {
+      backgroundColor: c.bg === darkColors.bg ? "rgba(36,99,220,0.18)" : "rgba(36,99,220,0.08)",
+    },
+    dropdownOptionText: { flex: 1, color: c.text, fontSize: 15 },
+    dropdownOptionTextActive: { color: c.accent, fontWeight: "600" as const },
     toggleRow: {
       flexDirection: "row" as const,
       alignItems: "center" as const,
