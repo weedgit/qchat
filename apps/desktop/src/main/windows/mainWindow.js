@@ -144,7 +144,7 @@ function createMainWindow(opts) {
           `URL: ${validatedURL || webUrl}\n` +
           `Error: ${errorDescription} (${errorCode})\n\n` +
           `Start apps/web (npm run dev) or set QCHAT_WEB_URL, e.g.\n` +
-          `QCHAT_WEB_URL=http://135.181.224.36 npm start`
+          `QCHAT_WEB_URL=https://135.181.224.36 npm start`
       );
     }
   );

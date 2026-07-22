@@ -1,3 +1,5 @@
+const { net } = require("electron");
+
 /**
  * @param {string} webUrl
  */
@@ -6,8 +8,9 @@ function createCaptchaHandler(webUrl) {
     const base = String(webUrl || "").replace(/\/$/, "");
     if (!base) throw new Error("captcha: web URL not configured");
 
+    // Use Chromium net stack so certificate-error trust for the web host applies.
     const url = `${base}/v1/auth/captcha`;
-    const res = await fetch(url, { method: "GET" });
+    const res = await net.fetch(url, { method: "GET" });
     if (!res.ok) {
       throw new Error(`captcha HTTP ${res.status}`);
     }
