@@ -262,6 +262,8 @@ export default function ChatScreen() {
 
   useEffect(() => {
     openConversation(convId);
+    nearBottomRef.current = true;
+    setShowJumpBottom(false);
   }, [convId, openConversation]);
 
   useLayoutEffect(() => {

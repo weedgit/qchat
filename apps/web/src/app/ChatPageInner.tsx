@@ -1079,6 +1079,8 @@ export default function ChatPageInner() {
 
   useEffect(() => {
     setSelectedIds(new Set());
+    nearBottomRef.current = true;
+    setShowJumpBottom(false);
   }, [chat.activeId]);
 
   // Mattermost channel drafts: restore composer text when switching conversations.
