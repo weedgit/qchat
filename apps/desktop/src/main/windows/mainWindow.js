@@ -84,10 +84,15 @@ function flushPendingConversation() {
 }
 
 /**
- * @param {{ webUrl: string, isDev: boolean, onDeepLink?: (url: string) => boolean }} opts
+ * @param {{
+ *   webUrl: string,
+ *   isDev: boolean,
+ *   onDeepLink?: (url: string) => boolean,
+ *   startHidden?: boolean,
+ * }} opts
  */
 function createMainWindow(opts) {
-  const { webUrl, isDev, onDeepLink } = opts;
+  const { webUrl, isDev, onDeepLink, startHidden = false } = opts;
   const saved = loadWindowState();
   const icon = iconOption();
   let appVersion = "0.1.0";
@@ -143,10 +148,16 @@ function createMainWindow(opts) {
     mainWindow.setTitle(APP_TITLE);
     if (!mainWindow.isVisible()) mainWindow.show();
   };
+  // SHELL-27: auto-reveal is skipped when starting hidden to tray.
+  // Explicit focus (tray Show, deep link, second-instance) still shows.
+  const revealMainWindow = () => {
+    if (startHidden) return;
+    showMainWindow();
+  };
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.setTitle(APP_TITLE);
-    if (showOnReady) showMainWindow();
+    if (showOnReady) revealMainWindow();
   });
 
   mainWindow.on("resize", saveWindowState);
@@ -221,8 +232,8 @@ function createMainWindow(opts) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
     attachSessionPersistence(mainWindow, webUrl, {
-      deferShow: remembered,
-      reveal: showMainWindow,
+      deferShow: remembered || startHidden,
+      reveal: revealMainWindow,
     });
 
     if (remembered) {
@@ -234,7 +245,7 @@ function createMainWindow(opts) {
     // No usable session — open login directly (same as web: splash only while checking).
     showOnReady = true;
     await mainWindow.loadURL(`${webOrigin}/login`);
-    showMainWindow();
+    revealMainWindow();
   })();
 
   mainWindow.on("closed", () => {

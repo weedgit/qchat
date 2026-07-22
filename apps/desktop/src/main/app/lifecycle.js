@@ -10,6 +10,7 @@ const {
   registerTrayQuitHook,
 } = require("../native/tray");
 const { applyStoredAutostart } = require("../native/autostart");
+const { shouldStartHidden } = require("../native/hideOnStart");
 const { registerPermissionHandler } = require("../security/permissions");
 const { allowLocalNetworkForCalls } = require("../security/localNetwork");
 const { allowSelfSignedForWebHost } = require("../security/certificates");
@@ -48,7 +49,14 @@ function startApp() {
   /** @type {(raw: string) => boolean} */
   let openDeepLink = () => false;
   const focus = () =>
-    focusMainWindow(() => createMainWindow({ webUrl, isDev, onDeepLink: openDeepLink }));
+    focusMainWindow(() =>
+      createMainWindow({
+        webUrl,
+        isDev,
+        onDeepLink: openDeepLink,
+        startHidden: false,
+      })
+    );
   openDeepLink = createDeepLinkHandler({
     focusMainWindow: focus,
     sendConversationToRenderer,
@@ -59,6 +67,8 @@ function startApp() {
 
   // Cold-start / second-instance argv (Windows + Linux).
   let pendingDeepLink = getDeepLinkFromArgv(process.argv);
+  // SHELL-27: preference / --hidden / wasOpenedAsHidden (Mattermost-style).
+  const startHidden = shouldStartHidden(process.argv) && !pendingDeepLink;
 
   // macOS: links arrive via open-url (may fire before ready).
   app.on("open-url", (event, url) => {
@@ -94,17 +104,21 @@ function startApp() {
 
     process.env.QCHAT_WEB_URL_RESOLVED = webUrl;
 
+    const rebuildChrome = () => {
+      buildAppMenu({
+        webUrl,
+        isDev,
+        getMainWindow,
+        onAutostartChanged: () => refreshTrayMenu(trayDeps),
+        onHideOnStartChanged: () => refreshTrayMenu(trayDeps),
+      });
+      refreshTrayMenu(trayDeps);
+    };
+
     const trayDeps = {
       focusMainWindow: focus,
-      onAutostartChanged: () => {
-        buildAppMenu({
-          webUrl,
-          isDev,
-          getMainWindow,
-          onAutostartChanged: () => refreshTrayMenu(trayDeps),
-        });
-        refreshTrayMenu(trayDeps);
-      },
+      onAutostartChanged: rebuildChrome,
+      onHideOnStartChanged: rebuildChrome,
     };
 
     buildAppMenu({
@@ -112,12 +126,23 @@ function startApp() {
       isDev,
       getMainWindow,
       onAutostartChanged: () => refreshTrayMenu(trayDeps),
+      onHideOnStartChanged: () => refreshTrayMenu(trayDeps),
     });
-    createMainWindow({ webUrl, isDev, onDeepLink: openDeepLink });
+    createMainWindow({
+      webUrl,
+      isDev,
+      onDeepLink: openDeepLink,
+      startHidden,
+    });
     // Mattermost TrayIcon.init: icon in notification area; click focuses main window.
-    createSystemTray(trayDeps);
+    const tray = createSystemTray(trayDeps);
     // Mattermost AutoLauncher: apply saved open-at-login preference when packaged.
     applyStoredAutostart();
+
+    // Cannot stay hidden without a tray affordance to show the window again.
+    if (startHidden && !tray) {
+      focus();
+    }
 
     if (pendingDeepLink) {
       const link = pendingDeepLink;
@@ -128,7 +153,12 @@ function startApp() {
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow({ webUrl, isDev, onDeepLink: openDeepLink });
+        createMainWindow({
+          webUrl,
+          isDev,
+          onDeepLink: openDeepLink,
+          startHidden: false,
+        });
       } else {
         focus();
       }

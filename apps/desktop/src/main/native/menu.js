@@ -1,7 +1,15 @@
 const { Menu } = require("electron");
 const { APP_TITLE } = require("../../shared/constants");
 const { showAbout } = require("./about");
-const { isAutostartEnabled, setAutostartEnabled } = require("./autostart");
+const {
+  isAutostartEnabled,
+  setAutostartEnabled,
+  refreshAutostartLaunchFlags,
+} = require("./autostart");
+const {
+  isHideOnStartEnabled,
+  setHideOnStartEnabled,
+} = require("./hideOnStart");
 
 /**
  * @param {{
@@ -9,10 +17,17 @@ const { isAutostartEnabled, setAutostartEnabled } = require("./autostart");
  *   isDev: boolean,
  *   getMainWindow: () => Electron.BrowserWindow | null,
  *   onAutostartChanged?: () => void,
+ *   onHideOnStartChanged?: () => void,
  * }} opts
  */
 function buildAppMenu(opts) {
-  const { webUrl, isDev, getMainWindow, onAutostartChanged } = opts;
+  const {
+    webUrl,
+    isDev,
+    getMainWindow,
+    onAutostartChanged,
+    onHideOnStartChanged,
+  } = opts;
   /** @type {Electron.MenuItemConstructorOptions[]} */
   const template = [];
 
@@ -27,6 +42,18 @@ function buildAppMenu(opts) {
       buildAppMenu(opts);
     },
   };
+  const hideOnStartItem = {
+    label: "Hide on start",
+    type: "checkbox",
+    checked: isHideOnStartEnabled(),
+    click: (menuItem) => {
+      setHideOnStartEnabled(menuItem.checked);
+      refreshAutostartLaunchFlags();
+      onHideOnStartChanged?.();
+      onAutostartChanged?.();
+      buildAppMenu(opts);
+    },
+  };
 
   if (process.platform === "darwin") {
     template.push({
@@ -35,6 +62,7 @@ function buildAppMenu(opts) {
         { label: `About ${APP_TITLE}`, click: aboutClick },
         { type: "separator" },
         autostartItem,
+        hideOnStartItem,
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -50,6 +78,7 @@ function buildAppMenu(opts) {
       label: "File",
       submenu: [
         autostartItem,
+        hideOnStartItem,
         { type: "separator" },
         { role: "quit", label: "Quit Qchat" },
       ],

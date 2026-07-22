@@ -31,6 +31,7 @@ function trayIconImage() {
  * @param {object} deps
  * @param {() => void} deps.focusMainWindow
  * @param {() => void} [deps.onAutostartChanged]
+ * @param {() => void} [deps.onHideOnStartChanged]
  */
 function createSystemTray(deps) {
   if (tray && !tray.isDestroyed()) return tray;
@@ -51,6 +52,10 @@ function createSystemTray(deps) {
       focusMainWindow: deps.focusMainWindow,
       onAutostartChanged: () => {
         deps.onAutostartChanged?.();
+        applyMenu();
+      },
+      onHideOnStartChanged: () => {
+        deps.onHideOnStartChanged?.();
         applyMenu();
       },
     });
@@ -77,6 +82,10 @@ function refreshTrayMenu(deps) {
     focusMainWindow: deps.focusMainWindow,
     onAutostartChanged: () => {
       deps.onAutostartChanged?.();
+      refreshTrayMenu(deps);
+    },
+    onHideOnStartChanged: () => {
+      deps.onHideOnStartChanged?.();
       refreshTrayMenu(deps);
     },
   });
