@@ -25,7 +25,7 @@ func markSessionsRevoked(ids []string) {
 
 func sessionAccessRevoked(sessionID string) bool {
 	if sessionID == "" {
-		return true
+		return false
 	}
 	_, ok := revokedSessionIDs.Load(sessionID)
 	return ok
