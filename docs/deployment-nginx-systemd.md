@@ -1,10 +1,14 @@
 # Deploy Qchat with systemd and nginx
 
-This setup exposes Qchat at `http://SERVER_IP/`:
+This setup exposes Qchat at `https://SERVER_IP/` (HTTP redirects to HTTPS):
 
 - `systemd` runs the Go API continuously on `127.0.0.1:8080`.
-- nginx serves the static web build on port 80.
+- nginx serves the static web build on port **443** (self-signed TLS by default).
 - nginx proxies `/v1/`, `/v1/ws`, and `/healthz` to the API.
+- LiveKit signaling is proxied as **WSS** on port **7443** (required for calls on HTTPS pages).
+
+Mic/camera require a secure context: open **HTTPS**, accept the self-signed warning once.
+For a public domain, replace `deploy/certs/` with Let's Encrypt and keep the same nginx layout.
 
 Run the commands below as `root`, or prefix system commands with `sudo`.
 

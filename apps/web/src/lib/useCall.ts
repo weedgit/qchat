@@ -62,10 +62,10 @@ type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void
 function resolveLiveKitUrl(url: string): string {
   if (typeof window === "undefined") return url;
   const fromEnv = process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim();
-  if (fromEnv) return fromEnv.replace(/^http/i, "ws");
-  if (!url) return url;
+  let resolved = (fromEnv || url || "").trim();
+  if (!resolved) return resolved;
   try {
-    const normalized = url.replace(/^ws/i, "http");
+    const normalized = resolved.replace(/^ws/i, "http");
     const u = new URL(normalized);
     const pageHost = window.location.hostname;
     const lkHost = u.hostname;
@@ -74,9 +74,14 @@ function resolveLiveKitUrl(url: string): string {
     if (lkIsLoopback && !pageIsLoopback) {
       u.hostname = pageHost;
     }
+    // HTTPS pages cannot open ws:// (mixed content) — upgrade to wss.
+    if (window.location.protocol === "https:" && u.protocol === "http:") {
+      u.protocol = "https:";
+      if (u.port === "7880") u.port = "7443";
+    }
     return u.toString().replace(/^http/i, "ws");
   } catch {
-    return url;
+    return resolved.replace(/^http/i, "ws");
   }
 }
 

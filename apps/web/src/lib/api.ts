@@ -1,11 +1,19 @@
-/** API origin: env override, else same host as the page on :8080 (LAN-friendly). */
+/**
+ * API origin.
+ * - NEXT_PUBLIC_API_URL set (including "") → use it; empty means same-origin (nginx HTTPS/HTTP).
+ * - unset + browser → host:8080 (LAN next-dev without nginx).
+ */
 export function apiBaseUrl(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-  if (fromEnv) return fromEnv;
+  if (typeof process.env.NEXT_PUBLIC_API_URL === "string") {
+    const fromEnv = process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
+    if (fromEnv) return fromEnv;
+    if (typeof window !== "undefined") return window.location.origin;
+    return "";
+  }
   if (typeof window !== "undefined") {
     return `${window.location.protocol}//${window.location.hostname}:8080`;
   }
-  return process.env.NODE_ENV === "development" ? "http://localhost:8080" : "";
+  return "http://localhost:8080";
 }
 
 /** @deprecated prefer apiBaseUrl() — kept for call sites that need a sync string at import time in the browser. */

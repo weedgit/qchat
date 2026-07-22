@@ -2,6 +2,9 @@
 # Allow Qchat web/API/LiveKit through UFW (host processes are blocked; Docker
 # published ports often work without these rules).
 set -euo pipefail
+sudo ufw allow 80/tcp comment 'Qchat HTTP redirect'
+sudo ufw allow 443/tcp comment 'Qchat HTTPS'
+sudo ufw allow 7443/tcp comment 'LiveKit WSS via nginx'
 sudo ufw allow 3000/tcp comment 'Qchat web'
 sudo ufw allow 8080/tcp comment 'Qchat API'
 sudo ufw allow 7880/tcp comment 'LiveKit signal'

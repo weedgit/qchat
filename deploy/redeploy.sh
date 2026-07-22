@@ -69,6 +69,10 @@ if [[ ! -f "$ENV_FILE" ]]; then
   fi
 fi
 
+log "ensure TLS certs (HTTPS for mic/camera)"
+chmod +x "$ROOT/deploy/generate-tls.sh"
+"$ROOT/deploy/generate-tls.sh"
+
 log "render LiveKit/coturn for this host"
 "$ROOT/deploy/render-media-config.sh"
 # shellcheck disable=SC1091
@@ -110,8 +114,11 @@ if [[ "$DO_WEB" -eq 1 ]]; then
   log "build web (static export)"
   (
     cd "$ROOT/apps/web"
-    # Empty NEXT_PUBLIC_API_URL → same-origin via nginx :80 (not host:8080).
-    NEXT_PUBLIC_API_URL="" npm run build
+    # Empty NEXT_PUBLIC_API_URL → same-origin via nginx (not host:8080).
+    # LiveKit URL comes from rendered media.env (wss when TLS certs exist).
+    NEXT_PUBLIC_API_URL="" \
+      NEXT_PUBLIC_LIVEKIT_URL="${NEXT_PUBLIC_LIVEKIT_URL:-}" \
+      npm run build
   )
 
   # Optional: sync to a published docroot (set QCHAT_WEB_ROOT=/var/www/qchat).
@@ -138,9 +145,9 @@ if [[ "$DO_API" -eq 1 ]]; then
 fi
 
 if command -v nginx >/dev/null 2>&1; then
-  curl -fsS --retry 3 --retry-delay 1 -o /dev/null http://127.0.0.1/
-  echo "Web  :80/ OK"
-  curl -fsS --retry 3 --retry-delay 1 http://127.0.0.1/healthz >/dev/null
+  curl -kfsS --retry 3 --retry-delay 1 -o /dev/null https://127.0.0.1/
+  echo "Web  :443/ OK"
+  curl -kfsS --retry 3 --retry-delay 1 https://127.0.0.1/healthz >/dev/null
   echo "Nginx /healthz OK"
 fi
 

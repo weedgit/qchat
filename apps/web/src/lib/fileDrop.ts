@@ -21,3 +21,24 @@ export function filesFromDataTransfer(dt: DataTransfer): File[] {
   });
   return files;
 }
+
+/** Images from Ctrl+V / clipboard paste (Mattermost createFileFromClipboard). */
+export function imagesFromClipboard(dt: DataTransfer | null | undefined): File[] {
+  if (!dt) return [];
+  const out: File[] = [];
+  const items = dt.items ? Array.from(dt.items) : [];
+  for (const item of items) {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+    const blob = item.getAsFile();
+    if (!blob) continue;
+    const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+    const name =
+      blob.name && blob.name !== "image.png"
+        ? blob.name
+        : `clipboard-${Date.now()}.${ext}`;
+    out.push(new File([blob], name, { type: blob.type || "image/png" }));
+  }
+  if (out.length) return out;
+  // Fallback: some browsers only expose Files on paste.
+  return Array.from(dt.files || []).filter((f) => f.type.startsWith("image/"));
+}
