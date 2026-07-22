@@ -84,10 +84,10 @@ function flushPendingConversation() {
 }
 
 /**
- * @param {{ webUrl: string, isDev: boolean }} opts
+ * @param {{ webUrl: string, isDev: boolean, onDeepLink?: (url: string) => boolean }} opts
  */
 function createMainWindow(opts) {
-  const { webUrl, isDev } = opts;
+  const { webUrl, isDev, onDeepLink } = opts;
   const saved = loadWindowState();
   const icon = iconOption();
   let appVersion = "0.1.0";
@@ -162,7 +162,7 @@ function createMainWindow(opts) {
     mainWindow.hide();
   });
 
-  attachNavigationGuards(mainWindow, webUrl);
+  attachNavigationGuards(mainWindow, webUrl, { onDeepLink });
 
   mainWindow.webContents.on(
     "did-fail-load",

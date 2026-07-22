@@ -184,6 +184,7 @@ the previous defaults.
 - Native notifications that focus the target conversation
 - Dock / taskbar unread badge (mentions count or unread dot) via `setUnreadStatus`
 - Tray tooltip reflects unread / mention totals
+- Deep links: `qchat://conversation/<id>` (also `chat` / `c` / `open?conversation=`) focuses the window and opens that chat
 - Native download save dialog
 - Single-instance window behavior and persisted window bounds
 - `window.qchatDesktop` preload bridge for the web client

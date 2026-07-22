@@ -62,8 +62,8 @@
 | SHELL-25 | MM | Tray menu Show / Quit | menus/tray.ts | Done | `feat-kevin-desktop-tray-menu` |
 | SHELL-26 | MM | Autostart on OS login | AutoLauncher.ts | Done | `feat-kevin-desktop-autostart` |
 | SHELL-27 | MM | Hide on start (start minimized) | AutoLauncher hideOnStart | Todo | `feat-kevin-desktop-hide-on-start` |
-| SHELL-28 | MM | Protocol handler `qchat://` | mattermost:// deep links | Todo | `feat-kevin-desktop-protocol-qchat` |
-| SHELL-29 | MM | Open conversation from deep link | navigationManager | Todo | `feat-kevin-desktop-deeplink-chat` |
+| SHELL-28 | MM | Protocol handler `qchat://` | mattermost:// deep links | Done | `feat-kevin-desktop-protocol-qchat` |
+| SHELL-29 | MM | Open conversation from deep link | navigationManager | Done | `feat-kevin-desktop-deeplink-chat` |
 | SHELL-30 | MM | Certificate error trust/deny UI | certificateStore.ts | Todo | `feat-kevin-desktop-cert-dialog` |
 | SHELL-31 | MM | Theme sync with OS | themeManager.ts | Todo | `feat-kevin-desktop-os-theme` |
 | SHELL-32 | MM | Offline / reconnect banner (shell) | ErrorView / isOnline | Todo | `feat-kevin-desktop-offline-banner` |
@@ -83,14 +83,12 @@
 
 ### Todo backlog (implement one row = one commit)
 
-1. `SHELL-28` `qchat://` protocol  
-2. `SHELL-29` deep-link open chat  
-3. `SHELL-27` hide on start  
-4. `CALL-02` screenshare  
-5. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-6. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+1. `SHELL-27` hide on start  
+2. `CALL-02` screenshare  
+3. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
+4. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
-**In progress:** next concrete work is **D4** protocol / deep-link (or **D5** signing).
+**In progress:** next concrete work is **SHELL-27** hide on start (or **D5** signing).
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 
@@ -112,7 +110,7 @@ Full list across D0–D5:
 10. Windows / macOS (/ Linux) installers  
 11. System tray / minimize to tray  
 12. Autostart on login  
-13. Optional `qchat://` protocol handler  
+13. `qchat://` protocol handler + open conversation from deep link — Done  
 14. Secure token storage (`safeStorage`) — Done  
 15. Code signing + auto-update  
 
@@ -187,7 +185,7 @@ Full list across D0–D5:
 | Dock / taskbar unread badge | **Done** | Mentions show a count; plain unread shows a dot (Win overlay / macOS Dock / Linux badge count) |
 | System tray / minimize to tray | **Done** | Close-to-tray; tray menu Show / Quit; tooltip reflects unread |
 | Autostart on OS login | **Done** | Preferences / tray menu |
-| Protocol handler `qchat://` | Todo | `qchat://…` opens app / conversation |
+| Protocol handler `qchat://` | **Done** | `qchat://conversation/<id>` focuses app and opens chat |
 | Secure token storage (`safeStorage`) | **Done** | Tokens encrypted in `userData/secure/` via Electron `safeStorage`; desktop opens `/` when a session exists |
 
 ---

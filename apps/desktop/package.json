@@ -17,7 +17,7 @@
     "start:lan": "node scripts/launch-lan.js",
     "start:server": "node scripts/launch.js --url=https://135.181.224.36",
     "start:headless": "xvfb-run -a node scripts/launch.js",
-    "check": "node scripts/check.js",
+    "check": "node scripts/check.js && node scripts/check-protocol.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux AppImage deb",
@@ -40,6 +40,10 @@
     ],
     "extraMetadata": {
       "main": "src/main/index.js"
+    },
+    "protocols": {
+      "name": "Qchat",
+      "schemes": ["qchat"]
     },
     "linux": {
       "target": ["AppImage", "deb"],

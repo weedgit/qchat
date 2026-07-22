@@ -22,6 +22,11 @@ const {
   sendConversationToRenderer,
   flushPendingConversation,
 } = require("../windows/mainWindow");
+const {
+  registerProtocolClient,
+  getDeepLinkFromArgv,
+} = require("./protocol");
+const { createDeepLinkHandler } = require("./deepLink");
 
 function startApp() {
   // Before ready: unblock LiveKit ws://LAN from localhost web UI (Chromium PNA/LNA).
@@ -40,10 +45,32 @@ function startApp() {
     return;
   }
 
-  const focus = () => focusMainWindow(() => createMainWindow({ webUrl, isDev }));
+  /** @type {(raw: string) => boolean} */
+  let openDeepLink = () => false;
+  const focus = () =>
+    focusMainWindow(() => createMainWindow({ webUrl, isDev, onDeepLink: openDeepLink }));
+  openDeepLink = createDeepLinkHandler({
+    focusMainWindow: focus,
+    sendConversationToRenderer,
+  });
 
-  app.on("second-instance", () => {
+  // SHELL-28: claim qchat:// (packaged + unpackaged).
+  registerProtocolClient();
+
+  // Cold-start / second-instance argv (Windows + Linux).
+  let pendingDeepLink = getDeepLinkFromArgv(process.argv);
+
+  // macOS: links arrive via open-url (may fire before ready).
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    if (app.isReady()) openDeepLink(url);
+    else pendingDeepLink = url;
+  });
+
+  app.on("second-instance", (_event, argv) => {
     focus();
+    const link = getDeepLinkFromArgv(argv);
+    if (link) openDeepLink(link);
   });
 
   registerTrayQuitHook();
@@ -86,15 +113,22 @@ function startApp() {
       getMainWindow,
       onAutostartChanged: () => refreshTrayMenu(trayDeps),
     });
-    createMainWindow({ webUrl, isDev });
+    createMainWindow({ webUrl, isDev, onDeepLink: openDeepLink });
     // Mattermost TrayIcon.init: icon in notification area; click focuses main window.
     createSystemTray(trayDeps);
     // Mattermost AutoLauncher: apply saved open-at-login preference when packaged.
     applyStoredAutostart();
 
+    if (pendingDeepLink) {
+      const link = pendingDeepLink;
+      pendingDeepLink = null;
+      // Let the window finish bootstrapping session / preload before opening chat.
+      setTimeout(() => openDeepLink(link), 300);
+    }
+
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow({ webUrl, isDev });
+        createMainWindow({ webUrl, isDev, onDeepLink: openDeepLink });
       } else {
         focus();
       }
