@@ -70,7 +70,9 @@ docker compose up -d livekit coturn
 (not Cursor-only localhost). Prefer loading the web UI on the same LAN host:
 
 ```bash
-npm run start:lan    # http://<detected-LAN-IP>:3000
+npm run start:lan    # picks a reachable RFC1918 IP (skips VPN/docker); falls back to localhost
+# force a host if needed:
+QCHAT_LAN_IP=192.168.1.124 npm run start:lan
 # or keep localhost (Electron also disables Chromium local-network blocks):
 npm run start:local
 ```
