@@ -50,9 +50,12 @@ If the Chromium sandbox is unavailable in a development VM:
 
 ```bash
 npm run dev:no-sandbox
+# or: QCHAT_DESKTOP_NO_SANDBOX=1 npm start
 ```
 
 Do not use the no-sandbox command for packaged or production use.
+Packaged builds call `app.enableSandbox()`, ignore `QCHAT_DESKTOP_NO_SANDBOX`,
+and (on Linux `.deb`) set `chrome-sandbox` setuid via afterPack so the sandbox works.
 
 ### Voice / video calls (LiveKit)
 
@@ -178,7 +181,8 @@ the previous defaults.
 
 ## Desktop behavior
 
-- `contextIsolation`, renderer sandbox, and no renderer Node integration
+- `contextIsolation`, renderer sandbox, `app.enableSandbox()`, and no renderer Node integration
+- Packaged builds never honor `QCHAT_DESKTOP_NO_SANDBOX` (dev/VM `--no-sandbox` only)
 - Remember me: tokens via Electron `safeStorage` (`userData/secure/`); app opens `/` when a session exists; logout clears the vault
 - Origin-scoped permissions and external navigation checks
 - Certificate errors: trust / deny dialog (persisted); configured web host stays auto-trusted

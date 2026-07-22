@@ -76,16 +76,16 @@
 | PACK-04 | MM | Windows Authenticode signing | code sign | Todo | `feat-kevin-desktop-win-sign` |
 | PACK-05 | MM | macOS Developer ID + notarization | notarize | Todo | `feat-kevin-desktop-mac-notarize` |
 | PACK-06 | MM | Auto-update (`electron-updater`) | updateNotifier | Todo | `feat-kevin-desktop-auto-update` |
-| PACK-07 | MM | Ship without `--no-sandbox` | production hardening | Todo | `feat-kevin-desktop-prod-sandbox` |
+| PACK-07 | MM | Ship without `--no-sandbox` | production hardening | Done | `feat-kevin-desktop-prod-sandbox` |
 | PACK-08 | MM | Crash / telemetry hooks | diagnostics | Deferred | `feat-kevin-desktop-crash-report` |
 
 ---
 
 ### Todo backlog (implement one row = one commit)
 
-1. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
+1. `PACK-04`–`PACK-06` signing + auto-update  
 
-**In progress:** next concrete work is **D5** signing / auto-update / production sandbox.
+**In progress:** next concrete work is **PACK-06** auto-update scaffold, or signing when certs are available.
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 
@@ -195,7 +195,7 @@ Full list across D0–D5:
 | Windows Authenticode signing | Todo | No SmartScreen “unknown publisher” (or reduced) |
 | macOS Developer ID + notarization | Todo | Gatekeeper accepts the app |
 | Auto-update (`electron-updater`) | Todo | New build prompts update |
-| Production hardening (no `--no-sandbox` in ship) | Todo | Release start path without dev sandbox bypass |
+| Production hardening (no `--no-sandbox` in ship) | Done | `app.enableSandbox()`; packaged ignores `QCHAT_DESKTOP_NO_SANDBOX`; Linux afterPack setuid on `chrome-sandbox`; `--no-sandbox` remains explicit dev/VM only |
 | Crash / telemetry hooks (optional) | Todo | Crash report appears in chosen service |
 
 ---
