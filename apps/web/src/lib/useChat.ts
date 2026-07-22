@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, asList, ensureAccessToken, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
+import { api, asList, ensureAccessToken, formatSendError, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
 import { isQchatDesktop } from "./device";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
@@ -181,6 +181,7 @@ export function useChat() {
       setLoadError(null);
       return list;
     } catch (e: any) {
+      console.error("[qchat] load conversations failed:", e?.message || e);
       setLoadError(e.message);
       return [] as Conversation[];
     }
@@ -199,6 +200,7 @@ export function useChat() {
         api(`/v1/messages/${last.id}/read`, { method: "POST" }).catch(() => {});
       }
     } catch (e: any) {
+      console.error("[qchat] load messages failed:", e?.message || e);
       setLoadError(e.message);
     }
   }, []);
@@ -699,10 +701,14 @@ export function useChat() {
         ),
       }));
     } catch (e: any) {
+      const message = formatSendError(e);
+      console.error("[qchat] send message failed:", message, e);
       setMessages((prev) => ({
         ...prev,
         [convId]: (prev[convId] ?? []).map((m) =>
-          m.id === tempId ? { ...m, pending: false, failed: true } : m
+          m.id === tempId
+            ? { ...m, pending: false, failed: true, error: message }
+            : m
         ),
       }));
       throw e;
@@ -727,19 +733,26 @@ export function useChat() {
         : trimmedCaption || file.name || "File";
       const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const tempId = clientMsgId;
-      const localUrl = URL.createObjectURL(file);
+      // Lightweight preview only — full File decode freezes the tab on big photos/videos.
+      let localUrl = "";
+      if (isImage) {
+        const { makeImagePreviewUrl } = await import("./mediaPreview");
+        localUrl = await makeImagePreviewUrl(file);
+      }
       const optimistic: Message = {
         id: tempId,
         conversationId: convId,
         senderId: meRef.current?.id ?? "me",
         content: preview,
         type,
-        mediaUrl: localUrl,
+        mediaUrl: localUrl || undefined,
         createdAt: new Date().toISOString(),
         mine: true,
         pending: true,
+        uploadProgress: 0,
         clientMsgId,
         replyToId,
+        localFile: file,
       };
       setMessages((prev) => ({
         ...prev,
@@ -758,8 +771,29 @@ export function useChat() {
             : c
         )
       );
+      // Yield so the optimistic bubble paints before XHR starts.
+      await new Promise<void>((r) => setTimeout(r, 0));
       try {
-        const uploaded = await uploadMedia(file, isImage ? "image" : "file", file.name || `upload.${isImage ? "jpg" : "bin"}`);
+        let lastPct = -1;
+        const uploaded = await uploadMedia(
+          file,
+          isImage ? "image" : "file",
+          file.name || `upload.${isImage ? "jpg" : "bin"}`,
+          (loaded, total) => {
+            const pct = Math.min(1, loaded / total);
+            const stepped = Math.floor(pct * 20);
+            if (stepped === lastPct) return;
+            lastPct = stepped;
+            setMessages((prev) => ({
+              ...prev,
+              [convId]: (prev[convId] ?? []).map((m) =>
+                m.id === tempId || m.clientMsgId === clientMsgId
+                  ? { ...m, uploadProgress: pct }
+                  : m
+              ),
+            }));
+          }
+        );
         const body = await api<any>(`/v1/conversations/${convId}/messages`, {
           method: "POST",
           body: JSON.stringify({
@@ -785,16 +819,36 @@ export function useChat() {
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
             m.id === tempId || m.clientMsgId === clientMsgId
-              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              ? {
+                  ...saved,
+                  mine: true,
+                  pending: false,
+                  failed: false,
+                  error: undefined,
+                  uploadProgress: undefined,
+                  localFile: undefined,
+                  clientMsgId,
+                  replyToId,
+                }
               : m
           ),
         }));
-        URL.revokeObjectURL(localUrl);
+        if (localUrl) URL.revokeObjectURL(localUrl);
       } catch (e: any) {
+        const message = formatSendError(e, "Upload failed");
+        console.error("[qchat] media upload failed:", message, e);
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
-            m.id === tempId ? { ...m, pending: false, failed: true } : m
+            m.id === tempId
+              ? {
+                  ...m,
+                  pending: false,
+                  failed: true,
+                  uploadProgress: undefined,
+                  error: message,
+                }
+              : m
           ),
         }));
         throw e;
@@ -876,10 +930,19 @@ export function useChat() {
         }));
         URL.revokeObjectURL(localUrl);
       } catch (e: any) {
+        const message = formatSendError(e, "Upload failed");
+        console.error("[qchat] voice upload failed:", message, e);
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
-            m.id === tempId ? { ...m, pending: false, failed: true } : m
+            m.id === tempId
+              ? {
+                  ...m,
+                  pending: false,
+                  failed: true,
+                  error: message,
+                }
+              : m
           ),
         }));
         throw e;
@@ -893,6 +956,12 @@ export function useChat() {
       ...prev,
       [convId]: (prev[convId] ?? []).filter((m) => m.id !== msg.id),
     }));
+    if ((msg.type === "image" || msg.type === "file") && msg.localFile) {
+      const caption =
+        msg.type === "image" && msg.content && msg.content !== "Photo" ? msg.content : undefined;
+      await sendMediaMessage(convId, msg.localFile, msg.replyToId, caption);
+      return;
+    }
     if (msg.type === "voice" && msg.mediaUrl) {
       // Re-upload only works for blob URLs; otherwise resend existing media_url.
       if (msg.mediaUrl.startsWith("blob:")) {
@@ -926,7 +995,7 @@ export function useChat() {
       return;
     }
     await sendMessage(convId, msg.content, msg.replyToId);
-  }, [sendMessage, sendVoiceMessage, stopTyping]);
+  }, [sendMessage, sendMediaMessage, sendVoiceMessage, stopTyping]);
 
   const recallMessage = useCallback(async (messageId: string, convId: string) => {
     await api(`/v1/messages/${messageId}/recall`, { method: "POST" });

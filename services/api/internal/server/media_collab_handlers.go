@@ -15,21 +15,30 @@ import (
 	"github.com/qchat/qchat/services/api/internal/auth"
 )
 
-var allowedMedia = map[string]int64{
-	"image/jpeg":      20 << 20,
-	"image/png":       20 << 20,
-	"image/gif":       20 << 20,
-	"image/webp":      20 << 20,
-	"application/pdf": 50 << 20,
-	"text/plain":      5 << 20,
-	"application/msword": 50 << 20,
-	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": 50 << 20,
-	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       50 << 20,
-	"audio/webm": 10 << 20,
-	"audio/ogg":  10 << 20,
-	"audio/mpeg": 10 << 20,
-	"audio/mp4":  10 << 20,
-	"video/mp4":  200 << 20,
+var (
+	maxAvatarBytes = int64(100 << 20) // requirements: avatar ≤ 100 MB
+	maxFileBytes   = int64(100 << 20)
+	maxVideoBytes  = int64(200 << 20)
+	maxVoiceBytes  = int64(10 << 20) // ~60s recorded voice
+)
+
+// maxUploadBytes sizes by kind. Any content type is accepted for chat attachments.
+func maxUploadBytes(kind, contentType string) int64 {
+	switch kind {
+	case "avatar":
+		return maxAvatarBytes
+	case "voice":
+		return maxVoiceBytes
+	case "video":
+		return maxVideoBytes
+	case "image":
+		return maxFileBytes
+	default:
+		if strings.HasPrefix(contentType, "video/") {
+			return maxVideoBytes
+		}
+		return maxFileBytes
+	}
 }
 
 func (s *Server) uploadRoot() string {
@@ -42,7 +51,8 @@ func (s *Server) uploadRoot() string {
 
 func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
-	if err := r.ParseMultipartForm(210 << 20); err != nil {
+	// Keep most of the multipart in temp files so large uploads don't pin RAM.
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeErr(w, 400, "invalid multipart")
 		return
 	}
@@ -63,41 +73,50 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
 		ct = strings.TrimSpace(ct[:i])
 	}
-	max, ok := allowedMedia[ct]
-	if !ok {
-		writeErr(w, 400, "content type not allowed")
+	// Avatars must be images and ≤ 100 MB (Mattermost-style profile image upload).
+	if kind == "avatar" && !strings.HasPrefix(ct, "image/") {
+		writeErr(w, 400, "avatar must be an image")
 		return
 	}
-	if hdr.Size > max {
+	max := maxUploadBytes(kind, ct)
+	if hdr.Size > 0 && hdr.Size > max {
 		writeErr(w, 400, "file too large")
 		return
 	}
-	data, err := io.ReadAll(io.LimitReader(file, max+1))
-	if err != nil || int64(len(data)) > max {
-		writeErr(w, 400, "read failed or too large")
-		return
-	}
-	sum := sha256.Sum256(data)
 	key := filepath.Join(c.EnterpriseID, kind, uuid.NewString()+extFor(ct, hdr.Filename))
 	root := s.uploadRoot()
 	dir := filepath.Join(root, filepath.Dir(key))
-	_ = os.MkdirAll(dir, 0o755)
-	if err := os.WriteFile(filepath.Join(root, key), data, 0o644); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		writeErr(w, 500, "store failed")
+		return
+	}
+	destPath := filepath.Join(root, key)
+	out, err := os.Create(destPath)
+	if err != nil {
+		writeErr(w, 500, "store failed")
+		return
+	}
+	hash := sha256.New()
+	written, err := io.Copy(io.MultiWriter(out, hash), io.LimitReader(file, max+1))
+	closeErr := out.Close()
+	if err != nil || closeErr != nil || written > max {
+		_ = os.Remove(destPath)
+		writeErr(w, 400, "read failed or too large")
 		return
 	}
 	id := uuid.New()
 	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO media_objects(id, enterprise_id, uploader_id, kind, content_type, size_bytes, storage_key, checksum, scanned)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)`,
-		id, c.EnterpriseID, c.UserID, kind, ct, len(data), key, hex.EncodeToString(sum[:]))
+		id, c.EnterpriseID, c.UserID, kind, ct, written, key, hex.EncodeToString(hash.Sum(nil)))
 	if err != nil {
+		_ = os.Remove(destPath)
 		writeErr(w, 500, "db failed")
 		return
 	}
 	url := "/v1/media/files/" + filepath.ToSlash(key)
 	writeJSON(w, 201, map[string]any{
-		"id": id.String(), "url": url, "content_type": ct, "size": len(data), "kind": kind,
+		"id": id.String(), "url": url, "content_type": ct, "size": written, "kind": kind,
 	})
 }
 

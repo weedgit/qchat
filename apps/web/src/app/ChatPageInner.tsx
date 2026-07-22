@@ -25,10 +25,15 @@ import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
 import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard, imagesFromClipboardApi } from "@/lib/fileDrop";
+import { makeImagePreviewUrl } from "@/lib/mediaPreview";
+import { attachmentLimitError, avatarLimitError, VOICE_MAX_SEC } from "@/lib/mediaLimits";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
 
-const VOICE_MAX_SEC = 60;
+/** Chat errors go to the console only — never surface as UI banners. */
+function logChatError(...args: unknown[]) {
+  console.error("[qchat]", ...args);
+}
 
 function fmtTime(iso?: string): string {
   if (!iso) return "";
@@ -319,7 +324,14 @@ function Bubble({
       {fmtTime(msg.createdAt)}
       {receiptMark(msg)}
       {!selectMode && msg.failed && onRetry && (
-        <button type="button" className="btn-ghost" style={{ marginLeft: 6, padding: "0 4px", fontSize: 11 }} onClick={onRetry}>
+        <button
+          type="button"
+          className="msg-retry-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRetry();
+          }}
+        >
           Retry
         </button>
       )}
@@ -361,7 +373,7 @@ function Bubble({
             </button>
           </div>
         )}
-        <div className={`bubble ${msg.pending ? "pending" : ""} ${msg.failed ? "error-text" : ""} ${msg.recalled ? "muted" : ""}`}>
+        <div className={`bubble ${msg.pending ? "pending" : ""} ${msg.failed ? "failed" : ""} ${msg.recalled ? "muted" : ""}`}>
           {!msg.mine && isGroup && msg.senderName && (
             <div className="sender">{msg.senderName}</div>
           )}
@@ -386,18 +398,43 @@ function Bubble({
                   <MessageBody text={msg.content} />
                 </div>
               )}
+              {msg.pending && typeof msg.uploadProgress === "number" && (
+                <div className="upload-progress" aria-hidden>
+                  <div
+                    className="upload-progress-bar"
+                    style={{ width: `${Math.round(msg.uploadProgress * 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
-          ) : msg.type === "file" && msg.mediaUrl && !msg.recalled ? (
-            <a
-              className="media-file"
-              href={mediaAuthURL(msg.mediaUrl)}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
-              <span>{msg.content || "File"}</span>
-            </a>
+          ) : msg.type === "file" && (msg.mediaUrl || msg.pending || msg.failed) && !msg.recalled ? (
+            <div className="media-file-wrap">
+              {msg.mediaUrl && !msg.failed ? (
+                <a
+                  className="media-file"
+                  href={mediaAuthURL(msg.mediaUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
+                  <span>{msg.content || "File"}</span>
+                </a>
+              ) : (
+                <div className="media-file">
+                  <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
+                  <span>{msg.content || "File"}</span>
+                </div>
+              )}
+              {msg.pending && typeof msg.uploadProgress === "number" && (
+                <div className="upload-progress inline" aria-hidden>
+                  <div
+                    className="upload-progress-bar"
+                    style={{ width: `${Math.round(msg.uploadProgress * 100)}%` }}
+                  />
+                </div>
+              )}
+            </div>
           ) : (
             <MessageBody text={msg.content} />
           )}
@@ -481,7 +518,6 @@ export default function ChatPageInner() {
   mediaDraftRef.current = mediaDraft;
   const clipboardIngestLock = useRef(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
   /** Conversation id under file drag in the sidebar list (Mattermost channel drop). */
   const [dropHoverConvId, setDropHoverConvId] = useState<string | null>(null);
   /** File drag over the open chat history pane. */
@@ -676,8 +712,12 @@ export default function ChatPageInner() {
 
   async function uploadGroupAvatar(file: File) {
     if (!active || !canEditGroup) return;
+    const limitErr = avatarLimitError(file);
+    if (limitErr) {
+      logChatError(limitErr);
+      return;
+    }
     setAvatarBusy(true);
-    setSendError(null);
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -693,7 +733,7 @@ export default function ChatPageInner() {
       );
       await chat.reload();
     } catch (err: any) {
-      setSendError(err.message);
+      logChatError(err.message);
     } finally {
       setAvatarBusy(false);
     }
@@ -733,7 +773,7 @@ export default function ChatPageInner() {
       await reloadGroupDetails();
       await chat.reload();
     } catch (err: any) {
-      setSendError(err.message);
+      logChatError(err.message);
     } finally {
       setGroupMetaBusy(false);
     }
@@ -751,7 +791,7 @@ export default function ChatPageInner() {
       });
       await reloadGroupDetails();
     } catch (err: any) {
-      setSendError(err.message);
+      logChatError(err.message);
     } finally {
       setGroupMetaBusy(false);
     }
@@ -1009,7 +1049,6 @@ export default function ChatPageInner() {
 
   async function attachDroppedFiles(convId: string, files: File[]) {
     if (!convId || files.length === 0) return;
-    setSendError(null);
     setDropHoverConvId(null);
     setChatDropActive(false);
     chatDropDepthRef.current = 0;
@@ -1017,13 +1056,12 @@ export default function ChatPageInner() {
       chat.openConversation(convId);
       setMobileChatOpen(true);
     }
-    openMediaDraft(files);
+    await openMediaDraft(files);
   }
 
   async function send() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
-    setSendError(null);
     // Mattermost edit post: reuse the composer instead of a prompt dialog.
     if (editingMessage) {
       const id = editingMessage.id;
@@ -1038,7 +1076,7 @@ export default function ChatPageInner() {
         await chat.editMessage(id, chat.activeId, text);
         saveDraft(chat.activeId, "");
       } catch (e: any) {
-        setSendError(e.message);
+        logChatError(e.message);
         setEditingMessage({ ...editingMessage, content: text });
         setDraft(text);
       }
@@ -1050,8 +1088,8 @@ export default function ChatPageInner() {
     setReplyTo(null);
     try {
       await chat.sendMessage(chat.activeId, text, replyId);
-    } catch (e: any) {
-      setSendError(e.message);
+    } catch {
+      // Error is shown on the failed message bubble.
     }
   }
 
@@ -1062,38 +1100,60 @@ export default function ChatPageInner() {
     return n === 1 ? "Send File" : `Send ${n} files`;
   }
 
-  function openMediaDraft(files: File[], opts?: { append?: boolean }) {
+  async function openMediaDraft(files: File[], opts?: { append?: boolean }) {
     if (!chat.activeId || editingMessage || files.length === 0) return;
+    const accepted: File[] = [];
+    let limitErr: string | null = null;
+    for (const file of files) {
+      const err = attachmentLimitError(file);
+      if (err) {
+        limitErr = err;
+        continue;
+      }
+      accepted.push(file);
+    }
+    if (!accepted.length) {
+      logChatError(limitErr || "File too large");
+      return;
+    }
+    if (limitErr) logChatError(limitErr);
 
     if (opts?.append) {
+      const imageFiles = accepted.filter((f) => f.type.startsWith("image/"));
+      if (!imageFiles.length) return;
+      const additions: { file: File; url: string }[] = [];
+      for (const file of imageFiles) {
+        additions.push({ file, url: await makeImagePreviewUrl(file) });
+      }
       setMediaDraft((prev) => {
-        if (!prev || prev.mode !== "photos") return prev;
-        const imageFiles = files.filter((f) => f.type.startsWith("image/"));
-        if (!imageFiles.length) return prev;
-        // Each Ctrl+V appends again even when the clipboard image is identical
-        // (same type/size). Deduping only happens inside a single paste event.
-        const additions = imageFiles.map((file) => ({
-          file,
-          url: URL.createObjectURL(file),
-        }));
+        if (!prev || prev.mode !== "photos") {
+          additions.forEach((it) => {
+            if (it.url) URL.revokeObjectURL(it.url);
+          });
+          return prev;
+        }
         return { ...prev, items: [...prev.items, ...additions] };
       });
       window.setTimeout(() => mediaCaptionRef.current?.focus(), 0);
       return;
     }
 
-    const mode: "photos" | "files" = files.every((f) => f.type.startsWith("image/"))
+    const mode: "photos" | "files" = accepted.every((f) => f.type.startsWith("image/"))
       ? "photos"
       : "files";
+    const items: { file: File; url: string }[] = [];
+    for (const file of accepted) {
+      items.push({
+        file,
+        url: file.type.startsWith("image/") ? await makeImagePreviewUrl(file) : "",
+      });
+    }
     setMediaDraft((prev) => {
       prev?.items.forEach((it) => {
         if (it.url) URL.revokeObjectURL(it.url);
       });
       return {
-        items: files.map((file) => ({
-          file,
-          url: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
-        })),
+        items,
         mode,
         caption: draft,
         replyToId: replyTo?.id,
@@ -1127,25 +1187,30 @@ export default function ChatPageInner() {
   async function confirmSendMedia() {
     if (!mediaDraft || !chat.activeId || mediaSending) return;
     setMediaSending(true);
-    setSendError(null);
+    const convId = chat.activeId;
     const { items, mode, caption, replyToId } = mediaDraft;
     const trimmed = caption.trim();
+    // Close the modal immediately so the UI stays responsive while XHR streams.
+    setMediaDraft(null);
+    setMediaSending(false);
+    window.setTimeout(() => draftRef.current?.focus(), 0);
     try {
       if (mode === "files" && trimmed) {
-        await chat.sendMessage(chat.activeId, trimmed, replyToId);
+        await chat.sendMessage(convId, trimmed, replyToId);
       }
       for (let i = 0; i < items.length; i++) {
         const file = items[i].file;
         const isFirst = i === 0;
         const fileReply = mode === "files" && trimmed ? undefined : isFirst ? replyToId : undefined;
-        const fileCaption =
-          mode === "photos" && isFirst ? trimmed : undefined;
-        await chat.sendMediaMessage(chat.activeId, file, fileReply, fileCaption);
+        const fileCaption = mode === "photos" && isFirst ? trimmed : undefined;
+        await chat.sendMediaMessage(convId, file, fileReply, fileCaption);
+        if (items[i].url) URL.revokeObjectURL(items[i].url);
       }
-      closeMediaDraft();
     } catch (err: any) {
-      setSendError(err?.message || "Upload failed");
-      setMediaSending(false);
+      items.forEach((it) => {
+        if (it.url) URL.revokeObjectURL(it.url);
+      });
+      // Per-message error is already on the failed bubble via useChat.
     }
   }
 
@@ -1162,9 +1227,9 @@ export default function ChatPageInner() {
       }
       if (!images.length) return false;
       if (mediaDraftRef.current?.mode === "photos") {
-        openMediaDraft(images, { append: true });
+        openMediaDraft(images, { append: true }).catch(() => {});
       } else {
-        openMediaDraft(images);
+        openMediaDraft(images).catch(() => {});
       }
       return true;
     } finally {
@@ -1276,7 +1341,10 @@ export default function ChatPageInner() {
     if (!rec) return;
     clearRecordTimers();
     mediaRecorderRef.current = null;
-    const durationSec = Math.max(1, Math.round((Date.now() - recordStartedRef.current) / 1000));
+    const durationSec = Math.min(
+      VOICE_MAX_SEC,
+      Math.max(1, Math.round((Date.now() - recordStartedRef.current) / 1000))
+    );
     await new Promise<void>((resolve) => {
       rec.onstop = () => resolve();
       try {
@@ -1292,13 +1360,12 @@ export default function ChatPageInner() {
     chunksRef.current = [];
     if (!sendIt || blob.size < 200 || !chat.activeId) return;
     setVoiceBusy(true);
-    setSendError(null);
     const replyId = replyTo?.id;
     setReplyTo(null);
     try {
       await chat.sendVoiceMessage(chat.activeId, blob, durationSec, replyId);
-    } catch (e: any) {
-      setSendError(e.message || "Failed to send voice message");
+    } catch {
+      // Error is shown on the failed voice bubble.
     } finally {
       setVoiceBusy(false);
     }
@@ -1307,7 +1374,7 @@ export default function ChatPageInner() {
   async function startRecording() {
     if (!chat.activeId || recording || voiceBusy) return;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setSendError("Voice messages are not supported in this browser");
+      logChatError("Voice messages are not supported in this browser");
       return;
     }
     try {
@@ -1327,17 +1394,18 @@ export default function ChatPageInner() {
       recordStartedRef.current = Date.now();
       setRecordSecs(0);
       setRecording(true);
-      setSendError(null);
       rec.start(250);
       recordTimerRef.current = setInterval(() => {
-        setRecordSecs(Math.floor((Date.now() - recordStartedRef.current) / 1000));
+        setRecordSecs(
+          Math.min(VOICE_MAX_SEC, Math.floor((Date.now() - recordStartedRef.current) / 1000))
+        );
       }, 250);
       recordMaxRef.current = setTimeout(() => {
         finishRecording(true).catch(() => {});
       }, VOICE_MAX_SEC * 1000);
     } catch {
       stopMediaTracks();
-      setSendError("Microphone permission denied");
+      logChatError("Microphone permission denied");
     }
   }
 
@@ -1495,8 +1563,7 @@ export default function ChatPageInner() {
             <>
           {chat.loadError && (
             <div style={{ padding: 14 }}>
-              <div className="error-text">{chat.loadError}</div>
-              <button className="btn-ghost" onClick={chat.reload} style={{ marginTop: 6 }}>
+              <button className="btn-ghost" onClick={chat.reload}>
                 Retry
               </button>
             </div>
@@ -1707,7 +1774,7 @@ export default function ChatPageInner() {
                       onClick={() => {
                         call
                           .startCall(active.id, "voice", conversationDisplayName(active))
-                          .catch((e) => setSendError(e.message));
+                          .catch((e) => logChatError(e.message));
                       }}
                     >
                       <MenuIcon d={ICONS.phone} />
@@ -1720,7 +1787,7 @@ export default function ChatPageInner() {
                       onClick={() => {
                         call
                           .startCall(active.id, "video", conversationDisplayName(active))
-                          .catch((e) => setSendError(e.message));
+                          .catch((e) => logChatError(e.message));
                       }}
                     >
                       <MenuIcon d={ICONS.video} />
@@ -1773,8 +1840,7 @@ export default function ChatPageInner() {
             )}
 
             <div
-              className={`msg-scroll ${chatDropActive ? "drop-target" : ""}`}
-              ref={scrollRef}
+              className={`chat-drop-zone ${chatDropActive ? "is-active" : ""}`}
               onDragEnter={(e) => {
                 if (!dataTransferHasFiles(e.dataTransfer) || !chat.activeId) return;
                 e.preventDefault();
@@ -1807,10 +1873,14 @@ export default function ChatPageInner() {
               }}
             >
               {chatDropActive && (
-                <div className="msg-drop-overlay" aria-hidden>
-                  Drop to attach
+                <div className="chat-drop-overlay" aria-hidden>
+                  <div className="chat-drop-panel">
+                    <div className="chat-drop-title">Drop files here to send them</div>
+                    <div className="chat-drop-sub">without compression</div>
+                  </div>
                 </div>
               )}
+              <div className="msg-scroll" ref={scrollRef}>
               {activeMessages.length === 0 && (
                 <div className="empty-state" style={{ minHeight: 200 }}>
                   <div className="muted">No messages here yet…</div>
@@ -1842,17 +1912,7 @@ export default function ChatPageInner() {
                 </div>
               ))}
             </div>
-
-            {sendError && (
-              <div
-                className="error-text"
-                style={{ width: "100%", maxWidth: 720, margin: "0 auto", padding: "0 16px" }}
-              >
-                Failed to send: {sendError}
-              </div>
-            )}
-
-            <div className="composer">
+<div className="composer">
               <div className="composer-box">
                 {editingMessage ? (
                   <div className="reply-banner edit-banner">
@@ -1947,14 +2007,13 @@ export default function ChatPageInner() {
                         ref={fileInputRef}
                         type="file"
                         multiple
-                        accept="image/*,.pdf,audio/*,video/mp4,application/pdf"
+                        accept="*/*"
                         style={{ display: "none" }}
                         onChange={(e) => {
                           const list = e.target.files ? Array.from(e.target.files) : [];
                           e.target.value = "";
                           if (!list.length || !chat.activeId) return;
-                          setSendError(null);
-                          openMediaDraft(list);
+                          openMediaDraft(list).catch(() => {});
                         }}
                       />
                       <button
@@ -2060,6 +2119,7 @@ export default function ChatPageInner() {
                 </div>
               </div>
             </div>
+            </div>
           </>
         )}
       </main>
@@ -2084,7 +2144,7 @@ export default function ChatPageInner() {
               <input
                 ref={groupAvatarInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp"
+                accept="image/*"
                 hidden
                 onChange={(e) => {
                   const f = e.target.files?.[0];

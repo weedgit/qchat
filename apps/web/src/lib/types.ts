@@ -55,7 +55,13 @@ export interface Message {
   createdAt: string;
   mine?: boolean;
   pending?: boolean;
+  /** 0–1 while a media upload is in flight. */
+  uploadProgress?: number;
   failed?: boolean;
+  /** Human-readable send/upload failure shown on the bubble. */
+  error?: string;
+  /** Local File kept for Retry after a failed media upload. */
+  localFile?: File;
   clientMsgId?: string;
   seq?: number;
   recalled?: boolean;

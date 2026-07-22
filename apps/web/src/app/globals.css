@@ -17,6 +17,7 @@
   --border: #0d1520;
   --radius: 10px;
   --scrollbar: #2f3d4a;
+  --drop-accent: #9b8cff;
 }
 
 /* Mattermost-inspired light theme tokens (Display → Theme). */
@@ -38,6 +39,7 @@
   --border: #d5dee8;
   --radius: 10px;
   --scrollbar: #c5d0dc;
+  --drop-accent: #7b61ff;
 }
 
 * {
@@ -789,22 +791,71 @@ select:focus {
   gap: 4px;
   position: relative;
 }
-.msg-scroll.drop-target {
-  box-shadow: inset 0 0 0 2px var(--accent, #5b9bd5);
-  background: color-mix(in srgb, var(--accent, #5b9bd5) 8%, transparent);
+.chat-drop-zone {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
 }
-.msg-drop-overlay {
-  position: sticky;
-  top: 35%;
-  z-index: 4;
+.chat-drop-overlay {
+  position: absolute;
+  inset: 8px;
+  z-index: 40;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
   pointer-events: none;
+  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+  border-radius: 20px;
+}
+.chat-drop-panel {
+  flex: 1;
+  margin: 14px;
+  border: 2px dashed var(--drop-accent, #9b8cff);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   text-align: center;
-  padding: 14px 18px;
-  border-radius: 10px;
+  padding: 24px;
+}
+.chat-drop-title {
+  font-size: 22px;
   font-weight: 600;
-  color: var(--text);
-  background: color-mix(in srgb, var(--bg-panel, #1a2332) 88%, var(--accent, #5b9bd5));
-  border: 1px dashed var(--accent, #5b9bd5);
+  color: var(--drop-accent, #9b8cff);
+  letter-spacing: 0.01em;
+}
+.chat-drop-sub {
+  font-size: 15px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--drop-accent, #9b8cff) 72%, transparent);
+}
+.upload-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  border-radius: 0 0 8px 8px;
+}
+.upload-progress.inline {
+  position: relative;
+  margin-top: 8px;
+  border-radius: 999px;
+  height: 3px;
+}
+.upload-progress-bar {
+  height: 100%;
+  background: var(--accent, #2aabee);
+  transition: width 0.12s linear;
+}
+.media-file-wrap {
+  min-width: 160px;
 }
 /* keep the chat history in a narrow centered column */
 .msg-scroll > * {
@@ -1125,6 +1176,21 @@ select:focus {
 .bubble.pending {
   opacity: 0.6;
 }
+.bubble.failed {
+  opacity: 0.92;
+}
+.msg-retry-btn {
+  margin-left: 6px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--accent);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.msg-retry-btn:hover {
+  text-decoration: underline;
+}
 .bubble.muted {
   opacity: 0.65;
 }
@@ -1333,6 +1399,7 @@ select:focus {
   color: rgba(255, 255, 255, 0.55);
 }
 .media-image {
+  position: relative;
   max-width: min(280px, 70vw);
   border-radius: 8px;
   overflow: hidden;

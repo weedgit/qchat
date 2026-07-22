@@ -80,6 +80,24 @@ export class ApiError extends Error {
   }
 }
 
+/** Friendly copy for failed sends/uploads shown on the message bubble. */
+export function formatSendError(err: unknown, fallback = "Failed to send"): string {
+  if (err instanceof ApiError) {
+    if (err.status === 413) return "File too large";
+    if (err.status === 401) return "Session expired — sign in again";
+    if (err.status === 0) return err.message || "Network error";
+    if (err.message && !/^upload failed \(\d+\)$/i.test(err.message)) return err.message;
+    if (err.status === 400) return "File not allowed";
+    if (err.status >= 500) return "Server error — try again";
+    return `Failed to send (${err.status})`;
+  }
+  if (err && typeof err === "object" && "message" in err) {
+    const m = String((err as { message?: string }).message || "").trim();
+    if (m) return m;
+  }
+  return fallback;
+}
+
 let refreshPromise: Promise<boolean> | null = null;
 
 async function refreshAccess(): Promise<boolean> {
@@ -231,13 +249,86 @@ export function mediaAuthURL(path?: string | null): string | undefined {
   return abs;
 }
 
+export type UploadProgressFn = (loaded: number, total: number) => void;
+
+type MediaUploadResult = {
+  id: string;
+  url: string;
+  content_type: string;
+  size: number;
+  kind: string;
+};
+
+/**
+ * Upload via XHR so the File streams from disk (avoids fetch+FormData main-thread stalls)
+ * and so callers get upload progress for large media.
+ */
 export async function uploadMedia(
   file: Blob,
   kind: string,
-  filename: string
-): Promise<{ id: string; url: string; content_type: string; size: number; kind: string }> {
+  filename: string,
+  onProgress?: UploadProgressFn
+): Promise<MediaUploadResult> {
+  await ensureAccessToken();
   const form = new FormData();
   form.append("file", file, filename);
   form.append("kind", kind);
-  return api("/v1/media/upload", { method: "POST", body: form });
+
+  const doUpload = (retried: boolean) =>
+    new Promise<MediaUploadResult>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${apiBaseUrl()}/v1/media/upload`);
+      const token = getToken();
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      xhr.upload.onprogress = (ev) => {
+        if (!onProgress || !ev.lengthComputable || ev.total <= 0) return;
+        onProgress(ev.loaded, ev.total);
+      };
+
+      xhr.onload = () => {
+        let body: unknown = null;
+        const text = xhr.responseText;
+        if (text) {
+          try {
+            body = JSON.parse(text);
+          } catch {
+            body = text;
+          }
+        }
+        if (xhr.status === 401 && !retried) {
+          refreshAccess()
+            .then((ok) => {
+              if (ok) {
+                doUpload(true).then(resolve, reject);
+                return;
+              }
+              clearToken();
+              redirectLogin();
+              reject(new ApiError(401, "unauthorized", body));
+            })
+            .catch(reject);
+          return;
+        }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          let msg = `upload failed (${xhr.status})`;
+          if (xhr.status === 413) {
+            msg = "File too large";
+          } else if (typeof body === "object" && body && "error" in body) {
+            const e = String((body as { error?: string }).error || "").trim();
+            if (e) msg = e;
+          }
+          reject(new ApiError(xhr.status, msg, body));
+          return;
+        }
+        resolve(body as MediaUploadResult);
+      };
+
+      xhr.onerror = () => reject(new ApiError(0, "network error", null));
+      xhr.onabort = () => reject(new ApiError(0, "upload aborted", null));
+      // Let the browser stream the File; do not read it into an ArrayBuffer first.
+      xhr.send(form);
+    });
+
+  return doUpload(false);
 }

@@ -6,6 +6,7 @@ import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import PageHeader from "@/components/PageHeader";
 import { api, clearToken, apiBaseUrl } from "@/lib/api";
+import { avatarLimitError } from "@/lib/mediaLimits";
 import {
   loadLocalNotifyProps,
   saveLocalNotifyProps,
@@ -93,6 +94,11 @@ export default function ProfilePage() {
 
   async function uploadAvatar(file: File) {
     if (!me) return;
+    const limitErr = avatarLimitError(file);
+    if (limitErr) {
+      setError(limitErr);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -276,7 +282,7 @@ export default function ProfilePage() {
           <input
             ref={avatarInputRef}
             type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
+            accept="image/*"
             style={{ display: "none" }}
             onChange={(e) => {
               const file = e.target.files?.[0];
