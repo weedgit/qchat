@@ -15,6 +15,8 @@ export interface Conversation {
   lastMessageAt?: string;
   lastMessageSender?: string;
   lastMessageMine?: boolean;
+  /** True when the preview row's last message was recalled. */
+  lastMessageRecalled?: boolean;
   unreadCount: number;
   mentionCount?: number;
   peerId?: string;
@@ -73,16 +75,21 @@ export function normalizeConversation(raw: any): Conversation {
     raw?.title || raw?.peer_name || raw?.peer_nickname || raw?.name,
     typ === "dm" ? "Direct message" : "Conversation"
   );
+  const lastRecalled =
+    typeof last === "object" && last != null ? Boolean(last.recalled) : false;
+  let lastMessage =
+    typeof last === "string" ? last : str(last?.content ?? last?.body ?? last?.text) || undefined;
+  if (lastRecalled) lastMessage = "Message recalled";
   return {
     id: str(raw?.id ?? raw?.conversation_id),
     type: typ,
     title,
     avatarUrl: str(raw?.avatar_url ?? raw?.avatarUrl) || undefined,
-    lastMessage:
-      typeof last === "string" ? last : str(last?.content ?? last?.body ?? last?.text) || undefined,
+    lastMessage,
     lastMessageAt: str(raw?.last_message_at ?? raw?.updated_at ?? last?.created_at) || undefined,
     lastMessageSender: str(raw?.last_message_sender) || undefined,
     lastMessageMine: Boolean(raw?.last_message_mine),
+    lastMessageRecalled: lastRecalled,
     unreadCount: Number(raw?.unread_count ?? raw?.unread ?? 0) || 0,
     mentionCount: Number(raw?.mention_count ?? 0) || 0,
     peerId: str(raw?.peer_id) || undefined,

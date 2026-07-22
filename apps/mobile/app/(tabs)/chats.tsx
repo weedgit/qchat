@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -11,7 +12,7 @@ import {
 import { router } from "expo-router";
 import { Avatar } from "../../src/components/Avatar";
 import { useChat } from "../../src/context/ChatContext";
-import { conversationDisplayName } from "../../src/lib/types";
+import { Conversation, conversationDisplayName } from "../../src/lib/types";
 import { colors, radius, spacing } from "../../src/theme";
 
 function formatTime(iso?: string): string {
@@ -29,8 +30,27 @@ function formatTime(iso?: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/** Mirror web ConversationRow last-message preview. */
+function previewText(c: Conversation): string {
+  if (c.lastMessageRecalled) return "Message recalled";
+  if (!c.lastMessage) return "No messages yet";
+  const showSender = c.lastMessageMine || c.type !== "dm";
+  if (showSender && c.lastMessageSender) {
+    const who = c.lastMessageMine ? "You" : c.lastMessageSender;
+    return `${who}: ${c.lastMessage}`;
+  }
+  return c.lastMessage;
+}
+
 export default function ChatsScreen() {
-  const { conversations, loadConversations, openConversation, connected, loadError } = useChat();
+  const {
+    conversations,
+    loadConversations,
+    openConversation,
+    updateConversationPrefs,
+    connected,
+    loadError,
+  } = useChat();
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
@@ -49,17 +69,41 @@ export default function ChatsScreen() {
     setRefreshing(false);
   }, [loadConversations]);
 
+  const onLongPress = useCallback(
+    (c: Conversation) => {
+      Alert.alert(conversationDisplayName(c), undefined, [
+        {
+          text: c.favorite ? "Unfavorite" : "Favorite",
+          onPress: () => {
+            updateConversationPrefs(c.id, { favorite: !c.favorite }).catch(() => {});
+          },
+        },
+        {
+          text: c.muted ? "Unmute" : "Mute",
+          onPress: () => {
+            updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => {});
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    },
+    [updateConversationPrefs]
+  );
+
   return (
     <View style={styles.root}>
       <View style={styles.searchWrap}>
         <TextInput
           style={styles.search}
-          placeholder="搜索"
+          placeholder="Search"
           placeholderTextColor={colors.textMuted}
           value={query}
           onChangeText={setQuery}
         />
-        <Text style={styles.conn}>{connected ? "已连接" : "重连中…"}</Text>
+        <Pressable style={styles.newChat} onPress={() => router.push("/(tabs)/contacts")}>
+          <Text style={styles.newChatText}>New</Text>
+        </Pressable>
+        <Text style={styles.conn}>{connected ? "Connected" : "Reconnecting…"}</Text>
       </View>
       {loadError ? <Text style={styles.error}>{loadError}</Text> : null}
       <FlatList
@@ -68,34 +112,55 @@ export default function ChatsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={filtered.length === 0 ? styles.emptyWrap : undefined}
         ListEmptyComponent={
-          <Text style={styles.empty}>暂无会话。去通讯录加好友或开私聊。</Text>
+          <Text style={styles.empty}>
+            No conversations yet. Tap New or open Contacts to start a DM.
+          </Text>
         }
         renderItem={({ item }) => {
           const name = conversationDisplayName(item);
+          const muted = Boolean(item.muted);
+          const mention = (item.mentionCount ?? 0) > 0;
           return (
             <Pressable
-              style={styles.row}
+              style={[styles.row, muted && styles.rowMuted]}
               onPress={() => {
                 openConversation(item.id);
                 router.push(`/chat/${item.id}`);
               }}
+              onLongPress={() => onLongPress(item)}
+              delayLongPress={350}
             >
               <Avatar name={name} url={item.avatarUrl} />
               <View style={styles.meta}>
                 <View style={styles.topLine}>
-                  <Text style={styles.title} numberOfLines={1}>
+                  <Text style={[styles.title, muted && styles.titleMuted]} numberOfLines={1}>
+                    {item.favorite ? "★ " : ""}
                     {name}
+                    {muted ? " · muted" : ""}
                   </Text>
                   <Text style={styles.time}>{formatTime(item.lastMessageAt)}</Text>
                 </View>
                 <View style={styles.bottomLine}>
-                  <Text style={styles.preview} numberOfLines={1}>
-                    {item.lastMessageMine ? "我: " : ""}
-                    {item.lastMessage || " "}
+                  <Text
+                    style={[
+                      styles.preview,
+                      item.lastMessageRecalled && styles.previewRecalled,
+                      muted && styles.previewMuted,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {previewText(item)}
                   </Text>
                   {item.unreadCount > 0 ? (
-                    <View style={styles.badge}>
+                    <View
+                      style={[
+                        styles.badge,
+                        muted && styles.badgeMuted,
+                        mention && styles.badgeMention,
+                      ]}
+                    >
                       <Text style={styles.badgeText}>
+                        {mention ? "@" : ""}
                         {item.unreadCount > 99 ? "99+" : item.unreadCount}
                       </Text>
                     </View>
@@ -131,7 +196,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
   },
-  conn: { fontSize: 11, color: colors.textMuted },
+  newChat: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  newChatText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  conn: { fontSize: 11, color: colors.textMuted, maxWidth: 72 },
   error: { color: colors.danger, padding: spacing.md },
   row: {
     flexDirection: "row",
@@ -143,9 +215,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
+  rowMuted: { opacity: 0.85 },
   meta: { flex: 1, minWidth: 0 },
   topLine: { flexDirection: "row", justifyContent: "space-between", gap: spacing.sm },
   title: { flex: 1, fontSize: 16, fontWeight: "600", color: colors.text },
+  titleMuted: { color: colors.textSecondary },
   time: { fontSize: 12, color: colors.textMuted },
   bottomLine: {
     flexDirection: "row",
@@ -154,6 +228,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   preview: { flex: 1, fontSize: 13, color: colors.textSecondary },
+  previewRecalled: { fontStyle: "italic" },
+  previewMuted: { color: colors.textMuted },
   badge: {
     minWidth: 20,
     height: 20,
@@ -163,6 +239,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 6,
   },
+  badgeMuted: { backgroundColor: colors.textMuted },
+  badgeMention: { backgroundColor: colors.accent },
   badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
   emptyWrap: { flexGrow: 1, justifyContent: "center", padding: spacing.xl },
   empty: { textAlign: "center", color: colors.textSecondary },

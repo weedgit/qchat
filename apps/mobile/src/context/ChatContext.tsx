@@ -16,6 +16,14 @@ import {
 } from "../lib/types";
 import { useAuth } from "./AuthContext";
 
+/** Mirror web useChat prefs sort: favorites first, then lastMessageAt desc. */
+function sortConversations(list: Conversation[]): Conversation[] {
+  return [...list].sort((a, b) => {
+    if (Boolean(a.favorite) !== Boolean(b.favorite)) return a.favorite ? -1 : 1;
+    return (b.lastMessageAt || "").localeCompare(a.lastMessageAt || "");
+  });
+}
+
 type ChatContextValue = {
   conversations: Conversation[];
   messages: Record<string, Message[]>;
@@ -27,6 +35,11 @@ type ChatContextValue = {
   activeId: string | null;
   sendMessage: (convId: string, content: string) => Promise<void>;
   openDM: (userId: string) => Promise<string>;
+  recallMessage: (messageId: string, convId: string) => Promise<void>;
+  updateConversationPrefs: (
+    convId: string,
+    prefs: { favorite?: boolean; muted?: boolean }
+  ) => Promise<void>;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -41,6 +54,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const meRef = useRef(user);
   const activeIdRef = useRef<string | null>(null);
+  const messagesRef = useRef(messages);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
@@ -48,11 +62,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   meRef.current = user;
   activeIdRef.current = activeId;
+  messagesRef.current = messages;
 
   const loadConversations = useCallback(async () => {
     try {
       const body = await api<any>("/v1/conversations");
-      const list = asList(body, "conversations").map(normalizeConversation);
+      const list = sortConversations(asList(body, "conversations").map(normalizeConversation));
       setConversations(list);
       setLoadError(null);
       return list;
@@ -73,6 +88,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (last && !last.mine) {
         api(`/v1/messages/${last.id}/read`, { method: "POST" }).catch(() => {});
       }
+      // Keep list preview aligned with loaded history (incl. recalls).
+      if (last) {
+        setConversations((prev) =>
+          sortConversations(
+            prev.map((c) =>
+              c.id === convId
+                ? {
+                    ...c,
+                    lastMessage: last.recalled ? "Message recalled" : last.content || c.lastMessage,
+                    lastMessageAt: last.createdAt || c.lastMessageAt,
+                    lastMessageSender: last.mine
+                      ? meRef.current?.nickname || meRef.current?.username
+                      : last.senderName,
+                    lastMessageMine: Boolean(last.mine),
+                    lastMessageRecalled: Boolean(last.recalled),
+                  }
+                : c
+            )
+          )
+        );
+      }
     } catch (e: any) {
       setLoadError(e.message);
     }
@@ -82,7 +118,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     (convId: string) => {
       setActiveId(convId);
       setConversations((prev) =>
-        prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0 } : c))
+        prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0, mentionCount: 0 } : c))
       );
       loadMessages(convId);
     },
@@ -93,7 +129,88 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     (raw: any) => {
       const type = String(raw?.type ?? "");
       const payload = raw?.payload ?? raw?.data ?? raw;
+
+      // Mirror web useChat message.recalled
+      if (type === "message.recalled") {
+        const id = String(payload?.id ?? "");
+        const convId = String(payload?.conversation_id ?? "");
+        const recalledBody = String(payload?.body ?? "");
+        if (!id || !convId) return;
+        const list = messagesRef.current[convId] ?? [];
+        const wasLast = list.length > 0 && list[list.length - 1]?.id === id;
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === id
+              ? { ...m, content: recalledBody, recalled: true, mediaUrl: undefined }
+              : m
+          ),
+        }));
+        if (wasLast) {
+          setConversations((prev) =>
+            sortConversations(
+              prev.map((c) =>
+                c.id === convId
+                  ? {
+                      ...c,
+                      lastMessage: "Message recalled",
+                      lastMessageRecalled: true,
+                    }
+                  : c
+              )
+            )
+          );
+        }
+        return;
+      }
+
+      if (type === "message.updated") {
+        const id = String(payload?.id ?? "");
+        const convId = String(payload?.conversation_id ?? "");
+        const body = String(payload?.body ?? "");
+        if (!id || !convId) return;
+        const list = messagesRef.current[convId] ?? [];
+        const wasLast = list.length > 0 && list[list.length - 1]?.id === id;
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === id ? { ...m, content: body } : m
+          ),
+        }));
+        if (wasLast) {
+          setConversations((prev) =>
+            sortConversations(
+              prev.map((c) =>
+                c.id === convId ? { ...c, lastMessage: body, lastMessageRecalled: false } : c
+              )
+            )
+          );
+        }
+        return;
+      }
+
+      if (type === "group.updated") {
+        const convId = String(payload?.conversation_id ?? "");
+        if (!convId) return;
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id !== convId) return c;
+            const title = payload?.title != null ? String(payload.title) : c.title;
+            const avatarUrl =
+              payload?.avatar_url != null
+                ? String(payload.avatar_url) || undefined
+                : c.avatarUrl;
+            return { ...c, title, avatarUrl };
+          })
+        );
+        return;
+      }
+
       if (!type.includes("message")) return;
+      // Ignore delivery/read receipts that aren't full message payloads
+      if (type === "message.read" || type === "message.delivered" || type === "message.removed") {
+        return;
+      }
 
       const msg = normalizeMessage(payload, meRef.current?.id);
       if (!msg.conversationId) return;
@@ -126,20 +243,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           loadConversations();
           return prev;
         }
-        return prev.map((c) =>
-          c.id === msg.conversationId
-            ? {
-                ...c,
-                lastMessage: msg.content || c.lastMessage,
-                lastMessageAt: msg.createdAt,
-                lastMessageSender: msg.mine
-                  ? meRef.current?.nickname || meRef.current?.username
-                  : msg.senderName,
-                lastMessageMine: Boolean(msg.mine),
-                unreadCount:
-                  c.id === activeIdRef.current || msg.mine ? c.unreadCount : c.unreadCount + 1,
-              }
-            : c
+        return sortConversations(
+          prev.map((c) =>
+            c.id === msg.conversationId
+              ? {
+                  ...c,
+                  lastMessage: msg.recalled
+                    ? "Message recalled"
+                    : msg.content || c.lastMessage,
+                  lastMessageAt: msg.createdAt,
+                  lastMessageSender: msg.mine
+                    ? meRef.current?.nickname || meRef.current?.username
+                    : msg.senderName,
+                  lastMessageMine: Boolean(msg.mine),
+                  lastMessageRecalled: Boolean(msg.recalled),
+                  unreadCount:
+                    c.id === activeIdRef.current || msg.mine
+                      ? c.unreadCount
+                      : c.unreadCount + 1,
+                }
+              : c
+          )
         );
       });
 
@@ -253,16 +377,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       [convId]: [...(prev[convId] ?? []), optimistic],
     }));
     setConversations((prev) =>
-      prev.map((c) =>
-        c.id === convId
-          ? {
-              ...c,
-              lastMessage: content,
-              lastMessageAt: optimistic.createdAt,
-              lastMessageSender: meRef.current?.nickname || meRef.current?.username,
-              lastMessageMine: true,
-            }
-          : c
+      sortConversations(
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                lastMessage: content,
+                lastMessageAt: optimistic.createdAt,
+                lastMessageSender: meRef.current?.nickname || meRef.current?.username,
+                lastMessageMine: true,
+                lastMessageRecalled: false,
+              }
+            : c
+        )
       )
     );
     try {
@@ -301,6 +428,58 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const recallMessage = useCallback(async (messageId: string, convId: string) => {
+    await api(`/v1/messages/${messageId}/recall`, { method: "POST" });
+    const list = messagesRef.current[convId] ?? [];
+    const wasLast = list.length > 0 && list[list.length - 1]?.id === messageId;
+    setMessages((prev) => ({
+      ...prev,
+      [convId]: (prev[convId] ?? []).map((m) =>
+        m.id === messageId
+          ? { ...m, content: "", recalled: true, mediaUrl: undefined }
+          : m
+      ),
+    }));
+    if (wasLast) {
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  lastMessage: "Message recalled",
+                  lastMessageRecalled: true,
+                }
+              : c
+          )
+        )
+      );
+    }
+  }, []);
+
+  const updateConversationPrefs = useCallback(
+    async (convId: string, prefs: { favorite?: boolean; muted?: boolean }) => {
+      const res = await api<any>(`/v1/conversations/${convId}/prefs`, {
+        method: "PATCH",
+        body: JSON.stringify(prefs),
+      });
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  favorite: res?.favorite != null ? Boolean(res.favorite) : c.favorite,
+                  muted: res?.muted != null ? Boolean(res.muted) : c.muted,
+                }
+              : c
+          )
+        )
+      );
+    },
+    []
+  );
+
   const openDM = useCallback(
     async (userId: string) => {
       const res = await api<any>("/v1/conversations/dm", {
@@ -328,6 +507,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       activeId,
       sendMessage,
       openDM,
+      recallMessage,
+      updateConversationPrefs,
     }),
     [
       conversations,
@@ -340,6 +521,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       activeId,
       sendMessage,
       openDM,
+      recallMessage,
+      updateConversationPrefs,
     ]
   );
 

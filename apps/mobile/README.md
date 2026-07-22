@@ -70,6 +70,46 @@ EXPO_PUBLIC_API_URL=http://127.0.0.1:8080 npx expo start --android
 
 You do **not** need a full Android SDK on Linux for Expo Go. You only need `adb` (+ the reverse tunnels).
 
+## Custom dev client (HTTPS + self-signed TLS)
+
+Expo Go cannot trust the deploy host’s self-signed cert (`deploy/certs/qchat.crt`).
+Use a development build that embeds that cert via Android `network_security_config`.
+
+1. Copy the **public** cert from the server (not the private key):
+
+```bash
+# from the deploy host, or scrape the live cert:
+# scp root@135.181.224.36:/root/qchat/deploy/certs/qchat.crt apps/mobile/certs/qchat.crt
+```
+
+Ensure `apps/mobile/certs/qchat.crt` exists (PEM).
+
+2. Set `.env`:
+
+```
+EXPO_PUBLIC_API_URL=https://135.181.224.36
+EXPO_PUBLIC_LIVEKIT_URL=wss://135.181.224.36:7443
+```
+
+3. Build and install the Android dev client (needs Android SDK / Studio):
+
+```bash
+cd apps/mobile
+npm install
+npx expo run:android
+```
+
+4. Later sessions — Metro only (app already installed):
+
+```bash
+npx expo start --dev-client
+# press a, or open the Qchat app on the emulator
+```
+
+If the server rotates TLS (`./deploy/generate-tls.sh`), refresh `certs/qchat.crt` and rebuild.
+
+**iOS note:** ATS exceptions do not accept invalid certs. Install the cert in Settings → General → About → Certificate Trust Settings, or use a real CA / tunnel.
+
 ## Auth device
 
 Login/register send `device_type: "phone"` (browser uses `web`, Electron uses `desktop`). At most one session per type.
