@@ -3,6 +3,7 @@ const { IPC } = require("../../../shared/ipc/channels");
 const { createNotifyHandler } = require("./notify");
 const { createCaptchaHandler } = require("./captcha");
 const { createAboutHandler } = require("./about");
+const { createUnreadStatusHandler } = require("./unreadStatus");
 
 /**
  * @param {object} deps
@@ -30,6 +31,8 @@ function registerIpcHandlers(deps) {
       webUrl: deps.webUrl,
     })
   );
+
+  ipcMain.handle(IPC.SET_UNREAD_STATUS, createUnreadStatusHandler());
 
   ipcMain.on(IPC.RENDERER_READY, () => {
     deps.flushPendingConversation();

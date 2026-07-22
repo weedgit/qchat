@@ -5,6 +5,7 @@ const IPC = {
   SHOW_ABOUT: "qchat:show-about",
   RENDERER_READY: "qchat:renderer-ready",
   OPEN_CONVERSATION: "qchat:open-conversation",
+  SET_UNREAD_STATUS: "qchat:set-unread-status",
 };
 
 module.exports = { IPC };

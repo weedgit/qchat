@@ -32,7 +32,7 @@
 | NOTI-01 | MM | Native OS notification | `src/main/notifications/` | Done | `feat-kevin-desktop-native-notify` |
 | NOTI-02 | MM | Click notification → focus + open chat | navigationManager deep link | Done | `feat-kevin-desktop-notify-deeplink` |
 | NOTI-03 | MM | Dock / taskbar unread badge | badge.ts | Todo | `feat-kevin-desktop-unread-badge` |
-| NOTI-04 | MM | Tray icon unread / mention state | tray.ts + AppState | Todo | `feat-kevin-desktop-tray-badge` |
+| NOTI-04 | MM | Tray icon unread / mention state | tray.ts + AppState | Partial | `feat-kevin-desktop-tray-badge` *(desktop IPC ready; web hook later)* |
 | NOTI-05 | MM | Flash / bounce on mention (Win/mac) | notifications flash/bounce | Todo | `feat-kevin-desktop-attention` |
 | SHELL-01 | MM / §3 | Electron window loads web client | BrowserWindow / WebContentsView | Done | `feat-kevin-desktop-shell-window` |
 | SHELL-02 | MM | `contextIsolation` + no `nodeIntegration` | security defaults | Done | `feat-kevin-desktop-secure-prefs` |
@@ -82,11 +82,11 @@
 
 ### Todo backlog (implement one row = one commit)
 
-1. `NOTI-04` tray unread state  
-2. `NOTI-03` dock/taskbar badge  
-3. `SHELL-28` `qchat://` protocol  
-4. `SHELL-29` deep-link open chat  
-5. `SHELL-27` hide on start  
+1. `NOTI-03` dock/taskbar badge  
+2. `SHELL-28` `qchat://` protocol  
+3. `SHELL-29` deep-link open chat  
+4. `SHELL-27` hide on start  
+5. Web hook for `NOTI-04` — call `qchatDesktop.setUnreadStatus({ unread, mentions })`  
 6. `AUTH-03` `safeStorage`  
 7. `CALL-02` screenshare  
 8. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
