@@ -30,6 +30,7 @@ function trayIconImage() {
  *
  * @param {object} deps
  * @param {() => void} deps.focusMainWindow
+ * @param {() => void} [deps.onAutostartChanged]
  */
 function createSystemTray(deps) {
   if (tray && !tray.isDestroyed()) return tray;
@@ -44,21 +45,42 @@ function createSystemTray(deps) {
   tray.setToolTip(APP_TITLE);
   tray.setTitle?.(APP_TITLE);
 
-  // Mattermost menus/tray.ts: context menu with show + quit.
-  const menu = buildTrayMenu({ focusMainWindow: deps.focusMainWindow });
-  tray.setContextMenu(menu);
+  const applyMenu = () => {
+    if (!tray || tray.isDestroyed()) return;
+    const menu = buildTrayMenu({
+      focusMainWindow: deps.focusMainWindow,
+      onAutostartChanged: () => {
+        deps.onAutostartChanged?.();
+        applyMenu();
+      },
+    });
+    tray.setContextMenu(menu);
+    tray.removeAllListeners("right-click");
+    tray.on("right-click", () => {
+      tray?.popUpContextMenu(menu);
+    });
+  };
+  applyMenu();
 
   const onClick = () => {
     deps.focusMainWindow();
   };
   tray.on("click", onClick);
-  // Some Linux DEs only emit double-click for restore.
   tray.on("double-click", onClick);
-  tray.on("right-click", () => {
-    tray?.popUpContextMenu(menu);
-  });
 
   return tray;
+}
+
+function refreshTrayMenu(deps) {
+  if (!tray || tray.isDestroyed()) return;
+  const menu = buildTrayMenu({
+    focusMainWindow: deps.focusMainWindow,
+    onAutostartChanged: () => {
+      deps.onAutostartChanged?.();
+      refreshTrayMenu(deps);
+    },
+  });
+  tray.setContextMenu(menu);
 }
 
 function destroySystemTray() {
@@ -88,5 +110,6 @@ module.exports = {
   createSystemTray,
   destroySystemTray,
   getTray,
+  refreshTrayMenu,
   registerTrayQuitHook,
 };

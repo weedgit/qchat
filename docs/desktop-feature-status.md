@@ -59,7 +59,7 @@
 | SHELL-23 | MM | System tray icon | tray/tray.ts | Done | `feat-kevin-desktop-system-tray` |
 | SHELL-24 | MM | Minimize / close to tray | minimizeToTray | Done | `feat-kevin-desktop-close-to-tray` |
 | SHELL-25 | MM | Tray menu Show / Quit | menus/tray.ts | Done | `feat-kevin-desktop-tray-menu` |
-| SHELL-26 | MM | Autostart on OS login | AutoLauncher.ts | Todo | `feat-kevin-desktop-autostart` |
+| SHELL-26 | MM | Autostart on OS login | AutoLauncher.ts | Done | `feat-kevin-desktop-autostart` |
 | SHELL-27 | MM | Hide on start (start minimized) | AutoLauncher hideOnStart | Todo | `feat-kevin-desktop-hide-on-start` |
 | SHELL-28 | MM | Protocol handler `qchat://` | mattermost:// deep links | Todo | `feat-kevin-desktop-protocol-qchat` |
 | SHELL-29 | MM | Open conversation from deep link | navigationManager | Todo | `feat-kevin-desktop-deeplink-chat` |
@@ -84,9 +84,9 @@
 
 1. `NOTI-04` tray unread state  
 2. `NOTI-03` dock/taskbar badge  
-3. `SHELL-26` autostart  
-4. `SHELL-28` `qchat://` protocol  
-5. `SHELL-29` deep-link open chat  
+3. `SHELL-28` `qchat://` protocol  
+4. `SHELL-29` deep-link open chat  
+5. `SHELL-27` hide on start  
 6. `AUTH-03` `safeStorage`  
 7. `CALL-02` screenshare  
 8. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
