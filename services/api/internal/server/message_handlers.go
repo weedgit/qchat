@@ -1049,6 +1049,9 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		"mentions": req.Mentions, "mention_all": req.MentionAll,
 		"sender_name": senderName, "sender_avatar": senderAvatar,
 	}
+	if req.ReplyToID != "" {
+		payload["reply_to_id"] = req.ReplyToID
+	}
 	s.hub.PublishToUsers(memberIDs, ws.Event{Type: "message.new", Payload: payload})
 	preview := req.Body
 	if len([]rune(preview)) > 80 {

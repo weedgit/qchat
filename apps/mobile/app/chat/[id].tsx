@@ -42,8 +42,10 @@ function messageBody(item: Message): string {
   return item.content || "";
 }
 
-function canRecall(m: Message): boolean {
-  return Boolean(m.mine && !m.recalled && !m.pending && !m.failed);
+function canRecall(m: Message, canAdminRecall: boolean): boolean {
+  return Boolean(
+    !m.recalled && !m.pending && !m.failed && (m.mine || canAdminRecall)
+  );
 }
 
 function canForward(m: Message): boolean {
@@ -523,6 +525,8 @@ export default function ChatScreen() {
   );
   const isGroup =
     conversation?.type === "social_group" || conversation?.type === "group";
+  const canAdminRecall =
+    isGroup && (conversation?.role === "owner" || conversation?.role === "admin");
   const list = messages[convId] ?? [];
 
   const selectedMsgs = useMemo(
@@ -534,7 +538,8 @@ export default function ChatScreen() {
     (m) => !m.recalled && Boolean(messageBody(m).trim())
   );
   const canRecallSelected =
-    selectedMsgs.length > 0 && selectedMsgs.every((m) => canRecall(m));
+    selectedMsgs.length > 0 &&
+    selectedMsgs.every((m) => canRecall(m, canAdminRecall));
   const forwardableSelected = selectedMsgs.filter((m) => canForward(m));
   const pinnedList: PinnedMessage[] = useMemo(() => {
     if (!conversation) return [];
@@ -1016,6 +1021,7 @@ export default function ChatScreen() {
             <MessageActionPopup
               msg={ctxMsg}
               pinned={pinnedIdSet.has(ctxMsg.id)}
+              canAdminRecall={canAdminRecall}
               onClose={() => setCtxMsg(null)}
               onReact={onPopupReact}
               onAction={onPopupAction}
@@ -1178,6 +1184,7 @@ export default function ChatScreen() {
             msg={ctxMsg}
             pinned={conversation?.pinnedMessages?.some((p) => p.id === ctxMsg.id) ||
               conversation?.pinnedMessageId === ctxMsg.id}
+            canAdminRecall={canAdminRecall}
             onClose={() => setCtxMsg(null)}
             onReact={onPopupReact}
             onAction={onPopupAction}

@@ -2528,16 +2528,36 @@ select:focus {
   background: var(--bg-panel-2);
   border-radius: var(--radius);
   text-align: left;
+  box-sizing: border-box;
+  min-width: 0;
+  align-self: stretch;
 }
 .group-meta-edit textarea,
-.group-meta-edit input {
+.group-meta-edit input[type="text"],
+.group-meta-edit input:not([type="checkbox"]) {
   width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 .group-toggle {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
   font-size: 13px;
+  line-height: 1.35;
   color: var(--text-dim);
+  cursor: pointer;
+}
+.group-toggle input[type="checkbox"] {
+  flex: none;
+  margin: 2px 0 0;
+}
+.group-toggle-label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 

@@ -788,9 +788,18 @@ export default function ChatPageInner() {
     () => activeMessages.filter((m) => selectedIds.has(m.id)),
     [activeMessages, selectedIds]
   );
-  const recallableSelected = selectedMessages.filter(
-    (m) => m.mine && !m.recalled && !m.pending && !m.failed
-  );
+  const myGroupRole = groupDetails?.role || chat.myRole || "";
+  const isGroupOwner = myGroupRole === "owner";
+  /** Group owner/admin may recall any message (API + permission matrix). */
+  const canAdminRecall = isGroup && (myGroupRole === "owner" || myGroupRole === "admin");
+  const canRecallMsg = (m: Message) =>
+    Boolean(
+      !m.recalled &&
+        !m.pending &&
+        !m.failed &&
+        (m.mine || canAdminRecall)
+    );
+  const recallableSelected = selectedMessages.filter((m) => canRecallMsg(m));
   const forwardableSelected = selectedMessages.filter((m) => !m.recalled);
 
   function toggleSelect(id: string) {
@@ -833,8 +842,6 @@ export default function ChatPageInner() {
       groupDetails?.role === "admin" ||
       chat.myRole === "owner" ||
       chat.myRole === "admin");
-  const myGroupRole = groupDetails?.role || chat.myRole || "";
-  const isGroupOwner = myGroupRole === "owner";
 
   /** Open DM with a group member and show their user detail panel. */
   async function openMemberChat(userId: string) {
@@ -1066,7 +1073,7 @@ export default function ChatPageInner() {
       itemCount =
         2 + // copy + select always
         (!msg.recalled && !msg.failed ? 2 : 0) + // reply + forward
-        (msg.mine && !msg.recalled && !msg.failed ? 1 : 0) + // recall
+        (canRecallMsg(msg) ? 1 : 0) + // recall (own or group admin)
         (msg.failed ? 1 : 0); // retry
     }
     const MENU_H = itemCount * 38 + 12;
@@ -1982,7 +1989,7 @@ export default function ChatPageInner() {
                   dropHover={dropHoverConvId === c.id}
                   typing={chat.typingByConv[c.id] ?? []}
                   online={
-                    c.peerId
+                    c.type === "dm" && c.peerId
                       ? chat.presenceByUser[c.peerId]?.online ?? c.peerOnline
                       : undefined
                   }
@@ -2042,12 +2049,7 @@ export default function ChatPageInner() {
       </aside>
 
       <main className="chat-pane">
-        {!active ? (
-          <div className="empty-state">
-            <div style={{ fontSize: 44 }}>{"\u{1F4AC}"}</div>
-            <div>Select a chat to start messaging</div>
-          </div>
-        ) : (
+        {!active ? null : (
           <>
             {pinsListOpen ? (
               <div className="chat-header">
@@ -2789,7 +2791,9 @@ export default function ChatPageInner() {
                       disabled={groupMetaBusy}
                       onChange={() => toggleForbidFriendAdd().catch(() => { })}
                     />
-                    Forbid members adding each other as friends
+                    <span className="group-toggle-label">
+                      Forbid members adding each other as friends
+                    </span>
                   </label>
                 </div>
               ) : (
@@ -3201,17 +3205,19 @@ export default function ChatPageInner() {
                   <MenuIcon d={ICONS.pin} />
                   {pinnedIdSet.has(ctxMsg.id) ? "Unpin" : "Pin"}
                 </button>
-                <button
-                  className="ctx-item danger"
-                  onClick={() => {
-                    chat.recallMessage(ctxMsg.id, chat.activeId!);
-                    setCtxMenu(null);
-                  }}
-                >
-                  <MenuIcon d={ICONS.trash} />
-                  Recall
-                </button>
               </>
+            )}
+            {canRecallMsg(ctxMsg) && chat.activeId && (
+              <button
+                className="ctx-item danger"
+                onClick={() => {
+                  chat.recallMessage(ctxMsg.id, chat.activeId!);
+                  setCtxMenu(null);
+                }}
+              >
+                <MenuIcon d={ICONS.trash} />
+                Recall
+              </button>
             )}
             {!ctxMsg.mine && !ctxMsg.recalled && chat.activeId && (
               <button

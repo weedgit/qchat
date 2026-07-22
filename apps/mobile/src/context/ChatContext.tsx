@@ -195,6 +195,48 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Groups: ordinary members get silent remove (requirements — no recall notice).
+      if (type === "message.removed") {
+        const id = String(payload?.id ?? "");
+        const convId = String(payload?.conversation_id ?? "");
+        if (!id || !convId) return;
+        const list = messagesRef.current[convId] ?? [];
+        const wasLast = list.length > 0 && list[list.length - 1]?.id === id;
+        const nextList = list.filter((m) => m.id !== id);
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).filter((m) => m.id !== id),
+        }));
+        if (wasLast) {
+          const newLast = nextList[nextList.length - 1];
+          setConversations((prev) =>
+            sortConversations(
+              prev.map((c) =>
+                c.id === convId
+                  ? {
+                      ...c,
+                      lastMessage: newLast
+                        ? newLast.recalled
+                          ? "Message recalled"
+                          : newLast.content || ""
+                        : "",
+                      lastMessageAt: newLast?.createdAt || c.lastMessageAt,
+                      lastMessageSender: newLast
+                        ? newLast.mine
+                          ? meRef.current?.nickname || meRef.current?.username
+                          : newLast.senderName
+                        : c.lastMessageSender,
+                      lastMessageMine: Boolean(newLast?.mine),
+                      lastMessageRecalled: Boolean(newLast?.recalled),
+                    }
+                  : c
+              )
+            )
+          );
+        }
+        return;
+      }
+
       if (type === "message.updated") {
         const id = String(payload?.id ?? "");
         const convId = String(payload?.conversation_id ?? "");
@@ -335,10 +377,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!type.includes("message")) return;
-      // Ignore other non-content message events
-      if (type === "message.removed") {
-        return;
-      }
+      // message.removed handled above (group silent recall / delete)
 
       const msg = normalizeMessage(payload, meRef.current?.id);
       if (!msg.conversationId) return;
@@ -353,13 +392,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ) {
           return {
             ...prev,
-            [msg.conversationId]: list.map((m) =>
-              m.clientMsgId && m.clientMsgId === msg.clientMsgId
-                ? { ...msg, mine: true, pending: false, failed: false }
-                : m.id === msg.id
-                  ? { ...m, ...msg, pending: false, failed: false }
-                  : m
-            ),
+            [msg.conversationId]: list.map((m) => {
+              if (m.clientMsgId && m.clientMsgId === msg.clientMsgId) {
+                return {
+                  ...msg,
+                  mine: true,
+                  pending: false,
+                  failed: false,
+                  replyToId: msg.replyToId || m.replyToId,
+                  mediaUrl: msg.mediaUrl || m.mediaUrl,
+                };
+              }
+              if (m.id === msg.id) {
+                return {
+                  ...m,
+                  ...msg,
+                  pending: false,
+                  failed: false,
+                  replyToId: msg.replyToId || m.replyToId,
+                  mediaUrl: msg.mediaUrl || m.mediaUrl,
+                };
+              }
+              return m;
+            }),
           };
         }
         return { ...prev, [msg.conversationId]: [...list, msg] };
@@ -732,13 +787,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     await api(`/v1/messages/${messageId}/recall`, { method: "POST" });
     const list = messagesRef.current[convId] ?? [];
     const wasLast = list.length > 0 && list[list.length - 1]?.id === messageId;
+    const conv = conversations.find((c) => c.id === convId);
+    const isGroup = conv?.type === "social_group" || conv?.type === "group";
+    const isGroupAdmin =
+      isGroup && (conv?.role === "owner" || conv?.role === "admin");
+    const canSeeNotice = !isGroup || isGroupAdmin;
     setMessages((prev) => ({
       ...prev,
-      [convId]: (prev[convId] ?? []).map((m) =>
-        m.id === messageId
-          ? { ...m, content: "", recalled: true, mediaUrl: undefined }
-          : m
-      ),
+      [convId]: canSeeNotice
+        ? (prev[convId] ?? []).map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  content: isGroupAdmin ? m.content : "",
+                  recalled: true,
+                  mediaUrl: isGroupAdmin ? m.mediaUrl : undefined,
+                }
+              : m
+          )
+        : (prev[convId] ?? []).filter((m) => m.id !== messageId),
     }));
     if (wasLast) {
       setConversations((prev) =>
@@ -747,15 +814,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             c.id === convId
               ? {
                   ...c,
-                  lastMessage: "Message recalled",
-                  lastMessageRecalled: true,
+                  lastMessage: canSeeNotice ? "Message recalled" : c.lastMessage,
+                  lastMessageRecalled: canSeeNotice,
                 }
               : c
           )
         )
       );
     }
-  }, []);
+  }, [conversations]);
 
   // Mirror web reactMessage (POST /v1/messages/{id}/react).
   const reactMessage = useCallback(async (messageId: string, convId: string, emoji: string) => {

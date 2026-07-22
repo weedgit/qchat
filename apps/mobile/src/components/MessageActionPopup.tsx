@@ -19,6 +19,8 @@ type ActionKey = "reply" | "copy" | "forward" | "pin" | "unpin" | "edit" | "dele
 export type MessageActionPopupProps = {
   msg: Message;
   pinned: boolean;
+  /** Group owner/admin may delete (recall) others' messages. */
+  canAdminRecall?: boolean;
   onClose: () => void;
   onReact: (emoji: string) => void;
   onAction: (action: ActionKey) => void;
@@ -39,6 +41,7 @@ function statusLabel(msg: Message): string {
 export function MessageActionPopup({
   msg,
   pinned,
+  canAdminRecall,
   onClose,
   onReact,
   onAction,
@@ -52,7 +55,12 @@ export function MessageActionPopup({
   const canForward = !msg.recalled && !msg.pending && !msg.failed;
   const canPin = canForward;
   const canEdit = Boolean(msg.mine && !msg.recalled && !msg.pending && !msg.failed && msg.type !== "voice");
-  const canDelete = Boolean(msg.mine && !msg.recalled && !msg.pending && !msg.failed);
+  const canDelete = Boolean(
+    !msg.recalled &&
+      !msg.pending &&
+      !msg.failed &&
+      (msg.mine || canAdminRecall)
+  );
 
   const rows: { key: ActionKey; label: string; icon: keyof typeof Ionicons.glyphMap; danger?: boolean }[] = [];
   if (canReply) rows.push({ key: "reply", label: "Reply", icon: "arrow-undo-outline" });

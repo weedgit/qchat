@@ -30,6 +30,8 @@ export interface Conversation {
   peerLastActiveAt?: string;
   favorite?: boolean;
   muted?: boolean;
+  /** My membership role in this conversation (owner|admin|member). */
+  role?: string;
   pinnedMessageId?: string;
   pinnedMessage?: string;
   /** All pins for this conversation, ordered by seq ascending (top→bottom). */
@@ -122,6 +124,7 @@ export function normalizeConversation(raw: any): Conversation {
     peerLastActiveAt: str(raw?.peer_last_active_at) || undefined,
     favorite: Boolean(raw?.favorite),
     muted: Boolean(raw?.muted),
+    role: str(raw?.role) || undefined,
     pinnedMessageId: str(raw?.pinned_message_id) || undefined,
     pinnedMessage: str(raw?.pinned_message) || undefined,
     pinnedMessages: (() => {

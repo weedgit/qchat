@@ -174,7 +174,7 @@ export function useChat() {
       setPresenceByUser((prev) => {
         const next = { ...prev };
         for (const c of list) {
-          if (!c.peerId) continue;
+          if (c.type !== "dm" || !c.peerId) continue;
           next[c.peerId] = {
             online: Boolean(c.peerOnline),
             lastActiveAt: c.peerLastActiveAt,
@@ -455,13 +455,30 @@ export function useChat() {
       if (list.some((m) => m.id === msg.id || (msg.clientMsgId && m.clientMsgId === msg.clientMsgId))) {
         return {
           ...prev,
-          [msg.conversationId]: list.map((m) =>
-            m.clientMsgId && m.clientMsgId === msg.clientMsgId
-              ? { ...msg, mine: true, pending: false, failed: false }
-              : m.id === msg.id
-                ? { ...m, ...msg, pending: false, failed: false }
-                : m
-          ),
+          [msg.conversationId]: list.map((m) => {
+            if (m.clientMsgId && m.clientMsgId === msg.clientMsgId) {
+              return {
+                ...msg,
+                mine: true,
+                pending: false,
+                failed: false,
+                // WS echo may omit fields the optimistic/HTTP path already set.
+                replyToId: msg.replyToId || m.replyToId,
+                mediaUrl: msg.mediaUrl || m.mediaUrl,
+              };
+            }
+            if (m.id === msg.id) {
+              return {
+                ...m,
+                ...msg,
+                pending: false,
+                failed: false,
+                replyToId: msg.replyToId || m.replyToId,
+                mediaUrl: msg.mediaUrl || m.mediaUrl,
+              };
+            }
+            return m;
+          }),
         };
       }
       return { ...prev, [msg.conversationId]: [...list, msg] };
