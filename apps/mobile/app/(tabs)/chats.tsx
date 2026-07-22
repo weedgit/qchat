@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import {
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -9,7 +8,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useNavigation } from "expo-router";
 import { Avatar } from "../../src/components/Avatar";
 import { useChat } from "../../src/context/ChatContext";
 import { Conversation, conversationDisplayName } from "../../src/lib/types";
@@ -43,6 +43,7 @@ function previewText(c: Conversation): string {
 }
 
 export default function ChatsScreen() {
+  const navigation = useNavigation();
   const {
     conversations,
     loadConversations,
@@ -53,6 +54,9 @@ export default function ChatsScreen() {
   } = useChat();
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const selecting = selectedIds.length > 0;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -63,53 +67,119 @@ export default function ChatsScreen() {
     });
   }, [conversations, query]);
 
+  const selectedConvs = useMemo(
+    () => conversations.filter((c) => selectedIds.includes(c.id)),
+    [conversations, selectedIds]
+  );
+
+  const allSelectedFavorite =
+    selectedConvs.length > 0 && selectedConvs.every((c) => c.favorite);
+  const allSelectedMuted =
+    selectedConvs.length > 0 && selectedConvs.every((c) => c.muted);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: !selecting,
+    });
+  }, [navigation, selecting]);
+
+  const clearSelection = useCallback(() => setSelectedIds([]), []);
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }, []);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadConversations();
     setRefreshing(false);
   }, [loadConversations]);
 
-  const onLongPress = useCallback(
-    (c: Conversation) => {
-      Alert.alert(conversationDisplayName(c), undefined, [
-        {
-          text: c.favorite ? "Unfavorite" : "Favorite",
-          onPress: () => {
-            updateConversationPrefs(c.id, { favorite: !c.favorite }).catch(() => {});
-          },
-        },
-        {
-          text: c.muted ? "Unmute" : "Mute",
-          onPress: () => {
-            updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => {});
-          },
-        },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    },
-    [updateConversationPrefs]
-  );
+  const applyFavorite = useCallback(async () => {
+    const next = !allSelectedFavorite;
+    await Promise.all(
+      selectedIds.map((id) =>
+        updateConversationPrefs(id, { favorite: next }).catch(() => {})
+      )
+    );
+    clearSelection();
+  }, [allSelectedFavorite, selectedIds, updateConversationPrefs, clearSelection]);
+
+  const applyMute = useCallback(async () => {
+    const next = !allSelectedMuted;
+    await Promise.all(
+      selectedIds.map((id) =>
+        updateConversationPrefs(id, { muted: next }).catch(() => {})
+      )
+    );
+    clearSelection();
+  }, [allSelectedMuted, selectedIds, updateConversationPrefs, clearSelection]);
 
   return (
     <View style={styles.root}>
-      <View style={styles.searchWrap}>
-        <TextInput
-          style={styles.search}
-          placeholder="Search"
-          placeholderTextColor={colors.textMuted}
-          value={query}
-          onChangeText={setQuery}
-        />
-        <Pressable style={styles.newChat} onPress={() => router.push("/(tabs)/contacts")}>
-          <Text style={styles.newChatText}>New</Text>
-        </Pressable>
-        <Text style={styles.conn}>{connected ? "Connected" : "Reconnecting…"}</Text>
-      </View>
+      {selecting ? (
+        <View style={styles.actionBar}>
+          <Pressable
+            style={styles.actionBtn}
+            onPress={clearSelection}
+            hitSlop={8}
+            accessibilityLabel="Cancel selection"
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </Pressable>
+          <Text style={styles.actionCount}>{selectedIds.length}</Text>
+          <View style={styles.actionSpacer} />
+          <Pressable
+            style={styles.actionBtn}
+            onPress={applyFavorite}
+            hitSlop={8}
+            accessibilityLabel={allSelectedFavorite ? "Unfavorite" : "Favorite"}
+          >
+            <Ionicons
+              name={allSelectedFavorite ? "star" : "star-outline"}
+              size={22}
+              color="#fff"
+            />
+          </Pressable>
+          <Pressable
+            style={styles.actionBtn}
+            onPress={applyMute}
+            hitSlop={8}
+            accessibilityLabel={allSelectedMuted ? "Unmute" : "Mute"}
+          >
+            <Ionicons
+              name={allSelectedMuted ? "notifications-off" : "notifications-outline"}
+              size={22}
+              color="#fff"
+            />
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.searchWrap}>
+          <TextInput
+            style={styles.search}
+            placeholder="Search"
+            placeholderTextColor={colors.textMuted}
+            value={query}
+            onChangeText={setQuery}
+          />
+          <Pressable style={styles.newChat} onPress={() => router.push("/(tabs)/contacts")}>
+            <Text style={styles.newChatText}>New</Text>
+          </Pressable>
+          <Text style={styles.conn}>{connected ? "Connected" : "Reconnecting…"}</Text>
+        </View>
+      )}
       {loadError ? <Text style={styles.error}>{loadError}</Text> : null}
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          selecting ? undefined : (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          )
+        }
         contentContainerStyle={filtered.length === 0 ? styles.emptyWrap : undefined}
         ListEmptyComponent={
           <Text style={styles.empty}>
@@ -120,17 +190,37 @@ export default function ChatsScreen() {
           const name = conversationDisplayName(item);
           const muted = Boolean(item.muted);
           const mention = (item.mentionCount ?? 0) > 0;
+          const selected = selectedIds.includes(item.id);
           return (
             <Pressable
-              style={[styles.row, muted && styles.rowMuted]}
+              style={[
+                styles.row,
+                muted && styles.rowMuted,
+                selected && styles.rowSelected,
+              ]}
               onPress={() => {
+                if (selecting) {
+                  toggleSelect(item.id);
+                  return;
+                }
                 openConversation(item.id);
                 router.push(`/chat/${item.id}`);
               }}
-              onLongPress={() => onLongPress(item)}
+              onLongPress={() => {
+                if (!selectedIds.includes(item.id)) {
+                  setSelectedIds((prev) => [...prev, item.id]);
+                }
+              }}
               delayLongPress={350}
             >
-              <Avatar name={name} url={item.avatarUrl} />
+              <View style={styles.avatarWrap}>
+                <Avatar name={name} url={item.avatarUrl} />
+                {selected ? (
+                  <View style={styles.checkBadge}>
+                    <Ionicons name="checkmark" size={14} color="#fff" />
+                  </View>
+                ) : null}
+              </View>
               <View style={styles.meta}>
                 <View style={styles.topLine}>
                   <Text style={[styles.title, muted && styles.titleMuted]} numberOfLines={1}>
@@ -151,7 +241,7 @@ export default function ChatsScreen() {
                   >
                     {previewText(item)}
                   </Text>
-                  {item.unreadCount > 0 ? (
+                  {!selecting && item.unreadCount > 0 ? (
                     <View
                       style={[
                         styles.badge,
@@ -177,6 +267,29 @@ export default function ChatsScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  actionBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+    backgroundColor: colors.headerBlue,
+    minHeight: 52,
+  },
+  actionBtn: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionCount: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    marginLeft: 4,
+    minWidth: 24,
+  },
+  actionSpacer: { flex: 1 },
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
@@ -216,6 +329,21 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   rowMuted: { opacity: 0.85 },
+  rowSelected: { backgroundColor: "#e8f0fe" },
+  avatarWrap: { position: "relative" },
+  checkBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
   meta: { flex: 1, minWidth: 0 },
   topLine: { flexDirection: "row", justifyContent: "space-between", gap: spacing.sm },
   title: { flex: 1, fontSize: 16, fontWeight: "600", color: colors.text },
