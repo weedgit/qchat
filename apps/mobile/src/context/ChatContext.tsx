@@ -33,9 +33,12 @@ type ChatContextValue = {
   loadMessages: (convId: string) => Promise<void>;
   openConversation: (convId: string) => void;
   activeId: string | null;
-  sendMessage: (convId: string, content: string) => Promise<void>;
+  sendMessage: (convId: string, content: string, replyToId?: string) => Promise<void>;
   openDM: (userId: string) => Promise<string>;
   recallMessage: (messageId: string, convId: string) => Promise<void>;
+  reactMessage: (messageId: string, convId: string, emoji: string) => Promise<void>;
+  pinMessage: (messageId: string, convId: string, pin: boolean) => Promise<void>;
+  editMessage: (messageId: string, convId: string, body: string) => Promise<void>;
   updateConversationPrefs: (
     convId: string,
     prefs: { favorite?: boolean; muted?: boolean }
@@ -392,7 +395,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
   }, [signedIn, loadConversations]);
 
-  const sendMessage = useCallback(async (convId: string, content: string) => {
+  const sendMessage = useCallback(async (convId: string, content: string, replyToId?: string) => {
     const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimistic: Message = {
       id: clientMsgId,
@@ -404,6 +407,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       mine: true,
       pending: true,
       clientMsgId,
+      replyToId,
     };
     setMessages((prev) => ({
       ...prev,
@@ -432,6 +436,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           type: "text",
           body: content,
           client_msg_id: clientMsgId,
+          reply_to_id: replyToId || undefined,
         }),
       });
       const saved = normalizeMessage(
@@ -447,7 +452,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         [convId]: (prev[convId] ?? []).map((m) =>
           m.id === clientMsgId || m.clientMsgId === clientMsgId
-            ? { ...saved, mine: true, pending: false, failed: false, clientMsgId }
+            ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
             : m
         ),
       }));
@@ -488,6 +493,72 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         )
       );
     }
+  }, []);
+
+  // Mirror web reactMessage (POST /v1/messages/{id}/react).
+  const reactMessage = useCallback(async (messageId: string, convId: string, emoji: string) => {
+    const res = await api<any>(`/v1/messages/${messageId}/react`, {
+      method: "POST",
+      body: JSON.stringify({ emoji }),
+    });
+    const count = Number(res?.count) || 0;
+    const added = Boolean(res?.added);
+    setMessages((prev) => ({
+      ...prev,
+      [convId]: (prev[convId] ?? []).map((m) => {
+        if (m.id !== messageId) return m;
+        const rest = (m.reactions ?? []).filter((x) => x.emoji !== emoji);
+        const existing = (m.reactions ?? []).find((x) => x.emoji === emoji);
+        const myId = meRef.current?.id ?? "";
+        let users = (existing?.users ?? []).filter((u) => u.id !== myId);
+        if (added) {
+          users = [
+            ...users,
+            {
+              id: myId,
+              name: meRef.current?.nickname || meRef.current?.username || "",
+              avatarUrl: meRef.current?.avatarUrl,
+            },
+          ];
+        }
+        return {
+          ...m,
+          reactions: count > 0 ? [...rest, { emoji, count, mine: added, users }] : rest,
+        };
+      }),
+    }));
+  }, []);
+
+  // Mirror web pinMessage.
+  const pinMessage = useCallback(async (messageId: string, convId: string, pin: boolean) => {
+    await api(`/v1/messages/${messageId}/${pin ? "pin" : "unpin"}`, { method: "POST" });
+    const msg = (messagesRef.current[convId] ?? []).find((m) => m.id === messageId);
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? {
+              ...c,
+              pinnedMessageId: pin ? messageId : undefined,
+              pinnedMessage: pin ? msg?.content : undefined,
+            }
+          : c
+      )
+    );
+  }, []);
+
+  // Mirror web editMessage (PATCH /v1/messages/{id}).
+  const editMessage = useCallback(async (messageId: string, convId: string, body: string) => {
+    const res = await api<any>(`/v1/messages/${messageId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ body }),
+    });
+    const editedAt = String(res?.edited_at ?? new Date().toISOString());
+    setMessages((prev) => ({
+      ...prev,
+      [convId]: (prev[convId] ?? []).map((m) =>
+        m.id === messageId ? { ...m, content: body, editedAt } : m
+      ),
+    }));
   }, []);
 
   const updateConversationPrefs = useCallback(
@@ -564,6 +635,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       sendMessage,
       openDM,
       recallMessage,
+      reactMessage,
+      pinMessage,
+      editMessage,
       updateConversationPrefs,
       markConversationRead,
       forwardMessage,
@@ -580,6 +654,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       sendMessage,
       openDM,
       recallMessage,
+      reactMessage,
+      pinMessage,
+      editMessage,
       updateConversationPrefs,
       markConversationRead,
       forwardMessage,

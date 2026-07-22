@@ -18,8 +18,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
+import { MessageActionPopup } from "../../src/components/MessageActionPopup";
 import { useChat } from "../../src/context/ChatContext";
-import { Conversation, Message, conversationDisplayName } from "../../src/lib/types";
+import { Conversation, Message, Reaction, conversationDisplayName } from "../../src/lib/types";
 import { colors, radius, spacing } from "../../src/theme";
 
 function messageBody(item: Message): string {
@@ -231,11 +232,16 @@ export default function ChatScreen() {
     sendMessage,
     recallMessage,
     forwardMessage,
+    reactMessage,
+    pinMessage,
+    editMessage,
   } = useChat();
   const [text, setText] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [ctxMsg, setCtxMsg] = useState<Message | null>(null);
   const [forwardIds, setForwardIds] = useState<string[] | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<Message | null>(null);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
   const listRef = useRef<FlatList>(null);
   const nearBottomRef = useRef(true);
@@ -307,7 +313,22 @@ export default function ChatScreen() {
     const body = text.trim();
     if (!body) return;
     setText("");
-    await sendMessage(convId, body);
+    if (editing) {
+      const target = editing;
+      setEditing(null);
+      setReplyTo(null);
+      try {
+        await editMessage(target.id, convId, body);
+      } catch (e: any) {
+        Alert.alert("Error", e?.message || "Could not edit message");
+        setText(body);
+        setEditing(target);
+      }
+      return;
+    }
+    const replyId = replyTo?.id;
+    setReplyTo(null);
+    await sendMessage(convId, body, replyId);
   }
 
   async function shareText(parts: string[]) {
@@ -342,36 +363,62 @@ export default function ChatScreen() {
     setForwardIds(forwardableSelected.map((m) => m.id));
   }
 
-  async function onCtxShare() {
-    if (!ctxMsg || ctxMsg.recalled) return;
-    const body = messageBody(ctxMsg).trim();
-    setCtxMsg(null);
-    await shareText([body]);
-  }
-
-  function onCtxForward() {
-    if (!ctxMsg || !canForward(ctxMsg)) return;
-    const mid = ctxMsg.id;
-    setCtxMsg(null);
-    setForwardIds([mid]);
-  }
-
-  async function onCtxRecall() {
-    if (!ctxMsg || !canRecall(ctxMsg)) return;
+  async function onPopupAction(action: string) {
+    if (!ctxMsg) return;
     const msg = ctxMsg;
     setCtxMsg(null);
-    try {
-      await recallMessage(msg.id, convId);
-    } catch (e: any) {
-      Alert.alert("Error", e?.message || "Could not recall message");
+    switch (action) {
+      case "reply":
+        setEditing(null);
+        setReplyTo(msg);
+        break;
+      case "copy":
+        await shareText([messageBody(msg).trim()]);
+        break;
+      case "forward":
+        setForwardIds([msg.id]);
+        break;
+      case "pin":
+        try {
+          await pinMessage(msg.id, convId, true);
+        } catch (e: any) {
+          Alert.alert("Error", e?.message || "Could not pin");
+        }
+        break;
+      case "unpin":
+        try {
+          await pinMessage(msg.id, convId, false);
+        } catch (e: any) {
+          Alert.alert("Error", e?.message || "Could not unpin");
+        }
+        break;
+      case "edit":
+        setReplyTo(null);
+        setEditing(msg);
+        setText(messageBody(msg));
+        break;
+      case "delete":
+        try {
+          await recallMessage(msg.id, convId);
+        } catch (e: any) {
+          Alert.alert("Error", e?.message || "Could not delete message");
+        }
+        break;
+      case "select":
+        setSelectedIds((prev) => (prev.includes(msg.id) ? prev : [...prev, msg.id]));
+        break;
     }
   }
 
-  function onCtxSelect() {
+  async function onPopupReact(emoji: string) {
     if (!ctxMsg) return;
-    const mid = ctxMsg.id;
+    const msg = ctxMsg;
     setCtxMsg(null);
-    setSelectedIds((prev) => (prev.includes(mid) ? prev : [...prev, mid]));
+    try {
+      await reactMessage(msg.id, convId, emoji);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not react");
+    }
   }
 
   return (
@@ -505,6 +552,20 @@ export default function ChatScreen() {
                 {item.failed ? (
                   <Text style={mine ? styles.fail : styles.failPeer}>Failed to send</Text>
                 ) : null}
+                {(item.reactions?.length ?? 0) > 0 ? (
+                  <View style={styles.reactionRow}>
+                    {item.reactions!.map((r: Reaction) => (
+                      <View
+                        key={r.emoji}
+                        style={[styles.reactionChip, r.mine && styles.reactionChipMine]}
+                      >
+                        <Text style={styles.reactionChipText}>
+                          {r.emoji} {r.count > 1 ? r.count : ""}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
                 <View style={styles.metaRow}>
                   {time ? (
                     <Text style={[styles.metaTime, mine ? styles.metaTimeMine : styles.metaTimePeer]}>
@@ -531,17 +592,54 @@ export default function ChatScreen() {
 
       {!selecting ? (
         <View style={styles.composer}>
-          <TextInput
-            style={styles.input}
-            value={text}
-            onChangeText={setText}
-            placeholder="Message"
-            placeholderTextColor={colors.textMuted}
-            multiline
-          />
-          <Pressable style={styles.send} onPress={onSend}>
-            <Text style={styles.sendText}>Send</Text>
-          </Pressable>
+          {editing ? (
+            <View style={styles.banner}>
+              <Ionicons name="pencil-outline" size={18} color={colors.accent} />
+              <View style={styles.bannerBody}>
+                <Text style={styles.bannerTitle}>Edit message</Text>
+                <Text style={styles.bannerText} numberOfLines={1}>
+                  {messageBody(editing)}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  setEditing(null);
+                  setText("");
+                }}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : replyTo ? (
+            <View style={styles.banner}>
+              <Ionicons name="arrow-undo-outline" size={18} color={colors.accent} />
+              <View style={styles.bannerBody}>
+                <Text style={styles.bannerTitle}>
+                  Reply to {replyTo.mine ? "You" : replyTo.senderName || "User"}
+                </Text>
+                <Text style={styles.bannerText} numberOfLines={1}>
+                  {messageBody(replyTo)}
+                </Text>
+              </View>
+              <Pressable onPress={() => setReplyTo(null)} hitSlop={8}>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : null}
+          <View style={styles.composerRow}>
+            <TextInput
+              style={styles.input}
+              value={text}
+              onChangeText={setText}
+              placeholder={editing ? "Edit message" : "Message"}
+              placeholderTextColor={colors.textMuted}
+              multiline
+            />
+            <Pressable style={styles.send} onPress={onSend}>
+              <Text style={styles.sendText}>{editing ? "Save" : "Send"}</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
 
@@ -551,54 +649,15 @@ export default function ChatScreen() {
         animationType="fade"
         onRequestClose={() => setCtxMsg(null)}
       >
-        <Pressable style={styles.modalBg} onPress={() => setCtxMsg(null)}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
-            <Text style={styles.modalTitle} numberOfLines={2}>
-              {ctxMsg && !ctxMsg.recalled ? messageBody(ctxMsg) : "Message"}
-            </Text>
-            {ctxMsg && canForward(ctxMsg) ? (
-              <Pressable style={styles.modalItem} onPress={onCtxForward}>
-                <Ionicons name="arrow-redo-outline" size={20} color={colors.text} />
-                <Text style={styles.modalItemText}>Forward</Text>
-              </Pressable>
-            ) : null}
-            {ctxMsg && !ctxMsg.recalled && !ctxMsg.failed ? (
-              <Pressable style={styles.modalItem} onPress={onCtxShare}>
-                <Ionicons name="share-outline" size={20} color={colors.text} />
-                <Text style={styles.modalItemText}>Share</Text>
-              </Pressable>
-            ) : null}
-            {ctxMsg && canRecall(ctxMsg) ? (
-              <Pressable style={styles.modalItem} onPress={onCtxRecall}>
-                <Ionicons name="arrow-undo-outline" size={20} color={colors.danger} />
-                <Text style={[styles.modalItemText, { color: colors.danger }]}>Recall</Text>
-              </Pressable>
-            ) : null}
-            {ctxMsg && !ctxMsg.recalled ? (
-              <Pressable style={styles.modalItem} onPress={onCtxSelect}>
-                <Ionicons name="checkbox-outline" size={20} color={colors.text} />
-                <Text style={styles.modalItemText}>Select</Text>
-              </Pressable>
-            ) : null}
-            {ctxMsg?.mine ? (
-              <Text style={styles.modalMeta}>
-                Status:{" "}
-                {ctxMsg.pending
-                  ? "Sending"
-                  : ctxMsg.failed
-                    ? "Failed"
-                    : ctxMsg.read
-                      ? "Read"
-                      : ctxMsg.delivered
-                        ? "Delivered"
-                        : "Sent"}
-              </Text>
-            ) : null}
-            <Pressable style={styles.modalCancel} onPress={() => setCtxMsg(null)}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
+        {ctxMsg ? (
+          <MessageActionPopup
+            msg={ctxMsg}
+            pinned={conversation?.pinnedMessageId === ctxMsg.id}
+            onClose={() => setCtxMsg(null)}
+            onReact={onPopupReact}
+            onAction={onPopupAction}
+          />
+        ) : null}
       </Modal>
 
       {forwardIds && forwardIds.length > 0 ? (
@@ -752,6 +811,22 @@ const styles = StyleSheet.create({
   mediaDetail: { fontSize: 12, marginTop: 2 },
   fail: { fontSize: 11, color: "#fecaca", marginTop: 4 },
   failPeer: { fontSize: 11, color: colors.danger, marginTop: 4 },
+  reactionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    marginTop: 6,
+  },
+  reactionChip: {
+    backgroundColor: "rgba(0,0,0,0.08)",
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  reactionChipMine: {
+    backgroundColor: "rgba(255,255,255,0.22)",
+  },
+  reactionChipText: { fontSize: 13 },
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -764,14 +839,31 @@ const styles = StyleSheet.create({
   metaTimeMine: { color: "rgba(255,255,255,0.88)" },
   metaTimePeer: { color: "#4b5563" },
   composer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: spacing.sm,
-    padding: spacing.sm,
     backgroundColor: colors.surface,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
   },
+  composerRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: spacing.sm,
+  },
+  banner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.inputBg,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+  },
+  bannerBody: { flex: 1, minWidth: 0 },
+  bannerTitle: { fontSize: 12, fontWeight: "700", color: colors.accent },
+  bannerText: { fontSize: 13, color: colors.textSecondary, marginTop: 1 },
   input: {
     flex: 1,
     minHeight: 40,
@@ -790,47 +882,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   sendText: { color: "#fff", fontWeight: "700" },
-  modalBg: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
-  },
-  modalCard: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.md,
-  },
-  modalTitle: {
-    fontSize: 13,
-    color: colors.textMuted,
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.sm,
-  },
-  modalItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: 14,
-    paddingHorizontal: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  modalItemText: { fontSize: 16, color: colors.text, fontWeight: "500" },
-  modalMeta: {
-    fontSize: 12,
-    color: colors.textMuted,
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.md,
-  },
-  modalCancel: {
-    marginTop: spacing.md,
-    alignItems: "center",
-    paddingVertical: 12,
-  },
-  modalCancelText: { fontSize: 16, fontWeight: "600", color: colors.accent },
   forwardBg: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",

@@ -24,9 +24,24 @@ export interface Conversation {
   peerLastActiveAt?: string;
   favorite?: boolean;
   muted?: boolean;
+  pinnedMessageId?: string;
+  pinnedMessage?: string;
   friendNote?: string;
   friendshipId?: string;
   friendTags?: string[];
+}
+
+export interface ReactionUser {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+}
+
+export interface Reaction {
+  emoji: string;
+  count: number;
+  mine?: boolean;
+  users?: ReactionUser[];
 }
 
 export interface Message {
@@ -48,6 +63,8 @@ export interface Message {
   replyToId?: string;
   delivered?: boolean;
   read?: boolean;
+  editedAt?: string;
+  reactions?: Reaction[];
 }
 
 export interface Friend {
@@ -97,6 +114,8 @@ export function normalizeConversation(raw: any): Conversation {
     peerLastActiveAt: str(raw?.peer_last_active_at) || undefined,
     favorite: Boolean(raw?.favorite),
     muted: Boolean(raw?.muted),
+    pinnedMessageId: str(raw?.pinned_message_id) || undefined,
+    pinnedMessage: str(raw?.pinned_message) || undefined,
     friendNote: str(raw?.friend_note) || undefined,
     friendshipId: str(raw?.friendship_id) || undefined,
     friendTags: Array.isArray(raw?.friend_tags) ? raw.friend_tags.map(String) : undefined,
@@ -133,6 +152,21 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
     replyToId: str(raw?.reply_to_id) || undefined,
     delivered: Boolean(raw?.delivered),
     read: Boolean(raw?.read),
+    editedAt: str(raw?.edited_at ?? raw?.editedAt) || undefined,
+    reactions: Array.isArray(raw?.reactions)
+      ? raw.reactions.map((r: any) => ({
+          emoji: str(r?.emoji),
+          count: Number(r?.count) || 0,
+          mine: Boolean(r?.mine),
+          users: Array.isArray(r?.users)
+            ? r.users.map((u: any) => ({
+                id: str(u?.id),
+                name: str(u?.name),
+                avatarUrl: str(u?.avatar_url) || undefined,
+              }))
+            : [],
+        }))
+      : [],
   };
 }
 
