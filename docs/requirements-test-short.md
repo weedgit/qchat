@@ -9,7 +9,7 @@
 1. Register with phone + invite code (desk/web/mobile)
 2. Login with password + CAPTCHA (desk/web/mobile)
 3. Remember login / stay signed in (desk/web/mobile)
-4. Multi-device session (phone + desk same time; same-type kick) (desk/web/mobile)
+4. Multi-device session (phone + desk same time; same-type kick) (desk/web/mobile) — **Supported:** one web + one desktop + one phone; same-type login kicks the prior client via `session.revoked`
 5. Edit profile (avatar, name, real name, age, region, status) (desk/web/mobile)
 6. Profile visibility (public / friends-only) (desk/web/mobile)
 7. Add / manage friends + notes/tags (desk/web/mobile)

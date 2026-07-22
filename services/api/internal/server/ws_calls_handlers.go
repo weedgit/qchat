@@ -27,6 +27,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "unauthorized")
 		return
 	}
+	if sessionAccessRevoked(claims.SessionID) || !s.sessionRowActive(r.Context(), claims.SessionID) {
+		writeErr(w, 401, "session revoked")
+		return
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return

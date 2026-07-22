@@ -37,6 +37,19 @@ export default function LoginPage() {
         router.replace("/");
         return;
       }
+      try {
+        const reason = sessionStorage.getItem("qchat.session_revoked");
+        if (reason) {
+          sessionStorage.removeItem("qchat.session_revoked");
+          setError(
+            reason === "banned"
+              ? "Your account was banned. Contact an administrator."
+              : "Signed out — another device of this type signed in."
+          );
+        }
+      } catch {
+        /* ignore */
+      }
       setCheckingSession(false);
     })();
     return () => {

@@ -29,7 +29,7 @@ A project member should be able to mention (`@`) another member in a group so th
 - Registration requires an 11-digit mobile number.
 - Login requires a graphical CAPTCHA to prevent automated abuse.
 - A phone and a computer may remain signed in at the same time.
-- When another device of the same type signs in, the previous device should be signed out. This interpretation must be confirmed.
+- When another device of the same type signs in, the previous device should be signed out. **Confirmed:** at most one `web`, one `desktop`, and one `phone` session; same-type login replaces the previous (`revokeSameTypeSessions` + `session.revoked`).
 - “Remember my password/login” should keep the user signed in for up to 60 days.
 - Users can sign in with a password.
 - Passwords must contain only digits, or a combination of letters and digits, and must be at least eight characters long (for example, `12345678` or `abc123456`).
@@ -141,7 +141,7 @@ The back-office system must support:
 ## 6. Open Questions Requiring Client Approval
 
 1. Does “more than 1,000 online” mean total concurrent users, concurrent users per enterprise, or members concurrently active in one group?
-2. Does a new login remove the oldest session on the same device category, or all other sessions? How many phone and desktop sessions are allowed?
+2. ~~Does a new login remove the oldest session on the same device category, or all other sessions? How many phone and desktop sessions are allowed?~~ **Decided:** one web + one desktop + one phone; same-type login replaces the previous session.
 3. Is phone ownership verified by SMS OTP during registration, or is entering an 11-digit number sufficient?
 4. Should an invitation code be permanently reusable, or should administrators be able to rotate/revoke it after leakage?
 5. Which countries and phone-number formats must be supported? The 11-digit rule appears specific to mainland China.
