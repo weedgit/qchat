@@ -25,6 +25,7 @@ import { useTheme } from "@/lib/theme";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
 import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard, imagesFromClipboardApi } from "@/lib/fileDrop";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
 
 const VOICE_MAX_SEC = 60;
@@ -237,6 +238,7 @@ const ICONS = {
   trash: "M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3",
   retry: "M3 12a9 9 0 1 0 3-6.7 M6 2v4h4",
   menu: "M3 6h18 M3 12h18 M3 18h18",
+  back: "M15 18l-6-6 6-6",
   pencil: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
   edit: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
   user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
@@ -458,6 +460,10 @@ export default function ChatPageInner() {
   const router = useRouter();
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  /** Narrow layout: list ↔ chat (Mattermost mobile channel view). */
+  const narrowLayout = useMediaQuery("(max-width: 768px)");
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const wasNarrowRef = useRef(false);
   const [query, setQuery] = useState("");
   const [inChatSearch, setInChatSearch] = useState("");
   const [showInChatSearch, setShowInChatSearch] = useState(false);
@@ -519,6 +525,39 @@ export default function ChatPageInner() {
   const active = chat.conversations.find((c) => c.id === chat.activeId) ?? null;
   const activeMessages = chat.activeId ? chat.messages[chat.activeId] ?? [] : [];
   const isGroup = active?.type === "social_group" || active?.type === "group";
+  const mobilePane: "list" | "chat" =
+    narrowLayout && mobileChatOpen && active ? "chat" : "list";
+
+  function openChat(convId: string) {
+    chat.openConversation(convId);
+    setMobileChatOpen(true);
+  }
+
+  function backToConversationList() {
+    if (showDetails) {
+      setShowDetails(false);
+      return;
+    }
+    if (showInChatSearch) {
+      setShowInChatSearch(false);
+      setInChatSearch("");
+      return;
+    }
+    if (selectMode) {
+      clearSelection();
+      return;
+    }
+    setMobileChatOpen(false);
+    setMainMenuOpen(false);
+  }
+
+  // Entering narrow width: show chat if a conversation is already open.
+  useEffect(() => {
+    if (narrowLayout && !wasNarrowRef.current) {
+      setMobileChatOpen(!!chat.activeId);
+    }
+    wasNarrowRef.current = narrowLayout;
+  }, [narrowLayout, chat.activeId]);
 
   const selectMode = selectedIds.size > 0;
   const selectedMessages = useMemo(
@@ -820,6 +859,7 @@ export default function ChatPageInner() {
     if (c && c !== openedFromQuery.current) {
       openedFromQuery.current = c;
       openConversation(c);
+      setMobileChatOpen(true);
     }
   }, [openConversation]);
 
@@ -878,6 +918,7 @@ export default function ChatPageInner() {
     chatDropDepthRef.current = 0;
     if (chat.activeId !== convId) {
       chat.openConversation(convId);
+      setMobileChatOpen(true);
     }
     openMediaDraft(files);
   }
@@ -1220,7 +1261,7 @@ export default function ChatPageInner() {
   }
 
   return (
-    <AppShell rail={false}>
+    <AppShell rail={false} mobilePane={mobilePane}>
       <aside className="sidebar">
         <div className="sidebar-header">
           <button
@@ -1315,7 +1356,7 @@ export default function ChatPageInner() {
                       type="button"
                       className="search-hit"
                       onClick={() => {
-                        chat.openDM(u.id).catch(() => {});
+                        chat.openDM(u.id).then(() => setMobileChatOpen(true)).catch(() => {});
                         setQuery("");
                       }}
                     >
@@ -1337,7 +1378,7 @@ export default function ChatPageInner() {
                       type="button"
                       className="search-hit"
                       onClick={() => {
-                        chat.openConversation(m.conversationId);
+                        openChat(m.conversationId);
                         setQuery("");
                       }}
                     >
@@ -1380,7 +1421,7 @@ export default function ChatPageInner() {
                   ? chat.presenceByUser[c.peerId]?.online ?? c.peerOnline
                   : undefined
               }
-              onClick={() => chat.openConversation(c.id)}
+              onClick={() => openChat(c.id)}
               onFavorite={() =>
                 chat.updateConversationPrefs(c.id, { favorite: !c.favorite }).catch(() => {})
               }
@@ -1434,6 +1475,14 @@ export default function ChatPageInner() {
             {selectMode ? (
               <div className="chat-header select-bar">
                 <button
+                  type="button"
+                  className="icon-btn chat-back-btn"
+                  title="Back to chats"
+                  onClick={backToConversationList}
+                >
+                  <MenuIcon d={ICONS.back} />
+                </button>
+                <button
                   className="btn-ghost"
                   style={{ borderRadius: 8, padding: "6px 10px" }}
                   onClick={clearSelection}
@@ -1472,6 +1521,14 @@ export default function ChatPageInner() {
               </div>
             ) : showInChatSearch ? (
               <div className="chat-header" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="icon-btn chat-back-btn"
+                  title="Back to chats"
+                  onClick={backToConversationList}
+                >
+                  <MenuIcon d={ICONS.back} />
+                </button>
                 <input
                   className="search-input"
                   autoFocus
@@ -1493,6 +1550,14 @@ export default function ChatPageInner() {
               </div>
             ) : (
               <div className="chat-header">
+                <button
+                  type="button"
+                  className="icon-btn chat-back-btn"
+                  title="Back to chats"
+                  onClick={backToConversationList}
+                >
+                  <MenuIcon d={ICONS.back} />
+                </button>
                 <div
                   className="chat-header clickable"
                   style={{ flex: 1, border: "none", padding: 0, minWidth: 0 }}

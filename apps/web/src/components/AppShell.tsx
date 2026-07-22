@@ -16,9 +16,14 @@ const NAV = [
 export default function AppShell({
   children,
   rail = true,
+  className,
+  mobilePane,
 }: {
   children: React.ReactNode;
   rail?: boolean;
+  className?: string;
+  /** Narrow-width list/chat switch (Mattermost mobile channel view). */
+  mobilePane?: "list" | "chat";
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -42,7 +47,10 @@ export default function AppShell({
   }
 
   return (
-    <div className="shell">
+    <div
+      className={["shell", className].filter(Boolean).join(" ")}
+      data-mobile-pane={mobilePane}
+    >
       {rail && (
         <nav className="nav-rail">
           {NAV.map((item) => (

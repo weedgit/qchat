@@ -491,6 +491,33 @@ select:focus {
   overflow: hidden;
 }
 
+/* Narrow: conversation list ↔ chat history (Mattermost mobile channel view). */
+.chat-back-btn {
+  display: none;
+}
+@media (max-width: 768px) {
+  .shell[data-mobile-pane="list"] > .sidebar {
+    flex: 1;
+    width: auto;
+    max-width: none;
+    border-right: none;
+  }
+  .shell[data-mobile-pane="list"] > .chat-pane {
+    display: none;
+  }
+  .shell[data-mobile-pane="chat"] > .sidebar {
+    display: none;
+  }
+  .shell[data-mobile-pane="chat"] > .chat-pane {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+  }
+  .chat-back-btn {
+    display: inline-flex;
+  }
+}
+
 .nav-rail {
   flex: none;
   width: 64px;
