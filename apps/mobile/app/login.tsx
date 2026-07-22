@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -15,10 +15,13 @@ import { Redirect, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, api } from "../src/lib/api";
 import { getAuthDevice, useAuth } from "../src/context/AuthContext";
-import { colors, radius, spacing } from "../src/theme";
+import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
+import { radius, spacing, type ColorTokens } from "../src/theme";
 
 export default function LoginScreen() {
   const { signedIn, ready, signIn } = useAuth();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -145,14 +148,14 @@ export default function LoginScreen() {
             </Pressable>
           </View>
 
-          <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="13800000002" />
+          <Field label="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="13800000002" styles={styles} colors={colors} />
           {mode === "register" && (
             <Text style={styles.hint}>After signup, join a company with an invite code in chat.</Text>
           )}
           {mode === "register" && (
-            <Field label="Username" value={username} onChangeText={setUsername} placeholder="alice" />
+            <Field label="Username" value={username} onChangeText={setUsername} placeholder="alice" styles={styles} colors={colors} />
           )}
-          <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry placeholder="at least 8 chars" />
+          <Field label="Password" value={password} onChangeText={setPassword} secureTextEntry placeholder="at least 8 chars" styles={styles} colors={colors} />
 
           <Text style={styles.label}>Captcha</Text>
           <View style={styles.captchaRow}>
@@ -205,6 +208,8 @@ export default function LoginScreen() {
                 onSubmitEditing={() => {
                   if (!busy) onSubmit();
                 }}
+                styles={styles}
+                colors={colors}
               />
             </>
           )}
@@ -224,12 +229,18 @@ export default function LoginScreen() {
   );
 }
 
+type Styles = ReturnType<typeof makeStyles>;
+
 function Field({
   label,
+  styles,
+  colors,
   ...props
 }: {
   label: string;
-} & React.ComponentProps<typeof TextInput>) {
+  styles: Styles;
+  colors: ColorTokens;
+} & ComponentProps<typeof TextInput>) {
   return (
     <View style={{ marginBottom: spacing.md }}>
       <Text style={styles.label}>{label}</Text>
@@ -251,62 +262,64 @@ function formatErr(e: any): string {
   return e?.message || "Request failed";
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.headerBlue },
-  hero: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
-  brand: { color: "#fff", fontSize: 36, fontWeight: "800", marginTop: spacing.lg },
-  heroSub: { color: "rgba(255,255,255,0.85)", marginTop: spacing.xs, fontSize: 15 },
-  sheet: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-  },
-  sheetInner: { padding: spacing.xl, paddingBottom: 48 },
-  modeRow: { flexDirection: "row", gap: spacing.lg, marginBottom: spacing.lg },
-  modeBtn: { paddingVertical: spacing.sm },
-  modeText: { fontSize: 17, color: colors.textMuted, fontWeight: "600" },
-  modeActive: { color: colors.accent },
-  label: { color: colors.textSecondary, fontSize: 13, marginBottom: 6, fontWeight: "500" },
-  input: {
-    backgroundColor: colors.inputBg,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.text,
-  },
-  captchaRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
-  captchaBox: {
-    width: 132,
-    height: 48,
-    backgroundColor: "#fff",
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  captchaImage: { width: 132, height: 48 },
-  captchaText: { fontWeight: "700", color: colors.accent, letterSpacing: 2, fontSize: 18 },
-  primaryBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: spacing.md,
-  },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  secondaryBtn: {
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
-  secondaryBtnText: { color: colors.accent, fontWeight: "600" },
-  hint: { color: colors.textSecondary, marginBottom: spacing.sm },
-  error: { color: colors.danger, marginTop: spacing.sm },
-});
+function makeStyles(c: ColorTokens) {
+  return {
+    root: { flex: 1, backgroundColor: c.headerBlue },
+    hero: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
+    brand: { color: "#fff", fontSize: 36, fontWeight: "800" as const, marginTop: spacing.lg },
+    heroSub: { color: "rgba(255,255,255,0.85)", marginTop: spacing.xs, fontSize: 15 },
+    sheet: {
+      flex: 1,
+      backgroundColor: c.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+    },
+    sheetInner: { padding: spacing.xl, paddingBottom: 48 },
+    modeRow: { flexDirection: "row" as const, gap: spacing.lg, marginBottom: spacing.lg },
+    modeBtn: { paddingVertical: spacing.sm },
+    modeText: { fontSize: 17, color: c.textMuted, fontWeight: "600" as const },
+    modeActive: { color: c.accent },
+    label: { color: c.textSecondary, fontSize: 13, marginBottom: 6, fontWeight: "500" as const },
+    input: {
+      backgroundColor: c.inputBg,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 12,
+      fontSize: 16,
+      color: c.text,
+    },
+    captchaRow: { flexDirection: "row" as const, gap: spacing.sm, marginBottom: spacing.md },
+    captchaBox: {
+      width: 132,
+      height: 48,
+      backgroundColor: "#fff",
+      borderRadius: radius.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      overflow: "hidden" as const,
+    },
+    captchaImage: { width: 132, height: 48 },
+    captchaText: { fontWeight: "700" as const, color: c.accent, letterSpacing: 2, fontSize: 18 },
+    primaryBtn: {
+      backgroundColor: c.accent,
+      borderRadius: radius.md,
+      paddingVertical: 14,
+      alignItems: "center" as const,
+      marginTop: spacing.md,
+    },
+    primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 16 },
+    secondaryBtn: {
+      borderWidth: 1,
+      borderColor: c.accent,
+      borderRadius: radius.md,
+      paddingVertical: 12,
+      alignItems: "center" as const,
+      marginBottom: spacing.sm,
+    },
+    secondaryBtnText: { color: c.accent, fontWeight: "600" as const },
+    hint: { color: c.textSecondary, marginBottom: spacing.sm },
+    error: { color: c.danger, marginTop: spacing.sm },
+  };
+}

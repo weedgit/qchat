@@ -11,7 +11,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTrackVolume, VideoTrack } from "@livekit/react-native";
 import type { LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
 import type { useCall } from "../lib/useCall";
-import { colors, radius, spacing } from "../theme";
+import { useThemedStyles } from "../context/ThemeContext";
+import { radius, spacing, type ColorTokens } from "../theme";
 
 type CallApi = ReturnType<typeof useCall>;
 
@@ -26,6 +27,7 @@ function formatCallClock(elapsedMs: number): string {
 
 function CallDuration({ connectedAt }: { connectedAt: number }) {
   const [now, setNow] = useState(() => Date.now());
+  const styles = useThemedStyles(makeStyles);
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -44,6 +46,7 @@ function MicLevelMeter({
   label: string;
 }) {
   const raw = useTrackVolume(track ?? undefined);
+  const styles = useThemedStyles(makeStyles);
   const level = muted ? 0 : Math.min(1, raw * 1.8);
   const lit = muted ? 0 : Math.min(MIC_BAR_COUNT, Math.round(level * MIC_BAR_COUNT));
   const tone = muted ? "muted" : lit >= 4 ? "hot" : lit >= 2 ? "mid" : "low";
@@ -89,6 +92,7 @@ function ControlBtn({
   label: string;
   children: ReactNode;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -106,6 +110,7 @@ function ControlBtn({
 
 /** Incoming ring + in-call panel (Mattermost Calls UI placement). */
 export function CallOverlay({ call }: { call: CallApi }) {
+  const styles = useThemedStyles(makeStyles);
   const {
     incoming,
     active,
@@ -245,86 +250,87 @@ export function CallOverlay({ call }: { call: CallApi }) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(c: ColorTokens) {
+  return {
   root: {
     flex: 1,
     backgroundColor: "#0f1419",
-    justifyContent: "space-between",
+    justifyContent: "space-between" as const,
   },
   remoteVideo: {
     ...StyleSheet.absoluteFillObject,
   },
   localVideo: {
-    position: "absolute",
+    position: "absolute" as const,
     top: 56,
     right: 16,
     width: 110,
     height: 160,
     borderRadius: radius.md,
-    overflow: "hidden",
+    overflow: "hidden" as const,
     backgroundColor: "#1a1d24",
   },
   avatarStage: {
     ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   avatar: {
     width: 112,
     height: 112,
     borderRadius: 56,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: c.accent,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   avatarLetter: {
     color: "#fff",
     fontSize: 44,
-    fontWeight: "700",
+    fontWeight: "700" as const,
   },
   topMeta: {
     paddingTop: 72,
     paddingHorizontal: spacing.xl,
-    alignItems: "center",
+    alignItems: "center" as const,
   },
   title: {
     color: "rgba(255,255,255,0.85)",
     fontSize: 15,
-    fontWeight: "500",
+    fontWeight: "500" as const,
   },
   name: {
     color: "#fff",
     fontSize: 26,
-    fontWeight: "700",
+    fontWeight: "700" as const,
     marginTop: 8,
-    textAlign: "center",
+    textAlign: "center" as const,
   },
   duration: {
     color: "rgba(255,255,255,0.8)",
     fontSize: 16,
     marginTop: 10,
-    fontVariant: ["tabular-nums"],
+    fontVariant: ["tabular-nums"] as ("tabular-nums")[],
   },
   error: {
     color: "#fecaca",
     marginTop: 12,
-    textAlign: "center",
+    textAlign: "center" as const,
   },
   metersRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "flex-end",
+    flexDirection: "row" as const,
+    justifyContent: "center" as const,
+    alignItems: "flex-end" as const,
     gap: 28,
     paddingHorizontal: spacing.xl,
     marginBottom: 8,
   },
   meter: {
-    alignItems: "center",
+    alignItems: "center" as const,
     minWidth: 88,
   },
   meterBars: {
-    flexDirection: "row",
-    alignItems: "flex-end",
+    flexDirection: "row" as const,
+    alignItems: "flex-end" as const,
     gap: 4,
     height: 22,
   },
@@ -352,14 +358,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
     color: "rgba(255,255,255,0.75)",
     fontSize: 12,
-    fontWeight: "500",
+    fontWeight: "500" as const,
     maxWidth: 120,
-    textAlign: "center",
+    textAlign: "center" as const,
   },
   actions: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
     gap: 28,
     paddingBottom: 56,
     paddingHorizontal: spacing.xl,
@@ -369,13 +375,14 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 32,
     backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   controlDanger: {
-    backgroundColor: colors.danger,
+    backgroundColor: c.danger,
   },
   controlAnswer: {
     backgroundColor: "#16a34a",
   },
-});
+};
+}

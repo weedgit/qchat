@@ -23,7 +23,8 @@ import {
 } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Message } from "../lib/types";
-import { colors, radius, spacing } from "../theme";
+import { useTheme, useThemedStyles } from "../context/ThemeContext";
+import { radius, spacing, type ColorTokens } from "../theme";
 
 const EMOJI_GRID = [
   "😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘",
@@ -67,6 +68,8 @@ export function ChatComposer({
   onSendVoice,
 }: ChatComposerProps) {
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const insets = useSafeAreaInsets();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -292,29 +295,30 @@ export function ChatComposer({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(c: ColorTokens) {
+  return {
   wrap: {
-    backgroundColor: "#e8ebf0",
+    backgroundColor: c.bg,
     paddingHorizontal: spacing.sm,
     paddingTop: spacing.sm,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
   },
   banner: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: spacing.sm,
-    backgroundColor: "#fff",
+    backgroundColor: c.surface,
     borderRadius: radius.md,
     paddingHorizontal: spacing.sm,
     paddingVertical: 8,
   },
   bannerBody: { flex: 1, minWidth: 0 },
-  bannerTitle: { fontSize: 12, fontWeight: "700", color: colors.accent },
-  bannerText: { fontSize: 13, color: colors.textSecondary, marginTop: 1 },
+  bannerTitle: { fontSize: 12, fontWeight: "700" as const, color: c.accent },
+  bannerText: { fontSize: 13, color: c.textSecondary, marginTop: 1 },
   pill: {
-    flexDirection: "row",
-    alignItems: "flex-end",
+    flexDirection: "row" as const,
+    alignItems: "flex-end" as const,
     backgroundColor: "#1c1c1e",
     borderRadius: 999,
     paddingLeft: 4,
@@ -325,8 +329,8 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 40,
     height: 40,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   input: {
     flex: 1,
@@ -342,21 +346,21 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     backgroundColor: "#9b8cff",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     marginBottom: 0,
   },
   sendBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: c.accent,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   recordBar: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: 10,
     backgroundColor: "#1c1c1e",
     borderRadius: 999,
@@ -370,21 +374,21 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: "#ef4444",
   },
-  recordText: { flex: 1, color: "#fff", fontSize: 15, fontWeight: "600" },
+  recordText: { flex: 1, color: "#fff", fontSize: 15, fontWeight: "600" as const },
   recordCancel: { paddingHorizontal: 8, paddingVertical: 6 },
-  recordCancelText: { color: "#9ca3af", fontWeight: "600" },
+  recordCancelText: { color: "#9ca3af", fontWeight: "600" as const },
   recordSend: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: c.accent,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   emojiBg: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "flex-end",
+    justifyContent: "flex-end" as const,
   },
   emojiSheet: {
     backgroundColor: "#1c1c1e",
@@ -392,25 +396,26 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     paddingTop: 12,
     paddingBottom: 28,
-    maxHeight: "45%",
+    maxHeight: "45%" as const,
   },
   emojiTitle: {
     color: "#fff",
-    fontWeight: "700",
+    fontWeight: "700" as const,
     fontSize: 15,
     paddingHorizontal: 16,
     marginBottom: 8,
   },
   emojiGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
     paddingHorizontal: 10,
   },
   emojiCell: {
-    width: "12.5%",
+    width: "12.5%" as const,
     aspectRatio: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   emojiGlyph: { fontSize: 26 },
-});
+};
+}

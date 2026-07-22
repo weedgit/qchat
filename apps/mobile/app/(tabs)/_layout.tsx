@@ -2,13 +2,22 @@ import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "../../src/context/AuthContext";
-import { colors } from "../../src/theme";
+import { useTheme } from "../../src/context/ThemeContext";
 
 export default function TabsLayout() {
   const { ready, signedIn } = useAuth();
+  const { colors } = useTheme();
+
   if (!ready) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      <View
+        style={{
+          flex: 1,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: colors.bg,
+        }}
+      >
         <ActivityIndicator color={colors.accent} />
       </View>
     );
@@ -22,7 +31,10 @@ export default function TabsLayout() {
         headerTintColor: "#fff",
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+        },
       }}
     >
       <Tabs.Screen

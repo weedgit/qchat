@@ -1,6 +1,7 @@
-import { StyleSheet, Text, View, Image } from "react-native";
+import { Text, View, Image } from "react-native";
 import { mediaAuthURL } from "../lib/api";
-import { colors } from "../theme";
+import { useThemedStyles } from "../context/ThemeContext";
+import type { ColorTokens } from "../theme";
 
 export function Avatar({
   name,
@@ -11,6 +12,7 @@ export function Avatar({
   url?: string | null;
   size?: number;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const src = mediaAuthURL(url);
   const initial = (name || "?").trim().charAt(0).toUpperCase() || "?";
   return (
@@ -33,15 +35,17 @@ export function Avatar({
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: {
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  initial: {
-    color: "#fff",
-    fontWeight: "700",
-  },
-});
+function makeStyles(c: ColorTokens) {
+  return {
+    wrap: {
+      backgroundColor: c.accent,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      overflow: "hidden" as const,
+    },
+    initial: {
+      color: "#fff",
+      fontWeight: "700" as const,
+    },
+  };
+}

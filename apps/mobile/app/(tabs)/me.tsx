@@ -9,7 +9,6 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -18,8 +17,9 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../src/components/Avatar";
 import { useAuth } from "../../src/context/AuthContext";
+import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { api, uploadMedia } from "../../src/lib/api";
-import { colors, radius, spacing } from "../../src/theme";
+import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 type Profile = {
   id: string;
@@ -53,6 +53,8 @@ function mapProfile(u: any): Profile {
 
 export default function MeScreen() {
   const { refreshMe } = useAuth();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [me, setMe] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -214,22 +216,28 @@ export default function MeScreen() {
       {me ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Edit profile</Text>
-          <Field label="Username" value={me.username} editable={false} hint="Set at registration" />
+          <Field label="Username" value={me.username} editable={false} hint="Set at registration" styles={styles} colors={colors} />
           <Field
             label="Phone (login ID)"
             value={me.phone}
             editable={false}
             hint="Change in Settings"
+            styles={styles}
+            colors={colors}
           />
           <Field
             label="Display name"
             value={me.display_name}
             onChangeText={(t) => setMe({ ...me, display_name: t })}
+            styles={styles}
+            colors={colors}
           />
           <Field
             label="Real name"
             value={me.real_name}
             onChangeText={(t) => setMe({ ...me, real_name: t })}
+            styles={styles}
+            colors={colors}
           />
           <Field
             label="Age"
@@ -238,19 +246,25 @@ export default function MeScreen() {
             onChangeText={(t) =>
               setMe({ ...me, age: t.trim() === "" ? null : Number(t) || null })
             }
+            styles={styles}
+            colors={colors}
           />
           <Field
             label="Region"
             value={me.region}
             onChangeText={(t) => setMe({ ...me, region: t })}
+            styles={styles}
+            colors={colors}
           />
           <Field
             label="Signature"
             value={me.signature}
             onChangeText={(t) => setMe({ ...me, signature: t })}
+            styles={styles}
+            colors={colors}
           />
-          <SelectRow label="Profile visibility" value={visibilityLabel} onPress={pickVisibility} />
-          <SelectRow label="Friend requests" value={friendLabel} onPress={pickFriendPrivacy} />
+          <SelectRow label="Profile visibility" value={visibilityLabel} onPress={pickVisibility} styles={styles} colors={colors} />
+          <SelectRow label="Friend requests" value={friendLabel} onPress={pickFriendPrivacy} styles={styles} colors={colors} />
           <Pressable style={styles.primaryBtn} onPress={onSaveProfile} disabled={saving}>
             {saving ? (
               <ActivityIndicator color="#fff" />
@@ -269,13 +283,19 @@ export default function MeScreen() {
   );
 }
 
+type Styles = ReturnType<typeof makeStyles>;
+
 function Field({
   label,
   hint,
+  styles,
+  colors,
   ...props
 }: {
   label: string;
   hint?: string;
+  styles: Styles;
+  colors: ColorTokens;
 } & ComponentProps<typeof TextInput>) {
   const editable = props.editable !== false;
   return (
@@ -296,10 +316,14 @@ function SelectRow({
   label,
   value,
   onPress,
+  styles,
+  colors,
 }: {
   label: string;
   value: string;
   onPress: () => void;
+  styles: Styles;
+  colors: ColorTokens;
 }) {
   return (
     <Pressable style={styles.selectRow} onPress={onPress}>
@@ -314,74 +338,76 @@ function SelectRow({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
-  error: {
-    color: colors.danger,
-    backgroundColor: "#fef2f2",
-    padding: spacing.md,
-    borderRadius: radius.md,
-    overflow: "hidden",
-  },
-  hero: {
-    backgroundColor: colors.headerBlue,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  avatarBtn: { position: "relative" },
-  avatarBadge: {
-    position: "absolute",
-    right: -2,
-    bottom: -2,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: colors.headerBlue,
-  },
-  name: { color: "#fff", fontSize: 20, fontWeight: "700" },
-  sub: { color: "rgba(255,255,255,0.85)", marginTop: 2, fontSize: 13 },
-  idLine: { color: "rgba(255,255,255,0.7)", marginTop: 4, fontSize: 11 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: 10,
-  },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
-  field: { gap: 4 },
-  label: { color: colors.textSecondary, fontSize: 13, fontWeight: "500" },
-  input: {
-    backgroundColor: colors.inputBg,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: colors.text,
-  },
-  inputDisabled: { color: colors.textMuted },
-  fieldHint: { fontSize: 11, color: colors.textMuted },
-  selectRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: 6,
-  },
-  selectValue: { color: colors.text, fontSize: 15, marginTop: 2 },
-  primaryBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.sm,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  hint: { color: colors.textSecondary, fontSize: 13 },
-});
+function makeStyles(c: ColorTokens) {
+  return {
+    root: { flex: 1, backgroundColor: c.bg },
+    content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
+    error: {
+      color: c.danger,
+      backgroundColor: "#fef2f2",
+      padding: spacing.md,
+      borderRadius: radius.md,
+      overflow: "hidden" as const,
+    },
+    hero: {
+      backgroundColor: c.headerBlue,
+      borderRadius: radius.lg,
+      padding: spacing.lg,
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: spacing.md,
+    },
+    avatarBtn: { position: "relative" as const },
+    avatarBadge: {
+      position: "absolute" as const,
+      right: -2,
+      bottom: -2,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: "rgba(0,0,0,0.45)",
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      borderWidth: 2,
+      borderColor: c.headerBlue,
+    },
+    name: { color: "#fff", fontSize: 20, fontWeight: "700" as const },
+    sub: { color: "rgba(255,255,255,0.85)", marginTop: 2, fontSize: 13 },
+    idLine: { color: "rgba(255,255,255,0.7)", marginTop: 4, fontSize: 11 },
+    card: {
+      backgroundColor: c.surface,
+      borderRadius: radius.md,
+      padding: spacing.md,
+      gap: 10,
+    },
+    cardTitle: { fontSize: 16, fontWeight: "700" as const, color: c.text },
+    field: { gap: 4 },
+    label: { color: c.textSecondary, fontSize: 13, fontWeight: "500" as const },
+    input: {
+      backgroundColor: c.inputBg,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 10,
+      fontSize: 15,
+      color: c.text,
+    },
+    inputDisabled: { color: c.textMuted },
+    fieldHint: { fontSize: 11, color: c.textMuted },
+    selectRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: spacing.sm,
+      paddingVertical: 6,
+    },
+    selectValue: { color: c.text, fontSize: 15, marginTop: 2 },
+    primaryBtn: {
+      backgroundColor: c.accent,
+      borderRadius: radius.sm,
+      paddingVertical: 12,
+      alignItems: "center" as const,
+      marginTop: 4,
+    },
+    primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 15 },
+    hint: { color: c.textSecondary, fontSize: 13 },
+  };
+}

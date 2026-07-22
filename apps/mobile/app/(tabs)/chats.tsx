@@ -14,7 +14,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
 import { useChat } from "../../src/context/ChatContext";
 import { Conversation, conversationDisplayName } from "../../src/lib/types";
-import { colors, radius, spacing } from "../../src/theme";
+import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
+import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 function formatTime(iso?: string): string {
   if (!iso) return "";
@@ -46,6 +47,8 @@ function previewText(c: Conversation): string {
 export default function ChatsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const {
     conversations,
     loadConversations,
@@ -307,47 +310,48 @@ export default function ChatsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+function makeStyles(c: ColorTokens) {
+  return {
+  root: { flex: 1, backgroundColor: c.bg },
   actionBar: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: 4,
     paddingHorizontal: spacing.sm,
     paddingBottom: 10,
-    backgroundColor: colors.headerBlue,
+    backgroundColor: c.headerBlue,
     minHeight: 52,
   },
   actionBtn: {
     width: 40,
     height: 40,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   actionCount: {
     color: "#fff",
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "600" as const,
     marginLeft: 4,
     minWidth: 24,
   },
   actionSpacer: { flex: 1 },
   searchWrap: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
   searchField: {
     flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: 8,
-    backgroundColor: colors.inputBg,
+    backgroundColor: c.inputBg,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     minHeight: 36,
@@ -356,70 +360,71 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     fontSize: 15,
-    color: colors.text,
+    color: c.text,
   },
   newChat: {
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     borderRadius: radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 9,
   },
-  newChatText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  list: { flex: 1, backgroundColor: colors.bg },
+  newChatText: { color: "#fff", fontWeight: "700" as const, fontSize: 13 },
+  list: { flex: 1, backgroundColor: c.bg },
   listContent: { paddingBottom: spacing.sm },
-  error: { color: colors.danger, padding: spacing.md, backgroundColor: colors.bg },
+  error: { color: c.danger, padding: spacing.md, backgroundColor: c.bg },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: spacing.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
   rowMuted: { opacity: 0.85 },
   rowSelected: { backgroundColor: "#e8f0fe" },
-  avatarWrap: { position: "relative" },
+  avatarWrap: { position: "relative" as const },
   checkBadge: {
-    position: "absolute",
+    position: "absolute" as const,
     right: -2,
     bottom: -2,
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: c.accent,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     borderWidth: 2,
-    borderColor: colors.surface,
+    borderColor: c.surface,
   },
   meta: { flex: 1, minWidth: 0 },
-  topLine: { flexDirection: "row", justifyContent: "space-between", gap: spacing.sm },
-  title: { flex: 1, fontSize: 16, fontWeight: "600", color: colors.text },
-  titleMuted: { color: colors.textSecondary },
-  time: { fontSize: 12, color: colors.textMuted },
+  topLine: { flexDirection: "row" as const, justifyContent: "space-between" as const, gap: spacing.sm },
+  title: { flex: 1, fontSize: 16, fontWeight: "600" as const, color: c.text },
+  titleMuted: { color: c.textSecondary },
+  time: { fontSize: 12, color: c.textMuted },
   bottomLine: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     marginTop: 4,
     gap: spacing.sm,
   },
-  preview: { flex: 1, fontSize: 13, color: colors.textSecondary },
-  previewRecalled: { fontStyle: "italic" },
-  previewMuted: { color: colors.textMuted },
+  preview: { flex: 1, fontSize: 13, color: c.textSecondary },
+  previewRecalled: { fontStyle: "italic" as const },
+  previewMuted: { color: c.textMuted },
   badge: {
     minWidth: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: colors.unread,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: c.unread,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     paddingHorizontal: 6,
   },
-  badgeMuted: { backgroundColor: colors.textMuted },
-  badgeMention: { backgroundColor: colors.accent },
-  badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
-  emptyWrap: { flexGrow: 1, justifyContent: "center", padding: spacing.xl },
-  empty: { textAlign: "center", color: colors.textSecondary },
-});
+  badgeMuted: { backgroundColor: c.textMuted },
+  badgeMention: { backgroundColor: c.accent },
+  badgeText: { color: "#fff", fontSize: 11, fontWeight: "700" as const },
+  emptyWrap: { flexGrow: 1, justifyContent: "center" as const, padding: spacing.xl },
+  empty: { textAlign: "center" as const, color: c.textSecondary },
+};
+}

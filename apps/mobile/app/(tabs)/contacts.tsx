@@ -15,7 +15,8 @@ import { Avatar } from "../../src/components/Avatar";
 import { useChat } from "../../src/context/ChatContext";
 import { api, asList } from "../../src/lib/api";
 import { Friend, normalizeFriend } from "../../src/lib/types";
-import { colors, radius, spacing } from "../../src/theme";
+import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
+import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 type Row =
   | { kind: "header"; title: string; key: string }
@@ -28,6 +29,8 @@ function friendName(f: Friend): string {
 
 export default function ContactsScreen() {
   const { openDM } = useChat();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -237,108 +240,110 @@ export default function ContactsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+function makeStyles(c: ColorTokens) {
+  return {
+  root: { flex: 1, backgroundColor: c.bg },
   toolbar: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
   search: {
     flex: 1,
-    backgroundColor: colors.inputBg,
+    backgroundColor: c.inputBg,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: 8,
     fontSize: 15,
-    color: colors.text,
+    color: c.text,
   },
   addBtn: {
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     borderRadius: radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  addBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  addBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 13 },
   section: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     paddingBottom: spacing.xs,
-    backgroundColor: colors.bg,
+    backgroundColor: c.bg,
   },
   sectionText: {
     fontSize: 12,
-    fontWeight: "700",
-    color: colors.textMuted,
-    textTransform: "uppercase",
+    fontWeight: "700" as const,
+    color: c.textMuted,
+    textTransform: "uppercase" as const,
     letterSpacing: 0.4,
   },
-  error: { color: colors.danger, padding: spacing.md },
+  error: { color: c.danger, padding: spacing.md },
   empty: {
-    textAlign: "center",
-    color: colors.textSecondary,
+    textAlign: "center" as const,
+    color: c.textSecondary,
     marginTop: 48,
     paddingHorizontal: spacing.xl,
     lineHeight: 20,
   },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: spacing.md,
     padding: spacing.md,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
-  name: { fontSize: 16, fontWeight: "600", color: colors.text },
-  sub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  messageHint: { fontSize: 13, color: colors.accent, fontWeight: "600" },
-  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.online },
+  name: { fontSize: 16, fontWeight: "600" as const, color: c.text },
+  sub: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
+  messageHint: { fontSize: 13, color: c.accent, fontWeight: "600" as const },
+  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.online },
   accept: {
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radius.sm,
   },
-  acceptText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+  acceptText: { color: "#fff", fontWeight: "600" as const, fontSize: 13 },
   reject: {
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: radius.sm,
   },
-  rejectText: { color: colors.textSecondary, fontSize: 13 },
+  rejectText: { color: c.textSecondary, fontSize: 13 },
   modalBg: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
+    justifyContent: "center" as const,
     padding: spacing.xl,
   },
   modalCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radius.lg,
     padding: spacing.xl,
   },
-  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: spacing.md, color: colors.text },
+  modalTitle: { fontSize: 18, fontWeight: "700" as const, marginBottom: spacing.md, color: c.text },
   input: {
-    backgroundColor: colors.inputBg,
+    backgroundColor: c.inputBg,
     borderRadius: radius.md,
     padding: spacing.md,
     fontSize: 16,
-    color: colors.text,
+    color: c.text,
     marginBottom: spacing.md,
   },
   primary: {
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     borderRadius: radius.md,
     paddingVertical: 12,
-    alignItems: "center",
+    alignItems: "center" as const,
   },
-  primaryText: { color: "#fff", fontWeight: "700" },
-});
+  primaryText: { color: "#fff", fontWeight: "700" as const },
+};
+}

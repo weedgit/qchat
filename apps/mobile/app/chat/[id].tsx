@@ -28,7 +28,8 @@ import {
   previousPinnedInCycle,
   type PinnedMessage,
 } from "../../src/lib/pinnedCycle";
-import { colors, radius, spacing } from "../../src/theme";
+import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
+import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 function messageBody(item: Message): string {
   if (item.type === "image") return item.content || "Photo";
@@ -78,6 +79,8 @@ function ReceiptIcons({ msg }: { msg: Message }) {
 }
 
 function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const icon =
     item.type === "image" ? "image-outline" : item.type === "voice" ? "mic-outline" : "document-outline";
   const label =
@@ -138,6 +141,8 @@ const ChatMessageRow = memo(function ChatMessageRow({
   onLongPress,
   onPressReply,
 }: ChatMessageRowProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   if (item.recalled) {
     const label = item.mine
       ? "You recalled a message"
@@ -299,6 +304,7 @@ const ChatMessageList = memo(function ChatMessageList({
   onLongPressMessage,
   onPressReply,
 }: ChatMessageListProps) {
+  const styles = useThemedStyles(makeStyles);
   const keyExtractor = useCallback((m: Message) => m.id, []);
   const byId = useMemo(() => new Map(list.map((m) => [m.id, m])), [list]);
   const renderItem = useCallback(
@@ -376,6 +382,8 @@ function ForwardPicker({
   onCancel: () => void;
   onSend: (conversationIds: string[]) => Promise<void>;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
@@ -487,6 +495,8 @@ export default function ChatScreen() {
   const convId = String(id);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const {
     conversations,
     messages,
@@ -1210,81 +1220,82 @@ export default function ChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#e8ebf0" },
+function makeStyles(c: ColorTokens) {
+  return {
+  root: { flex: 1, backgroundColor: c.bg },
   actionBar: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: 4,
     paddingHorizontal: spacing.sm,
     paddingBottom: 10,
-    backgroundColor: colors.headerBlue,
+    backgroundColor: c.headerBlue,
     minHeight: 52,
   },
   actionBtn: {
     width: 40,
     height: 40,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   actionCount: {
     color: "#fff",
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "600" as const,
     marginLeft: 4,
     minWidth: 24,
   },
   actionSpacer: { flex: 1 },
   pinnedBanner: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    backgroundColor: colors.surface,
+    flexDirection: "row" as const,
+    alignItems: "stretch" as const,
+    backgroundColor: c.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
     minHeight: 52,
   },
   pinnedAccent: {
     width: 3,
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     borderTopRightRadius: 2,
     borderBottomRightRadius: 2,
   },
   pinnedMain: {
     flex: 1,
     minWidth: 0,
-    justifyContent: "center",
+    justifyContent: "center" as const,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   pinnedLabel: {
     fontSize: 12,
-    fontWeight: "700",
-    color: colors.accent,
+    fontWeight: "700" as const,
+    color: c.accent,
     marginBottom: 2,
   },
   pinnedText: {
     fontSize: 13,
-    color: colors.textSecondary,
+    color: c.textSecondary,
   },
   pinnedListBtn: {
     width: 44,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: colors.border,
+    borderLeftColor: c.border,
   },
-  threadWrap: { flex: 1, position: "relative" },
+  threadWrap: { flex: 1, position: "relative" as const },
   list: { padding: spacing.md, paddingBottom: spacing.lg, flexGrow: 1 },
   jumpBottom: {
-    position: "absolute",
+    position: "absolute" as const,
     right: 16,
     bottom: 12,
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: "rgba(36, 40, 48, 0.88)",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -1297,42 +1308,42 @@ const styles = StyleSheet.create({
     }),
   },
   emptyThread: {
-    textAlign: "center",
-    color: colors.textMuted,
+    textAlign: "center" as const,
+    color: c.textMuted,
     marginTop: spacing.xxl,
     fontSize: 14,
   },
   systemRow: {
-    alignItems: "center",
+    alignItems: "center" as const,
     marginVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
   systemText: {
     fontSize: 12,
-    color: colors.textMuted,
-    textAlign: "center",
+    color: c.textMuted,
+    textAlign: "center" as const,
   },
-  bubbleWrap: { marginBottom: spacing.sm, flexDirection: "row" },
+  bubbleWrap: { marginBottom: spacing.sm, flexDirection: "row" as const },
   bubbleWrapSelected: { opacity: 1 },
-  mineWrap: { justifyContent: "flex-end" },
-  peerWrap: { justifyContent: "flex-start" },
+  mineWrap: { justifyContent: "flex-end" as const },
+  peerWrap: { justifyContent: "flex-start" as const },
   bubble: {
-    maxWidth: "78%",
+    maxWidth: "78%" as const,
     minWidth: 72,
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 6,
-    position: "relative",
+    position: "relative" as const,
   },
   mine: {
-    backgroundColor: colors.bubbleMine,
+    backgroundColor: c.bubbleMine,
     borderBottomRightRadius: 4,
   },
   peer: {
-    backgroundColor: "#ffffff",
+    backgroundColor: c.bubblePeer,
     borderWidth: 1,
-    borderColor: "#c5cbd6",
+    borderColor: c.border,
     borderBottomLeftRadius: 4,
     ...Platform.select({
       ios: {
@@ -1346,67 +1357,67 @@ const styles = StyleSheet.create({
     }),
   },
   mineSelected: { backgroundColor: "#1a4fb8" },
-  peerSelected: { backgroundColor: "#e8f0fe", borderColor: colors.accent },
+  peerSelected: { backgroundColor: "#e8f0fe", borderColor: c.accent },
   bubbleHighlighted: {
     borderWidth: 2,
-    borderColor: colors.accent,
+    borderColor: c.accent,
   },
   checkBadge: {
-    position: "absolute",
+    position: "absolute" as const,
     top: -6,
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: c.accent,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     borderWidth: 2,
-    borderColor: colors.bg,
+    borderColor: c.bg,
     zIndex: 1,
   },
   checkMine: { left: -6 },
   checkPeer: { right: -6 },
-  sender: { fontSize: 12, fontWeight: "600", color: colors.accent, marginBottom: 2 },
+  sender: { fontSize: 12, fontWeight: "600" as const, color: c.accent, marginBottom: 2 },
   replyQuote: {
-    flexDirection: "row",
+    flexDirection: "row" as const,
     borderRadius: 8,
     marginBottom: 6,
-    overflow: "hidden",
-    alignSelf: "stretch",
+    overflow: "hidden" as const,
+    alignSelf: "stretch" as const,
   },
   replyQuoteMine: { backgroundColor: "rgba(255,255,255,0.18)" },
   replyQuotePeer: { backgroundColor: "rgba(36,99,220,0.08)" },
   replyBar: { width: 3 },
   replyBarMine: { backgroundColor: "#fff" },
-  replyBarPeer: { backgroundColor: colors.accent },
+  replyBarPeer: { backgroundColor: c.accent },
   replyQuoteBody: { flex: 1, paddingVertical: 6, paddingHorizontal: 8, minWidth: 0 },
-  replyName: { fontSize: 13, fontWeight: "700", marginBottom: 2 },
+  replyName: { fontSize: 13, fontWeight: "700" as const, marginBottom: 2 },
   replyNameMine: { color: "#fff" },
-  replyNamePeer: { color: colors.accent },
+  replyNamePeer: { color: c.accent },
   replySnippet: { fontSize: 13, lineHeight: 17 },
   replySnippetMine: { color: "rgba(255,255,255,0.9)" },
-  replySnippetPeer: { color: colors.textSecondary },
+  replySnippetPeer: { color: c.textSecondary },
   body: { fontSize: 16, lineHeight: 22 },
   mineText: { color: "#fff" },
-  peerText: { color: colors.text },
-  mediaRow: { flexDirection: "row", alignItems: "center", gap: 10, minWidth: 140 },
+  peerText: { color: c.text },
+  mediaRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, minWidth: 140 },
   mediaIconWrap: {
     width: 36,
     height: 36,
     borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   mediaIconMine: { backgroundColor: "rgba(255,255,255,0.18)" },
   mediaIconPeer: { backgroundColor: "rgba(36,99,220,0.1)" },
   mediaTextCol: { flex: 1, minWidth: 0 },
-  mediaTitle: { fontSize: 15, fontWeight: "600" },
+  mediaTitle: { fontSize: 15, fontWeight: "600" as const },
   mediaDetail: { fontSize: 12, marginTop: 2 },
   fail: { fontSize: 11, color: "#fecaca", marginTop: 4 },
-  failPeer: { fontSize: 11, color: colors.danger, marginTop: 4 },
+  failPeer: { fontSize: 11, color: c.danger, marginTop: 4 },
   reactionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
     gap: 4,
     marginTop: 6,
   },
@@ -1421,79 +1432,80 @@ const styles = StyleSheet.create({
   },
   reactionChipText: { fontSize: 13 },
   metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "flex-end" as const,
     gap: 4,
     marginTop: 4,
-    alignSelf: "flex-end",
+    alignSelf: "flex-end" as const,
   },
-  metaTime: { fontSize: 11, fontWeight: "500" },
+  metaTime: { fontSize: 11, fontWeight: "500" as const },
   metaTimeMine: { color: "rgba(255,255,255,0.88)" },
   metaTimePeer: { color: "#4b5563" },
   forwardBg: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "flex-end",
+    justifyContent: "flex-end" as const,
   },
   forwardCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
-    maxHeight: "85%",
+    maxHeight: "85%" as const,
     paddingTop: spacing.md,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
   },
   forwardTitle: {
     fontSize: 16,
-    fontWeight: "700",
-    color: colors.text,
+    fontWeight: "700" as const,
+    color: c.text,
     marginBottom: spacing.sm,
   },
   forwardSearch: {
-    backgroundColor: colors.inputBg,
+    backgroundColor: c.inputBg,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     fontSize: 15,
-    color: colors.text,
+    color: c.text,
     marginBottom: spacing.sm,
   },
   forwardList: { maxHeight: 360 },
   forwardEmpty: {
-    textAlign: "center",
-    color: colors.textMuted,
+    textAlign: "center" as const,
+    color: c.textMuted,
     paddingVertical: spacing.lg,
   },
   forwardRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: spacing.sm,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
   forwardRowText: { flex: 1, minWidth: 0 },
-  forwardName: { fontSize: 15, fontWeight: "600", color: colors.text },
-  forwardType: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  forwardName: { fontSize: 15, fontWeight: "600" as const, color: c.text },
+  forwardType: { fontSize: 12, color: c.textMuted, marginTop: 1 },
   forwardActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    justifyContent: "flex-end" as const,
+    alignItems: "center" as const,
     gap: spacing.sm,
     marginTop: spacing.md,
   },
   forwardCancel: { paddingHorizontal: 14, paddingVertical: 10 },
-  forwardCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: "600" },
+  forwardCancelText: { fontSize: 15, color: c.textSecondary, fontWeight: "600" as const },
   forwardSend: {
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     borderRadius: radius.md,
     paddingHorizontal: 16,
     paddingVertical: 10,
     minWidth: 110,
-    alignItems: "center",
+    alignItems: "center" as const,
   },
   forwardSendDisabled: { opacity: 0.45 },
-  forwardSendText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-});
+  forwardSendText: { color: "#fff", fontWeight: "700" as const, fontSize: 15 },
+};
+}

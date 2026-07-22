@@ -16,7 +16,8 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 import { Avatar } from "../../src/components/Avatar";
 import { useChat } from "../../src/context/ChatContext";
 import { api } from "../../src/lib/api";
-import { colors, radius, spacing } from "../../src/theme";
+import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
+import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 type UserProfile = {
   id: string;
@@ -53,6 +54,8 @@ export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId = String(id);
   const { openDM } = useChat();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -180,16 +183,16 @@ export default function UserProfileScreen() {
 
             <View style={styles.card}>
               {profile.signature != null ? (
-                <Row label="Signature" value={profile.signature || "—"} />
+                <Row label="Signature" value={profile.signature || "—"} styles={styles} />
               ) : null}
               {profile.real_name != null ? (
-                <Row label="Real name" value={profile.real_name || "—"} />
+                <Row label="Real name" value={profile.real_name || "—"} styles={styles} />
               ) : null}
               {profile.age !== undefined ? (
-                <Row label="Age" value={profile.age == null ? "—" : String(profile.age)} />
+                <Row label="Age" value={profile.age == null ? "—" : String(profile.age)} styles={styles} />
               ) : null}
               {profile.region != null ? (
-                <Row label="Region" value={profile.region || "—"} />
+                <Row label="Region" value={profile.region || "—"} styles={styles} />
               ) : null}
               {profile.signature == null &&
               profile.real_name == null &&
@@ -208,7 +211,17 @@ export default function UserProfileScreen() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+type Styles = ReturnType<typeof makeStyles>;
+
+function Row({
+  label,
+  value,
+  styles,
+}: {
+  label: string;
+  value: string;
+  styles: Styles;
+}) {
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
@@ -217,55 +230,57 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+function makeStyles(c: ColorTokens) {
+  return {
+  root: { flex: 1, backgroundColor: c.bg },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
-  error: { color: colors.danger, padding: spacing.sm },
+  error: { color: c.danger, padding: spacing.sm },
   hero: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radius.lg,
     padding: spacing.xl,
-    alignItems: "center",
+    alignItems: "center" as const,
     gap: spacing.sm,
   },
-  name: { fontSize: 22, fontWeight: "700", color: colors.text, textAlign: "center" },
-  sub: { fontSize: 14, color: colors.textSecondary, textAlign: "center" },
-  presence: { fontSize: 13, color: colors.online, marginTop: 2 },
-  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center" },
+  name: { fontSize: 22, fontWeight: "700" as const, color: c.text, textAlign: "center" as const },
+  sub: { fontSize: 14, color: c.textSecondary, textAlign: "center" as const },
+  presence: { fontSize: 13, color: c.online, marginTop: 2 },
+  tagRow: { flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 6, justifyContent: "center" as const },
   tag: {
-    backgroundColor: colors.inputBg,
-    color: colors.accent,
+    backgroundColor: c.inputBg,
+    color: c.accent,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.pill,
     fontSize: 12,
-    overflow: "hidden",
+    overflow: "hidden" as const,
   },
   actions: { gap: spacing.sm },
   primaryBtn: {
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     borderRadius: radius.md,
     paddingVertical: 14,
-    alignItems: "center",
+    alignItems: "center" as const,
   },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 16 },
   secondaryBtn: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radius.md,
     paddingVertical: 14,
-    alignItems: "center",
+    alignItems: "center" as const,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderColor: c.border,
   },
-  secondaryBtnText: { color: colors.accent, fontWeight: "700", fontSize: 16 },
-  hint: { textAlign: "center", color: colors.textSecondary, fontSize: 13 },
+  secondaryBtnText: { color: c.accent, fontWeight: "700" as const, fontSize: 16 },
+  hint: { textAlign: "center" as const, color: c.textSecondary, fontSize: 13 },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radius.md,
     padding: spacing.md,
     gap: 10,
   },
   row: { gap: 2 },
-  rowLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: "500" },
-  rowValue: { color: colors.text, fontSize: 15 },
-});
+  rowLabel: { color: c.textSecondary, fontSize: 12, fontWeight: "500" as const },
+  rowValue: { color: c.text, fontSize: 15 },
+};
+}

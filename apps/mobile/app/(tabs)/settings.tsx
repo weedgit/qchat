@@ -1,6 +1,6 @@
 /**
- * App settings — notifications, sessions, phone, about (Mattermost Account Settings).
- * Profile editing stays on the Me tab.
+ * App settings — appearance, notifications, sessions, phone, about
+ * (Mattermost Account Settings / Display → Theme).
  */
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
@@ -18,8 +18,19 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useAuth } from "../../src/context/AuthContext";
+import {
+  themeModeLabel,
+  useTheme,
+  useThemedStyles,
+} from "../../src/context/ThemeContext";
 import { api, apiBaseUrl } from "../../src/lib/api";
-import { colors, radius, spacing } from "../../src/theme";
+import {
+  darkColors,
+  radius,
+  spacing,
+  type ColorTokens,
+  type ThemeMode,
+} from "../../src/theme";
 
 type NotifyProps = {
   desktop: "all" | "mention" | "none";
@@ -66,6 +77,8 @@ function sessionTitle(s: LoginSession): string {
 
 export default function SettingsScreen() {
   const { user, refreshMe, signOut } = useAuth();
+  const { theme, setTheme, colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -257,6 +270,17 @@ export default function SettingsScreen() {
     ]);
   }
 
+  function pickTheme() {
+    const order: ThemeMode[] = ["dark", "light", "system"];
+    Alert.alert("Theme", "Mattermost Display → Theme", [
+      ...order.map((mode) => ({
+        text: themeModeLabel(mode) + (theme === mode ? " ✓" : ""),
+        onPress: () => setTheme(mode),
+      })),
+      { text: "Cancel", style: "cancel" as const },
+    ]);
+  }
+
   const desktopLabel =
     notify.desktop === "mention"
       ? "Mentions only"
@@ -284,18 +308,40 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>Appearance</Text>
+        <Text style={styles.cardHint}>Mattermost Display → Theme</Text>
+        <SelectRow
+          label="Theme"
+          value={themeModeLabel(theme)}
+          onPress={pickTheme}
+          styles={styles}
+          colors={colors}
+        />
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>Notifications</Text>
         <Text style={styles.cardHint}>Mattermost-style notify preferences</Text>
-        <SelectRow label="Desktop notifications" value={desktopLabel} onPress={pickDesktopNotify} />
+        <SelectRow
+          label="Desktop notifications"
+          value={desktopLabel}
+          onPress={pickDesktopNotify}
+          styles={styles}
+          colors={colors}
+        />
         <ToggleRow
           label="Play notification sound"
           value={notify.sound}
           onValueChange={(v) => setNotify({ ...notify, sound: v })}
+          styles={styles}
+          colors={colors}
         />
         <ToggleRow
           label="Mentions only"
           value={notify.mentions_only}
           onValueChange={(v) => setNotify({ ...notify, mentions_only: v })}
+          styles={styles}
+          colors={colors}
         />
         <Pressable style={styles.primaryBtn} onPress={onSaveNotify} disabled={saving}>
           {saving ? (
@@ -348,6 +394,8 @@ export default function SettingsScreen() {
           onChangeText={setNewPhone}
           keyboardType="phone-pad"
           maxLength={11}
+          styles={styles}
+          colors={colors}
         />
         {!challengeId ? (
           <Pressable
@@ -364,6 +412,8 @@ export default function SettingsScreen() {
               value={phoneCode}
               onChangeText={setPhoneCode}
               keyboardType="number-pad"
+              styles={styles}
+              colors={colors}
             />
             <Pressable
               style={[styles.primaryBtn, !phoneCode && styles.btnDisabled]}
@@ -390,13 +440,19 @@ export default function SettingsScreen() {
   );
 }
 
+type Styles = ReturnType<typeof makeStyles>;
+
 function Field({
   label,
   hint,
+  styles,
+  colors,
   ...props
 }: {
   label: string;
   hint?: string;
+  styles: Styles;
+  colors: ColorTokens;
 } & ComponentProps<typeof TextInput>) {
   const editable = props.editable !== false;
   return (
@@ -417,10 +473,14 @@ function SelectRow({
   label,
   value,
   onPress,
+  styles,
+  colors,
 }: {
   label: string;
   value: string;
   onPress: () => void;
+  styles: Styles;
+  colors: ColorTokens;
 }) {
   return (
     <Pressable style={styles.selectRow} onPress={onPress}>
@@ -439,10 +499,14 @@ function ToggleRow({
   label,
   value,
   onValueChange,
+  styles,
+  colors,
 }: {
   label: string;
   value: boolean;
   onValueChange: (v: boolean) => void;
+  styles: Styles;
+  colors: ColorTokens;
 }) {
   return (
     <View style={styles.toggleRow}>
@@ -457,94 +521,96 @@ function ToggleRow({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
-  error: {
-    color: colors.danger,
-    backgroundColor: "#fef2f2",
-    padding: spacing.md,
-    borderRadius: radius.md,
-    overflow: "hidden",
-  },
-  hero: {
-    backgroundColor: colors.headerBlue,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  heroTitle: { color: "#fff", fontSize: 20, fontWeight: "700" },
-  heroSub: { color: "rgba(255,255,255,0.85)", marginTop: 2, fontSize: 13 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    gap: 10,
-  },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
-  cardHint: { fontSize: 12, color: colors.textMuted, marginTop: -4 },
-  field: { gap: 4 },
-  label: { color: colors.textSecondary, fontSize: 13, fontWeight: "500" },
-  input: {
-    backgroundColor: colors.inputBg,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: colors.text,
-  },
-  inputDisabled: { color: colors.textMuted },
-  fieldHint: { fontSize: 11, color: colors.textMuted },
-  selectRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: 6,
-  },
-  selectValue: { color: colors.text, fontSize: 15, marginTop: 2 },
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.md,
-    paddingVertical: 4,
-  },
-  toggleLabel: { flex: 1, color: colors.text, fontSize: 15 },
-  primaryBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.sm,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginTop: 4,
-  },
-  btnDisabled: { opacity: 0.45 },
-  primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
-  hint: { color: colors.textSecondary, fontSize: 13 },
-  muted: { color: colors.textSecondary, fontSize: 13 },
-  mutedSmall: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
-  sessionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-  },
-  sessionTitle: { fontWeight: "600", color: colors.text, fontSize: 14 },
-  ghostBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
-    backgroundColor: colors.inputBg,
-  },
-  ghostBtnText: { color: colors.accent, fontWeight: "600", fontSize: 13 },
-  logout: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  logoutText: { color: colors.danger, fontWeight: "600", fontSize: 16 },
-});
+function makeStyles(c: ColorTokens) {
+  return {
+    root: { flex: 1, backgroundColor: c.bg },
+    content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
+    error: {
+      color: c.danger,
+      backgroundColor: c.bg === darkColors.bg ? "#3f1d1d" : "#fef2f2",
+      padding: spacing.md,
+      borderRadius: radius.md,
+      overflow: "hidden" as const,
+    },
+    hero: {
+      backgroundColor: c.headerBlue,
+      borderRadius: radius.lg,
+      padding: spacing.lg,
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: spacing.md,
+    },
+    heroTitle: { color: "#fff", fontSize: 20, fontWeight: "700" as const },
+    heroSub: { color: "rgba(255,255,255,0.85)", marginTop: 2, fontSize: 13 },
+    card: {
+      backgroundColor: c.surface,
+      borderRadius: radius.md,
+      padding: spacing.md,
+      gap: 10,
+    },
+    cardTitle: { fontSize: 16, fontWeight: "700" as const, color: c.text },
+    cardHint: { fontSize: 12, color: c.textMuted, marginTop: -4 },
+    field: { gap: 4 },
+    label: { color: c.textSecondary, fontSize: 13, fontWeight: "500" as const },
+    input: {
+      backgroundColor: c.inputBg,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 10,
+      fontSize: 15,
+      color: c.text,
+    },
+    inputDisabled: { color: c.textMuted },
+    fieldHint: { fontSize: 11, color: c.textMuted },
+    selectRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: spacing.sm,
+      paddingVertical: 6,
+    },
+    selectValue: { color: c.text, fontSize: 15, marginTop: 2 },
+    toggleRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "space-between" as const,
+      gap: spacing.md,
+      paddingVertical: 4,
+    },
+    toggleLabel: { flex: 1, color: c.text, fontSize: 15 },
+    primaryBtn: {
+      backgroundColor: c.accent,
+      borderRadius: radius.sm,
+      paddingVertical: 12,
+      alignItems: "center" as const,
+      marginTop: 4,
+    },
+    btnDisabled: { opacity: 0.45 },
+    primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 15 },
+    hint: { color: c.textSecondary, fontSize: 13 },
+    muted: { color: c.textSecondary, fontSize: 13 },
+    mutedSmall: { color: c.textMuted, fontSize: 11, marginTop: 2 },
+    sessionRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: spacing.sm,
+      paddingVertical: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.border,
+    },
+    sessionTitle: { fontWeight: "600" as const, color: c.text, fontSize: 14 },
+    ghostBtn: {
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderRadius: radius.sm,
+      backgroundColor: c.inputBg,
+    },
+    ghostBtnText: { color: c.accent, fontWeight: "600" as const, fontSize: 13 },
+    logout: {
+      backgroundColor: c.surface,
+      borderRadius: radius.md,
+      paddingVertical: 14,
+      alignItems: "center" as const,
+    },
+    logoutText: { color: c.danger, fontWeight: "600" as const, fontSize: 16 },
+  };
+}

@@ -27,7 +27,8 @@ import {
   conversationDisplayName,
   normalizeFriend,
 } from "../../src/lib/types";
-import { colors, radius, spacing } from "../../src/theme";
+import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
+import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 type GroupMember = {
   userId: string;
@@ -68,6 +69,8 @@ export default function ChatInfoScreen() {
   const convId = String(id);
   const { conversations, updateConversationPrefs, loadConversations } = useChat();
   const { user: me } = useAuth();
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const conversation = useMemo(
     () => conversations.find((c) => c.id === convId) ?? null,
     [conversations, convId]
@@ -542,6 +545,8 @@ function ToggleRow({
   onValueChange: () => void;
   disabled?: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.toggleRow}>
       <Text style={styles.toggleLabel}>{label}</Text>
@@ -557,6 +562,7 @@ function ToggleRow({
 }
 
 function InfoLine({ label, value }: { label: string; value: string }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.infoLine}>
       <Text style={styles.label}>{label}</Text>
@@ -565,133 +571,135 @@ function InfoLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+function makeStyles(c: ColorTokens) {
+  return {
+  root: { flex: 1, backgroundColor: c.bg },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
-  error: { color: colors.danger, padding: spacing.sm },
+  error: { color: c.danger, padding: spacing.sm },
   hero: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radius.lg,
     padding: spacing.xl,
-    alignItems: "center",
+    alignItems: "center" as const,
     gap: spacing.sm,
   },
-  name: { fontSize: 20, fontWeight: "700", color: colors.text, textAlign: "center" },
-  sub: { fontSize: 13, color: colors.textSecondary, textAlign: "center" },
-  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center" },
+  name: { fontSize: 20, fontWeight: "700" as const, color: c.text, textAlign: "center" as const },
+  sub: { fontSize: 13, color: c.textSecondary, textAlign: "center" as const },
+  tagRow: { flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 6, justifyContent: "center" as const },
   tag: {
-    backgroundColor: colors.inputBg,
-    color: colors.accent,
+    backgroundColor: c.inputBg,
+    color: c.accent,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.pill,
     fontSize: 12,
-    overflow: "hidden",
+    overflow: "hidden" as const,
   },
   addMembersBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     gap: 8,
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     borderRadius: radius.md,
     paddingVertical: 14,
   },
-  addMembersText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  addMembersText: { color: "#fff", fontWeight: "700" as const, fontSize: 16 },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radius.md,
     padding: spacing.md,
     gap: 10,
   },
   cardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
   },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
-  label: { color: colors.textSecondary, fontSize: 12, fontWeight: "500" },
+  cardTitle: { fontSize: 16, fontWeight: "700" as const, color: c.text },
+  label: { color: c.textSecondary, fontSize: 12, fontWeight: "500" as const },
   input: {
-    backgroundColor: colors.inputBg,
+    backgroundColor: c.inputBg,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     fontSize: 15,
-    color: colors.text,
+    color: c.text,
   },
   primaryBtn: {
-    backgroundColor: colors.accent,
+    backgroundColor: c.accent,
     borderRadius: radius.sm,
     paddingVertical: 12,
-    alignItems: "center",
+    alignItems: "center" as const,
     marginTop: 4,
   },
-  primaryBtnText: { color: "#fff", fontWeight: "700" },
+  primaryBtnText: { color: "#fff", fontWeight: "700" as const },
   toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
     paddingVertical: 4,
   },
-  toggleLabel: { color: colors.text, fontSize: 15 },
+  toggleLabel: { color: c.text, fontSize: 15 },
   infoLine: { gap: 2 },
-  infoValue: { color: colors.text, fontSize: 14 },
-  warn: { color: colors.danger, fontSize: 13 },
+  infoValue: { color: c.text, fontSize: 14 },
+  warn: { color: c.danger, fontSize: 13 },
   memberRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: spacing.md,
     paddingVertical: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopColor: c.border,
   },
-  memberName: { fontSize: 15, fontWeight: "600", color: colors.text, flexShrink: 1 },
-  memberNameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  memberName: { fontSize: 15, fontWeight: "600" as const, color: c.text, flexShrink: 1 },
+  memberNameRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
   meBadge: {
     fontSize: 11,
-    fontWeight: "700",
-    color: colors.accent,
+    fontWeight: "700" as const,
+    color: c.accent,
     backgroundColor: "rgba(36,99,220,0.12)",
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 999,
-    overflow: "hidden",
+    overflow: "hidden" as const,
   },
-  memberMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  link: { color: colors.accent, fontWeight: "600", fontSize: 15 },
-  modalRoot: { flex: 1, backgroundColor: colors.bg, paddingTop: 56 },
+  memberMeta: { fontSize: 12, color: c.textMuted, marginTop: 2 },
+  link: { color: c.accent, fontWeight: "600" as const, fontSize: 15 },
+  modalRoot: { flex: 1, backgroundColor: c.bg, paddingTop: 56 },
   modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "space-between" as const,
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
   },
-  modalTitle: { fontSize: 17, fontWeight: "700", color: colors.text },
+  modalTitle: { fontSize: 17, fontWeight: "700" as const, color: c.text },
   search: {
     marginHorizontal: spacing.md,
     marginBottom: spacing.sm,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     fontSize: 15,
-    color: colors.text,
+    color: c.text,
   },
   pickRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: spacing.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
   empty: {
-    textAlign: "center",
-    color: colors.textSecondary,
+    textAlign: "center" as const,
+    color: c.textSecondary,
     marginTop: spacing.xl,
     paddingHorizontal: spacing.xl,
   },
-});
+};
+}
