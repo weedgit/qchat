@@ -99,18 +99,24 @@ function resolveWebUrl() {
   return DEFAULT_DEV_URL;
 }
 
-/** Prefer /login so we don't land on the Suspense "Loading…" home page unauthenticated. */
-function resolveStartUrl(base) {
+/** Prefer /login when unsigned-in; open / when a remembered secure session exists. */
+function resolveStartUrl(base, opts = {}) {
+  const hasSession = Boolean(opts.hasSession);
   try {
     const u = new URL(base);
     if (!u.pathname || u.pathname === "/") {
-      u.pathname = "/login";
+      u.pathname = hasSession ? "/" : "/login";
     }
-    return u.toString().replace(/\/$/, "") === `${u.origin}/login`
-      ? `${u.origin}/login`
-      : u.toString();
+    if (u.pathname === "/login" && !hasSession) {
+      return `${u.origin}/login`;
+    }
+    if (u.pathname === "/" || u.pathname === "") {
+      return hasSession ? `${u.origin}/` : `${u.origin}/login`;
+    }
+    return u.toString();
   } catch {
-    return String(base).replace(/\/$/, "") + "/login";
+    const root = String(base).replace(/\/$/, "");
+    return hasSession ? `${root}/` : `${root}/login`;
   }
 }
 

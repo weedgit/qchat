@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { api, clearToken, getToken } from "@/lib/api";
+import { api, clearToken, getToken, restoreDesktopSession } from "@/lib/api";
 import { unregisterWebPush } from "@/lib/webPush";
 
 const NAV = [
@@ -29,10 +29,17 @@ export default function AppShell({
   const router = useRouter();
 
   useEffect(() => {
-    if (!getToken()) {
-      // Hard navigate so Electron/static export never sits on a Suspense fallback.
-      window.location.replace("/login");
-    }
+    let cancelled = false;
+    (async () => {
+      const ok = (await restoreDesktopSession()) || Boolean(getToken());
+      if (cancelled) return;
+      if (!ok) {
+        window.location.replace("/login");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function logout() {

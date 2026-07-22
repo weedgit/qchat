@@ -12,6 +12,7 @@ const { resolveStartUrl } = require("../app/configuration/webUrl");
 const { attachNavigationGuards } = require("../security/navigation");
 const { getTray } = require("../native/tray");
 const { isAppQuitting } = require("../app/quitState");
+const { hasSecureSession } = require("../secureStorage");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -83,7 +84,7 @@ function flushPendingConversation() {
  */
 function createMainWindow(opts) {
   const { webUrl, isDev } = opts;
-  const startUrl = resolveStartUrl(webUrl);
+  const startUrl = resolveStartUrl(webUrl, { hasSession: hasSecureSession(webUrl) });
   const saved = loadWindowState();
   const icon = iconOption();
   let appVersion = "0.1.0";

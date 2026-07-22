@@ -179,6 +179,7 @@ the previous defaults.
 ## Desktop behavior
 
 - `contextIsolation`, renderer sandbox, and no renderer Node integration
+- Remember me: tokens via Electron `safeStorage` (`userData/secure/`); app opens `/` when a session exists; logout clears the vault
 - Origin-scoped permissions and external navigation checks
 - Native notifications that focus the target conversation
 - Native download save dialog

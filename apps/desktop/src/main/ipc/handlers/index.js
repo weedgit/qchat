@@ -4,6 +4,7 @@ const { createNotifyHandler } = require("./notify");
 const { createCaptchaHandler } = require("./captcha");
 const { createAboutHandler } = require("./about");
 const { createUnreadStatusHandler } = require("./unreadStatus");
+const { createSecureStorageHandlers } = require("./secureStorage");
 
 /**
  * @param {object} deps
@@ -33,6 +34,12 @@ function registerIpcHandlers(deps) {
   );
 
   ipcMain.handle(IPC.SET_UNREAD_STATUS, createUnreadStatusHandler());
+
+  const secure = createSecureStorageHandlers(deps.webUrl);
+  ipcMain.handle(IPC.SECURE_SESSION_AVAILABLE, secure.available);
+  ipcMain.handle(IPC.SECURE_SESSION_GET, secure.get);
+  ipcMain.handle(IPC.SECURE_SESSION_SET, secure.set);
+  ipcMain.handle(IPC.SECURE_SESSION_CLEAR, secure.clear);
 
   ipcMain.on(IPC.RENDERER_READY, () => {
     deps.flushPendingConversation();

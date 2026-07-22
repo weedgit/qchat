@@ -24,6 +24,42 @@ const ACCESS_KEY = "qchat.access_token";
 const REFRESH_KEY = "qchat.refresh_token";
 const REMEMBER_KEY = "qchat.remember";
 
+function desktopBridge(): Window["qchatDesktop"] | undefined {
+  if (typeof window === "undefined") return undefined;
+  return window.qchatDesktop;
+}
+
+function applyTokensLocal(access: string, refresh: string, remember: boolean) {
+  localStorage.removeItem(ACCESS_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+  sessionStorage.removeItem(ACCESS_KEY);
+  sessionStorage.removeItem(REFRESH_KEY);
+  const s = storage(remember);
+  s.setItem(ACCESS_KEY, access);
+  if (refresh) s.setItem(REFRESH_KEY, refresh);
+  localStorage.setItem(REMEMBER_KEY, remember ? "1" : "0");
+}
+
+/**
+ * Hydrate tokens from Electron safeStorage (AUTH-03). Call before auth gates.
+ * Returns true when an access token is available afterward.
+ */
+export async function restoreDesktopSession(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (getToken()) return true;
+  const desk = desktopBridge();
+  if (!desk?.getSecureSession) return false;
+  try {
+    const session = await desk.getSecureSession();
+    const access = String(session?.accessToken || "").trim();
+    if (!access) return false;
+    applyTokensLocal(access, String(session?.refreshToken || ""), true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(ACCESS_KEY) ?? sessionStorage.getItem(ACCESS_KEY);
@@ -39,14 +75,14 @@ function storage(remember: boolean): Storage {
 }
 
 export function setTokens(access: string, refresh: string, remember: boolean) {
-  localStorage.removeItem(ACCESS_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-  sessionStorage.removeItem(ACCESS_KEY);
-  sessionStorage.removeItem(REFRESH_KEY);
-  const s = storage(remember);
-  s.setItem(ACCESS_KEY, access);
-  if (refresh) s.setItem(REFRESH_KEY, refresh);
-  localStorage.setItem(REMEMBER_KEY, remember ? "1" : "0");
+  applyTokensLocal(access, refresh, remember);
+  const desk = desktopBridge();
+  if (!desk?.setSecureSession) return;
+  if (remember) {
+    void desk.setSecureSession({ accessToken: access, refreshToken: refresh || "" }).catch(() => {});
+  } else if (desk.clearSecureSession) {
+    void desk.clearSecureSession().catch(() => {});
+  }
 }
 
 /** @deprecated use setTokens */
@@ -60,6 +96,10 @@ export function clearToken() {
   sessionStorage.removeItem(ACCESS_KEY);
   sessionStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(REMEMBER_KEY);
+  const desk = desktopBridge();
+  if (desk?.clearSecureSession) {
+    void desk.clearSecureSession().catch(() => {});
+  }
 }
 
 function remembered(): boolean {

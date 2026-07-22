@@ -1,6 +1,11 @@
 export {};
 
 declare global {
+  interface QchatDesktopSecureSession {
+    accessToken: string;
+    refreshToken: string;
+  }
+
   interface QchatDesktopBridge {
     isDesktop: true;
     platform: string;
@@ -17,8 +22,16 @@ declare global {
     }) => Promise<boolean>;
     showAbout: () => Promise<boolean>;
     fetchCaptcha: () => Promise<{ captcha_id: string; image: string }>;
+    setUnreadStatus?: (payload: { unread?: boolean; mentions?: number }) => Promise<boolean>;
     signalReady: () => void;
     onOpenConversation: (handler: (conversationId: string) => void) => () => void;
+    secureSessionAvailable?: () => Promise<{ available: boolean; encryption: boolean }>;
+    getSecureSession?: () => Promise<QchatDesktopSecureSession | null>;
+    setSecureSession?: (tokens: {
+      accessToken: string;
+      refreshToken?: string;
+    }) => Promise<{ ok: boolean }>;
+    clearSecureSession?: () => Promise<{ ok: boolean }>;
   }
 
   interface Window {

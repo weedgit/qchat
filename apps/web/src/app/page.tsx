@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ChatPageInner from "./ChatPageInner";
 import LoadingSplash from "@/components/LoadingSplash";
-import { getToken } from "@/lib/api";
+import { getToken, restoreDesktopSession } from "@/lib/api";
 
 /**
  * Auth gate before chat UI.
@@ -16,11 +16,19 @@ export default function ChatPage() {
   const [state, setState] = useState<"checking" | "ready">("checking");
 
   useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    setState("ready");
+    let cancelled = false;
+    (async () => {
+      const ok = (await restoreDesktopSession()) || Boolean(getToken());
+      if (cancelled) return;
+      if (!ok) {
+        router.replace("/login");
+        return;
+      }
+      setState("ready");
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   if (state !== "ready") {
