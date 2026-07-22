@@ -13,6 +13,7 @@ const { attachNavigationGuards } = require("../security/navigation");
 const { getTray } = require("../native/tray");
 const { isAppQuitting } = require("../app/quitState");
 const { hasSecureSession } = require("../secureStorage");
+const { attachSessionPersistence } = require("./sessionPersistence");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -145,6 +146,7 @@ function createMainWindow(opts) {
   });
 
   attachNavigationGuards(mainWindow, webUrl);
+  attachSessionPersistence(mainWindow, webUrl);
 
   mainWindow.webContents.on(
     "did-fail-load",
@@ -166,6 +168,8 @@ function createMainWindow(opts) {
   }
 
   mainWindow.webContents.on("did-finish-load", () => {
+    // Don't force /login while a remembered session exists — auth gates handle expiry.
+    if (hasSecureSession(webUrl)) return;
     const watchdog = `
       (function () {
         try {

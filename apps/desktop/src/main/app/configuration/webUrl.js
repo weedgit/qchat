@@ -99,24 +99,21 @@ function resolveWebUrl() {
   return DEFAULT_DEV_URL;
 }
 
-/** Prefer /login when unsigned-in; open / when a remembered secure session exists. */
+/**
+ * Start at app root. The web auth gate sends unsigned users to /login.
+ * Always forcing /login broke "remember me" when tokens already lived in
+ * Chromium localStorage (typical for start:server / packaged remote web).
+ */
 function resolveStartUrl(base, opts = {}) {
-  const hasSession = Boolean(opts.hasSession);
+  void opts; // hasSession reserved; root load + inject handles restore
   try {
     const u = new URL(base);
-    if (!u.pathname || u.pathname === "/") {
-      u.pathname = hasSession ? "/" : "/login";
-    }
-    if (u.pathname === "/login" && !hasSession) {
-      return `${u.origin}/login`;
-    }
-    if (u.pathname === "/" || u.pathname === "") {
-      return hasSession ? `${u.origin}/` : `${u.origin}/login`;
+    if (!u.pathname || u.pathname === "/" || u.pathname === "/login") {
+      return `${u.origin}/`;
     }
     return u.toString();
   } catch {
-    const root = String(base).replace(/\/$/, "");
-    return hasSession ? `${root}/` : `${root}/login`;
+    return String(base).replace(/\/$/, "") + "/";
   }
 }
 
