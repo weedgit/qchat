@@ -41,7 +41,19 @@
           }
         }
       ],
-      "./plugins/withTrustedQchatCert.js"
+      "./plugins/withTrustedQchatCert.js",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Qchat to record voice messages."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Qchat to send photos from your library."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

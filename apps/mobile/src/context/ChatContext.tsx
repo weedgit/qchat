@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { api, asList, ensureAccessToken, getToken, wsUrl } from "../lib/api";
+import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "../lib/api";
 import {
   Conversation,
   Message,
@@ -34,6 +34,17 @@ type ChatContextValue = {
   openConversation: (convId: string) => void;
   activeId: string | null;
   sendMessage: (convId: string, content: string, replyToId?: string) => Promise<void>;
+  sendMediaMessage: (
+    convId: string,
+    localUri: string,
+    opts: { kind: "image" | "file"; name: string; mimeType?: string; replyToId?: string }
+  ) => Promise<void>;
+  sendVoiceMessage: (
+    convId: string,
+    localUri: string,
+    durationSec: number,
+    replyToId?: string
+  ) => Promise<void>;
   openDM: (userId: string) => Promise<string>;
   recallMessage: (messageId: string, convId: string) => Promise<void>;
   reactMessage: (messageId: string, convId: string, emoji: string) => Promise<void>;
@@ -466,6 +477,176 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const sendMediaMessage = useCallback(
+    async (
+      convId: string,
+      localUri: string,
+      opts: { kind: "image" | "file"; name: string; mimeType?: string; replyToId?: string }
+    ) => {
+      const { kind, name, mimeType, replyToId } = opts;
+      const preview = kind === "image" ? "Photo" : name || "File";
+      const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const optimistic: Message = {
+        id: clientMsgId,
+        conversationId: convId,
+        senderId: meRef.current?.id ?? "me",
+        content: preview,
+        type: kind,
+        mediaUrl: localUri,
+        createdAt: new Date().toISOString(),
+        mine: true,
+        pending: true,
+        clientMsgId,
+        replyToId,
+      };
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: [...(prev[convId] ?? []), optimistic],
+      }));
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  lastMessage: preview,
+                  lastMessageAt: optimistic.createdAt,
+                  lastMessageSender: meRef.current?.nickname || meRef.current?.username,
+                  lastMessageMine: true,
+                  lastMessageRecalled: false,
+                }
+              : c
+          )
+        )
+      );
+      try {
+        const uploaded = await uploadMedia(
+          localUri,
+          kind,
+          name || (kind === "image" ? "photo.jpg" : "file.bin"),
+          mimeType || (kind === "image" ? "image/jpeg" : "application/octet-stream")
+        );
+        const body = await api<any>(`/v1/conversations/${convId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: kind,
+            body: preview,
+            media_url: uploaded.url,
+            client_msg_id: clientMsgId,
+            reply_to_id: replyToId || undefined,
+          }),
+        });
+        const saved = normalizeMessage(
+          {
+            ...body,
+            conversation_id: convId,
+            type: kind,
+            body: body?.body ?? preview,
+            media_url: body?.media_url ?? uploaded.url,
+            sender_id: meRef.current?.id,
+          },
+          meRef.current?.id
+        );
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === clientMsgId || m.clientMsgId === clientMsgId
+              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              : m
+          ),
+        }));
+      } catch {
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === clientMsgId ? { ...m, pending: false, failed: true } : m
+          ),
+        }));
+      }
+    },
+    []
+  );
+
+  const sendVoiceMessage = useCallback(
+    async (convId: string, localUri: string, durationSec: number, replyToId?: string) => {
+      const preview = `Voice message (${Math.max(1, Math.round(durationSec))}s)`;
+      const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const optimistic: Message = {
+        id: clientMsgId,
+        conversationId: convId,
+        senderId: meRef.current?.id ?? "me",
+        content: preview,
+        type: "voice",
+        mediaUrl: localUri,
+        createdAt: new Date().toISOString(),
+        mine: true,
+        pending: true,
+        clientMsgId,
+        replyToId,
+      };
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: [...(prev[convId] ?? []), optimistic],
+      }));
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  lastMessage: preview,
+                  lastMessageAt: optimistic.createdAt,
+                  lastMessageSender: meRef.current?.nickname || meRef.current?.username,
+                  lastMessageMine: true,
+                  lastMessageRecalled: false,
+                }
+              : c
+          )
+        )
+      );
+      try {
+        const uploaded = await uploadMedia(localUri, "voice", "voice.m4a", "audio/mp4");
+        const body = await api<any>(`/v1/conversations/${convId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: "voice",
+            body: preview,
+            media_url: uploaded.url,
+            client_msg_id: clientMsgId,
+            reply_to_id: replyToId || undefined,
+          }),
+        });
+        const saved = normalizeMessage(
+          {
+            ...body,
+            conversation_id: convId,
+            type: "voice",
+            body: body?.body ?? preview,
+            media_url: body?.media_url ?? uploaded.url,
+            sender_id: meRef.current?.id,
+          },
+          meRef.current?.id
+        );
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === clientMsgId || m.clientMsgId === clientMsgId
+              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              : m
+          ),
+        }));
+      } catch {
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.id === clientMsgId ? { ...m, pending: false, failed: true } : m
+          ),
+        }));
+      }
+    },
+    []
+  );
+
   const recallMessage = useCallback(async (messageId: string, convId: string) => {
     await api(`/v1/messages/${messageId}/recall`, { method: "POST" });
     const list = messagesRef.current[convId] ?? [];
@@ -633,6 +814,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       openConversation,
       activeId,
       sendMessage,
+      sendMediaMessage,
+      sendVoiceMessage,
       openDM,
       recallMessage,
       reactMessage,
@@ -652,6 +835,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       openConversation,
       activeId,
       sendMessage,
+      sendMediaMessage,
+      sendVoiceMessage,
       openDM,
       recallMessage,
       reactMessage,

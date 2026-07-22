@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
+import { ChatComposer } from "../../src/components/ChatComposer";
 import { MessageActionPopup } from "../../src/components/MessageActionPopup";
 import { useChat } from "../../src/context/ChatContext";
 import { Conversation, Message, Reaction, conversationDisplayName } from "../../src/lib/types";
@@ -235,6 +236,8 @@ export default function ChatScreen() {
     reactMessage,
     pinMessage,
     editMessage,
+    sendMediaMessage,
+    sendVoiceMessage,
   } = useChat();
   const [text, setText] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -591,56 +594,31 @@ export default function ChatScreen() {
       </View>
 
       {!selecting ? (
-        <View style={styles.composer}>
-          {editing ? (
-            <View style={styles.banner}>
-              <Ionicons name="pencil-outline" size={18} color={colors.accent} />
-              <View style={styles.bannerBody}>
-                <Text style={styles.bannerTitle}>Edit message</Text>
-                <Text style={styles.bannerText} numberOfLines={1}>
-                  {messageBody(editing)}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  setEditing(null);
-                  setText("");
-                }}
-                hitSlop={8}
-              >
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </Pressable>
-            </View>
-          ) : replyTo ? (
-            <View style={styles.banner}>
-              <Ionicons name="arrow-undo-outline" size={18} color={colors.accent} />
-              <View style={styles.bannerBody}>
-                <Text style={styles.bannerTitle}>
-                  Reply to {replyTo.mine ? "You" : replyTo.senderName || "User"}
-                </Text>
-                <Text style={styles.bannerText} numberOfLines={1}>
-                  {messageBody(replyTo)}
-                </Text>
-              </View>
-              <Pressable onPress={() => setReplyTo(null)} hitSlop={8}>
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </Pressable>
-            </View>
-          ) : null}
-          <View style={styles.composerRow}>
-            <TextInput
-              style={styles.input}
-              value={text}
-              onChangeText={setText}
-              placeholder={editing ? "Edit message" : "Message"}
-              placeholderTextColor={colors.textMuted}
-              multiline
-            />
-            <Pressable style={styles.send} onPress={onSend}>
-              <Text style={styles.sendText}>{editing ? "Save" : "Send"}</Text>
-            </Pressable>
-          </View>
-        </View>
+        <ChatComposer
+          text={text}
+          onChangeText={setText}
+          onSend={onSend}
+          editing={editing}
+          replyTo={replyTo}
+          onCancelEdit={() => {
+            setEditing(null);
+            setText("");
+          }}
+          onCancelReply={() => setReplyTo(null)}
+          onPickMedia={(uri, kind, name, mimeType) => {
+            sendMediaMessage(convId, uri, {
+              kind,
+              name,
+              mimeType,
+              replyToId: replyTo?.id,
+            }).catch(() => {});
+            setReplyTo(null);
+          }}
+          onSendVoice={(uri, durationSec) => {
+            sendVoiceMessage(convId, uri, durationSec, replyTo?.id).catch(() => {});
+            setReplyTo(null);
+          }}
+        />
       ) : null}
 
       <Modal
@@ -838,50 +816,6 @@ const styles = StyleSheet.create({
   metaTime: { fontSize: 11, fontWeight: "500" },
   metaTimeMine: { color: "rgba(255,255,255,0.88)" },
   metaTimePeer: { color: "#4b5563" },
-  composer: {
-    backgroundColor: colors.surface,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-    gap: spacing.sm,
-  },
-  composerRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: spacing.sm,
-  },
-  banner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.inputBg,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 8,
-  },
-  bannerBody: { flex: 1, minWidth: 0 },
-  bannerTitle: { fontSize: 12, fontWeight: "700", color: colors.accent },
-  bannerText: { fontSize: 13, color: colors.textSecondary, marginTop: 1 },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
-    backgroundColor: colors.inputBg,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: colors.text,
-  },
-  send: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  sendText: { color: "#fff", fontWeight: "700" },
   forwardBg: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",

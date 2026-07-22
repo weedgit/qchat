@@ -205,3 +205,62 @@ export function mediaAuthURL(path?: string | null): string | undefined {
   }
   return abs;
 }
+
+export type MediaUploadResult = {
+  url: string;
+  kind?: string;
+  size?: number;
+};
+
+/** React Native FormData upload to POST /v1/media/upload (mirror web uploadMedia). */
+export async function uploadMedia(
+  localUri: string,
+  kind: "image" | "file" | "voice",
+  filename: string,
+  mimeType = "application/octet-stream"
+): Promise<MediaUploadResult> {
+  await ensureAccessToken();
+  const form = new FormData();
+  form.append("file", {
+    uri: localUri,
+    name: filename,
+    type: mimeType,
+  } as any);
+  form.append("kind", kind);
+
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${apiBaseUrl()}/v1/media/upload`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  const text = await res.text();
+  let body: any = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+  if (res.status === 401) {
+    const ok = await refreshAccess();
+    if (ok) return uploadMedia(localUri, kind, filename, mimeType);
+    await clearToken();
+    onUnauthorized?.();
+  }
+  if (!res.ok) {
+    const msg =
+      body?.message ?? body?.error ?? (res.status === 413 ? "File too large" : `upload failed (${res.status})`);
+    throw new ApiError(res.status, String(msg), body);
+  }
+  const data = body?.data ?? body;
+  return {
+    url: String(data?.url ?? data?.media_url ?? ""),
+    kind: data?.kind,
+    size: data?.size,
+  };
+}
