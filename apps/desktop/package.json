@@ -17,18 +17,22 @@
     "start:lan": "node scripts/launch-lan.js",
     "start:server": "node scripts/launch.js --url=https://135.181.224.36",
     "start:headless": "xvfb-run -a node scripts/launch.js",
-    "check": "node scripts/check.js && node scripts/check-protocol.js && node scripts/check-context-menu.js && node scripts/check-sandbox.js",
+    "check": "node scripts/check.js && node scripts/check-protocol.js && node scripts/check-context-menu.js && node scripts/check-sandbox.js && node scripts/check-signing.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:linux": "electron-builder --linux AppImage deb",
     "dist:win": "electron-builder --win nsis",
-    "dist:mac": "electron-builder --mac dmg"
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:win:signed": "electron-builder --win nsis",
+    "dist:mac:signed": "electron-builder --mac dmg"
   },
   "build": {
     "appId": "com.qchat.desktop",
     "productName": "Qchat Desktop",
     "copyright": "Copyright © Qchat",
     "afterPack": "./scripts/afterPack.js",
+    "afterSign": "./scripts/afterSign.js",
+    "forceCodeSigning": false,
     "directories": {
       "output": "dist",
       "buildResources": "assets"
@@ -65,7 +69,12 @@
         "nsis"
       ],
       "icon": "assets/icon.png",
-      "artifactName": "qchat-desktop-Setup-${version}.${ext}"
+      "artifactName": "qchat-desktop-Setup-${version}.${ext}",
+      "signingHashAlgorithms": [
+        "sha256"
+      ],
+      "rfc3161TimeStampServer": "http://timestamp.digicert.com",
+      "verifyUpdateCodeSignature": true
     },
     "nsis": {
       "oneClick": false,
@@ -80,7 +89,12 @@
       ],
       "icon": "assets/icon.png",
       "category": "public.app-category.social-networking",
-      "artifactName": "qchat-desktop-${version}-${arch}.${ext}"
+      "artifactName": "qchat-desktop-${version}-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "notarize": false
     },
     "dmg": {
       "contents": [
@@ -98,6 +112,7 @@
     }
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "electron": "^43.1.1",
     "electron-builder": "^26.0.12"
   },

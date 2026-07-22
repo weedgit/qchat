@@ -73,8 +73,8 @@
 | PACK-01 | MM / §3 | electron-builder project config | packaging | Done | `feat-kevin-desktop-builder-config` |
 | PACK-02 | MM | Windows build via Wine Docker on Linux | builder:wine | Done | `feat-kevin-desktop-win-docker` |
 | PACK-03 | MM | Bundle static `apps/web/out` offline | asar extraResources | Deferred | `feat-kevin-desktop-offline-web` |
-| PACK-04 | MM | Windows Authenticode signing | code sign | Todo | `feat-kevin-desktop-win-sign` |
-| PACK-05 | MM | macOS Developer ID + notarization | notarize | Todo | `feat-kevin-desktop-mac-notarize` |
+| PACK-04 | MM | Windows Authenticode signing | code sign | Done | `feat-kevin-desktop-win-sign` |
+| PACK-05 | MM | macOS Developer ID + notarization | notarize | Done | `feat-kevin-desktop-mac-notarize` |
 | PACK-06 | MM | Auto-update (`electron-updater`) | updateNotifier | Done | `feat-kevin-desktop-auto-update` |
 | PACK-07 | MM | Ship without `--no-sandbox` | production hardening | Done | `feat-kevin-desktop-prod-sandbox` |
 | PACK-08 | MM | Crash / telemetry hooks | diagnostics | Deferred | `feat-kevin-desktop-crash-report` |
@@ -83,9 +83,9 @@
 
 ### Todo backlog (implement one row = one commit)
 
-1. `PACK-04`–`PACK-05` Windows / macOS signing (needs certificates)  
+*(No open desktop units — deferred items only: CALL-03, SHELL-33–35, PACK-03, PACK-08.)*
 
-**In progress:** next concrete work is code signing when certs are available.
+**In progress:** supply real `CSC_*` / `APPLE_*` credentials when ready to ship signed builds.
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 
@@ -192,11 +192,11 @@ Full list across D0–D5:
 
 | Feature | Status | Verification (when done) |
 |---|---|---|
-| Windows Authenticode signing | Todo | No SmartScreen “unknown publisher” (or reduced) |
-| macOS Developer ID + notarization | Todo | Gatekeeper accepts the app |
+| Windows Authenticode signing | Done | Scaffolded: `CSC_LINK` + `CSC_KEY_PASSWORD` (or `WIN_CSC_*`); sha256 + DigiCert timestamp; unsigned builds still work (`forceCodeSigning: false`) |
+| macOS Developer ID + notarization | Done | Scaffolded: hardened runtime + entitlements; `afterSign` notarizes when `APPLE_*` + `CSC_*` set; skipped otherwise |
 | Auto-update (`electron-updater`) | Done | Packaged + `updateUrl` / `QCHAT_UPDATE_URL`; Help → Check for Updates; no-op when URL empty or unpackaged |
 | Production hardening (no `--no-sandbox` in ship) | Done | `app.enableSandbox()`; packaged ignores `QCHAT_DESKTOP_NO_SANDBOX`; Linux afterPack setuid on `chrome-sandbox`; `--no-sandbox` remains explicit dev/VM only |
-| Crash / telemetry hooks (optional) | Todo | Crash report appears in chosen service |
+| Crash / telemetry hooks (optional) | Deferred | Crash report appears in chosen service |
 
 ---
 
@@ -207,7 +207,7 @@ Full list across D0–D5:
 | Phone + computer concurrent | Supported (`phone` vs `desktop` buckets) | OK — both may stay signed in |
 | Same-type device kick | New login of that type revokes prior session, pushes `session.revoked`, closes WS | OK |
 | Browser vs Electron | Separate `web` and `desktop` — both can stay; second of the same type kicks the first | OK |
-| Windows / macOS clients | Installers via electron-builder (D3); unsigned | **D5** signing for distribution |
+| Windows / macOS clients | Installers via electron-builder (D3); signing optional via env (D5 scaffold) | Provide `CSC_*` / `APPLE_*` for distribution |
 | Native store apps | Explicitly deferred in security decisions | Out of MVP |
 
 ---

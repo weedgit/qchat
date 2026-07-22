@@ -173,7 +173,25 @@ npm run dist          # current platform defaults
 
 Windows installers can be cross-built on Linux only with Wine configured.
 Building `dist:win` on Windows 11 is the supported development workflow.
-Signing is not configured yet. Auto-update is scaffolded: set `updateUrl` in
+Signing is optional and env-driven (PACK-04 / PACK-05). Unsigned `dist:*` builds
+still work. To sign:
+
+```bash
+# Windows (Authenticode)
+export CSC_LINK=/path/to/windows-cert.pfx
+export CSC_KEY_PASSWORD='…'
+npm run dist:win:signed
+
+# macOS (Developer ID) + notarize
+export CSC_LINK=/path/to/mac-cert.p12
+export CSC_KEY_PASSWORD='…'
+export APPLE_ID='you@example.com'
+export APPLE_APP_SPECIFIC_PASSWORD='…'
+export APPLE_TEAM_ID='ABCDE12345'
+npm run dist:mac:signed
+```
+
+Auto-update is scaffolded: set `updateUrl` in
 `production.json` / `userData/config.json` or `QCHAT_UPDATE_URL` to a generic
 electron-builder feed, then ship installs that host `latest*.yml` + artifacts.
 
@@ -186,6 +204,7 @@ the previous defaults.
 - `contextIsolation`, renderer sandbox, `app.enableSandbox()`, and no renderer Node integration
 - Packaged builds never honor `QCHAT_DESKTOP_NO_SANDBOX` (dev/VM `--no-sandbox` only)
 - Auto-update via `electron-updater` when `updateUrl` / `QCHAT_UPDATE_URL` is set (Help → Check for Updates)
+- Optional Authenticode / Developer ID signing + notarize when `CSC_*` / `APPLE_*` env are set
 - Remember me: tokens via Electron `safeStorage` (`userData/secure/`); app opens `/` when a session exists; logout clears the vault
 - Origin-scoped permissions and external navigation checks
 - Certificate errors: trust / deny dialog (persisted); configured web host stays auto-trusted
