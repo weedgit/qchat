@@ -54,6 +54,30 @@ npm run dev:no-sandbox
 
 Do not use the no-sandbox command for packaged or production use.
 
+### Voice / video calls (LiveKit)
+
+Calls need LiveKit on port **7880** reachable from the desktop shell. Typical
+local setup:
+
+```bash
+# from qchat/
+./deploy/render-media-config.sh
+set -a && source deploy/generated/media.env && set +a
+docker compose up -d livekit coturn
+```
+
+`apps/web/.env.local` should set `NEXT_PUBLIC_LIVEKIT_URL=ws://<LAN-IP>:7880`
+(not Cursor-only localhost). Prefer loading the web UI on the same LAN host:
+
+```bash
+npm run start:lan    # http://<detected-LAN-IP>:3000
+# or keep localhost (Electron also disables Chromium local-network blocks):
+npm run start:local
+```
+
+If you still see “Couldn’t reach LiveKit signaling”, confirm `curl http://<LAN-IP>:7880`
+returns OK and restart Electron so Chromium flags apply.
+
 ### Missing X server or `$DISPLAY`
 
 Run Electron from a terminal opened in the graphical desktop session. For a
