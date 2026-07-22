@@ -159,10 +159,22 @@ export default function LoginScreen() {
             <TextInput
               style={[styles.input, { flex: 1 }]}
               value={captchaCode}
-              onChangeText={setCaptchaCode}
+              onChangeText={(t) => setCaptchaCode(t.toUpperCase())}
               autoCapitalize="characters"
-              placeholder="Code"
+              autoCorrect={false}
+              spellCheck={false}
+              textContentType="oneTimeCode"
+              placeholder="CODE"
               placeholderTextColor={colors.textMuted}
+              returnKeyType="go"
+              blurOnSubmit
+              onSubmitEditing={() => {
+                if (mode === "register") {
+                  if (!smsBusy) sendRegisterOTP();
+                  return;
+                }
+                if (!busy) onSubmit();
+              }}
             />
             <View style={styles.captchaBox} pointerEvents="none">
               {captchaImage ? (
@@ -183,7 +195,17 @@ export default function LoginScreen() {
                 )}
               </Pressable>
               {smsHint ? <Text style={styles.hint}>{smsHint}</Text> : null}
-              <Field label="SMS code" value={smsCode} onChangeText={setSmsCode} keyboardType="number-pad" />
+              <Field
+                label="SMS code"
+                value={smsCode}
+                onChangeText={setSmsCode}
+                keyboardType="number-pad"
+                returnKeyType="go"
+                blurOnSubmit
+                onSubmitEditing={() => {
+                  if (!busy) onSubmit();
+                }}
+              />
             </>
           )}
 

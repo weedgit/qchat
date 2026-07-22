@@ -83,8 +83,23 @@ export default function ChatsScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: !selecting,
+      headerRight:
+        selecting || connected
+          ? undefined
+          : () => (
+              <Text
+                style={{
+                  color: "rgba(255,255,255,0.85)",
+                  fontSize: 12,
+                  fontWeight: "500",
+                  marginRight: 12,
+                }}
+              >
+                Reconnecting…
+              </Text>
+            ),
     });
-  }, [navigation, selecting]);
+  }, [navigation, selecting, connected]);
 
   const clearSelection = useCallback(() => setSelectedIds([]), []);
 
@@ -180,21 +195,24 @@ export default function ChatsScreen() {
         </View>
       ) : (
         <View style={styles.searchWrap}>
-          <TextInput
-            style={styles.search}
-            placeholder="Search"
-            placeholderTextColor={colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-          />
+          <View style={styles.searchField}>
+            <Ionicons name="search" size={16} color={colors.textMuted} />
+            <TextInput
+              style={styles.search}
+              placeholder={connected ? "Search" : "Reconnecting…"}
+              placeholderTextColor={colors.textMuted}
+              value={query}
+              onChangeText={setQuery}
+            />
+          </View>
           <Pressable style={styles.newChat} onPress={() => router.push("/(tabs)/contacts")}>
             <Text style={styles.newChatText}>New</Text>
           </Pressable>
-          <Text style={styles.conn}>{connected ? "Connected" : "Reconnecting…"}</Text>
         </View>
       )}
       {loadError ? <Text style={styles.error}>{loadError}</Text> : null}
       <FlatList
+        style={styles.list}
         data={filtered}
         keyExtractor={(item) => item.id}
         refreshControl={
@@ -202,7 +220,9 @@ export default function ChatsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           )
         }
-        contentContainerStyle={filtered.length === 0 ? styles.emptyWrap : undefined}
+        contentContainerStyle={
+          filtered.length === 0 ? styles.emptyWrap : styles.listContent
+        }
         ListEmptyComponent={
           <Text style={styles.empty}>
             No conversations yet. Tap New or open Contacts to start a DM.
@@ -322,11 +342,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  search: {
+  searchField: {
     flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     backgroundColor: colors.inputBg,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.md,
+    minHeight: 36,
+  },
+  search: {
+    flex: 1,
     paddingVertical: 8,
     fontSize: 15,
     color: colors.text,
@@ -334,12 +361,13 @@ const styles = StyleSheet.create({
   newChat: {
     backgroundColor: colors.accent,
     borderRadius: radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
   },
   newChatText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  conn: { fontSize: 11, color: colors.textMuted, maxWidth: 72 },
-  error: { color: colors.danger, padding: spacing.md },
+  list: { flex: 1, backgroundColor: colors.bg },
+  listContent: { paddingBottom: spacing.sm },
+  error: { color: colors.danger, padding: spacing.md, backgroundColor: colors.bg },
   row: {
     flexDirection: "row",
     alignItems: "center",

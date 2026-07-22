@@ -227,6 +227,12 @@ export default function LoginPage() {
               className="captcha-input"
               value={captchaCode}
               onChange={(e) => setCaptchaCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                if (mode !== "register") return;
+                e.preventDefault();
+                if (!smsBusy && phone && captchaCode) sendRegisterOTP();
+              }}
               placeholder="ENTER CODE"
               autoComplete="off"
               autoCapitalize="characters"
