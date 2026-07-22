@@ -46,19 +46,20 @@ services:
 
   # LiveKit SFU for 1:1 voice/video (Phase 6). Coturn provides remote TURN for NAT.
   # v1.9.12+ exposes /rtc/v1 (required by livekit-client 2.20 without legacy fallback).
+  # Generate host-specific YAML first: ./deploy/render-media-config.sh (or ./deploy/up-media.sh).
   livekit:
     image: livekit/livekit-server:v1.9.12
-    # LIVEKIT_NODE_IP = address browsers use to reach this host (VM LAN IP).
+    # LIVEKIT_NODE_IP = browser-reachable address for this machine (auto-set by render script).
     # 127.0.0.1 only works when the browser runs on the same machine as Docker.
     command:
       [
         "--config",
         "/etc/livekit.yaml",
         "--node-ip",
-        "${LIVEKIT_NODE_IP:-192.168.91.136}",
+        "${LIVEKIT_NODE_IP:?Run ./deploy/render-media-config.sh first (or set LIVEKIT_NODE_IP)}",
       ]
     volumes:
-      - ./deploy/livekit.yaml:/etc/livekit.yaml:ro
+      - ./deploy/generated/livekit.yaml:/etc/livekit.yaml:ro
     ports:
       - "7880:7880"
       - "7881:7881"
@@ -69,7 +70,7 @@ services:
   coturn:
     image: coturn/coturn:4.6.2
     volumes:
-      - ./deploy/coturn.conf:/etc/coturn/turnserver.conf:ro
+      - ./deploy/generated/coturn.conf:/etc/coturn/turnserver.conf:ro
     command: ["-c", "/etc/coturn/turnserver.conf"]
     ports:
       - "3478:3478"
