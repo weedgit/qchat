@@ -10,6 +10,9 @@ const IPC = {
   SECURE_SESSION_GET: "qchat:secure-session-get",
   SECURE_SESSION_SET: "qchat:secure-session-set",
   SECURE_SESSION_CLEAR: "qchat:secure-session-clear",
+  GET_NATIVE_THEME: "qchat:get-native-theme",
+  SET_NATIVE_THEME_SOURCE: "qchat:set-native-theme-source",
+  NATIVE_THEME_UPDATED: "qchat:native-theme-updated",
 };
 
 module.exports = { IPC };

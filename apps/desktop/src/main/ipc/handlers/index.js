@@ -5,6 +5,10 @@ const { createCaptchaHandler } = require("./captcha");
 const { createAboutHandler } = require("./about");
 const { createUnreadStatusHandler } = require("./unreadStatus");
 const { createSecureStorageHandlers } = require("./secureStorage");
+const {
+  createGetNativeThemeHandler,
+  createSetNativeThemeSourceHandler,
+} = require("./theme");
 
 /**
  * @param {object} deps
@@ -43,6 +47,12 @@ function registerIpcHandlers(deps) {
   ipcMain.handle(IPC.SECURE_SESSION_GET, secure.get);
   ipcMain.handle(IPC.SECURE_SESSION_SET, secure.set);
   ipcMain.handle(IPC.SECURE_SESSION_CLEAR, secure.clear);
+
+  ipcMain.handle(IPC.GET_NATIVE_THEME, createGetNativeThemeHandler());
+  ipcMain.handle(
+    IPC.SET_NATIVE_THEME_SOURCE,
+    createSetNativeThemeSourceHandler()
+  );
 
   ipcMain.on(IPC.RENDERER_READY, () => {
     deps.flushPendingConversation();

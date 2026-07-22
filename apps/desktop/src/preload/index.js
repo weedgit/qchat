@@ -59,4 +59,14 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
   getSecureSession: () => ipcRenderer.invoke(IPC.SECURE_SESSION_GET),
   setSecureSession: (tokens) => ipcRenderer.invoke(IPC.SECURE_SESSION_SET, tokens),
   clearSecureSession: () => ipcRenderer.invoke(IPC.SECURE_SESSION_CLEAR),
+  /** SHELL-31: OS / shell chrome theme. */
+  getNativeTheme: () => ipcRenderer.invoke(IPC.GET_NATIVE_THEME),
+  setNativeThemeSource: (source) =>
+    ipcRenderer.invoke(IPC.SET_NATIVE_THEME_SOURCE, source),
+  onNativeThemeUpdated: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(IPC.NATIVE_THEME_UPDATED, listener);
+    return () => ipcRenderer.removeListener(IPC.NATIVE_THEME_UPDATED, listener);
+  },
 });

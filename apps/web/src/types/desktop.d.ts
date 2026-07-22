@@ -35,6 +35,22 @@ declare global {
       refreshToken?: string;
     }) => Promise<{ ok: boolean }>;
     clearSecureSession?: () => Promise<{ ok: boolean }>;
+    /** SHELL-31 — Electron nativeTheme / window chrome. */
+    getNativeTheme?: () => Promise<{
+      shouldUseDarkColors: boolean;
+      themeSource: string;
+      resolved: "dark" | "light";
+    }>;
+    setNativeThemeSource?: (
+      source: "system" | "light" | "dark"
+    ) => Promise<{ ok: boolean }>;
+    onNativeThemeUpdated?: (
+      handler: (payload: {
+        shouldUseDarkColors: boolean;
+        themeSource: string;
+        resolved: "dark" | "light";
+      }) => void
+    ) => () => void;
   }
 
   interface Window {

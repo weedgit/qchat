@@ -15,6 +15,7 @@ const { registerPermissionHandler } = require("../security/permissions");
 const { registerScreenshareHandler } = require("../security/screenshare");
 const { allowLocalNetworkForCalls } = require("../security/localNetwork");
 const { allowSelfSignedForWebHost } = require("../security/certificates");
+const { registerThemeSync } = require("../native/theme");
 const { registerDownloadHandler } = require("../services/downloads");
 const { registerIpcHandlers } = require("../ipc/handlers");
 const {
@@ -33,6 +34,8 @@ const { createDeepLinkHandler } = require("./deepLink");
 function startApp() {
   // Before ready: unblock LiveKit ws://LAN from localhost web UI (Chromium PNA/LNA).
   allowLocalNetworkForCalls();
+  // SHELL-31: nativeTheme follows system until the web client sets an explicit source.
+  registerThemeSync({ getMainWindow });
 
   const webUrl = resolveWebUrl();
   // Production nginx redirects HTTP→HTTPS with a self-signed IP cert.
