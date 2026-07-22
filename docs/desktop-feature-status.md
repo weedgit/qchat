@@ -55,7 +55,7 @@
 | SHELL-18 | MM | Menu reload / zoom in-out-reset | view.ts zoom | Done | `feat-kevin-desktop-zoom-menu` |
 | SHELL-19 | MM | Spellcheck in composer | spellChecker session | Done | `feat-kevin-desktop-spellcheck` |
 | SHELL-20 | MM | Download → OS save dialog | downloadsManager | Done | `feat-kevin-desktop-download-save` |
-| SHELL-21 | MM | Download completion notification | notifications/Download | Todo | `feat-kevin-desktop-download-notify` |
+| SHELL-21 | MM | Download completion notification | notifications/Download | Done | `feat-kevin-desktop-download-notify` |
 | SHELL-22 | MM | Right-click context menu | contextMenu.ts | Todo | `feat-kevin-desktop-context-menu` |
 | SHELL-23 | MM | System tray icon | tray/tray.ts | Done | `feat-kevin-desktop-system-tray` |
 | SHELL-24 | MM | Minimize / close to tray | minimizeToTray | Done | `feat-kevin-desktop-close-to-tray` |
@@ -84,9 +84,9 @@
 ### Todo backlog (implement one row = one commit)
 
 1. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-2. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+2. `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
-**In progress:** next concrete work is **D5** signing / auto-update, or polish items (context menu, cert UI).
+**In progress:** next concrete work is **SHELL-22** context menu, or **D5** signing / auto-update.
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 

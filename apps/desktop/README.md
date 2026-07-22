@@ -187,6 +187,6 @@ the previous defaults.
 - Deep links: `qchat://conversation/<id>` (also `chat` / `c` / `open?conversation=`) focuses the window and opens that chat
 - Hide on start: optional tray-only launch (File / tray menu); also `--hidden`
 - Screen share in calls: `getDisplayMedia` via `desktopCapturer` / OS picker (LiveKit)
-- Native download save dialog
+- Native download save dialog; completion notification opens the file in the folder
 - Single-instance window behavior and persisted window bounds
 - `window.qchatDesktop` preload bridge for the web client
