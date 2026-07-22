@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -49,7 +50,16 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		       (SELECT m.created_at FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
 		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1),
 		       conv.pinned_message_id::text,
-		       COALESCE((SELECT body FROM messages pm WHERE pm.id=conv.pinned_message_id AND pm.recalled=FALSE), '')
+		       COALESCE(
+		         NULLIF((SELECT body FROM messages pm WHERE pm.id=conv.pinned_message_id AND pm.recalled=FALSE), ''),
+		         CASE (SELECT type FROM messages pm WHERE pm.id=conv.pinned_message_id AND pm.recalled=FALSE)
+		           WHEN 'image' THEN 'Photo'
+		           WHEN 'voice' THEN 'Voice message'
+		           WHEN 'file' THEN 'File'
+		           ELSE ''
+		         END,
+		         ''
+		       )
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
 		WHERE cm.user_id=$1 AND conv.enterprise_id=$2 AND cm.role <> 'pending'
@@ -108,6 +118,28 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	}
 	if out == nil {
 		out = []map[string]any{}
+	}
+	convIDs := make([]string, 0, len(out))
+	for _, item := range out {
+		convIDs = append(convIDs, fmt.Sprint(item["id"]))
+	}
+	pinsByConv := s.loadPinsForConversations(r.Context(), convIDs)
+	for _, item := range out {
+		id := fmt.Sprint(item["id"])
+		pins := pinsByConv[id]
+		if pins == nil {
+			pins = []map[string]any{}
+		}
+		item["pinned_messages"] = pins
+		if len(pins) > 0 {
+			// Prefer chronologically last pin (bottom of chat) for legacy fields.
+			last := pins[len(pins)-1]
+			item["pinned_message_id"] = last["id"]
+			item["pinned_message"] = last["body"]
+		} else {
+			delete(item, "pinned_message_id")
+			delete(item, "pinned_message")
+		}
 	}
 	online := s.hub.OnlineUserIDs(peerIDs)
 	for _, item := range out {

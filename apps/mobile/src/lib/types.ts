@@ -26,6 +26,8 @@ export interface Conversation {
   muted?: boolean;
   pinnedMessageId?: string;
   pinnedMessage?: string;
+  /** All pins for this conversation, ordered by seq ascending (top→bottom). */
+  pinnedMessages?: { id: string; body: string; type?: string; seq?: number }[];
   friendNote?: string;
   friendshipId?: string;
   friendTags?: string[];
@@ -116,6 +118,20 @@ export function normalizeConversation(raw: any): Conversation {
     muted: Boolean(raw?.muted),
     pinnedMessageId: str(raw?.pinned_message_id) || undefined,
     pinnedMessage: str(raw?.pinned_message) || undefined,
+    pinnedMessages: (() => {
+      const list = Array.isArray(raw?.pinned_messages)
+        ? raw.pinned_messages.map((p: any) => ({
+            id: str(p?.id),
+            body: str(p?.body ?? p?.content).trim() || "Pinned message",
+            type: p?.type ? str(p.type) : undefined,
+            seq: typeof p?.seq === "number" ? p.seq : undefined,
+          })).filter((p: { id: string }) => p.id)
+        : [];
+      if (list.length) return list.sort((a: { seq?: number }, b: { seq?: number }) => (a.seq ?? 0) - (b.seq ?? 0));
+      const id = str(raw?.pinned_message_id);
+      if (!id) return [];
+      return [{ id, body: str(raw?.pinned_message).trim() || "Pinned message" }];
+    })(),
     friendNote: str(raw?.friend_note) || undefined,
     friendshipId: str(raw?.friendship_id) || undefined,
     friendTags: Array.isArray(raw?.friend_tags) ? raw.friend_tags.map(String) : undefined,

@@ -27,6 +27,11 @@ import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
 import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard, imagesFromClipboardApi } from "@/lib/fileDrop";
 import { makeImagePreviewUrl } from "@/lib/mediaPreview";
+import {
+  nextPinnedFromScroll,
+  previousPinnedInCycle,
+  type PinnedMessage,
+} from "@/lib/pinnedCycle";
 import { attachmentLimitError, avatarLimitError, VOICE_MAX_SEC } from "@/lib/mediaLimits";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
@@ -245,6 +250,9 @@ const ICONS = {
   stop: "M6 6h12v12H6z",
   paperclip: "M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48",
   pin: "M12 17v5 M9 10.76V3h6v7.76L19 14v1H5v-1l4-3.24z",
+  /** Pin + list affordance for opening the pinned messages panel. */
+  pinList:
+    "M12 2v8l3 3H9l3-3V2z M8 14h8 M8 17h6 M8 20h4 M5 12.5V22h14V12.5",
   mute: "M11 5L6 9H2v6h4l5 4V5z M23 9l-6 6 M17 9l6 6",
   unmute: "M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14",
   phone: "M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
@@ -272,6 +280,7 @@ function Bubble({
   selectMode,
   selected,
   selectable,
+  pinned,
   onToggleSelect,
   onContextMenu,
   onReact,
@@ -285,6 +294,7 @@ function Bubble({
   selectMode: boolean;
   selected: boolean;
   selectable: boolean;
+  pinned?: boolean;
   onToggleSelect?: () => void;
   onContextMenu?: (e: ReactMouseEvent) => void;
   onReact?: (emoji: string) => void;
@@ -312,6 +322,11 @@ function Bubble({
 
   const meta = (
     <span className="meta">
+      {pinned && !msg.recalled && (
+        <span className="pin-mark" title="Pinned message">
+          <MenuIcon d={ICONS.pin} style={{ width: 11, height: 11 }} />
+        </span>
+      )}
       {msg.recalled && (
         <span className="recall-mark" title="This message was recalled">
           <MenuIcon d={ICONS.trash} style={{ width: 11, height: 11 }} />
@@ -575,6 +590,8 @@ export default function ChatPageInner() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
+  const [barPin, setBarPin] = useState<PinnedMessage | null>(null);
+  const [pinsListOpen, setPinsListOpen] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const groupAvatarInputRef = useRef<HTMLInputElement>(null);
@@ -589,6 +606,36 @@ export default function ChatPageInner() {
   const active = chat.conversations.find((c) => c.id === chat.activeId) ?? null;
   const activeMessages = chat.activeId ? chat.messages[chat.activeId] ?? [] : [];
   const isGroup = active?.type === "social_group" || active?.type === "group";
+  const pinnedList: PinnedMessage[] = useMemo(() => {
+    if (!active) return [];
+    if (active.pinnedMessages?.length) return active.pinnedMessages;
+    if (active.pinnedMessageId) {
+      return [{ id: active.pinnedMessageId, body: active.pinnedMessage || "Pinned message" }];
+    }
+    return [];
+  }, [active]);
+  const pinnedIdSet = useMemo(() => new Set(pinnedList.map((p) => p.id)), [pinnedList]);
+
+  const pinnedThreadMessages = useMemo(() => {
+    const byId = new Map(activeMessages.map((m) => [m.id, m]));
+    return pinnedList.map((p) => {
+      const loaded = byId.get(p.id);
+      if (loaded) return loaded;
+      return {
+        id: p.id,
+        conversationId: active?.id || "",
+        senderId: "",
+        content: p.body || "Pinned message",
+        type: p.type || "text",
+        createdAt: "",
+        mine: false,
+      } as Message;
+    });
+  }, [pinnedList, activeMessages, active?.id]);
+
+  useEffect(() => {
+    if (pinsListOpen && pinnedList.length === 0) setPinsListOpen(false);
+  }, [pinsListOpen, pinnedList.length]);
 
   const mentionSuggestions = useMemo(() => {
     if (!mentionMenu) return [];
@@ -827,7 +874,11 @@ export default function ChatPageInner() {
   }
 
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
-  const ctxMsg = ctxMenu ? activeMessages.find((m) => m.id === ctxMenu.msgId) ?? null : null;
+  const ctxMsg = ctxMenu
+    ? activeMessages.find((m) => m.id === ctxMenu.msgId) ??
+      pinnedThreadMessages.find((m) => m.id === ctxMenu.msgId) ??
+      null
+    : null;
 
   function openCtxMenu(e: ReactMouseEvent, msg: Message) {
     e.preventDefault();
@@ -1069,6 +1120,22 @@ export default function ChatPageInner() {
     const near = distance < 80;
     nearBottomRef.current = near;
     setShowJumpBottom(!near && el.scrollHeight > el.clientHeight + 40);
+
+    if (pinnedList.length === 0) {
+      setBarPin(null);
+      return;
+    }
+    const scrollRect = el.getBoundingClientRect();
+    const tops: Record<string, number> = {};
+    for (const p of pinnedList) {
+      const node = document.getElementById(`msg-${p.id}`);
+      if (!node) continue;
+      // Position relative to scroll content (offsetTop can be wrong with nested layout).
+      tops[p.id] = node.getBoundingClientRect().top - scrollRect.top + el.scrollTop;
+    }
+    const focusY = el.scrollTop + Math.min(120, el.clientHeight * 0.25);
+    const next = nextPinnedFromScroll(pinnedList, focusY, tops);
+    setBarPin(next);
   }
 
   function jumpToBottom() {
@@ -1076,6 +1143,40 @@ export default function ChatPageInner() {
     setShowJumpBottom(false);
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }
+
+  function jumpToPinnedId(id: string, opts?: { syncBar?: boolean }) {
+    const el = document.getElementById(`msg-${id}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.classList.add("msg-highlight");
+    window.setTimeout(() => el?.classList.remove("msg-highlight"), 1600);
+    if (opts?.syncBar !== false) {
+      window.setTimeout(() => updateJumpBottomVisibility(), 400);
+    }
+  }
+
+  function jumpPinnedBar() {
+    const target = barPin ?? pinnedList[pinnedList.length - 1];
+    if (!target) return;
+    // Don't re-sync from scroll mid-animation — bar already advances to previous.
+    jumpToPinnedId(target.id, { syncBar: false });
+    const prev = previousPinnedInCycle(pinnedList, target.id);
+    if (prev) setBarPin(prev);
+  }
+
+  useEffect(() => {
+    if (pinnedList.length === 0) {
+      setBarPin(null);
+      return;
+    }
+    setBarPin((prev) => {
+      if (prev && pinnedList.some((p) => p.id === prev.id)) return prev;
+      return pinnedList[pinnedList.length - 1];
+    });
+    // Sync once messages/layout are ready.
+    const t = window.setTimeout(() => updateJumpBottomVisibility(), 50);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.activeId, pinnedList.map((p) => p.id).join(",")]);
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -1364,6 +1465,7 @@ export default function ChatPageInner() {
   }
 
   function startEdit(msg: Message) {
+    setPinsListOpen(false);
     setReplyTo(null);
     setEditingMessage(msg);
     setDraft(msg.content);
@@ -1723,7 +1825,25 @@ export default function ChatPageInner() {
           </div>
         ) : (
           <>
-            {selectMode ? (
+            {pinsListOpen ? (
+              <div className="chat-header">
+                <button
+                  type="button"
+                  className="icon-btn chat-back-btn"
+                  title="Back to chat"
+                  aria-label="Back to chat"
+                  onClick={() => setPinsListOpen(false)}
+                >
+                  <MenuIcon d={ICONS.back} />
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="title">Pinned messages</div>
+                  <div className="sub">
+                    {pinnedList.length} pin{pinnedList.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+              </div>
+            ) : selectMode ? (
               <div className="chat-header select-bar">
                 <button
                   type="button"
@@ -1909,19 +2029,34 @@ export default function ChatPageInner() {
               </div>
             )}
 
-            {active.pinnedMessageId && active.pinnedMessage && (
+            {pinnedList.length > 0 && !pinsListOpen && (
               <div className="pinned-banner">
-                <MenuIcon d={ICONS.pin} style={{ width: 16, height: 16 }} />
-                <div className="pinned-text">{active.pinnedMessage}</div>
+                <div className="pinned-accent" aria-hidden />
                 <button
                   type="button"
-                  className="btn-ghost"
-                  style={{ flex: "none", padding: "2px 6px" }}
-                  onClick={() =>
-                    chat.pinMessage(active.pinnedMessageId!, active.id, false).catch(() => { })
-                  }
+                  className="pinned-banner-main"
+                  title="Jump to next pinned message"
+                  onClick={jumpPinnedBar}
                 >
-                  Unpin
+                  <div className="pinned-label">
+                    Pinned Message
+                    {pinnedList.length > 1 ? ` · ${pinnedList.length}` : ""}
+                  </div>
+                  <div className="pinned-text">
+                    {(barPin ?? pinnedList[pinnedList.length - 1])?.body || "Pinned message"}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="pinned-list-btn"
+                  title="Pinned messages"
+                  aria-label="Pinned messages"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPinsListOpen(true);
+                  }}
+                >
+                  <MenuIcon d={ICONS.pinList} style={{ width: 18, height: 18 }} />
                 </button>
               </div>
             )}
@@ -1970,48 +2105,82 @@ export default function ChatPageInner() {
               <div className="msg-scroll-wrap">
                 <div
                   className="msg-scroll"
-                  ref={scrollRef}
-                  onScroll={updateJumpBottomVisibility}
+                  ref={pinsListOpen ? undefined : scrollRef}
+                  onScroll={pinsListOpen ? undefined : updateJumpBottomVisibility}
                 >
-                  {activeMessages.length === 0 && (
-                    <div className="empty-state" style={{ minHeight: 200 }}>
-                      <div className="muted">No messages here yet…</div>
-                    </div>
+                  {pinsListOpen ? (
+                    <>
+                      {pinnedThreadMessages.length === 0 && (
+                        <div className="empty-state" style={{ minHeight: 200 }}>
+                          <div className="muted">No pinned messages</div>
+                        </div>
+                      )}
+                      {pinnedThreadMessages.map((m) => (
+                        <div key={m.id} className="pins-thread-item">
+                          <Bubble
+                            msg={m}
+                            isGroup={!!isGroup}
+                            replyPreview={previewFor(m)}
+                            selectMode={selectMode}
+                            selected={selectedIds.has(m.id)}
+                            selectable={!m.pending && !m.failed}
+                            pinned
+                            onToggleSelect={() => toggleSelect(m.id)}
+                            onContextMenu={(e) => openCtxMenu(e, m)}
+                            ctxOpen={!!ctxMenu && ctxMenu.msgId === m.id}
+                            onReact={
+                              chat.activeId
+                                ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
+                                : undefined
+                            }
+                          />
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {activeMessages.length === 0 && (
+                        <div className="empty-state" style={{ minHeight: 200 }}>
+                          <div className="muted">No messages here yet…</div>
+                        </div>
+                      )}
+                      {activeMessages.map((m) => (
+                        <div key={m.id} id={`msg-${m.id}`}>
+                          <Bubble
+                            msg={m}
+                            isGroup={!!isGroup}
+                            replyPreview={previewFor(m)}
+                            selectMode={selectMode}
+                            selected={selectedIds.has(m.id)}
+                            selectable={!m.pending && !m.failed}
+                            pinned={pinnedIdSet.has(m.id)}
+                            onToggleSelect={() => toggleSelect(m.id)}
+                            onContextMenu={(e) => openCtxMenu(e, m)}
+                            ctxOpen={!!ctxMenu}
+                            onReact={
+                              chat.activeId
+                                ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
+                                : undefined
+                            }
+                            onRetry={
+                              m.failed && chat.activeId
+                                ? () => chat.retryMessage(chat.activeId!, m)
+                                : undefined
+                            }
+                            onCancelUpload={
+                              m.pending &&
+                                typeof m.uploadProgress === "number" &&
+                                chat.activeId
+                                ? () => chat.cancelUpload(chat.activeId!, m)
+                                : undefined
+                            }
+                          />
+                        </div>
+                      ))}
+                    </>
                   )}
-                  {activeMessages.map((m) => (
-                    <div key={m.id} id={`msg-${m.id}`}>
-                      <Bubble
-                        msg={m}
-                        isGroup={!!isGroup}
-                        replyPreview={previewFor(m)}
-                        selectMode={selectMode}
-                        selected={selectedIds.has(m.id)}
-                        selectable={!m.pending && !m.failed}
-                        onToggleSelect={() => toggleSelect(m.id)}
-                        onContextMenu={(e) => openCtxMenu(e, m)}
-                        ctxOpen={!!ctxMenu}
-                        onReact={
-                          chat.activeId
-                            ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
-                            : undefined
-                        }
-                        onRetry={
-                          m.failed && chat.activeId
-                            ? () => chat.retryMessage(chat.activeId!, m)
-                            : undefined
-                        }
-                        onCancelUpload={
-                          m.pending &&
-                            typeof m.uploadProgress === "number" &&
-                            chat.activeId
-                            ? () => chat.cancelUpload(chat.activeId!, m)
-                            : undefined
-                        }
-                      />
-                    </div>
-                  ))}
                 </div>
-                {showJumpBottom && (
+                {!pinsListOpen && showJumpBottom && (
                   <button
                     type="button"
                     className="jump-bottom-btn"
@@ -2023,6 +2192,7 @@ export default function ChatPageInner() {
                   </button>
                 )}
               </div>
+              {!pinsListOpen && (
               <div className="composer">
                 <div className="composer-box">
                   {editingMessage ? (
@@ -2230,6 +2400,7 @@ export default function ChatPageInner() {
                   </div>
                 </div>
               </div>
+              )}
             </div>
           </>
         )}
@@ -2600,6 +2771,7 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item"
                 onClick={() => {
+                  setPinsListOpen(false);
                   setEditingMessage(null);
                   setReplyTo(ctxMsg);
                   setCtxMenu(null);
@@ -2634,6 +2806,7 @@ export default function ChatPageInner() {
             <button
               className="ctx-item"
               onClick={() => {
+                setPinsListOpen(false);
                 toggleSelect(ctxMsg.id);
                 setCtxMenu(null);
               }}
@@ -2671,13 +2844,13 @@ export default function ChatPageInner() {
                 <button
                   className="ctx-item"
                   onClick={() => {
-                    const pinned = active?.pinnedMessageId === ctxMsg.id;
+                    const pinned = pinnedIdSet.has(ctxMsg.id);
                     chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => { });
                     setCtxMenu(null);
                   }}
                 >
                   <MenuIcon d={ICONS.pin} />
-                  {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
+                  {pinnedIdSet.has(ctxMsg.id) ? "Unpin" : "Pin"}
                 </button>
                 <button
                   className="ctx-item danger"
@@ -2695,13 +2868,13 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item"
                 onClick={() => {
-                  const pinned = active?.pinnedMessageId === ctxMsg.id;
+                  const pinned = pinnedIdSet.has(ctxMsg.id);
                   chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => { });
                   setCtxMenu(null);
                 }}
               >
                 <MenuIcon d={ICONS.pin} />
-                {active?.pinnedMessageId === ctxMsg.id ? "Unpin" : "Pin"}
+                {pinnedIdSet.has(ctxMsg.id) ? "Unpin" : "Pin"}
               </button>
             )}
           </div>

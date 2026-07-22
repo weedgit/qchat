@@ -205,6 +205,72 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (type === "message.pinned") {
+        const convId = String(payload?.conversation_id ?? "");
+        const messageId = String(payload?.message_id ?? "");
+        const body = String(payload?.body ?? "").trim() || "Pinned message";
+        if (!convId || !messageId) return;
+        const pins = Array.isArray(payload?.pinned_messages)
+          ? payload.pinned_messages
+              .map((p: any) => ({
+                id: String(p?.id ?? ""),
+                body: String(p?.body ?? "").trim() || "Pinned message",
+                type: p?.type ? String(p.type) : undefined,
+                seq: typeof p?.seq === "number" ? p.seq : undefined,
+              }))
+              .filter((p: { id: string }) => p.id)
+              .sort((a: { seq?: number }, b: { seq?: number }) => (a.seq ?? 0) - (b.seq ?? 0))
+          : null;
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id !== convId) return c;
+            const pinnedMessages =
+              pins ??
+              (() => {
+                const rest = (c.pinnedMessages ?? []).filter((p) => p.id !== messageId);
+                return [...rest, { id: messageId, body, type: String(payload?.type ?? ""), seq: Number(payload?.seq) || undefined }].sort(
+                  (a, b) => (a.seq ?? 0) - (b.seq ?? 0)
+                );
+              })();
+            const last = pinnedMessages[pinnedMessages.length - 1];
+            return { ...c, pinnedMessages, pinnedMessageId: last?.id, pinnedMessage: last?.body };
+          })
+        );
+        return;
+      }
+
+      if (type === "message.unpinned") {
+        const convId = String(payload?.conversation_id ?? "");
+        const messageId = String(payload?.message_id ?? "");
+        if (!convId) return;
+        const pins = Array.isArray(payload?.pinned_messages)
+          ? payload.pinned_messages
+              .map((p: any) => ({
+                id: String(p?.id ?? ""),
+                body: String(p?.body ?? "").trim() || "Pinned message",
+                type: p?.type ? String(p.type) : undefined,
+                seq: typeof p?.seq === "number" ? p.seq : undefined,
+              }))
+              .filter((p: { id: string }) => p.id)
+              .sort((a: { seq?: number }, b: { seq?: number }) => (a.seq ?? 0) - (b.seq ?? 0))
+          : null;
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id !== convId) return c;
+            const pinnedMessages =
+              pins ?? (c.pinnedMessages ?? []).filter((p) => p.id !== messageId);
+            const last = pinnedMessages[pinnedMessages.length - 1];
+            return {
+              ...c,
+              pinnedMessages,
+              pinnedMessageId: last?.id,
+              pinnedMessage: last?.body,
+            };
+          })
+        );
+        return;
+      }
+
       if (type === "group.updated") {
         const convId = String(payload?.conversation_id ?? "");
         if (!convId) return;
@@ -710,20 +776,55 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  // Mirror web pinMessage.
+  // Mirror web pinMessage. Multiple pins per conversation; pinning adds, unpinning removes.
   const pinMessage = useCallback(async (messageId: string, convId: string, pin: boolean) => {
-    await api(`/v1/messages/${messageId}/${pin ? "pin" : "unpin"}`, { method: "POST" });
+    const res = await api<any>(`/v1/messages/${messageId}/${pin ? "pin" : "unpin"}`, {
+      method: "POST",
+    });
     const msg = (messagesRef.current[convId] ?? []).find((m) => m.id === messageId);
+    const preview =
+      String(res?.body ?? "").trim() ||
+      msg?.content ||
+      (msg?.type === "image"
+        ? "Photo"
+        : msg?.type === "voice"
+          ? "Voice message"
+          : msg?.type === "file"
+            ? "File"
+            : "Pinned message");
+    const fromApi = Array.isArray(res?.pinned_messages)
+      ? res.pinned_messages
+          .map((p: any) => ({
+            id: String(p?.id ?? ""),
+            body: String(p?.body ?? "").trim() || "Pinned message",
+            type: p?.type ? String(p.type) : undefined,
+            seq: typeof p?.seq === "number" ? p.seq : undefined,
+          }))
+          .filter((p: { id: string }) => p.id)
+          .sort((a: { seq?: number }, b: { seq?: number }) => (a.seq ?? 0) - (b.seq ?? 0))
+      : null;
     setConversations((prev) =>
-      prev.map((c) =>
-        c.id === convId
-          ? {
-              ...c,
-              pinnedMessageId: pin ? messageId : undefined,
-              pinnedMessage: pin ? msg?.content : undefined,
-            }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id !== convId) return c;
+        let pinnedMessages = c.pinnedMessages ?? [];
+        if (fromApi) {
+          pinnedMessages = fromApi;
+        } else if (pin) {
+          const rest = pinnedMessages.filter((p) => p.id !== messageId);
+          pinnedMessages = [...rest, { id: messageId, body: preview, type: msg?.type, seq: msg?.seq }].sort(
+            (a, b) => (a.seq ?? 0) - (b.seq ?? 0)
+          );
+        } else {
+          pinnedMessages = pinnedMessages.filter((p) => p.id !== messageId);
+        }
+        const last = pinnedMessages[pinnedMessages.length - 1];
+        return {
+          ...c,
+          pinnedMessages,
+          pinnedMessageId: last?.id,
+          pinnedMessage: last?.body,
+        };
+      })
     );
   }, []);
 

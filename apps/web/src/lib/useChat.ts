@@ -11,6 +11,7 @@ import {
   normalizeConversation,
   normalizeMessage,
 } from "./types";
+import { normalizePinnedMessages, PinnedMessage } from "./pinnedCycle";
 
 export type TypingUser = { userId: string; name: string };
 
@@ -388,6 +389,57 @@ export function useChat() {
           m.id === id ? { ...m, content: recalledBody, recalled: true } : m
         ),
       }));
+      return;
+    }
+    if (type === "message.pinned") {
+      const convId = String(payload?.conversation_id ?? "");
+      const messageId = String(payload?.message_id ?? "");
+      const body = String(payload?.body ?? "").trim() || "Pinned message";
+      if (!convId || !messageId) return;
+      const pins = normalizePinnedMessages(payload?.pinned_messages);
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          const pinnedMessages =
+            pins.length > 0
+              ? pins
+              : (() => {
+                  const rest = (c.pinnedMessages ?? []).filter((p) => p.id !== messageId);
+                  const next = [...rest, { id: messageId, body, type: String(payload?.type ?? ""), seq: Number(payload?.seq) || undefined }];
+                  return next.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+                })();
+          const last = pinnedMessages[pinnedMessages.length - 1];
+          return {
+            ...c,
+            pinnedMessages,
+            pinnedMessageId: last?.id,
+            pinnedMessage: last?.body,
+          };
+        })
+      );
+      return;
+    }
+    if (type === "message.unpinned") {
+      const convId = String(payload?.conversation_id ?? "");
+      const messageId = String(payload?.message_id ?? "");
+      if (!convId) return;
+      const pins = normalizePinnedMessages(payload?.pinned_messages);
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          const pinnedMessages =
+            pins.length || payload?.pinned_messages
+              ? pins
+              : (c.pinnedMessages ?? []).filter((p) => p.id !== messageId);
+          const last = pinnedMessages[pinnedMessages.length - 1];
+          return {
+            ...c,
+            pinnedMessages,
+            pinnedMessageId: last?.id,
+            pinnedMessage: last?.body,
+          };
+        })
+      );
       return;
     }
     if (!type.includes("message")) return;
@@ -1171,18 +1223,42 @@ export function useChat() {
   }, []);
 
   const pinMessage = useCallback(async (messageId: string, convId: string, pin: boolean) => {
-    await api(`/v1/messages/${messageId}/${pin ? "pin" : "unpin"}`, { method: "POST" });
+    const res = await api<any>(`/v1/messages/${messageId}/${pin ? "pin" : "unpin"}`, {
+      method: "POST",
+    });
     const msg = (messages[convId] ?? []).find((m) => m.id === messageId);
+    const preview =
+      String(res?.body ?? "").trim() ||
+      msg?.content ||
+      (msg?.type === "image"
+        ? "Photo"
+        : msg?.type === "voice"
+          ? "Voice message"
+          : msg?.type === "file"
+            ? "File"
+            : "Pinned message");
+    const fromApi = normalizePinnedMessages(res?.pinned_messages);
     setConversations((prev) =>
-      prev.map((c) =>
-        c.id === convId
-          ? {
-              ...c,
-              pinnedMessageId: pin ? messageId : undefined,
-              pinnedMessage: pin ? msg?.content : undefined,
-            }
-          : c
-      )
+      prev.map((c) => {
+        if (c.id !== convId) return c;
+        let pinnedMessages: PinnedMessage[];
+        if (fromApi.length || Array.isArray(res?.pinned_messages)) {
+          pinnedMessages = fromApi;
+        } else if (pin) {
+          const rest = (c.pinnedMessages ?? []).filter((p) => p.id !== messageId);
+          pinnedMessages = [...rest, { id: messageId, body: preview, type: msg?.type, seq: msg?.seq }];
+          pinnedMessages.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+        } else {
+          pinnedMessages = (c.pinnedMessages ?? []).filter((p) => p.id !== messageId);
+        }
+        const last = pinnedMessages[pinnedMessages.length - 1];
+        return {
+          ...c,
+          pinnedMessages,
+          pinnedMessageId: last?.id,
+          pinnedMessage: last?.body,
+        };
+      })
     );
   }, [messages]);
 

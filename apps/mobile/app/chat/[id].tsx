@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,11 @@ import { ChatComposer } from "../../src/components/ChatComposer";
 import { MessageActionPopup } from "../../src/components/MessageActionPopup";
 import { useChat } from "../../src/context/ChatContext";
 import { Conversation, Message, Reaction, conversationDisplayName } from "../../src/lib/types";
+import {
+  nextPinnedFromScroll,
+  previousPinnedInCycle,
+  type PinnedMessage,
+} from "../../src/lib/pinnedCycle";
 import { colors, radius, spacing } from "../../src/theme";
 
 function messageBody(item: Message): string {
@@ -102,6 +107,185 @@ function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
     </View>
   );
 }
+
+type ChatMessageRowProps = {
+  item: Message;
+  selected: boolean;
+  pinned: boolean;
+  onPress: (item: Message) => void;
+  onLongPress: (item: Message) => void;
+};
+
+/** Memoized row — keeps FlatList from re-rendering every bubble on parent updates. */
+const ChatMessageRow = memo(function ChatMessageRow({
+  item,
+  selected,
+  pinned,
+  onPress,
+  onLongPress,
+}: ChatMessageRowProps) {
+  if (item.recalled) {
+    const label = item.mine
+      ? "You recalled a message"
+      : item.senderName
+        ? `${item.senderName} recalled a message`
+        : "Message recalled";
+    return (
+      <View style={styles.systemRow}>
+        <Text style={styles.systemText}>{label}</Text>
+      </View>
+    );
+  }
+
+  const mine = Boolean(item.mine);
+  const isMedia =
+    item.type === "image" ||
+    item.type === "file" ||
+    item.type === "voice" ||
+    Boolean(item.mediaUrl);
+  const time = fmtTime(item.createdAt);
+
+  return (
+    <Pressable
+      onPress={() => onPress(item)}
+      onLongPress={() => onLongPress(item)}
+      delayLongPress={350}
+      style={[
+        styles.bubbleWrap,
+        mine ? styles.mineWrap : styles.peerWrap,
+        selected && styles.bubbleWrapSelected,
+      ]}
+    >
+      <View
+        style={[
+          styles.bubble,
+          mine ? styles.mine : styles.peer,
+          selected && (mine ? styles.mineSelected : styles.peerSelected),
+        ]}
+      >
+        {selected ? (
+          <View style={[styles.checkBadge, mine ? styles.checkMine : styles.checkPeer]}>
+            <Ionicons name="checkmark" size={12} color="#fff" />
+          </View>
+        ) : null}
+        {!mine && item.senderName ? (
+          <Text style={styles.sender}>{item.senderName}</Text>
+        ) : null}
+        {isMedia ? (
+          <MediaBody item={item} mine={mine} />
+        ) : (
+          <Text style={[styles.body, mine ? styles.mineText : styles.peerText]}>
+            {messageBody(item)}
+          </Text>
+        )}
+        {item.failed ? (
+          <Text style={mine ? styles.fail : styles.failPeer}>Failed to send</Text>
+        ) : null}
+        {(item.reactions?.length ?? 0) > 0 ? (
+          <View style={styles.reactionRow}>
+            {item.reactions!.map((r: Reaction) => (
+              <View
+                key={r.emoji}
+                style={[styles.reactionChip, r.mine && styles.reactionChipMine]}
+              >
+                <Text style={styles.reactionChipText}>
+                  {r.emoji} {r.count > 1 ? r.count : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        <View style={styles.metaRow}>
+          {pinned && !item.recalled ? (
+            <Ionicons
+              name="pin"
+              size={11}
+              color={mine ? "rgba(255,255,255,0.9)" : colors.accent}
+            />
+          ) : null}
+          {time ? (
+            <Text style={[styles.metaTime, mine ? styles.metaTimeMine : styles.metaTimePeer]}>
+              {time}
+            </Text>
+          ) : null}
+          {mine ? <ReceiptIcons msg={item} /> : null}
+        </View>
+      </View>
+    </Pressable>
+  );
+});
+
+type ChatMessageListProps = {
+  list: Message[];
+  selectedSet: Set<string>;
+  pinnedIdSet: Set<string>;
+  listRef: RefObject<FlatList<Message> | null>;
+  onScroll: (e: any) => void;
+  onViewableItemsChanged: (info: {
+    viewableItems: Array<{ index: number | null }>;
+  }) => void;
+  viewabilityConfig: { itemVisiblePercentThreshold: number };
+  onPressMessage: (item: Message) => void;
+  onLongPressMessage: (item: Message) => void;
+};
+
+const ChatMessageList = memo(function ChatMessageList({
+  list,
+  selectedSet,
+  pinnedIdSet,
+  listRef,
+  onScroll,
+  onViewableItemsChanged,
+  viewabilityConfig,
+  onPressMessage,
+  onLongPressMessage,
+}: ChatMessageListProps) {
+  const keyExtractor = useCallback((m: Message) => m.id, []);
+  const renderItem = useCallback(
+    ({ item }: { item: Message }) => (
+      <ChatMessageRow
+        item={item}
+        selected={selectedSet.has(item.id)}
+        pinned={pinnedIdSet.has(item.id)}
+        onPress={onPressMessage}
+        onLongPress={onLongPressMessage}
+      />
+    ),
+    [selectedSet, pinnedIdSet, onPressMessage, onLongPressMessage]
+  );
+
+  return (
+    <FlatList
+      ref={listRef}
+      data={list}
+      keyExtractor={keyExtractor}
+      renderItem={renderItem}
+      extraData={selectedSet}
+      contentContainerStyle={styles.list}
+      onScroll={onScroll}
+      scrollEventThrottle={32}
+      onViewableItemsChanged={onViewableItemsChanged}
+      viewabilityConfig={viewabilityConfig}
+      removeClippedSubviews
+      windowSize={9}
+      maxToRenderPerBatch={8}
+      updateCellsBatchingPeriod={50}
+      initialNumToRender={14}
+      onScrollToIndexFailed={(info) => {
+        setTimeout(() => {
+          listRef.current?.scrollToIndex({
+            index: info.index,
+            animated: true,
+            viewPosition: 0.35,
+          });
+        }, 120);
+      }}
+      ListEmptyComponent={
+        <Text style={styles.emptyThread}>No messages here yet…</Text>
+      }
+    />
+  );
+});
 
 /** Mirror web ForwardPicker / Mattermost ForwardPostModal. */
 function ForwardPicker({
@@ -246,7 +430,9 @@ export default function ChatScreen() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
-  const listRef = useRef<FlatList>(null);
+  const [barPin, setBarPin] = useState<PinnedMessage | null>(null);
+  const [pinsListOpen, setPinsListOpen] = useState(false);
+  const listRef = useRef<FlatList<Message>>(null);
   const nearBottomRef = useRef(true);
 
   const selecting = selectedIds.length > 0;
@@ -268,6 +454,85 @@ export default function ChatScreen() {
   const canRecallSelected =
     selectedMsgs.length > 0 && selectedMsgs.every((m) => canRecall(m));
   const forwardableSelected = selectedMsgs.filter((m) => canForward(m));
+  const pinnedList: PinnedMessage[] = useMemo(() => {
+    if (!conversation) return [];
+    if (conversation.pinnedMessages?.length) return conversation.pinnedMessages;
+    if (conversation.pinnedMessageId) {
+      return [
+        {
+          id: conversation.pinnedMessageId,
+          body: conversation.pinnedMessage || "Pinned message",
+        },
+      ];
+    }
+    return [];
+  }, [conversation]);
+  const pinnedIdSet = useMemo(() => new Set(pinnedList.map((p) => p.id)), [pinnedList]);
+
+  const syncBarFromIndices = useCallback(
+    (minVisibleIndex: number) => {
+      if (pinnedList.length === 0) {
+        setBarPin((prev) => (prev ? null : prev));
+        return;
+      }
+      const tops: Record<string, number> = {};
+      for (const p of pinnedList) {
+        const idx = list.findIndex((m) => m.id === p.id);
+        if (idx >= 0) tops[p.id] = idx * 1000;
+      }
+      const focusY = Math.max(0, minVisibleIndex) * 1000 + 100;
+      const next = nextPinnedFromScroll(pinnedList, focusY, tops);
+      setBarPin((prev) => (prev?.id === next?.id ? prev : next));
+    },
+    [pinnedList, list]
+  );
+  const syncBarFromIndicesRef = useRef(syncBarFromIndices);
+  syncBarFromIndicesRef.current = syncBarFromIndices;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
+      const idxs = viewableItems
+        .map((v) => v.index)
+        .filter((n): n is number => typeof n === "number");
+      if (idxs.length === 0) return;
+      syncBarFromIndicesRef.current(Math.min(...idxs));
+    }
+  ).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 20 }).current;
+
+  useEffect(() => {
+    if (pinnedList.length === 0) {
+      setBarPin(null);
+      return;
+    }
+    setBarPin((prev) => {
+      if (prev && pinnedList.some((p) => p.id === prev.id)) return prev;
+      return pinnedList[pinnedList.length - 1];
+    });
+  }, [convId, pinnedList.map((p) => p.id).join(",")]);
+
+  const jumpToPinnedId = useCallback(
+    (id: string, opts?: { syncBar?: boolean }) => {
+      const index = list.findIndex((m) => m.id === id);
+      if (index < 0) {
+        Alert.alert("Pinned message", "Message is not loaded in this view yet.");
+        return;
+      }
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.35 });
+      if (opts?.syncBar !== false) {
+        setTimeout(() => syncBarFromIndices(index), 350);
+      }
+    },
+    [list, syncBarFromIndices]
+  );
+
+  const jumpToPinned = useCallback(() => {
+    const target = barPin ?? pinnedList[pinnedList.length - 1];
+    if (!target) return;
+    // Don't re-sync from scroll mid-animation — bar already advances to previous.
+    jumpToPinnedId(target.id, { syncBar: false });
+    const prev = previousPinnedInCycle(pinnedList, target.id);
+    if (prev) setBarPin(prev);
+  }, [barPin, pinnedList, jumpToPinnedId]);
 
   useEffect(() => {
     openConversation(convId);
@@ -276,11 +541,63 @@ export default function ChatScreen() {
   }, [convId, openConversation]);
 
   useLayoutEffect(() => {
+    if (pinsListOpen) {
+      navigation.setOptions({
+        headerShown: true,
+        title: "Pinned messages",
+        headerLeft: () => (
+          <Pressable
+            onPress={() => setPinsListOpen(false)}
+            hitSlop={8}
+            style={{ marginLeft: Platform.OS === "ios" ? 0 : 8, padding: 4 }}
+            accessibilityLabel="Back"
+          >
+            <Ionicons
+              name={Platform.OS === "ios" ? "chevron-back" : "arrow-back"}
+              size={28}
+              color="#fff"
+            />
+          </Pressable>
+        ),
+      });
+      return;
+    }
     navigation.setOptions({
       headerShown: !selecting,
       title: conversation ? conversationDisplayName(conversation) : "Chat",
+      headerLeft: undefined,
     });
-  }, [navigation, conversation, selecting]);
+  }, [navigation, conversation, selecting, pinsListOpen]);
+
+  useEffect(() => {
+    if (pinsListOpen && pinnedList.length === 0) {
+      setPinsListOpen(false);
+    }
+  }, [pinsListOpen, pinnedList.length]);
+
+  const pinnedThreadMessages = useMemo(() => {
+    const byId = new Map(list.map((m) => [m.id, m]));
+    // Same chronological order as chat history (seq ascending = top→bottom).
+    return pinnedList.map((p) => {
+      const loaded = byId.get(p.id);
+      if (loaded) return loaded;
+      return {
+        id: p.id,
+        conversationId: convId,
+        senderId: "",
+        content: p.body || "Pinned message",
+        type: p.type || "text",
+        createdAt: "",
+        mine: false,
+      } as Message;
+    });
+  }, [pinnedList, list, convId]);
+
+  const emptySelectedSet = useMemo(() => new Set<string>(), []);
+  const noopScroll = useCallback(() => {}, []);
+  const noopViewable = useRef(
+    (_info: { viewableItems: Array<{ index: number | null }> }) => {}
+  ).current;
 
   useEffect(() => {
     if (list.length === 0) return;
@@ -297,7 +614,8 @@ export default function ChatScreen() {
       contentSize.height - layoutMeasurement.height - contentOffset.y;
     const near = distanceFromBottom < 80;
     nearBottomRef.current = near;
-    setShowJumpBottom(!near && contentSize.height > layoutMeasurement.height + 40);
+    const show = !near && contentSize.height > layoutMeasurement.height + 40;
+    setShowJumpBottom((prev) => (prev === show ? prev : show));
   }, []);
 
   const jumpToBottom = useCallback(() => {
@@ -310,6 +628,24 @@ export default function ChatScreen() {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+  }, []);
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  const onPressMessage = useCallback(
+    (item: Message) => {
+      if (selectedIds.length > 0) {
+        toggleSelect(item.id);
+        return;
+      }
+      setCtxMsg(item);
+    },
+    [selectedIds.length, toggleSelect]
+  );
+
+  const onLongPressMessage = useCallback((item: Message) => {
+    setPinsListOpen(false);
+    setSelectedIds((prev) => (prev.includes(item.id) ? prev : [...prev, item.id]));
   }, []);
 
   async function onSend() {
@@ -372,6 +708,7 @@ export default function ChatScreen() {
     setCtxMsg(null);
     switch (action) {
       case "reply":
+        setPinsListOpen(false);
         setEditing(null);
         setReplyTo(msg);
         break;
@@ -396,6 +733,7 @@ export default function ChatScreen() {
         }
         break;
       case "edit":
+        setPinsListOpen(false);
         setReplyTo(null);
         setEditing(msg);
         setText(messageBody(msg));
@@ -408,6 +746,7 @@ export default function ChatScreen() {
         }
         break;
       case "select":
+        setPinsListOpen(false);
         setSelectedIds((prev) => (prev.includes(msg.id) ? prev : [...prev, msg.id]));
         break;
     }
@@ -422,6 +761,54 @@ export default function ChatScreen() {
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Could not react");
     }
+  }
+
+  if (pinsListOpen) {
+    return (
+      <View style={styles.root}>
+        <ChatMessageList
+          list={pinnedThreadMessages}
+          selectedSet={emptySelectedSet}
+          pinnedIdSet={pinnedIdSet}
+          listRef={listRef}
+          onScroll={noopScroll}
+          onViewableItemsChanged={noopViewable}
+          viewabilityConfig={viewabilityConfig}
+          onPressMessage={onPressMessage}
+          onLongPressMessage={onLongPressMessage}
+        />
+        <Modal
+          visible={Boolean(ctxMsg)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCtxMsg(null)}
+        >
+          {ctxMsg ? (
+            <MessageActionPopup
+              msg={ctxMsg}
+              pinned={pinnedIdSet.has(ctxMsg.id)}
+              onClose={() => setCtxMsg(null)}
+              onReact={onPopupReact}
+              onAction={onPopupAction}
+            />
+          ) : null}
+        </Modal>
+        {forwardIds && forwardIds.length > 0 ? (
+          <ForwardPicker
+            conversations={conversations}
+            messageCount={forwardIds.length}
+            onCancel={() => setForwardIds(null)}
+            onSend={async (targetIds) => {
+              for (const mid of forwardIds) {
+                await forwardMessage(mid, targetIds);
+              }
+              setForwardIds(null);
+              clearSelection();
+            }}
+          />
+        ) : null}
+      </View>
+    );
   }
 
   return (
@@ -475,113 +862,40 @@ export default function ChatScreen() {
         </View>
       ) : null}
 
+      {pinnedList.length > 0 && !selecting ? (
+        <View style={styles.pinnedBanner}>
+          <View style={styles.pinnedAccent} />
+          <Pressable style={styles.pinnedMain} onPress={jumpToPinned}>
+            <Text style={styles.pinnedLabel}>
+              Pinned Message{pinnedList.length > 1 ? ` · ${pinnedList.length}` : ""}
+            </Text>
+            <Text style={styles.pinnedText} numberOfLines={1}>
+              {(barPin ?? pinnedList[pinnedList.length - 1])?.body || "Pinned message"}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={styles.pinnedListBtn}
+            onPress={() => setPinsListOpen(true)}
+            accessibilityLabel="Pinned messages"
+            hitSlop={6}
+          >
+            <Ionicons name="list" size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+      ) : null}
+
       <View style={styles.threadWrap}>
-        <FlatList
-          ref={listRef}
-          data={list}
-          keyExtractor={(m) => m.id}
-          contentContainerStyle={styles.list}
+        <ChatMessageList
+          list={list}
+          selectedSet={selectedSet}
+          pinnedIdSet={pinnedIdSet}
+          listRef={listRef}
           onScroll={onListScroll}
-          scrollEventThrottle={16}
-          ListEmptyComponent={
-            <Text style={styles.emptyThread}>No messages here yet…</Text>
-          }
-          renderItem={({ item }) => {
-          if (item.recalled) {
-            const label = item.mine
-              ? "You recalled a message"
-              : item.senderName
-                ? `${item.senderName} recalled a message`
-                : "Message recalled";
-            return (
-              <View style={styles.systemRow}>
-                <Text style={styles.systemText}>{label}</Text>
-              </View>
-            );
-          }
-
-          const mine = Boolean(item.mine);
-          const selected = selectedIds.includes(item.id);
-          const isMedia =
-            item.type === "image" ||
-            item.type === "file" ||
-            item.type === "voice" ||
-            Boolean(item.mediaUrl);
-          const time = fmtTime(item.createdAt);
-
-          return (
-            <Pressable
-              onPress={() => {
-                if (selecting) {
-                  toggleSelect(item.id);
-                  return;
-                }
-                setCtxMsg(item);
-              }}
-              onLongPress={() => {
-                if (!selectedIds.includes(item.id)) {
-                  setSelectedIds((prev) => [...prev, item.id]);
-                }
-              }}
-              delayLongPress={350}
-              style={[
-                styles.bubbleWrap,
-                mine ? styles.mineWrap : styles.peerWrap,
-                selected && styles.bubbleWrapSelected,
-              ]}
-            >
-              <View
-                style={[
-                  styles.bubble,
-                  mine ? styles.mine : styles.peer,
-                  selected && (mine ? styles.mineSelected : styles.peerSelected),
-                ]}
-              >
-                {selected ? (
-                  <View style={[styles.checkBadge, mine ? styles.checkMine : styles.checkPeer]}>
-                    <Ionicons name="checkmark" size={12} color="#fff" />
-                  </View>
-                ) : null}
-                {!mine && item.senderName ? (
-                  <Text style={styles.sender}>{item.senderName}</Text>
-                ) : null}
-                {isMedia ? (
-                  <MediaBody item={item} mine={mine} />
-                ) : (
-                  <Text style={[styles.body, mine ? styles.mineText : styles.peerText]}>
-                    {messageBody(item)}
-                  </Text>
-                )}
-                {item.failed ? (
-                  <Text style={mine ? styles.fail : styles.failPeer}>Failed to send</Text>
-                ) : null}
-                {(item.reactions?.length ?? 0) > 0 ? (
-                  <View style={styles.reactionRow}>
-                    {item.reactions!.map((r: Reaction) => (
-                      <View
-                        key={r.emoji}
-                        style={[styles.reactionChip, r.mine && styles.reactionChipMine]}
-                      >
-                        <Text style={styles.reactionChipText}>
-                          {r.emoji} {r.count > 1 ? r.count : ""}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
-                <View style={styles.metaRow}>
-                  {time ? (
-                    <Text style={[styles.metaTime, mine ? styles.metaTimeMine : styles.metaTimePeer]}>
-                      {time}
-                    </Text>
-                  ) : null}
-                  {mine ? <ReceiptIcons msg={item} /> : null}
-                </View>
-              </View>
-            </Pressable>
-          );
-        }}
-      />
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          onPressMessage={onPressMessage}
+          onLongPressMessage={onLongPressMessage}
+        />
         {showJumpBottom ? (
           <Pressable
             style={styles.jumpBottom}
@@ -630,7 +944,8 @@ export default function ChatScreen() {
         {ctxMsg ? (
           <MessageActionPopup
             msg={ctxMsg}
-            pinned={conversation?.pinnedMessageId === ctxMsg.id}
+            pinned={conversation?.pinnedMessages?.some((p) => p.id === ctxMsg.id) ||
+              conversation?.pinnedMessageId === ctxMsg.id}
             onClose={() => setCtxMsg(null)}
             onReact={onPopupReact}
             onAction={onPopupAction}
@@ -681,6 +996,44 @@ const styles = StyleSheet.create({
     minWidth: 24,
   },
   actionSpacer: { flex: 1 },
+  pinnedBanner: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    backgroundColor: colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    minHeight: 52,
+  },
+  pinnedAccent: {
+    width: 3,
+    backgroundColor: colors.accent,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
+  },
+  pinnedMain: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  pinnedLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.accent,
+    marginBottom: 2,
+  },
+  pinnedText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  pinnedListBtn: {
+    width: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.border,
+  },
   threadWrap: { flex: 1, position: "relative" },
   list: { padding: spacing.md, paddingBottom: spacing.lg, flexGrow: 1 },
   jumpBottom: {
