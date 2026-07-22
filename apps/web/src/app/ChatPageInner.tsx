@@ -846,7 +846,7 @@ export default function ChatPageInner() {
     try {
       await api(`/v1/groups/${active.id}/members`, {
         method: "POST",
-        body: JSON.stringify({ member_ids: [...addMemberPicked] }),
+        body: JSON.stringify({ member_ids: Array.from(addMemberPicked) }),
       });
       setAddMembersOpen(false);
       await reloadGroupDetails();
