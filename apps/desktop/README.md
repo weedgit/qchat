@@ -54,6 +54,32 @@ npm run dev:no-sandbox
 
 Do not use the no-sandbox command for packaged or production use.
 
+### Voice / video calls (LiveKit)
+
+Calls need LiveKit on port **7880** reachable from the desktop shell. Typical
+local setup:
+
+```bash
+# from qchat/
+./deploy/render-media-config.sh
+set -a && source deploy/generated/media.env && set +a
+docker compose up -d livekit coturn
+```
+
+`apps/web/.env.local` should set `NEXT_PUBLIC_LIVEKIT_URL=ws://<LAN-IP>:7880`
+(not Cursor-only localhost). Prefer loading the web UI on the same LAN host:
+
+```bash
+npm run start:lan    # picks a reachable RFC1918 IP (skips VPN/docker); falls back to localhost
+# force a host if needed:
+QCHAT_LAN_IP=192.168.1.124 npm run start:lan
+# or keep localhost (Electron also disables Chromium local-network blocks):
+npm run start:local
+```
+
+If you still see “Couldn’t reach LiveKit signaling”, confirm `curl http://<LAN-IP>:7880`
+returns OK and restart Electron so Chromium flags apply.
+
 ### Missing X server or `$DISPLAY`
 
 Run Electron from a terminal opened in the graphical desktop session. For a
@@ -105,7 +131,10 @@ Config precedence:
 
 ## Packaging
 
-Artifacts are written to `apps/desktop/dist/`.
+Artifacts are written to `apps/desktop/dist/`. Packaged apps load
+`production.json` (`https://135.181.224.36`). The shell trusts that host’s
+TLS certificate when it is self-signed (nginx IP cert), so the installer does
+not fail with `ERR_CERT_AUTHORITY_INVALID`.
 
 ```bash
 npm run pack          # unpacked app for a fast smoke test
@@ -118,6 +147,10 @@ npm run dist          # current platform defaults
 Windows installers can be cross-built on Linux only with Wine configured.
 Building `dist:win` on Windows 11 is the supported development workflow.
 Signing and auto-update are not configured yet.
+
+After changing `production.json` or main-process security, rebuild the
+installer (`npm run dist:win`) and reinstall — an old Setup.exe still embeds
+the previous defaults.
 
 ## Desktop behavior
 

@@ -11,6 +11,8 @@ const {
 } = require("../native/tray");
 const { applyStoredAutostart } = require("../native/autostart");
 const { registerPermissionHandler } = require("../security/permissions");
+const { allowLocalNetworkForCalls } = require("../security/localNetwork");
+const { allowSelfSignedForWebHost } = require("../security/certificates");
 const { registerDownloadHandler } = require("../services/downloads");
 const { registerIpcHandlers } = require("../ipc/handlers");
 const {
@@ -22,7 +24,12 @@ const {
 } = require("../windows/mainWindow");
 
 function startApp() {
+  // Before ready: unblock LiveKit ws://LAN from localhost web UI (Chromium PNA/LNA).
+  allowLocalNetworkForCalls();
+
   const webUrl = resolveWebUrl();
+  // Production nginx redirects HTTP→HTTPS with a self-signed IP cert.
+  allowSelfSignedForWebHost(webUrl);
   const isDev =
     process.env.QCHAT_DESKTOP_DEV === "1" || process.argv.includes("--dev");
   const iconPath = getIconPath();
