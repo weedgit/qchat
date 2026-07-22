@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, asList, ensureAccessToken, formatSendError, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
+import { api, asList, clearToken, ensureAccessToken, formatSendError, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
 import { isQchatDesktop } from "./device";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
@@ -228,6 +228,23 @@ export function useChat() {
   const handleIncoming = useCallback((raw: any) => {
     const type = String(raw?.type ?? "");
     const payload = raw?.payload ?? raw?.data ?? raw;
+
+    // Same-type login / remote revoke — sign out immediately (desk/web/mobile).
+    if (type === "session.revoked") {
+      try {
+        sessionStorage.setItem(
+          "qchat.session_revoked",
+          String(payload?.reason || "replaced")
+        );
+      } catch {
+        /* ignore */
+      }
+      clearToken();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.replace("/login");
+      }
+      return;
+    }
 
     if (type.startsWith("call.")) {
       eventListenersRef.current.forEach((fn) => {

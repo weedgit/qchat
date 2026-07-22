@@ -12,7 +12,7 @@ Run through this list on a staging host after `QCHAT_ENV=production` and a rotat
 | SMS OTP required on self-service register | 400 without `sms_challenge_id` / `sms_code` | |
 | Invite revoked blocks register | 400 invalid invite | |
 | Weak password rejected | 400 from `ValidatePassword` | |
-| Same-type device session kick | new desktop/phone replaces prior same type | |
+| Same-type device session kick | new desktop/phone/web replaces prior same type; old client gets `session.revoked` + 401 | Done |
 | Production refuses default JWT | API exits if `QCHAT_ENV=production` + weak secret | |
 
 ## Tenant isolation (IDOR)

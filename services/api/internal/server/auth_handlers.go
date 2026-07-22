@@ -251,6 +251,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	_, _ = s.db.Exec(r.Context(), `UPDATE sessions SET revoked=TRUE WHERE id=$1`, c.SessionID)
+	s.kickRevokedSessions([]string{c.SessionID}, "logout")
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -303,6 +304,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "session not found")
 		return
 	}
+	s.kickRevokedSessions([]string{sid}, "revoked")
 	writeJSON(w, 200, map[string]any{"ok": true, "id": sid})
 }
 
@@ -449,14 +451,6 @@ func normalizeDevice(d string) string {
 		// Legacy clients that omitted type: treat as web (browser).
 		return "web"
 	}
-}
-
-// revokeSameTypeSessions enforces one active session per device_type (web|desktop|phone).
-func (s *Server) revokeSameTypeSessions(r *http.Request, userID, deviceType string) {
-	dtype := normalizeDevice(deviceType)
-	_, _ = s.db.Exec(r.Context(), `
-		UPDATE sessions SET revoked=TRUE
-		WHERE user_id=$1 AND device_type=$2 AND revoked=FALSE`, userID, dtype)
 }
 
 func normalizeDeviceID(id string) string {
