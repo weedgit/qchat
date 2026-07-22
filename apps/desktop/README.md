@@ -187,6 +187,7 @@ the previous defaults.
 - Offline / reconnect banner in the desktop shell (OS offline + WS reconnect)
 - Native notifications that focus the target conversation
 - Mentions flash the taskbar (Win/Linux) or bounce the Dock (macOS) when unfocused
+- Idle (5 min / lock / sleep) auto-sets status to away; resumes to online (won’t override DND)
 - Dock / taskbar unread badge (mentions count or unread dot) via `setUnreadStatus`
 - Tray tooltip reflects unread / mention totals
 - Deep links: `qchat://conversation/<id>` (also `chat` / `c` / `open?conversation=`) focuses the window and opens that chat

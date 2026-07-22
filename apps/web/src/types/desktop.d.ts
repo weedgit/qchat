@@ -55,6 +55,14 @@ declare global {
     ) => () => void;
     /** SHELL-32 — Electron net.isOnline() probe. */
     getNetworkOnline?: () => Promise<{ online: boolean }>;
+    /** AUTH-04 — system idle / lock activity updates. */
+    onUserActivity?: (
+      handler: (payload: {
+        userIsActive: boolean;
+        idleTime: number;
+        isSystemEvent?: boolean;
+      }) => void
+    ) => () => void;
   }
 
   interface Window {

@@ -22,7 +22,7 @@
 | AUTH-01 | §2.1 | Captcha fetch via main-process IPC | session networking | Done | `feat-kevin-desktop-captcha-ipc` |
 | AUTH-02 | §2.1 | Send `device_type=desktop` / desktop device name | externalAPI / server view identity | Done | `feat-kevin-desktop-device-identity` |
 | AUTH-03 | §2.1 | Remember session via `safeStorage` tokens | secureStorage.ts | Done | `feat-kevin-desktop-safe-storage` |
-| AUTH-04 | §2.3 | Idle detection → away status bridge | UserActivityMonitor.ts | Todo | `feat-kevin-desktop-idle-status` |
+| AUTH-04 | §2.3 | Idle detection → away status bridge | UserActivityMonitor.ts | Done | `feat-kevin-desktop-idle-status` |
 | AUTH-05 | §2.1 | Same-type session kick (`session.revoked`) | session management | Done | `feat-kevin-desktop-session-kick` |
 | CALL-01 | §2.4 | Grant mic / camera permission | permissionsManager | Done | `feat-kevin-desktop-media-permission` |
 | CALL-02 | §2.4 | Screenshare via `desktopCapturer` | callsWidgetWindow / desktopCapturer | Done | `feat-kevin-desktop-screenshare` |
@@ -84,9 +84,8 @@
 ### Todo backlog (implement one row = one commit)
 
 1. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-2. `AUTH-04` idle  
 
-**In progress:** next concrete work is **AUTH-04** idle → away, or **D5** signing / auto-update.
+**In progress:** next concrete work is **D5** signing / auto-update / production sandbox.
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 

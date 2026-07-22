@@ -14,6 +14,7 @@ const IPC = {
   SET_NATIVE_THEME_SOURCE: "qchat:set-native-theme-source",
   NATIVE_THEME_UPDATED: "qchat:native-theme-updated",
   GET_NETWORK_ONLINE: "qchat:get-network-online",
+  USER_ACTIVITY_UPDATE: "qchat:user-activity-update",
 };
 
 module.exports = { IPC };

@@ -16,6 +16,7 @@ const { registerScreenshareHandler } = require("../security/screenshare");
 const { allowLocalNetworkForCalls } = require("../security/localNetwork");
 const { allowSelfSignedForWebHost } = require("../security/certificates");
 const { registerThemeSync } = require("../native/theme");
+const { startIdleMonitor } = require("../native/idleMonitor");
 const { registerDownloadHandler } = require("../services/downloads");
 const { registerIpcHandlers } = require("../ipc/handlers");
 const {
@@ -107,6 +108,9 @@ function startApp() {
       sendConversationToRenderer,
       flushPendingConversation,
     });
+
+    // AUTH-04: system idle → renderer (web bridges to away/online).
+    startIdleMonitor({ getMainWindow });
 
     process.env.QCHAT_WEB_URL_RESOLVED = webUrl;
 
