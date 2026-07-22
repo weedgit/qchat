@@ -32,8 +32,8 @@
 | PLAT-03 | §3 | Linux AppImage + deb | AppImage / deb | Done | `feat-kevin-desktop-linux-pack` |
 | NOTI-01 | MM | Native OS notification | `src/main/notifications/` | Done | `feat-kevin-desktop-native-notify` |
 | NOTI-02 | MM | Click notification → focus + open chat | navigationManager deep link | Done | `feat-kevin-desktop-notify-deeplink` |
-| NOTI-03 | MM | Dock / taskbar unread badge | badge.ts | Todo | `feat-kevin-desktop-unread-badge` |
-| NOTI-04 | MM | Tray icon unread / mention state | tray.ts + AppState | Partial | `feat-kevin-desktop-tray-badge` *(desktop IPC ready; web hook later)* |
+| NOTI-03 | MM | Dock / taskbar unread badge | badge.ts | Done | `feat-kevin-desktop-unread-badge` |
+| NOTI-04 | MM | Tray icon unread / mention state | tray.ts + AppState | Done | `feat-kevin-desktop-tray-badge` *(tooltip/title + web totals; custom tray images later)* |
 | NOTI-05 | MM | Flash / bounce on mention (Win/mac) | notifications flash/bounce | Todo | `feat-kevin-desktop-attention` |
 | SHELL-01 | MM / §3 | Electron window loads web client | BrowserWindow / WebContentsView | Done | `feat-kevin-desktop-shell-window` |
 | SHELL-02 | MM | `contextIsolation` + no `nodeIntegration` | security defaults | Done | `feat-kevin-desktop-secure-prefs` |
@@ -83,16 +83,14 @@
 
 ### Todo backlog (implement one row = one commit)
 
-1. `NOTI-03` dock/taskbar badge  
-2. `SHELL-28` `qchat://` protocol  
-3. `SHELL-29` deep-link open chat  
-4. `SHELL-27` hide on start  
-5. Web hook for `NOTI-04` — call `qchatDesktop.setUnreadStatus({ unread, mentions })`  
-6. `CALL-02` screenshare  
-7. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-8. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+1. `SHELL-28` `qchat://` protocol  
+2. `SHELL-29` deep-link open chat  
+3. `SHELL-27` hide on start  
+4. `CALL-02` screenshare  
+5. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
+6. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
 
-**In progress:** next concrete work is **D4** tray / autostart / protocol (or **D5** signing).
+**In progress:** next concrete work is **D4** protocol / deep-link (or **D5** signing).
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 
@@ -186,8 +184,9 @@ Full list across D0–D5:
 | Feature | Status | Verification (when done) |
 |---|---|---|
 | Native notifications + deep-link to conversation | **Done** (in D2) | Same as D2 notification test |
-| System tray / minimize to tray | Todo | Close-to-tray; tray menu Show / Quit |
-| Autostart on OS login | Todo | Reboot → app starts |
+| Dock / taskbar unread badge | **Done** | Mentions show a count; plain unread shows a dot (Win overlay / macOS Dock / Linux badge count) |
+| System tray / minimize to tray | **Done** | Close-to-tray; tray menu Show / Quit; tooltip reflects unread |
+| Autostart on OS login | **Done** | Preferences / tray menu |
 | Protocol handler `qchat://` | Todo | `qchat://…` opens app / conversation |
 | Secure token storage (`safeStorage`) | **Done** | Tokens encrypted in `userData/secure/` via Electron `safeStorage`; desktop opens `/` when a session exists |
 

@@ -182,6 +182,8 @@ the previous defaults.
 - Remember me: tokens via Electron `safeStorage` (`userData/secure/`); app opens `/` when a session exists; logout clears the vault
 - Origin-scoped permissions and external navigation checks
 - Native notifications that focus the target conversation
+- Dock / taskbar unread badge (mentions count or unread dot) via `setUnreadStatus`
+- Tray tooltip reflects unread / mention totals
 - Native download save dialog
 - Single-instance window behavior and persisted window bounds
 - `window.qchatDesktop` preload bridge for the web client

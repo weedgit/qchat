@@ -1350,6 +1350,24 @@ export function useChat() {
     };
   }, []);
 
+  // NOTI-03 / NOTI-04: push unread totals to Electron dock/taskbar + tray.
+  // No-op in the browser; does not alter chat state.
+  useEffect(() => {
+    if (!isQchatDesktop()) return;
+    const desk = window.qchatDesktop;
+    if (!desk?.setUnreadStatus) return;
+    const unread = conversations.reduce((n, c) => n + (Number(c.unreadCount) || 0), 0);
+    const mentions = conversations.reduce((n, c) => n + (Number(c.mentionCount) || 0), 0);
+    void desk.setUnreadStatus({ unread, mentions }).catch(() => {});
+  }, [conversations]);
+
+  useEffect(() => {
+    return () => {
+      if (!isQchatDesktop()) return;
+      void window.qchatDesktop?.setUnreadStatus?.({ unread: 0, mentions: 0 }).catch(() => {});
+    };
+  }, []);
+
   return {
     me,
     conversations,

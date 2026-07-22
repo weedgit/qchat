@@ -33,7 +33,10 @@ function registerIpcHandlers(deps) {
     })
   );
 
-  ipcMain.handle(IPC.SET_UNREAD_STATUS, createUnreadStatusHandler());
+  ipcMain.handle(
+    IPC.SET_UNREAD_STATUS,
+    createUnreadStatusHandler({ getMainWindow: deps.getMainWindow })
+  );
 
   const secure = createSecureStorageHandlers(deps.webUrl);
   ipcMain.handle(IPC.SECURE_SESSION_AVAILABLE, secure.available);

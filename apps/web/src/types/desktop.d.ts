@@ -22,7 +22,10 @@ declare global {
     }) => Promise<boolean>;
     showAbout: () => Promise<boolean>;
     fetchCaptcha: () => Promise<{ captcha_id: string; image: string }>;
-    setUnreadStatus?: (payload: { unread?: boolean; mentions?: number }) => Promise<boolean>;
+    setUnreadStatus?: (payload: {
+      unread?: number | boolean;
+      mentions?: number;
+    }) => Promise<boolean>;
     signalReady: () => void;
     onOpenConversation: (handler: (conversationId: string) => void) => () => void;
     secureSessionAvailable?: () => Promise<{ available: boolean; encryption: boolean }>;
