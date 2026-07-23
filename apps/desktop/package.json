@@ -70,10 +70,12 @@
       ],
       "icon": "assets/icon.png",
       "artifactName": "qchat-desktop-Setup-${version}.${ext}",
-      "signingHashAlgorithms": [
-        "sha256"
-      ],
-      "rfc3161TimeStampServer": "http://timestamp.digicert.com",
+      "signtoolOptions": {
+        "signingHashAlgorithms": [
+          "sha256"
+        ],
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      },
       "verifyUpdateCodeSignature": true
     },
     "nsis": {

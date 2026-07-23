@@ -20,15 +20,16 @@ const build = pkg.build || {};
 
 assert(build.forceCodeSigning !== true, "forceCodeSigning must not be true (unsigned builds must work)");
 assert(build.afterSign, "afterSign hook required for optional notarize");
+const winSign = build.win && build.win.signtoolOptions;
 assert(
-  build.win &&
-    Array.isArray(build.win.signingHashAlgorithms) &&
-    build.win.signingHashAlgorithms.includes("sha256"),
-  "win.signingHashAlgorithms must include sha256"
+  winSign &&
+    Array.isArray(winSign.signingHashAlgorithms) &&
+    winSign.signingHashAlgorithms.includes("sha256"),
+  "win.signtoolOptions.signingHashAlgorithms must include sha256"
 );
 assert(
-  build.win && build.win.rfc3161TimeStampServer,
-  "win.rfc3161TimeStampServer must be set for Authenticode timestamps"
+  winSign && winSign.rfc3161TimeStampServer,
+  "win.signtoolOptions.rfc3161TimeStampServer must be set for Authenticode timestamps"
 );
 assert(build.mac && build.mac.hardenedRuntime === true, "mac.hardenedRuntime required");
 assert(

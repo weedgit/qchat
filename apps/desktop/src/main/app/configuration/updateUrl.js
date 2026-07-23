@@ -4,7 +4,7 @@ const { app } = require("electron");
 const {
   getEnvFilePath,
   getProductionConfigPath,
-} = require("../app/configuration/paths");
+} = require("./paths");
 
 /**
  * Load KEY=VALUE from .env without overriding existing env (same idea as webUrl).
