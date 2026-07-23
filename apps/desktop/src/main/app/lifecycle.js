@@ -1,6 +1,6 @@
 const { app, BrowserWindow } = require("electron");
 const fs = require("fs");
-const { APP_TITLE } = require("../../shared/constants");
+const { APP_TITLE, APP_ID } = require("../../shared/constants");
 const { getIconPath } = require("../app/configuration/paths");
 const { resolveWebUrl } = require("../app/configuration/webUrl");
 const { buildAppMenu } = require("../native/menu");
@@ -32,8 +32,14 @@ const {
   getDeepLinkFromArgv,
 } = require("./protocol");
 const { createDeepLinkHandler } = require("./deepLink");
+const { registerWindowsNotifications } = require("../native/windowsNotifications");
 
 function startApp() {
+  // Windows toasts need a stable AppUserModelID (packaged + npm start).
+  if (process.platform === "win32") {
+    app.setAppUserModelId(APP_ID);
+  }
+
   // Before ready: unblock LiveKit ws://LAN from localhost web UI (Chromium PNA/LNA).
   allowLocalNetworkForCalls();
   // SHELL-31: nativeTheme follows system until the web client sets an explicit source.
@@ -94,6 +100,8 @@ function startApp() {
 
   app.whenReady().then(() => {
     app.setName(APP_TITLE);
+    // Start Menu .lnk + one-time prime toast so Windows lists Qchat under Notifications.
+    registerWindowsNotifications();
     if (process.platform === "linux" && fs.existsSync(iconPath)) {
       app.dock?.setIcon?.(iconPath);
     }

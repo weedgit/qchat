@@ -26,23 +26,31 @@ function createNotifyHandler(deps) {
       requestWindowAttention(deps.getMainWindow, { mention: true });
     }
 
-    const notification = new Notification({
-      title,
-      body,
-      silent: Boolean(payload.silent),
-      ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
-    });
-    notification.on("click", () => {
-      deps.focusMainWindow();
-      deps.sendConversationToRenderer(conversationId);
-    });
-    notification.on("show", () => {
-      if (isMention && typeof deps.getMainWindow === "function") {
-        requestWindowAttention(deps.getMainWindow, { mention: true });
-      }
-    });
-    notification.show();
-    return true;
+    try {
+      const notification = new Notification({
+        title,
+        body,
+        silent: Boolean(payload.silent),
+        ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
+      });
+      notification.on("click", () => {
+        deps.focusMainWindow();
+        deps.sendConversationToRenderer(conversationId);
+      });
+      notification.on("show", () => {
+        if (isMention && typeof deps.getMainWindow === "function") {
+          requestWindowAttention(deps.getMainWindow, { mention: true });
+        }
+      });
+      notification.on("failed", (_e, error) => {
+        console.warn("[qchat-desktop] notification failed:", error);
+      });
+      notification.show();
+      return true;
+    } catch (err) {
+      console.warn("[qchat-desktop] notification error:", err);
+      return false;
+    }
   };
 }
 
