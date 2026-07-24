@@ -18,7 +18,7 @@ function ensureWindowsToastShortcut() {
   if (process.platform !== "win32") return false;
 
   try {
-    app.setAppUserModelId(APP_ID);
+    ensureWindowsAppUserModelId();
 
     const programs = path.join(
       app.getPath("appData"),
@@ -73,9 +73,20 @@ function ensureWindowsToastShortcut() {
   }
 }
 
+/** Re-apply AUMID before each toast (cheap; required for reliable Win32 notify). */
+function ensureWindowsAppUserModelId() {
+  if (process.platform !== "win32") return;
+  try {
+    app.setAppUserModelId(APP_ID);
+  } catch (err) {
+    console.warn("[qchat-desktop] setAppUserModelId failed:", err?.message || err);
+  }
+}
+
 /**
  * Fire one silent toast so Windows registers the sender under
  * Settings → Notifications (app only appears after a successful notify).
+ * Persist the primed flag only after the toast actually shows.
  */
 function primeWindowsToastOnce() {
   if (process.platform !== "win32") return;
@@ -89,6 +100,7 @@ function primeWindowsToastOnce() {
   }
 
   try {
+    ensureWindowsAppUserModelId();
     const iconPath = getIconPath();
     const notification = new Notification({
       title: APP_TITLE,
@@ -96,10 +108,19 @@ function primeWindowsToastOnce() {
       silent: true,
       ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     });
+    notification.on("show", () => {
+      try {
+        fs.writeFileSync(flagPath, String(Date.now()));
+      } catch (err) {
+        console.warn("[qchat-desktop] could not persist toast prime flag:", err);
+      }
+    });
+    notification.on("failed", (_e, error) => {
+      console.warn("[qchat-desktop] prime toast failed:", error);
+    });
     notification.show();
-    fs.writeFileSync(flagPath, String(Date.now()));
   } catch (err) {
-    console.warn("[qchat-desktop] prime toast failed:", err);
+    console.warn("[qchat-desktop] prime toast error:", err);
   }
 }
 
@@ -112,6 +133,7 @@ function registerWindowsNotifications() {
 
 module.exports = {
   ensureWindowsToastShortcut,
+  ensureWindowsAppUserModelId,
   primeWindowsToastOnce,
   registerWindowsNotifications,
 };

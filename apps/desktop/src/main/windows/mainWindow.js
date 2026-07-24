@@ -72,16 +72,21 @@ function focusMainWindow(createIfMissing) {
 
 function sendConversationToRenderer(conversationId) {
   if (!conversationId) return;
-  pendingConversationId = conversationId;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IPC.OPEN_CONVERSATION, conversationId);
+    // Delivered to a live renderer — do not reopen on later signalReady.
+    pendingConversationId = null;
+    return;
   }
+  pendingConversationId = conversationId;
 }
 
 function flushPendingConversation() {
-  if (pendingConversationId && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(IPC.OPEN_CONVERSATION, pendingConversationId);
-  }
+  if (!pendingConversationId) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const conversationId = pendingConversationId;
+  pendingConversationId = null;
+  mainWindow.webContents.send(IPC.OPEN_CONVERSATION, conversationId);
 }
 
 /**

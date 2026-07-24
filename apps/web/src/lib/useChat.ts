@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, asList, clearToken, ensureAccessToken, formatSendError, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
 import { isQchatDesktop } from "./device";
-import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
+import {
+  loadLocalNotifyProps,
+  shouldAlertIncomingMessage,
+  shouldNotifyDesktop,
+} from "./notifyProps";
 import {
   Conversation,
   CurrentUser,
@@ -582,7 +586,8 @@ export function useChat() {
       if (activeIdRef.current === msg.conversationId) {
         api(`/v1/messages/${msg.id}/read`, { method: "POST" }).catch(() => {});
       }
-      if (document.hidden || activeIdRef.current !== msg.conversationId) {
+      // Electron: document.hidden often stays false when the window is only unfocused.
+      if (shouldAlertIncomingMessage(msg.conversationId, activeIdRef.current)) {
         const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
         const notify = loadLocalNotifyProps();
         const isMention =
@@ -595,7 +600,7 @@ export function useChat() {
             isMention,
           })
         ) {
- /* skip per notify_props */
+          /* skip per notify_props */
         } else {
           // Telegram-web style: "Sender → Recipient", sender avatar as icon.
           const sender = msg.senderName || conversation?.title || "New message";

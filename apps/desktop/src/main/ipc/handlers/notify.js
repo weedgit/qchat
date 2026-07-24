@@ -3,6 +3,7 @@ const { Notification } = require("electron");
 const { APP_TITLE } = require("../../../shared/constants");
 const { getIconPath } = require("../../app/configuration/paths");
 const { requestWindowAttention } = require("../../native/attention");
+const { ensureWindowsAppUserModelId } = require("../../native/windowsNotifications");
 
 /**
  * @param {object} deps
@@ -21,6 +22,9 @@ function createNotifyHandler(deps) {
     const isMention = Boolean(payload.mention || payload.attention);
     const iconPath = getIconPath();
 
+    // Win32 toasts require a matching AppUserModelID on the process.
+    ensureWindowsAppUserModelId();
+
     // NOTI-05: flash / bounce for mentions even if OS notification is blocked later.
     if (isMention && typeof deps.getMainWindow === "function") {
       requestWindowAttention(deps.getMainWindow, { mention: true });
@@ -35,7 +39,9 @@ function createNotifyHandler(deps) {
       });
       notification.on("click", () => {
         deps.focusMainWindow();
-        deps.sendConversationToRenderer(conversationId);
+        if (conversationId) {
+          deps.sendConversationToRenderer(conversationId);
+        }
       });
       notification.on("show", () => {
         if (isMention && typeof deps.getMainWindow === "function") {

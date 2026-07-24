@@ -37,3 +37,22 @@ export function shouldNotifyDesktop(
   if (props.desktop === "mention" || props.mentions_only) return Boolean(opts.isMention);
   return true;
 }
+
+/**
+ * Whether the UI should raise an OS / desktop toast for an incoming message.
+ *
+ * Electron often keeps `document.hidden === false` after Alt+Tab while the
+ * window is still visible, so rely on `document.hasFocus()` as well. Skip only
+ * when the user is focused on that conversation (page visible + focused).
+ */
+export function shouldAlertIncomingMessage(
+  conversationId: string,
+  activeConversationId: string | null | undefined
+): boolean {
+  if (!conversationId) return false;
+  if (activeConversationId !== conversationId) return true;
+  if (typeof document === "undefined") return false;
+  if (document.hidden) return true;
+  if (typeof document.hasFocus === "function" && !document.hasFocus()) return true;
+  return false;
+}
