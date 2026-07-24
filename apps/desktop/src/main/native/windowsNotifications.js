@@ -83,6 +83,9 @@ function ensureWindowsAppUserModelId() {
   }
 }
 
+/** Retained so the prime toast is not garbage-collected before it shows. */
+let primeNotification = null;
+
 /**
  * Fire one silent toast so Windows registers the sender under
  * Settings → Notifications (app only appears after a successful notify).
@@ -108,6 +111,7 @@ function primeWindowsToastOnce() {
       silent: true,
       ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     });
+    primeNotification = notification;
     notification.on("show", () => {
       try {
         fs.writeFileSync(flagPath, String(Date.now()));
@@ -115,7 +119,11 @@ function primeWindowsToastOnce() {
         console.warn("[qchat-desktop] could not persist toast prime flag:", err);
       }
     });
+    notification.on("close", () => {
+      primeNotification = null;
+    });
     notification.on("failed", (_e, error) => {
+      primeNotification = null;
       console.warn("[qchat-desktop] prime toast failed:", error);
     });
     notification.show();
