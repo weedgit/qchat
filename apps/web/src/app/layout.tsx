@@ -3,6 +3,7 @@ import "./globals.css";
 import AppProviders from "@/components/AppProviders";
 import DesktopBootstrap from "@/components/DesktopBootstrap";
 import PwaBootstrap from "@/components/PwaBootstrap";
+import ShellConnectionBanner from "@/components/ShellConnectionBanner";
 
 export const metadata: Metadata = {
   title: "Qchat",
@@ -46,6 +47,7 @@ export default function RootLayout({
         <AppProviders>
           <PwaBootstrap />
           <DesktopBootstrap />
+          <ShellConnectionBanner />
           {children}
         </AppProviders>
       </body>

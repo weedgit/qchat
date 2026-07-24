@@ -50,9 +50,12 @@ If the Chromium sandbox is unavailable in a development VM:
 
 ```bash
 npm run dev:no-sandbox
+# or: QCHAT_DESKTOP_NO_SANDBOX=1 npm start
 ```
 
 Do not use the no-sandbox command for packaged or production use.
+Packaged builds call `app.enableSandbox()`, ignore `QCHAT_DESKTOP_NO_SANDBOX`,
+and (on Linux `.deb`) set `chrome-sandbox` setuid via afterPack so the sandbox works.
 
 ### Voice / video calls (LiveKit)
 
@@ -170,7 +173,27 @@ npm run dist          # current platform defaults
 
 Windows installers can be cross-built on Linux only with Wine configured.
 Building `dist:win` on Windows 11 is the supported development workflow.
-Signing and auto-update are not configured yet.
+Signing is optional and env-driven (PACK-04 / PACK-05). Unsigned `dist:*` builds
+still work. To sign:
+
+```bash
+# Windows (Authenticode)
+export CSC_LINK=/path/to/windows-cert.pfx
+export CSC_KEY_PASSWORD='…'
+npm run dist:win:signed
+
+# macOS (Developer ID) + notarize
+export CSC_LINK=/path/to/mac-cert.p12
+export CSC_KEY_PASSWORD='…'
+export APPLE_ID='you@example.com'
+export APPLE_APP_SPECIFIC_PASSWORD='…'
+export APPLE_TEAM_ID='ABCDE12345'
+npm run dist:mac:signed
+```
+
+Auto-update is scaffolded: set `updateUrl` in
+`production.json` / `userData/config.json` or `QCHAT_UPDATE_URL` to a generic
+electron-builder feed, then ship installs that host `latest*.yml` + artifacts.
 
 After changing `production.json` or main-process security, rebuild the
 installer (`npm run dist:win`) and reinstall — an old Setup.exe still embeds
@@ -178,10 +201,24 @@ the previous defaults.
 
 ## Desktop behavior
 
-- `contextIsolation`, renderer sandbox, and no renderer Node integration
+- `contextIsolation`, renderer sandbox, `app.enableSandbox()`, and no renderer Node integration
+- Packaged builds never honor `QCHAT_DESKTOP_NO_SANDBOX` (dev/VM `--no-sandbox` only)
+- Auto-update via `electron-updater` when `updateUrl` / `QCHAT_UPDATE_URL` is set (Help → Check for Updates)
+- Optional Authenticode / Developer ID signing + notarize when `CSC_*` / `APPLE_*` env are set
 - Remember me: tokens via Electron `safeStorage` (`userData/secure/`); app opens `/` when a session exists; logout clears the vault
 - Origin-scoped permissions and external navigation checks
+- Certificate errors: trust / deny dialog (persisted); configured web host stays auto-trusted
+- Right-click: cut/copy/paste, links, images, spellcheck (gated so web chat menus still work)
+- Theme: shell chrome follows Display → Theme (system / light / dark) via `nativeTheme`
+- Offline / reconnect banner in the desktop shell (OS offline + WS reconnect)
 - Native notifications that focus the target conversation
-- Native download save dialog
+- Mentions flash the taskbar (Win/Linux) or bounce the Dock (macOS) when unfocused
+- Idle (5 min / lock / sleep) auto-sets status to away; resumes to online (won’t override DND)
+- Dock / taskbar unread badge (mentions count or unread dot) via `setUnreadStatus`
+- Tray tooltip reflects unread / mention totals
+- Deep links: `qchat://conversation/<id>` (also `chat` / `c` / `open?conversation=`) focuses the window and opens that chat
+- Hide on start: optional tray-only launch (File / tray menu); also `--hidden`
+- Screen share in calls: `getDisplayMedia` via `desktopCapturer` / OS picker (LiveKit)
+- Native download save dialog; completion notification opens the file in the folder
 - Single-instance window behavior and persisted window bounds
 - `window.qchatDesktop` preload bridge for the web client

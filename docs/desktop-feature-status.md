@@ -22,19 +22,19 @@
 | AUTH-01 | §2.1 | Captcha fetch via main-process IPC | session networking | Done | `feat-kevin-desktop-captcha-ipc` |
 | AUTH-02 | §2.1 | Send `device_type=desktop` / desktop device name | externalAPI / server view identity | Done | `feat-kevin-desktop-device-identity` |
 | AUTH-03 | §2.1 | Remember session via `safeStorage` tokens | secureStorage.ts | Done | `feat-kevin-desktop-safe-storage` |
-| AUTH-04 | §2.3 | Idle detection → away status bridge | UserActivityMonitor.ts | Todo | `feat-kevin-desktop-idle-status` |
+| AUTH-04 | §2.3 | Idle detection → away status bridge | UserActivityMonitor.ts | Done | `feat-kevin-desktop-idle-status` |
 | AUTH-05 | §2.1 | Same-type session kick (`session.revoked`) | session management | Done | `feat-kevin-desktop-session-kick` |
 | CALL-01 | §2.4 | Grant mic / camera permission | permissionsManager | Done | `feat-kevin-desktop-media-permission` |
-| CALL-02 | §2.4 | Screenshare via `desktopCapturer` | callsWidgetWindow / desktopCapturer | Todo | `feat-kevin-desktop-screenshare` |
+| CALL-02 | §2.4 | Screenshare via `desktopCapturer` | callsWidgetWindow / desktopCapturer | Done | `feat-kevin-desktop-screenshare` |
 | CALL-03 | §2.4 | Separate Calls widget window | callsWidgetWindow.ts | Deferred | `feat-kevin-desktop-calls-widget` |
 | PLAT-01 | §3 | Windows NSIS installer | electron-builder / nsis | Done | `feat-kevin-desktop-win-nsis` |
 | PLAT-02 | §3 | macOS dmg installer | electron-builder / dmg | Done | `feat-kevin-desktop-mac-dmg` |
 | PLAT-03 | §3 | Linux AppImage + deb | AppImage / deb | Done | `feat-kevin-desktop-linux-pack` |
 | NOTI-01 | Shell | Native OS notification | `src/main/notifications/` | Done | `feat-kevin-desktop-native-notify` |
 | NOTI-02 | Shell | Click notification → focus + open chat | navigationManager deep link | Done | `feat-kevin-desktop-notify-deeplink` |
-| NOTI-03 | Shell | Dock / taskbar unread badge | badge.ts | Todo | `feat-kevin-desktop-unread-badge` |
-| NOTI-04 | Shell | Tray icon unread / mention state | tray.ts + AppState | Partial | `feat-kevin-desktop-tray-badge` *(desktop IPC ready; web hook later)* |
-| NOTI-05 | Shell | Flash / bounce on mention (Win/mac) | notifications flash/bounce | Todo | `feat-kevin-desktop-attention` |
+| NOTI-03 | Shell | Dock / taskbar unread badge | badge.ts | Done | `feat-kevin-desktop-unread-badge` |
+| NOTI-04 | Shell | Tray icon unread / mention state | tray.ts + AppState | Done | `feat-kevin-desktop-tray-badge` *(tooltip/title + web totals; custom tray images later)* |
+| NOTI-05 | Shell | Flash / bounce on mention (Win/mac) | notifications flash/bounce | Done | `feat-kevin-desktop-attention` |
 | SHELL-01 | §3 | Electron window loads web client | BrowserWindow / WebContentsView | Done | `feat-kevin-desktop-shell-window` |
 | SHELL-02 | Shell | `contextIsolation` + no `nodeIntegration` | security defaults | Done | `feat-kevin-desktop-secure-prefs` |
 | SHELL-03 | Shell | Narrow preload bridge `qchatDesktop` | externalAPI preload | Done | `feat-kevin-desktop-preload-bridge` |
@@ -55,44 +55,37 @@
 | SHELL-18 | Shell | Menu reload / zoom in-out-reset | view.ts zoom | Done | `feat-kevin-desktop-zoom-menu` |
 | SHELL-19 | Shell | Spellcheck in composer | spellChecker session | Done | `feat-kevin-desktop-spellcheck` |
 | SHELL-20 | Shell | Download → OS save dialog | downloadsManager | Done | `feat-kevin-desktop-download-save` |
-| SHELL-21 | Shell | Download completion notification | notifications/Download | Todo | `feat-kevin-desktop-download-notify` |
-| SHELL-22 | Shell | Right-click context menu | contextMenu.ts | Todo | `feat-kevin-desktop-context-menu` |
+| SHELL-21 | Shell | Download completion notification | notifications/Download | Done | `feat-kevin-desktop-download-notify` |
+| SHELL-22 | Shell | Right-click context menu | contextMenu.ts | Done | `feat-kevin-desktop-context-menu` |
 | SHELL-23 | Shell | System tray icon | tray/tray.ts | Done | `feat-kevin-desktop-system-tray` |
 | SHELL-24 | Shell | Minimize / close to tray | minimizeToTray | Done | `feat-kevin-desktop-close-to-tray` |
 | SHELL-25 | Shell | Tray menu Show / Quit | menus/tray.ts | Done | `feat-kevin-desktop-tray-menu` |
 | SHELL-26 | Shell | Autostart on OS login | AutoLauncher.ts | Done | `feat-kevin-desktop-autostart` |
-| SHELL-27 | Shell | Hide on start (start minimized) | AutoLauncher hideOnStart | Todo | `feat-kevin-desktop-hide-on-start` |
-| SHELL-28 | Shell | Protocol handler `qchat://` | :// deep links | Todo | `feat-kevin-desktop-protocol-qchat` |
-| SHELL-29 | Shell | Open conversation from deep link | navigationManager | Todo | `feat-kevin-desktop-deeplink-chat` |
-| SHELL-30 | Shell | Certificate error trust/deny UI | certificateStore.ts | Todo | `feat-kevin-desktop-cert-dialog` |
-| SHELL-31 | Shell | Theme sync with OS | themeManager.ts | Todo | `feat-kevin-desktop-os-theme` |
-| SHELL-32 | Shell | Offline / reconnect banner (shell) | ErrorView / isOnline | Todo | `feat-kevin-desktop-offline-banner` |
+| SHELL-27 | Shell | Hide on start (start minimized) | AutoLauncher hideOnStart | Done | `feat-kevin-desktop-hide-on-start` |
+| SHELL-28 | Shell | Protocol handler `qchat://` | `qchat://` deep links | Done | `feat-kevin-desktop-protocol-qchat` |
+| SHELL-29 | Shell | Open conversation from deep link | navigationManager | Done | `feat-kevin-desktop-deeplink-chat` |
+| SHELL-30 | Shell | Certificate error trust/deny UI | certificateStore.ts | Done | `feat-kevin-desktop-cert-dialog` |
+| SHELL-31 | Shell | Theme sync with OS | themeManager.ts | Done | `feat-kevin-desktop-os-theme` |
+| SHELL-32 | Shell | Offline / reconnect banner (shell) | ErrorView / isOnline | Done | `feat-kevin-desktop-offline-banner` |
 | SHELL-33 | Shell | Multi-server tabs | tabs / servers | Deferred | `feat-kevin-desktop-multi-server` |
 | SHELL-34 | Shell | Pop-out windows | popoutManager.ts | Deferred | `feat-kevin-desktop-popout` |
 | SHELL-35 | Shell | GPO / MDM enterprise config | policyConfigLoader | Deferred | `feat-kevin-desktop-gpo` |
 | PACK-01 | §3 | electron-builder project config | packaging | Done | `feat-kevin-desktop-builder-config` |
 | PACK-02 | Shell | Windows build via Wine Docker on Linux | builder:wine | Done | `feat-kevin-desktop-win-docker` |
 | PACK-03 | Shell | Bundle static `apps/web/out` offline | asar extraResources | Deferred | `feat-kevin-desktop-offline-web` |
-| PACK-04 | Shell | Windows Authenticode signing | code sign | Todo | `feat-kevin-desktop-win-sign` |
-| PACK-05 | Shell | macOS Developer ID + notarization | notarize | Todo | `feat-kevin-desktop-mac-notarize` |
-| PACK-06 | Shell | Auto-update (`electron-updater`) | updateNotifier | Todo | `feat-kevin-desktop-auto-update` |
-| PACK-07 | Shell | Ship without `--no-sandbox` | production hardening | Todo | `feat-kevin-desktop-prod-sandbox` |
+| PACK-04 | Shell | Windows Authenticode signing | code sign | Done | `feat-kevin-desktop-win-sign` |
+| PACK-05 | Shell | macOS Developer ID + notarization | notarize | Done | `feat-kevin-desktop-mac-notarize` |
+| PACK-06 | Shell | Auto-update (`electron-updater`) | updateNotifier | Done | `feat-kevin-desktop-auto-update` |
+| PACK-07 | Shell | Ship without `--no-sandbox` | production hardening | Done | `feat-kevin-desktop-prod-sandbox` |
 | PACK-08 | Shell | Crash / telemetry hooks | diagnostics | Deferred | `feat-kevin-desktop-crash-report` |
 
 ---
 
 ### Todo backlog (implement one row = one commit)
 
-1. `NOTI-03` dock/taskbar badge  
-2. `SHELL-28` `qchat://` protocol  
-3. `SHELL-29` deep-link open chat  
-4. `SHELL-27` hide on start  
-5. Web hook for `NOTI-04` — call `qchatDesktop.setUnreadStatus({ unread, mentions })`  
-6. `CALL-02` screenshare  
-7. `PACK-04`–`PACK-07` signing + auto-update + sandbox  
-8. `SHELL-21` download notify · `SHELL-22` context menu · `SHELL-30` cert UI · `SHELL-31` OS theme · `SHELL-32` offline banner · `NOTI-05` attention · `AUTH-04` idle  
+*(No open desktop units — deferred items only: CALL-03, SHELL-33–35, PACK-03, PACK-08.)*
 
-**In progress:** next concrete work is **D4** tray / autostart / protocol (or **D5** signing).
+**In progress:** supply real `CSC_*` / `APPLE_*` credentials when ready to ship signed builds.
 
 > Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
 
@@ -114,7 +107,7 @@ Full list across D0–D5:
 10. Windows / macOS (/ Linux) installers  
 11. System tray / minimize to tray  
 12. Autostart on login  
-13. Optional `qchat://` protocol handler  
+13. `qchat://` protocol handler + open conversation from deep link — Done  
 14. Secure token storage (`safeStorage`) — Done  
 15. Code signing + auto-update  
 
@@ -161,7 +154,7 @@ Full list across D0–D5:
 | Native notification → focus + open chat | Done | Receive message while unfocused → click notification |
 | Download save dialog | Done | Download an attachment → OS Save dialog |
 | Spellcheck | Done | Typo underline in composer |
-| Dedicated offline banner | Partial | WS reconnects in `useChat`; no Electron-specific offline banner yet |
+| Dedicated offline banner | Done | Desktop shell shows “No internet connection” / “Reconnecting…” strip; search-field reconnect hint unchanged |
 
 
 ---
@@ -186,22 +179,24 @@ Full list across D0–D5:
 | Feature | Status | Verification (when done) |
 |---|---|---|
 | Native notifications + deep-link to conversation | **Done** (in D2) | Same as D2 notification test |
-| System tray / minimize to tray | Todo | Close-to-tray; tray menu Show / Quit |
-| Autostart on OS login | Todo | Reboot → app starts |
-| Protocol handler `qchat://` | Todo | `qchat://…` opens app / conversation |
+| Dock / taskbar unread badge | **Done** | Mentions show a count; plain unread shows a dot (Win overlay / macOS Dock / Linux badge count) |
+| System tray / minimize to tray | **Done** | Close-to-tray; tray menu Show / Quit; tooltip reflects unread |
+| Autostart on OS login | **Done** | Preferences / tray menu |
+| Hide on start | **Done** | Starts in tray when enabled (`--hidden` / login-item hidden also honored); Show / deep link still opens the window |
+| Protocol handler `qchat://` | **Done** | `qchat://conversation/<id>` focuses app and opens chat |
 | Secure token storage (`safeStorage`) | **Done** | Tokens encrypted in `userData/secure/` via Electron `safeStorage`; desktop opens `/` when a session exists |
 
 ---
 
-### D5 — Signing & release — Todo
+### D5 — Signing & release — Done (credentials optional)
 
 | Feature | Status | Verification (when done) |
 |---|---|---|
-| Windows Authenticode signing | Todo | No SmartScreen “unknown publisher” (or reduced) |
-| macOS Developer ID + notarization | Todo | Gatekeeper accepts the app |
-| Auto-update (`electron-updater`) | Todo | New build prompts update |
-| Production hardening (no `--no-sandbox` in ship) | Todo | Release start path without dev sandbox bypass |
-| Crash / telemetry hooks (optional) | Todo | Crash report appears in chosen service |
+| Windows Authenticode signing | Done | Scaffolded: `CSC_LINK` + `CSC_KEY_PASSWORD` (or `WIN_CSC_*`); sha256 + DigiCert timestamp; unsigned builds still work (`forceCodeSigning: false`) |
+| macOS Developer ID + notarization | Done | Scaffolded: hardened runtime + entitlements; `afterSign` notarizes when `APPLE_*` + `CSC_*` set; skipped otherwise |
+| Auto-update (`electron-updater`) | Done | Packaged + `updateUrl` / `QCHAT_UPDATE_URL`; Help → Check for Updates; no-op when URL empty or unpackaged |
+| Production hardening (no `--no-sandbox` in ship) | Done | `app.enableSandbox()`; packaged ignores `QCHAT_DESKTOP_NO_SANDBOX`; Linux afterPack setuid on `chrome-sandbox`; `--no-sandbox` remains explicit dev/VM only |
+| Crash / telemetry hooks (optional) | Deferred | Crash report appears in chosen service |
 
 ---
 
@@ -212,7 +207,7 @@ Full list across D0–D5:
 | Phone + computer concurrent | Supported (`phone` vs `desktop` buckets) | OK — both may stay signed in |
 | Same-type device kick | New login of that type revokes prior session, pushes `session.revoked`, closes WS | OK |
 | Browser vs Electron | Separate `web` and `desktop` — both can stay; second of the same type kicks the first | OK |
-| Windows / macOS clients | Installers via electron-builder (D3); unsigned | **D5** signing for distribution |
+| Windows / macOS clients | Installers via electron-builder (D3); signing optional via env (D5 scaffold) | Provide `CSC_*` / `APPLE_*` for distribution |
 | Native store apps | Explicitly deferred in security decisions | Out of MVP |
 
 ---

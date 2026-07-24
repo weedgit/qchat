@@ -24,6 +24,7 @@ import { useCall } from "@/lib/useCall";
 import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
 import { useLocale } from "@/lib/locale";
+import { useDesktopIdleStatus } from "@/lib/useDesktopIdleStatus";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
 import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard, imagesFromClipboardApi } from "@/lib/fileDrop";
@@ -36,6 +37,7 @@ import {
 import { attachmentLimitError, avatarLimitError, VOICE_MAX_SEC } from "@/lib/mediaLimits";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
+import ShellConnectionBanner from "@/components/ShellConnectionBanner";
 
 /** Chat errors go to the console only — never surface as UI banners. */
 function logChatError(...args: unknown[]) {
@@ -598,6 +600,7 @@ export default function ChatPageInner() {
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t, labelLocale, labelTheme } = useLocale();
   const [myStatus, setMyStatus] = useState<"online" | "away" | "dnd" | "offline">("online");
+  const { noteManualStatusChange } = useDesktopIdleStatus(myStatus, setMyStatus);
   const { openConversation } = chat;
   const router = useRouter();
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
@@ -1896,6 +1899,10 @@ export default function ChatPageInner() {
 
   return (
     <AppShell rail={false} mobilePane={mobilePane}>
+      <ShellConnectionBanner
+        reconnectOnly
+        reconnecting={!chat.connected && wsEverConnected}
+      />
       <aside className="sidebar">
         <div className="sidebar-header">
           <button
@@ -1976,6 +1983,7 @@ export default function ChatPageInner() {
                   const order = ["online", "away", "dnd", "offline"] as const;
                   const i = order.indexOf(myStatus);
                   const next = order[(i + 1) % order.length];
+                  noteManualStatusChange(next);
                   setMyStatus(next);
                   api("/v1/me/status", {
                     method: "PUT",

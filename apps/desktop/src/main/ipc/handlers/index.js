@@ -5,6 +5,11 @@ const { createCaptchaHandler } = require("./captcha");
 const { createAboutHandler } = require("./about");
 const { createUnreadStatusHandler } = require("./unreadStatus");
 const { createSecureStorageHandlers } = require("./secureStorage");
+const {
+  createGetNativeThemeHandler,
+  createSetNativeThemeSourceHandler,
+} = require("./theme");
+const { createGetNetworkOnlineHandler } = require("./networkStatus");
 
 /**
  * @param {object} deps
@@ -20,6 +25,7 @@ function registerIpcHandlers(deps) {
     createNotifyHandler({
       focusMainWindow: deps.focusMainWindow,
       sendConversationToRenderer: deps.sendConversationToRenderer,
+      getMainWindow: deps.getMainWindow,
     })
   );
 
@@ -33,13 +39,23 @@ function registerIpcHandlers(deps) {
     })
   );
 
-  ipcMain.handle(IPC.SET_UNREAD_STATUS, createUnreadStatusHandler());
+  ipcMain.handle(
+    IPC.SET_UNREAD_STATUS,
+    createUnreadStatusHandler({ getMainWindow: deps.getMainWindow })
+  );
 
   const secure = createSecureStorageHandlers(deps.webUrl);
   ipcMain.handle(IPC.SECURE_SESSION_AVAILABLE, secure.available);
   ipcMain.handle(IPC.SECURE_SESSION_GET, secure.get);
   ipcMain.handle(IPC.SECURE_SESSION_SET, secure.set);
   ipcMain.handle(IPC.SECURE_SESSION_CLEAR, secure.clear);
+
+  ipcMain.handle(IPC.GET_NATIVE_THEME, createGetNativeThemeHandler());
+  ipcMain.handle(
+    IPC.SET_NATIVE_THEME_SOURCE,
+    createSetNativeThemeSourceHandler()
+  );
+  ipcMain.handle(IPC.GET_NETWORK_ONLINE, createGetNetworkOnlineHandler());
 
   ipcMain.on(IPC.RENDERER_READY, () => {
     deps.flushPendingConversation();

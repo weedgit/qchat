@@ -13,8 +13,9 @@ function isSameWebHost(a, b) {
  * Restrict navigation to the configured web host; open other http(s) in the OS browser.
  * @param {Electron.BrowserWindow} win
  * @param {string} webUrl
+ * @param {{ onDeepLink?: (url: string) => boolean }} [opts]
  */
-function attachNavigationGuards(win, webUrl) {
+function attachNavigationGuards(win, webUrl, opts = {}) {
   let allowed;
   try {
     allowed = new URL(webUrl);
@@ -22,9 +23,19 @@ function attachNavigationGuards(win, webUrl) {
     allowed = null;
   }
 
+  const handleQchat = (url) => {
+    if (typeof opts.onDeepLink === "function" && opts.onDeepLink(url)) return true;
+    shell.openExternal(url).catch(() => {});
+    return true;
+  };
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const parsed = new URL(url);
+      if (parsed.protocol === "qchat:") {
+        handleQchat(url);
+        return { action: "deny" };
+      }
       if (allowed && isSameWebHost(parsed, allowed)) {
         return { action: "allow" };
       }
@@ -40,6 +51,11 @@ function attachNavigationGuards(win, webUrl) {
   win.webContents.on("will-navigate", (event, url) => {
     try {
       const target = new URL(url);
+      if (target.protocol === "qchat:") {
+        event.preventDefault();
+        handleQchat(url);
+        return;
+      }
       if (allowed && isSameWebHost(target, allowed)) {
         return;
       }

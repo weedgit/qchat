@@ -19,10 +19,15 @@ declare global {
       body?: string;
       conversationId?: string;
       silent?: boolean;
+      /** NOTI-05 — flash taskbar / bounce Dock when true. */
+      mention?: boolean;
     }) => Promise<boolean>;
     showAbout: () => Promise<boolean>;
     fetchCaptcha: () => Promise<{ captcha_id: string; image: string }>;
-    setUnreadStatus?: (payload: { unread?: boolean; mentions?: number }) => Promise<boolean>;
+    setUnreadStatus?: (payload: {
+      unread?: number | boolean;
+      mentions?: number;
+    }) => Promise<boolean>;
     signalReady: () => void;
     onOpenConversation: (handler: (conversationId: string) => void) => () => void;
     secureSessionAvailable?: () => Promise<{ available: boolean; encryption: boolean }>;
@@ -32,6 +37,32 @@ declare global {
       refreshToken?: string;
     }) => Promise<{ ok: boolean }>;
     clearSecureSession?: () => Promise<{ ok: boolean }>;
+    /** SHELL-31 — Electron nativeTheme / window chrome. */
+    getNativeTheme?: () => Promise<{
+      shouldUseDarkColors: boolean;
+      themeSource: string;
+      resolved: "dark" | "light";
+    }>;
+    setNativeThemeSource?: (
+      source: "system" | "light" | "dark"
+    ) => Promise<{ ok: boolean }>;
+    onNativeThemeUpdated?: (
+      handler: (payload: {
+        shouldUseDarkColors: boolean;
+        themeSource: string;
+        resolved: "dark" | "light";
+      }) => void
+    ) => () => void;
+    /** SHELL-32 — Electron net.isOnline() probe. */
+    getNetworkOnline?: () => Promise<{ online: boolean }>;
+    /** AUTH-04 — system idle / lock activity updates. */
+    onUserActivity?: (
+      handler: (payload: {
+        userIsActive: boolean;
+        idleTime: number;
+        isSystemEvent?: boolean;
+      }) => void
+    ) => () => void;
   }
 
   interface Window {

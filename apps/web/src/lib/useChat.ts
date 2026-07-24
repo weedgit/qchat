@@ -615,6 +615,7 @@ export function useChat() {
               body: msg.content,
               conversationId: msg.conversationId,
               silent: !notify.sound,
+              mention: isMention,
             }).catch(() => {});
           } else if ("Notification" in window && Notification.permission === "granted") {
             const notification = new Notification(title, {
@@ -1400,6 +1401,24 @@ export function useChat() {
     eventListenersRef.current.add(handler);
     return () => {
       eventListenersRef.current.delete(handler);
+    };
+  }, []);
+
+  // NOTI-03 / NOTI-04: push unread totals to Electron dock/taskbar + tray.
+  // No-op in the browser; does not alter chat state.
+  useEffect(() => {
+    if (!isQchatDesktop()) return;
+    const desk = window.qchatDesktop;
+    if (!desk?.setUnreadStatus) return;
+    const unread = conversations.reduce((n, c) => n + (Number(c.unreadCount) || 0), 0);
+    const mentions = conversations.reduce((n, c) => n + (Number(c.mentionCount) || 0), 0);
+    void desk.setUnreadStatus({ unread, mentions }).catch(() => {});
+  }, [conversations]);
+
+  useEffect(() => {
+    return () => {
+      if (!isQchatDesktop()) return;
+      void window.qchatDesktop?.setUnreadStatus?.({ unread: 0, mentions: 0 }).catch(() => {});
     };
   }, []);
 

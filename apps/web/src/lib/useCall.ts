@@ -124,6 +124,7 @@ export function useCall(opts: {
   const [remoteMicLevel, setRemoteMicLevel] = useState(0);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
   /** False when Chrome blocks remote audio until a user gesture (LiveKit startAudio). */
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(true);
  /** LiveKit ConnectionQuality for local participant (MOS-style hint). */
@@ -168,6 +169,7 @@ export function useCall(opts: {
     setQualityDegraded(false);
     setShowCallStats(false);
     setCallStats(null);
+    setScreenSharing(false);
     degradedSinceRef.current = null;
   }, []);
 
@@ -805,6 +807,27 @@ export function useCall(opts: {
     setCameraOff(next);
   }, [cameraOff, active?.kind]);
 
+  /** LiveKit screen share — uses getDisplayMedia (Electron: desktopCapturer handler). */
+  const toggleScreenShare = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room || active?.status !== "active") return;
+    const next = !screenSharing;
+    try {
+      await room.localParticipant.setScreenShareEnabled(next);
+      setScreenSharing(next);
+    } catch (err: any) {
+      setScreenSharing(false);
+      const msg = String(err?.message || err || "");
+      if (/Permission|NotAllowed|denied/i.test(msg)) {
+        setError("Screen share permission denied — allow display capture and try again");
+      } else if (/NotSupported|getDisplayMedia/i.test(msg)) {
+        setError("Screen share is not available in this environment");
+      } else {
+        setError(msg || "Could not start screen share");
+      }
+    }
+  }, [screenSharing, active?.status]);
+
   return {
     incoming,
     active,
@@ -820,6 +843,7 @@ export function useCall(opts: {
     remoteMicLevel,
     micMuted,
     cameraOff,
+    screenSharing,
     audioPlaybackOk,
     setRemoteVideoEl,
     setLocalVideoEl,
@@ -830,6 +854,7 @@ export function useCall(opts: {
     hangup,
     toggleMic,
     toggleCamera,
+    toggleScreenShare,
     enableSound,
     toggleCallStats,
   };

@@ -4,6 +4,7 @@ const path = require("path");
 const { app } = require("electron");
 const { APP_TITLE } = require("../../shared/constants");
 const { readUserConfig, writeUserConfig } = require("../app/configuration/userConfig");
+const { isHideOnStartEnabled } = require("./hideOnStart");
 
 /**
  * Autostart on OS login (SHELL-26).
@@ -29,13 +30,14 @@ function syncLinuxAutostart(enabled) {
     }
     fs.mkdirSync(path.dirname(desktopFile), { recursive: true });
     const execPath = linuxAutostartExec();
+    const hidden = isHideOnStartEnabled() ? " --hidden" : "";
     const body =
       `[Desktop Entry]\n` +
       `Type=Application\n` +
       `Version=1.0\n` +
       `Name=${APP_TITLE}\n` +
       `Comment=Qchat desktop client\n` +
-      `Exec="${execPath}"\n` +
+      `Exec="${execPath}"${hidden}\n` +
       `Terminal=false\n` +
       `X-GNOME-Autostart-enabled=true\n` +
       `Hidden=false\n`;
@@ -84,7 +86,8 @@ function setAutostartEnabled(enabled) {
   try {
     app.setLoginItemSettings({
       openAtLogin: next,
-      openAsHidden: false,
+      // SHELL-27: honor hide-on-start when registering the login item.
+      openAsHidden: next && isHideOnStartEnabled(),
     });
   } catch (err) {
     console.warn("[qchat-desktop] setLoginItemSettings failed:", err?.message || err);
@@ -95,6 +98,13 @@ function setAutostartEnabled(enabled) {
   }
 
   return true;
+}
+
+/** Re-apply login-item / .desktop flags after hide-on-start changes. */
+function refreshAutostartLaunchFlags() {
+  if (preferredOpenAtLogin() === true || isAutostartEnabled()) {
+    setAutostartEnabled(true);
+  }
 }
 
 /** Apply saved preference once the app is ready (packaged builds only). */
@@ -108,4 +118,5 @@ module.exports = {
   isAutostartEnabled,
   setAutostartEnabled,
   applyStoredAutostart,
+  refreshAutostartLaunchFlags,
 };
