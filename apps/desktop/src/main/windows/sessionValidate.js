@@ -4,14 +4,7 @@ const {
   setSecureSession,
   clearSecureSession,
 } = require("../secureStorage");
-
-function apiOrigin(webUrl) {
-  try {
-    return new URL(webUrl).origin;
-  } catch {
-    return String(webUrl || "").replace(/\/$/, "");
-  }
-}
+const { resolveApiOrigin } = require("../app/configuration/apiUrl");
 
 function accessExpired(token, skewMs = 60_000) {
   try {
@@ -48,7 +41,7 @@ async function ensureVaultSessionFresh(webUrl) {
   const current = getSecureSession(webUrl);
   if (!current?.accessToken) return null;
 
-  const origin = apiOrigin(webUrl);
+  const origin = resolveApiOrigin(webUrl);
   if (!origin) return null;
 
   const tryMe = async (accessToken) => {

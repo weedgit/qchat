@@ -1,12 +1,13 @@
 const { net } = require("electron");
+const { resolveApiOrigin } = require("../../app/configuration/apiUrl");
 
 /**
  * @param {string} webUrl
  */
 function createCaptchaHandler(webUrl) {
   return async () => {
-    const base = String(webUrl || "").replace(/\/$/, "");
-    if (!base) throw new Error("captcha: web URL not configured");
+    const base = resolveApiOrigin(webUrl);
+    if (!base) throw new Error("captcha: API URL not configured");
 
     // Use Chromium net stack so certificate-error trust for the web host applies.
     const url = `${base}/v1/auth/captcha`;
