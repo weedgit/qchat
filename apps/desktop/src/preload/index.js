@@ -71,6 +71,14 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
   },
   /** SHELL-32: main-process network probe (complements window online/offline). */
   getNetworkOnline: () => ipcRenderer.invoke(IPC.GET_NETWORK_ONLINE),
+  /** Mattermost-style OS window focus for desktop notification gating. */
+  isWindowFocused: () => ipcRenderer.invoke(IPC.GET_WINDOW_FOCUSED),
+  onWindowFocusChanged: (handler) => {
+    if (typeof handler !== "function") return () => {};
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on(IPC.WINDOW_FOCUS_CHANGED, listener);
+    return () => ipcRenderer.removeListener(IPC.WINDOW_FOCUS_CHANGED, listener);
+  },
   /** AUTH-04: system idle / lock → activity bridge. */
   onUserActivity: (handler) => {
     if (typeof handler !== "function") return () => {};

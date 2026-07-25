@@ -1,8 +1,52 @@
 const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const { Notification } = require("electron");
 const { APP_TITLE } = require("../../../shared/constants");
-const { getIconPath } = require("../../app/configuration/paths");
+const {
+  getIconPath,
+  getIconPngPath,
+  getDesktopRoot,
+} = require("../../app/configuration/paths");
 const { requestWindowAttention } = require("../../native/attention");
+
+function isWindows10OrNewer() {
+  if (process.platform !== "win32") return false;
+  // Windows 10+ releases start at 10.0.x (Mattermost Mention.ts).
+  const release = String(os.release() || "");
+  const parts = release.split(".").map((p) => parseInt(p, 10) || 0);
+  return parts[0] > 10 || (parts[0] === 10 && parts[1] >= 0);
+}
+
+/**
+ * Mattermost-style toast options:
+ * On macOS and Windows 10+, Notification Center already shows the app icon from
+ * the Start Menu shortcut — passing another icon duplicates or can fail the toast.
+ */
+function buildNotificationOptions(title, body, silent) {
+  /** @type {Electron.NotificationConstructorOptions} */
+  const options = {
+    title,
+    body,
+    silent: Boolean(silent),
+    urgency: "normal",
+  };
+
+  if (process.platform === "darwin" || isWindows10OrNewer()) {
+    return options;
+  }
+
+  const icon48 = path.join(getDesktopRoot(), "assets", "icon-48.png");
+  const iconPath = fs.existsSync(icon48)
+    ? icon48
+    : fs.existsSync(getIconPngPath())
+      ? getIconPngPath()
+      : getIconPath();
+  if (fs.existsSync(iconPath)) {
+    options.icon = iconPath;
+  }
+  return options;
+}
 
 /**
  * @param {object} deps
@@ -12,50 +56,69 @@ const { requestWindowAttention } = require("../../native/attention");
  */
 function createNotifyHandler(deps) {
   return async (_event, payload) => {
-    if (!Notification.isSupported()) return false;
+    if (!Notification.isSupported()) {
+      console.warn("[qchat-desktop] notification not supported");
+      return false;
+    }
     if (!payload || typeof payload !== "object") return false;
 
     const title = String(payload.title || APP_TITLE);
     const body = String(payload.body || "").trim() || "New message";
     const conversationId = String(payload.conversationId || "");
     const isMention = Boolean(payload.mention || payload.attention);
-    const suppressIfFocused = Boolean(payload.suppressIfFocused);
-    const iconPath = getIconPath();
+    // True when the renderer considers this the open conversation.
+    const viewingConversation = Boolean(payload.suppressIfFocused);
 
     const win =
       typeof deps.getMainWindow === "function" ? deps.getMainWindow() : null;
 
-    // Prefer OS window focus over document.hasFocus() (unreliable in Electron).
-    if (
-      suppressIfFocused &&
-      win &&
+    // Mattermost shouldSkipNotification: only skip when the window is focused
+    // AND the user is already looking at this conversation.
+    const windowActive =
+      Boolean(win) &&
       !win.isDestroyed() &&
-      win.isFocused() &&
-      !win.isMinimized()
-    ) {
+      win.isVisible() &&
+      !win.isMinimized() &&
+      win.isFocused();
+
+    if (viewingConversation && windowActive) {
+      console.log(
+        "[qchat-desktop] skip toast — focused on this conversation:",
+        conversationId
+      );
       return false;
     }
 
-    // NOTI-05: flash / bounce for mentions even if OS notification is blocked later.
-    if (isMention && win) {
-      requestWindowAttention(() => win, { mention: true });
+    console.log("[qchat-desktop] show toast:", {
+      title,
+      conversationId,
+      viewingConversation,
+      windowActive,
+    });
+
+    if (isMention && typeof deps.getMainWindow === "function") {
+      requestWindowAttention(deps.getMainWindow, { mention: true });
     }
 
     try {
-      const notification = new Notification({
-        title,
-        body,
-        silent: Boolean(payload.silent),
-        ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
-      });
+      const notification = new Notification(
+        buildNotificationOptions(title, body, payload.silent)
+      );
       notification.on("click", () => {
         deps.focusMainWindow();
         deps.sendConversationToRenderer(conversationId);
       });
       notification.on("show", () => {
         console.log("[qchat-desktop] message toast shown:", title);
-        if (isMention && win) {
-          requestWindowAttention(() => win, { mention: true });
+        if (process.platform === "win32" && win && !win.isDestroyed()) {
+          try {
+            win.flashFrame(true);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (isMention && typeof deps.getMainWindow === "function") {
+          requestWindowAttention(deps.getMainWindow, { mention: true });
         }
       });
       notification.on("failed", (_e, error) => {
@@ -70,4 +133,4 @@ function createNotifyHandler(deps) {
   };
 }
 
-module.exports = { createNotifyHandler };
+module.exports = { createNotifyHandler, buildNotificationOptions };

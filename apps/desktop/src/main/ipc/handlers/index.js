@@ -10,6 +10,7 @@ const {
   createSetNativeThemeSourceHandler,
 } = require("./theme");
 const { createGetNetworkOnlineHandler } = require("./networkStatus");
+const { createGetWindowFocusedHandler } = require("./windowFocus");
 
 /**
  * @param {object} deps
@@ -56,6 +57,10 @@ function registerIpcHandlers(deps) {
     createSetNativeThemeSourceHandler()
   );
   ipcMain.handle(IPC.GET_NETWORK_ONLINE, createGetNetworkOnlineHandler());
+  ipcMain.handle(
+    IPC.GET_WINDOW_FOCUSED,
+    createGetWindowFocusedHandler({ getMainWindow: deps.getMainWindow })
+  );
 
   ipcMain.on(IPC.RENDERER_READY, () => {
     deps.flushPendingConversation();

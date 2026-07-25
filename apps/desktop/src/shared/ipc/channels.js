@@ -15,6 +15,9 @@ const IPC = {
   NATIVE_THEME_UPDATED: "qchat:native-theme-updated",
   GET_NETWORK_ONLINE: "qchat:get-network-online",
   USER_ACTIVITY_UPDATE: "qchat:user-activity-update",
+  /** Mattermost-style browser focus for notification gating. */
+  GET_WINDOW_FOCUSED: "qchat:get-window-focused",
+  WINDOW_FOCUS_CHANGED: "qchat:window-focus-changed",
 };
 
 module.exports = { IPC };

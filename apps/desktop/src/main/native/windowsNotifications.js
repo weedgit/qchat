@@ -6,7 +6,7 @@ const {
   APP_ID,
   TOAST_ACTIVATOR_CLSID,
 } = require("../../shared/constants");
-const { getIconPath } = require("../app/configuration/paths");
+const { getIconPath, getIconPngPath } = require("../app/configuration/paths");
 
 function normalizeClsid(value) {
   const raw = String(value || "")
@@ -127,7 +127,9 @@ function ensureWindowsToastShortcut() {
     fs.mkdirSync(programs, { recursive: true });
 
     const shortcutPath = qchatShortcutPath();
-    const iconPath = getIconPath();
+    // Prefer PNG for .lnk icon — hand-rolled .ico failed Electron setIcon on Win11.
+    const iconPng = getIconPngPath();
+    const iconPath = fs.existsSync(iconPng) ? iconPng : getIconPath();
     const toastClsid = normalizeClsid(
       app.toastActivatorCLSID || TOAST_ACTIVATOR_CLSID
     );
@@ -192,6 +194,7 @@ function ensureWindowsToastShortcut() {
 
 /**
  * Fire one toast so Windows registers the sender under Settings → Notifications.
+ * Mattermost-style: no per-toast icon on Windows 10+ (Start Menu app icon is used).
  * @param {{ force?: boolean }} [opts]
  */
 function primeWindowsToastOnce(opts = {}) {
@@ -206,18 +209,17 @@ function primeWindowsToastOnce(opts = {}) {
   }
 
   try {
-    // Drop the old one-shot flag from earlier builds.
     try {
       fs.unlinkSync(path.join(app.getPath("userData"), "windows-toast-primed"));
     } catch {
       /* ignore */
     }
-    const iconPath = getIconPath();
+    // Do not pass icon on Win10+ — matches Mattermost Mention.ts and avoids
+    // toast failures from a bad/hand-rolled .ico path.
     const notification = new Notification({
       title: APP_TITLE,
       body: "Desktop notifications are enabled.",
       silent: false,
-      ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     });
     notification.on("failed", (_e, error) => {
       console.warn("[qchat-desktop] prime toast failed event:", error);

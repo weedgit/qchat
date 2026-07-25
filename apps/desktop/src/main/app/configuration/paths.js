@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { nativeImage } = require("electron");
 
 /** apps/desktop package root (contains package.json, assets/, production.json). */
 function getDesktopRoot() {
@@ -7,22 +8,38 @@ function getDesktopRoot() {
   return path.join(__dirname, "../../../..");
 }
 
-/** PNG source used for tray / Linux / macOS. */
+/** PNG source used for tray / notifications / window chrome. */
 function getIconPngPath() {
   return path.join(getDesktopRoot(), "assets", "icon.png");
 }
 
 /**
- * Best icon for the current platform.
- * Windows taskbar / Start Menu / BrowserWindow require .ico — PNG shows as the
- * blank document placeholder on the Win11 taskbar when running electron.exe.
+ * Runtime icon path for Electron APIs.
+ * Prefer PNG — Electron nativeImage loads it reliably. A hand-rolled .ico can
+ * fail (`Failed to load image`) and blank the Win11 taskbar.
+ * electron-builder still uses assets/icon.ico for NSIS when present.
  */
 function getIconPath() {
-  if (process.platform === "win32") {
-    const ico = path.join(getDesktopRoot(), "assets", "icon.ico");
-    if (fs.existsSync(ico)) return ico;
+  const png = getIconPngPath();
+  if (fs.existsSync(png)) return png;
+  const ico = path.join(getDesktopRoot(), "assets", "icon.ico");
+  if (fs.existsSync(ico)) return ico;
+  return png;
+}
+
+/** @returns {Electron.NativeImage | undefined} */
+function loadAppNativeImage() {
+  const candidates = [
+    path.join(getDesktopRoot(), "assets", "icon-256.png"),
+    path.join(getDesktopRoot(), "assets", "icon-128.png"),
+    getIconPngPath(),
+  ];
+  for (const file of candidates) {
+    if (!fs.existsSync(file)) continue;
+    const image = nativeImage.createFromPath(file);
+    if (!image.isEmpty()) return image;
   }
-  return getIconPngPath();
+  return undefined;
 }
 
 function getPreloadPath() {
@@ -38,14 +55,14 @@ function getEnvFilePath() {
 }
 
 function iconOption() {
-  const icon = getIconPath();
-  return fs.existsSync(icon) ? icon : undefined;
+  return loadAppNativeImage();
 }
 
 module.exports = {
   getDesktopRoot,
   getIconPath,
   getIconPngPath,
+  loadAppNativeImage,
   getPreloadPath,
   getProductionConfigPath,
   getEnvFilePath,

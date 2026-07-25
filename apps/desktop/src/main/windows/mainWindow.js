@@ -18,11 +18,15 @@ const {
 } = require("./sessionPersistence");
 const { ensureVaultSessionFresh } = require("./sessionValidate");
 const { attachContextMenu } = require("../native/contextMenu");
+const { IPC } = require("../../shared/ipc/channels");
+const { attachWindowFocusBridge } = require("../ipc/handlers/windowFocus");
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
 /** @type {string | null} */
 let pendingConversationId = null;
+/** @type {(() => void) | null} */
+let detachWindowFocusBridge = null;
 
 function getMainWindow() {
   return mainWindow;
@@ -135,8 +139,7 @@ function createMainWindow(opts) {
     },
   });
 
-  // Windows taskbar uses .ico; re-apply after create so electron.exe does not
-  // keep the blank document placeholder from the host binary.
+  // Apply PNG via nativeImage so Win11 taskbar is not a blank document icon.
   if (icon && process.platform === "win32") {
     try {
       mainWindow.setIcon(icon);
@@ -144,6 +147,19 @@ function createMainWindow(opts) {
       console.warn("[qchat-desktop] setIcon failed:", err?.message || err);
     }
   }
+
+  if (detachWindowFocusBridge) {
+    detachWindowFocusBridge();
+    detachWindowFocusBridge = null;
+  }
+  detachWindowFocusBridge = attachWindowFocusBridge(
+    mainWindow,
+    (channel, payload) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send(channel, payload);
+    },
+    IPC.WINDOW_FOCUS_CHANGED
+  );
 
   mainWindow.on("page-title-updated", (event) => {
     event.preventDefault();
@@ -262,6 +278,10 @@ function createMainWindow(opts) {
   })();
 
   mainWindow.on("closed", () => {
+    if (detachWindowFocusBridge) {
+      detachWindowFocusBridge();
+      detachWindowFocusBridge = null;
+    }
     mainWindow = null;
   });
 
