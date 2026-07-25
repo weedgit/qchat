@@ -1,27 +1,74 @@
 /**
  * Desktop chat layout override.
- * Applied via insertCSS so remote web (start:server) still gets Telegram-like
- * adaptive chat chrome (tdesktop Adaptive::Wide).
+ * Injected via insertCSS so the Electron shell matches the current web UI
+ * (Telegram-like adaptive chat + shared design tokens / menu modals).
  *
- * Shell:
- * - Wide window: 2 columns (chat list + chat)
- * - Narrow window (≤768px): 1 column (list OR chat)
- *
- * Messages (container queries on .msg-scroll):
- * - Narrow chat column: peer left + avatar left, own right + avatar right
- * - Wide chat column (≥880px): all rows left-stacked, all avatars on the left
+ * Keep this file in sync with apps/web/src/app/globals.css chat + theme rules.
  */
+
+/* —— Design tokens (match web) —— */
+:root,
+[data-theme="dark"] {
+  --bg: #0e1621 !important;
+  --bg-panel: #17212b !important;
+  --bg-panel-2: #242f3d !important;
+  --bg-hover: #202b36 !important;
+  --bg-active: #2b5278 !important;
+  --accent: #2aabee !important;
+  --accent-hover: #229ed9 !important;
+  --btn: #3390ec !important;
+  --btn-hover: #2a7fd4 !important;
+  --text: #f5f5f5 !important;
+  --text-dim: #708499 !important;
+  --text-faint: #6a7989 !important;
+  --border: #0d1520 !important;
+}
+
+[data-theme="light"] {
+  --bg: #e8eef3 !important;
+  --bg-panel: #ffffff !important;
+  --bg-panel-2: #f4f7fa !important;
+  --bg-hover: #eef3f8 !important;
+  --bg-active: #d6ebfa !important;
+  --accent: #3390ec !important;
+  --accent-hover: #2a7fd4 !important;
+  --btn: #3390ec !important;
+  --btn-hover: #2a7fd4 !important;
+  --text: #1a2332 !important;
+  --text-dim: #6b7c8f !important;
+  --text-faint: #9aabbc !important;
+  --border: #d5dee8 !important;
+}
+
+.btn {
+  background: var(--btn) !important;
+  color: #fff !important;
+}
+.btn:hover:not(:disabled) {
+  background: var(--btn-hover) !important;
+}
+.btn-ghost {
+  background: transparent !important;
+  color: var(--accent) !important;
+}
+
+/* —— Full-bleed chat chrome (no centered ~752px column) —— */
 .chat-pane > .chat-header,
 .msg-scroll-wrap,
 .composer,
 .pinned-banner,
 .chat-pane > .search-results,
-.chat-pane > .in-chat-search,
-.msg-scroll > * {
+.chat-pane > .in-chat-search {
   max-width: none !important;
   width: 100% !important;
   margin-left: 0 !important;
   margin-right: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.msg-scroll > * {
+  width: 100% !important;
+  max-width: none !important;
   box-sizing: border-box !important;
 }
 
@@ -103,4 +150,57 @@
 .msg-avatar {
   flex: none !important;
   align-self: flex-end !important;
+}
+
+/* —— Menu modals (Settings / Profile / Contacts / Groups) —— */
+.menu-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 50 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px 16px !important;
+  background: rgba(14, 22, 33, 0.72) !important;
+}
+
+.menu-modal {
+  width: min(420px, 100%) !important;
+  max-height: min(860px, calc(100vh - 48px)) !important;
+  border-radius: 12px !important;
+  background: var(--bg-panel) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45) !important;
+  overflow: hidden !important;
+}
+
+.menu-modal-body {
+  background: var(--bg) !important;
+}
+
+.menu-modal-section {
+  margin: 0 12px 12px !important;
+  border-radius: 12px !important;
+  background: var(--bg-panel) !important;
+}
+
+.menu-modal-section-title {
+  color: var(--accent) !important;
+  font-size: 14px !important;
+  font-weight: 550 !important;
+}
+
+.menu-modal-action {
+  color: var(--accent) !important;
+  background: transparent !important;
+}
+
+.menu-modal .btn {
+  background: var(--btn) !important;
+  border-radius: 8px !important;
+}
+
+.menu-modal-list-actions .btn,
+.menu-modal-list-actions .btn-ghost {
+  background: transparent !important;
+  color: var(--accent) !important;
 }
