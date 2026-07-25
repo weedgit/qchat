@@ -1,24 +1,38 @@
 const fs = require("fs");
 const path = require("path");
 const { app, shell, Notification } = require("electron");
-const { APP_TITLE, APP_ID } = require("../../shared/constants");
+const {
+  APP_TITLE,
+  APP_ID,
+  TOAST_ACTIVATOR_CLSID,
+} = require("../../shared/constants");
 const { getIconPath } = require("../app/configuration/paths");
+
+function normalizeClsid(value) {
+  const raw = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/^\{/, "")
+    .replace(/\}$/, "");
+  return raw ? `{${raw}}` : "";
+}
 
 /**
  * Windows Action Center only lists apps that have a Start Menu .lnk whose
- * AppUserModelID matches app.setAppUserModelId(). Without that shortcut,
- * Electron Notification.show() is a no-op and Qchat never appears under
- * Settings → System → Notifications.
+ * AppUserModelID and ToastActivatorCLSID match the running process.
+ * Without that shortcut (or with a mismatched CLSID), Electron
+ * Notification.show() is a silent no-op on Windows 11.
  *
  * Needed for both `npm start` (electron.exe) and installed NSIS builds.
  *
- * @returns {boolean}
+ * @returns {{ ok: boolean, clsidChanged: boolean }}
  */
 function ensureWindowsToastShortcut() {
-  if (process.platform !== "win32") return false;
+  if (process.platform !== "win32") return { ok: false, clsidChanged: false };
 
   try {
     app.setAppUserModelId(APP_ID);
+    app.setToastActivatorCLSID(TOAST_ACTIVATOR_CLSID);
 
     const programs = path.join(
       app.getPath("appData"),
@@ -31,6 +45,18 @@ function ensureWindowsToastShortcut() {
 
     const shortcutPath = path.join(programs, `${APP_TITLE}.lnk`);
     const iconPath = getIconPath();
+    const toastClsid = normalizeClsid(app.toastActivatorCLSID || TOAST_ACTIVATOR_CLSID);
+
+    let previousClsid = "";
+    if (fs.existsSync(shortcutPath)) {
+      try {
+        previousClsid = normalizeClsid(
+          shell.readShortcutLink(shortcutPath).toastActivatorClsid
+        );
+      } catch {
+        previousClsid = "";
+      }
+    }
 
     /** @type {Electron.ShortcutDetails} */
     const details = {
@@ -38,6 +64,7 @@ function ensureWindowsToastShortcut() {
       cwd: path.dirname(process.execPath),
       description: APP_TITLE,
       appUserModelId: APP_ID,
+      toastActivatorClsid: toastClsid,
     };
 
     if (!app.isPackaged) {
@@ -59,31 +86,34 @@ function ensureWindowsToastShortcut() {
         "[qchat-desktop] failed to write Start Menu shortcut for Windows toasts:",
         shortcutPath
       );
-    } else {
-      console.log(
-        "[qchat-desktop] Windows toast shortcut ready:",
-        shortcutPath,
-        `(${APP_ID})`
-      );
+      return { ok: false, clsidChanged: false };
     }
-    return ok;
+
+    const clsidChanged = Boolean(previousClsid) && previousClsid !== toastClsid;
+    console.log(
+      "[qchat-desktop] Windows toast shortcut ready:",
+      shortcutPath,
+      `(${APP_ID}, ${toastClsid})`
+    );
+    return { ok: true, clsidChanged };
   } catch (err) {
     console.warn("[qchat-desktop] Windows toast shortcut error:", err);
-    return false;
+    return { ok: false, clsidChanged: false };
   }
 }
 
 /**
  * Fire one silent toast so Windows registers the sender under
  * Settings → Notifications (app only appears after a successful notify).
+ * @param {{ force?: boolean }} [opts]
  */
-function primeWindowsToastOnce() {
+function primeWindowsToastOnce(opts = {}) {
   if (process.platform !== "win32") return;
   if (!Notification.isSupported()) return;
 
   const flagPath = path.join(app.getPath("userData"), "windows-toast-primed");
   try {
-    if (fs.existsSync(flagPath)) return;
+    if (!opts.force && fs.existsSync(flagPath)) return;
   } catch {
     return;
   }
@@ -96,6 +126,14 @@ function primeWindowsToastOnce() {
       silent: true,
       ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     });
+    notification.on("failed", (_e, error) => {
+      console.warn("[qchat-desktop] prime toast failed event:", error);
+      try {
+        fs.unlinkSync(flagPath);
+      } catch {
+        /* ignore */
+      }
+    });
     notification.show();
     fs.writeFileSync(flagPath, String(Date.now()));
   } catch (err) {
@@ -106,8 +144,10 @@ function primeWindowsToastOnce() {
 /** Call after app.whenReady() on Windows. */
 function registerWindowsNotifications() {
   if (process.platform !== "win32") return;
-  const ok = ensureWindowsToastShortcut();
-  if (ok) primeWindowsToastOnce();
+  const { ok, clsidChanged } = ensureWindowsToastShortcut();
+  if (!ok) return;
+  // Re-prime when the activator CLSID was repaired so Action Center rebinds.
+  primeWindowsToastOnce({ force: clsidChanged });
 }
 
 module.exports = {

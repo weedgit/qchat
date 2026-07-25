@@ -1,6 +1,10 @@
 const { app, BrowserWindow } = require("electron");
 const fs = require("fs");
-const { APP_TITLE, APP_ID } = require("../../shared/constants");
+const {
+  APP_TITLE,
+  APP_ID,
+  TOAST_ACTIVATOR_CLSID,
+} = require("../../shared/constants");
 const { getIconPath } = require("../app/configuration/paths");
 const { resolveWebUrl } = require("../app/configuration/webUrl");
 const { buildAppMenu } = require("../native/menu");
@@ -35,9 +39,10 @@ const { createDeepLinkHandler } = require("./deepLink");
 const { registerWindowsNotifications } = require("../native/windowsNotifications");
 
 function startApp() {
-  // Windows toasts need a stable AppUserModelID (packaged + npm start).
+  // Windows toasts need a stable AUMID + ToastActivatorCLSID (packaged + npm start).
   if (process.platform === "win32") {
     app.setAppUserModelId(APP_ID);
+    app.setToastActivatorCLSID(TOAST_ACTIVATOR_CLSID);
   }
 
   // Before ready: unblock LiveKit ws://LAN from localhost web UI (Chromium PNA/LNA).
