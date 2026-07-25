@@ -582,7 +582,14 @@ export function useChat() {
       if (activeIdRef.current === msg.conversationId) {
         api(`/v1/messages/${msg.id}/read`, { method: "POST" }).catch(() => {});
       }
-      if (document.hidden || activeIdRef.current !== msg.conversationId) {
+      // Electron keeps document.hidden=false while the window is visible but unfocused;
+      // still alert for the open chat when the shell is in the background.
+      const shellInactive =
+        document.hidden ||
+        (isQchatDesktop() &&
+          typeof document.hasFocus === "function" &&
+          !document.hasFocus());
+      if (shellInactive || activeIdRef.current !== msg.conversationId) {
         const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
         const notify = loadLocalNotifyProps();
         const isMention =
