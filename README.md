@@ -34,6 +34,18 @@ cd apps/desktop && npm install && npm run dev
 Desktop development instructions for Linux and Windows 11 are in
 [`apps/desktop/README.md`](apps/desktop/README.md).
 
+## Deploy modes
+
+Qchat can run on a **VPS** or on a **local LAN computer** (no VPS):
+
+| Mode | Host | Desktop command |
+|---|---|---|
+| **A — VPS** | nginx + HTTPS (e.g. `135.181.224.36`) | `cd apps/desktop && npm run start:vps` |
+| **B — Local / LAN** | PC or Ubuntu VM (e.g. `192.168.1.124:3000`) | `cd apps/desktop && npm run start:lan-host` |
+
+See [`docs/deployment-modes.md`](docs/deployment-modes.md) for both setups.
+VPS nginx details: [`docs/deployment-nginx-systemd.md`](docs/deployment-nginx-systemd.md).
+
 ## Brand assets
 
 Web/PWA, admin, desktop, and mobile icons are generated from
@@ -47,9 +59,8 @@ Web/PWA, admin, desktop, and mobile icons are generated from
 
 See [`docs/`](docs/) for requirements, architecture decisions, implementation plans, and operational guidance.
 
-For an always-on deployment with the Go API managed by systemd and the web
-frontend/API exposed through nginx on port 80, see
-[`docs/deployment-nginx-systemd.md`](docs/deployment-nginx-systemd.md).
+- Dual deploy (VPS vs local LAN): [`docs/deployment-modes.md`](docs/deployment-modes.md)
+- Always-on VPS with systemd + nginx: [`docs/deployment-nginx-systemd.md`](docs/deployment-nginx-systemd.md)
 
 To pull updates and redeploy on a host:
 

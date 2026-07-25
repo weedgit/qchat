@@ -8,6 +8,7 @@
  */
 
 import { detectDesktopPlatform, detectWebPlatform } from "./clientPlatform";
+import { newUUID } from "./uuid";
 
 const DEVICE_ID_KEY = "qchat.device_id";
 
@@ -19,12 +20,12 @@ export function getDeviceId(): string {
   try {
     let id = localStorage.getItem(DEVICE_ID_KEY);
     if (!id) {
-      id = crypto.randomUUID();
+      id = newUUID();
       localStorage.setItem(DEVICE_ID_KEY, id);
     }
     return id;
   } catch {
-    return crypto.randomUUID();
+    return newUUID();
   }
 }
 

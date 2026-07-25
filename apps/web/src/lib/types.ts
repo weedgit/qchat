@@ -1,3 +1,5 @@
+import { newUUID } from "./uuid";
+
 export interface CurrentUser {
   id: string;
   phone: string;
@@ -170,7 +172,7 @@ export function normalizeMessage(raw: any, currentUserId?: string): Message {
   if (!content && type === "image") content = "Photo";
   if (!content && type === "file") content = "File";
   return {
-    id: str(raw?.id ?? raw?.message_id ?? raw?.client_msg_id ?? crypto.randomUUID()),
+    id: str(raw?.id ?? raw?.message_id ?? raw?.client_msg_id ?? newUUID()),
     conversationId: str(raw?.conversation_id ?? raw?.conversationId),
     senderId,
     senderName: str(raw?.sender_name ?? raw?.display_name ?? raw?.nickname) || undefined,
