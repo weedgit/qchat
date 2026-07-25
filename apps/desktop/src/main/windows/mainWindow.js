@@ -135,6 +135,16 @@ function createMainWindow(opts) {
     },
   });
 
+  // Windows taskbar uses .ico; re-apply after create so electron.exe does not
+  // keep the blank document placeholder from the host binary.
+  if (icon && process.platform === "win32") {
+    try {
+      mainWindow.setIcon(icon);
+    } catch (err) {
+      console.warn("[qchat-desktop] setIcon failed:", err?.message || err);
+    }
+  }
+
   mainWindow.on("page-title-updated", (event) => {
     event.preventDefault();
     if (mainWindow && !mainWindow.isDestroyed()) {

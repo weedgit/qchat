@@ -68,7 +68,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "assets/icon.png",
+      "icon": "assets/icon.ico",
       "artifactName": "qchat-desktop-Setup-${version}.${ext}",
       "signtoolOptions": {
         "signingHashAlgorithms": [

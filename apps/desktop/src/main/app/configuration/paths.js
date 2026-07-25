@@ -7,8 +7,22 @@ function getDesktopRoot() {
   return path.join(__dirname, "../../../..");
 }
 
-function getIconPath() {
+/** PNG source used for tray / Linux / macOS. */
+function getIconPngPath() {
   return path.join(getDesktopRoot(), "assets", "icon.png");
+}
+
+/**
+ * Best icon for the current platform.
+ * Windows taskbar / Start Menu / BrowserWindow require .ico — PNG shows as the
+ * blank document placeholder on the Win11 taskbar when running electron.exe.
+ */
+function getIconPath() {
+  if (process.platform === "win32") {
+    const ico = path.join(getDesktopRoot(), "assets", "icon.ico");
+    if (fs.existsSync(ico)) return ico;
+  }
+  return getIconPngPath();
 }
 
 function getPreloadPath() {
@@ -31,6 +45,7 @@ function iconOption() {
 module.exports = {
   getDesktopRoot,
   getIconPath,
+  getIconPngPath,
   getPreloadPath,
   getProductionConfigPath,
   getEnvFilePath,

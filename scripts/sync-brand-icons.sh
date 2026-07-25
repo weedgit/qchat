@@ -37,4 +37,15 @@ cp "$SOURCE" "$ROOT/apps/mobile/assets/qchat-icon-512.png"
 cp "$SOURCE" "$ROOT/apps/mobile/assets/icon.png"
 magick "$SOURCE" -resize 1024x1024 -strip "$ROOT/apps/mobile/assets/adaptive-icon.png"
 
+# Windows taskbar / NSIS require a real .ico (PNG shows as a blank document).
+if command -v magick >/dev/null; then
+  magick "$ROOT/apps/desktop/assets/icon-16.png" \
+    "$ROOT/apps/desktop/assets/icon-32.png" \
+    "$ROOT/apps/desktop/assets/icon-48.png" \
+    "$ROOT/apps/desktop/assets/icon-64.png" \
+    "$ROOT/apps/desktop/assets/icon-128.png" \
+    "$ROOT/apps/desktop/assets/icon-256.png" \
+    "$ROOT/apps/desktop/assets/icon.ico"
+fi
+
 echo "Qchat icons synced from branding/qchat-icon-512.png"

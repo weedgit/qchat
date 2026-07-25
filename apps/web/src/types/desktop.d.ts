@@ -21,6 +21,8 @@ declare global {
       silent?: boolean;
       /** NOTI-05 — flash taskbar / bounce Dock when true. */
       mention?: boolean;
+      /** Skip toast when this conversation's window is OS-focused. */
+      suppressIfFocused?: boolean;
     }) => Promise<boolean>;
     showAbout: () => Promise<boolean>;
     fetchCaptcha: () => Promise<{ captcha_id: string; image: string }>;

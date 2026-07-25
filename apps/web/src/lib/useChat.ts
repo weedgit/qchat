@@ -582,70 +582,83 @@ export function useChat() {
       if (activeIdRef.current === msg.conversationId) {
         api(`/v1/messages/${msg.id}/read`, { method: "POST" }).catch(() => {});
       }
-      // Electron keeps document.hidden=false while the window is visible but unfocused;
-      // still alert for the open chat when the shell is in the background.
-      const shellInactive =
-        document.hidden ||
-        (isQchatDesktop() &&
-          typeof document.hasFocus === "function" &&
-          !document.hasFocus());
-      if (shellInactive || activeIdRef.current !== msg.conversationId) {
-        const conversation = conversationsRef.current.find((c) => c.id === msg.conversationId);
-        const notify = loadLocalNotifyProps();
-        const isMention =
-          Boolean((payload as any)?.mention_all) ||
-          (Array.isArray((payload as any)?.mentions) &&
-            (payload as any).mentions.includes(meRef.current?.id));
-        if (
-          !shouldNotifyDesktop(notify, {
-            muted: conversation?.muted,
-            isMention,
-          })
-        ) {
- /* skip per notify_props */
-        } else {
-          // Telegram-web style: "Sender → Recipient", sender avatar as icon.
-          const sender = msg.senderName || conversation?.title || "New message";
-          const target =
-            conversation?.type === "dm"
-              ? meRef.current?.nickname ?? ""
-              : conversation?.title ?? "";
-          let title = target ? `${sender} → ${target}` : sender;
-          if (isMention) {
-            title = Boolean((payload as any)?.mention_all)
-              ? `Mentioned everyone · ${title}`
-              : `Mentioned you · ${title}`;
-          }
-          if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
-            window.qchatDesktop.notifyMessage({
-              title,
-              body: msg.content,
-              conversationId: msg.conversationId,
-              silent: !notify.sound,
-              mention: isMention,
-            }).catch(() => {});
-          } else if ("Notification" in window && Notification.permission === "granted") {
-            const notification = new Notification(title, {
-              body: msg.content,
-              tag: `qchat-${msg.conversationId}`,
-              silent: !notify.sound,
-              icon: mediaAuthURL(msg.senderAvatar),
-            });
-            notification.onclick = () => {
-              window.focus();
-              setActiveId(msg.conversationId);
-              setConversations((prev) =>
-                prev.map((c) =>
-                  c.id === msg.conversationId
-                    ? { ...c, unreadCount: 0, mentionCount: 0 }
-                    : c
-                )
-              );
-              loadMessages(msg.conversationId);
-              notification.close();
-            };
-          }
+      const conversation = conversationsRef.current.find(
+        (c) => c.id === msg.conversationId
+      );
+      const notify = loadLocalNotifyProps();
+      const isMention =
+        Boolean((payload as any)?.mention_all) ||
+        (Array.isArray((payload as any)?.mentions) &&
+          (payload as any).mentions.includes(meRef.current?.id));
+      // Desktop: always hand off to main. Main suppresses only when this exact
+      // chat is focused (document.hasFocus is unreliable in Electron).
+      // Windows itself also hides toasts while the app is the foreground window —
+      // minimize or Alt+Tab away to see banners.
+      if (
+        !shouldNotifyDesktop(notify, {
+          muted: conversation?.muted,
+          isMention,
+        })
+      ) {
+        /* skip per notify_props */
+      } else if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
+        const sender = msg.senderName || conversation?.title || "New message";
+        const target =
+          conversation?.type === "dm"
+            ? meRef.current?.nickname ?? ""
+            : conversation?.title ?? "";
+        let title = target ? `${sender} → ${target}` : sender;
+        if (isMention) {
+          title = Boolean((payload as any)?.mention_all)
+            ? `Mentioned everyone · ${title}`
+            : `Mentioned you · ${title}`;
         }
+        window.qchatDesktop
+          .notifyMessage({
+            title,
+            body: msg.content || (msg.mediaUrl ? "Attachment" : "New message"),
+            conversationId: msg.conversationId,
+            silent: !notify.sound,
+            mention: isMention,
+            suppressIfFocused: activeIdRef.current === msg.conversationId,
+          })
+          .catch(() => {});
+      } else if (
+        (document.hidden || activeIdRef.current !== msg.conversationId) &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        // Telegram-web style: "Sender → Recipient", sender avatar as icon.
+        const sender = msg.senderName || conversation?.title || "New message";
+        const target =
+          conversation?.type === "dm"
+            ? meRef.current?.nickname ?? ""
+            : conversation?.title ?? "";
+        let title = target ? `${sender} → ${target}` : sender;
+        if (isMention) {
+          title = Boolean((payload as any)?.mention_all)
+            ? `Mentioned everyone · ${title}`
+            : `Mentioned you · ${title}`;
+        }
+        const notification = new Notification(title, {
+          body: msg.content,
+          tag: `qchat-${msg.conversationId}`,
+          silent: !notify.sound,
+          icon: mediaAuthURL(msg.senderAvatar),
+        });
+        notification.onclick = () => {
+          window.focus();
+          setActiveId(msg.conversationId);
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === msg.conversationId
+                ? { ...c, unreadCount: 0, mentionCount: 0 }
+                : c
+            )
+          );
+          loadMessages(msg.conversationId);
+          notification.close();
+        };
       }
     }
   }, [loadConversations, loadMessages, clearTypingUser, upsertTypingUser]);

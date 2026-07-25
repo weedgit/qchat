@@ -39,8 +39,13 @@ const { createDeepLinkHandler } = require("./deepLink");
 const { registerWindowsNotifications } = require("../native/windowsNotifications");
 
 function startApp() {
-  // Windows toasts need a stable AUMID + ToastActivatorCLSID (packaged + npm start).
+  // Windows toast identity is also set in index.js (must be before ready).
   if (process.platform === "win32") {
+    try {
+      app.setName(APP_TITLE);
+    } catch {
+      /* ignore */
+    }
     app.setAppUserModelId(APP_ID);
     app.setToastActivatorCLSID(TOAST_ACTIVATOR_CLSID);
   }

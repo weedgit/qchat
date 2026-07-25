@@ -16,14 +16,29 @@ function createNotifyHandler(deps) {
     if (!payload || typeof payload !== "object") return false;
 
     const title = String(payload.title || APP_TITLE);
-    const body = String(payload.body || "");
+    const body = String(payload.body || "").trim() || "New message";
     const conversationId = String(payload.conversationId || "");
     const isMention = Boolean(payload.mention || payload.attention);
+    const suppressIfFocused = Boolean(payload.suppressIfFocused);
     const iconPath = getIconPath();
 
+    const win =
+      typeof deps.getMainWindow === "function" ? deps.getMainWindow() : null;
+
+    // Prefer OS window focus over document.hasFocus() (unreliable in Electron).
+    if (
+      suppressIfFocused &&
+      win &&
+      !win.isDestroyed() &&
+      win.isFocused() &&
+      !win.isMinimized()
+    ) {
+      return false;
+    }
+
     // NOTI-05: flash / bounce for mentions even if OS notification is blocked later.
-    if (isMention && typeof deps.getMainWindow === "function") {
-      requestWindowAttention(deps.getMainWindow, { mention: true });
+    if (isMention && win) {
+      requestWindowAttention(() => win, { mention: true });
     }
 
     try {
@@ -38,8 +53,9 @@ function createNotifyHandler(deps) {
         deps.sendConversationToRenderer(conversationId);
       });
       notification.on("show", () => {
-        if (isMention && typeof deps.getMainWindow === "function") {
-          requestWindowAttention(deps.getMainWindow, { mention: true });
+        console.log("[qchat-desktop] message toast shown:", title);
+        if (isMention && win) {
+          requestWindowAttention(() => win, { mention: true });
         }
       });
       notification.on("failed", (_e, error) => {

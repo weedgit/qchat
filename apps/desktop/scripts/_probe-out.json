@@ -1,0 +1,22 @@
+{
+  "again": {
+    "ok": true,
+    "clsidChanged": false,
+    "conflictRemoved": false
+  },
+  "names": [
+    "Qchat Desktop.lnk"
+  ],
+  "appName": "Qchat Desktop",
+  "toastClsid": "{A7F3C2E1-9B4D-4E8A-9F21-6D8B0C4E1A2F}",
+  "details": {
+    "target": "E:\\Projects\\qchat\\apps\\desktop\\node_modules\\electron\\dist\\electron.exe",
+    "cwd": "E:\\Projects\\qchat\\apps\\desktop\\node_modules\\electron\\dist",
+    "args": "\"E:\\Projects\\qchat\\apps\\desktop\\scripts\"",
+    "description": "Qchat Desktop",
+    "icon": "E:\\Projects\\qchat\\apps\\desktop\\assets\\icon.png",
+    "iconIndex": 0,
+    "appUserModelId": "com.qchat.desktop",
+    "toastActivatorClsid": "{A7F3C2E1-9B4D-4E8A-9F21-6D8B0C4E1A2F}"
+  }
+}
