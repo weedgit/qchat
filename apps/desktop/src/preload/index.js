@@ -1,40 +1,46 @@
 const { contextBridge, ipcRenderer } = require("electron");
-const os = require("os");
-const { IPC } = require("../shared/ipc/channels");
+
+// Sandboxed preloads only get Electron's limited require() polyfill. Node core
+// modules (for example "os") and local CommonJS files are unavailable here.
+// Keep these values in sync with src/shared/ipc/channels.js.
+const IPC = Object.freeze({
+  DESKTOP_NOTIFY: "qchat:desktop-notify",
+  FETCH_CAPTCHA: "qchat:fetch-captcha",
+  SHOW_ABOUT: "qchat:show-about",
+  RENDERER_READY: "qchat:renderer-ready",
+  OPEN_CONVERSATION: "qchat:open-conversation",
+  SET_UNREAD_STATUS: "qchat:set-unread-status",
+  SECURE_SESSION_AVAILABLE: "qchat:secure-session-available",
+  SECURE_SESSION_GET: "qchat:secure-session-get",
+  SECURE_SESSION_SET: "qchat:secure-session-set",
+  SECURE_SESSION_CLEAR: "qchat:secure-session-clear",
+  GET_NATIVE_THEME: "qchat:get-native-theme",
+  SET_NATIVE_THEME_SOURCE: "qchat:set-native-theme-source",
+  NATIVE_THEME_UPDATED: "qchat:native-theme-updated",
+  GET_NETWORK_ONLINE: "qchat:get-network-online",
+  USER_ACTIVITY_UPDATE: "qchat:user-activity-update",
+  GET_WINDOW_FOCUSED: "qchat:get-window-focused",
+  WINDOW_FOCUS_CHANGED: "qchat:window-focus-changed",
+});
 
 function argumentValue(name) {
   const prefix = `--${name}=`;
   return process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length) || "";
 }
 
-/** Friendly OS label for session settings (Windows 11, Ubuntu 24.04, …). */
-function platformLabel() {
-  const plat = process.platform;
-  const release = os.release();
-  if (plat === "win32") {
-    const build = parseInt(String(release).split(".")[2] || "0", 10);
-    if (build >= 22000) return "Windows 11";
-    if (String(release).startsWith("10.")) return "Windows 10";
-    return `Windows (${release})`;
+function decodedArgumentValue(name) {
+  const value = argumentValue(name);
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
   }
-  if (plat === "darwin") {
-    const ver = typeof os.version === "function" ? os.version() : "";
-    if (ver && /macOS|Mac/i.test(ver)) return ver.replace(/^Darwin[^0-9]*/i, "macOS ").trim();
-    return `macOS (${release})`;
-  }
-  if (plat === "linux") {
-    const ver = typeof os.version === "function" ? String(os.version() || "") : "";
-    if (/ubuntu/i.test(ver)) {
-      const m = ver.match(/ubuntu[^0-9]*([\d.]+)/i);
-      return m ? `Ubuntu ${m[1]}` : ver;
-    }
-    if (ver && ver !== "Linux") return ver;
-    return `Linux (${release})`;
-  }
-  return `${plat} (${release})`;
 }
 
-const osLabel = platformLabel();
+// The main process has Node access and computes this before creating the
+// BrowserWindow. process.platform remains available in a sandboxed preload.
+const osLabel =
+  decodedArgumentValue("qchat-platform-label") || process.platform || "Desktop";
 
 contextBridge.exposeInMainWorld("qchatDesktop", {
   isDesktop: true,

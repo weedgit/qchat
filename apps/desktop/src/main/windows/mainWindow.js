@@ -1,4 +1,5 @@
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { app, BrowserWindow, dialog } = require("electron");
 const {
@@ -18,7 +19,6 @@ const {
 } = require("./sessionPersistence");
 const { ensureVaultSessionFresh } = require("./sessionValidate");
 const { attachContextMenu } = require("../native/contextMenu");
-const { IPC } = require("../../shared/ipc/channels");
 const { attachWindowFocusBridge } = require("../ipc/handlers/windowFocus");
 
 /** @type {BrowserWindow | null} */
@@ -28,8 +28,62 @@ let pendingConversationId = null;
 /** @type {(() => void) | null} */
 let detachWindowFocusBridge = null;
 
+/** Friendly OS label computed in main because sandboxed preloads cannot require("os"). */
+function platformLabel() {
+  const release = os.release();
+  if (process.platform === "win32") {
+    const build = parseInt(String(release).split(".")[2] || "0", 10);
+    if (build >= 22000) return "Windows 11";
+    if (String(release).startsWith("10.")) return "Windows 10";
+    return `Windows (${release})`;
+  }
+  if (process.platform === "darwin") {
+    const version = typeof os.version === "function" ? os.version() : "";
+    return version || `macOS (${release})`;
+  }
+  if (process.platform === "linux") {
+    const version = typeof os.version === "function" ? String(os.version() || "") : "";
+    const ubuntu = version.match(/ubuntu[^0-9]*([\d.]+)/i);
+    if (ubuntu) return `Ubuntu ${ubuntu[1]}`;
+    return version && version !== "Linux" ? version : `Linux (${release})`;
+  }
+  return `${process.platform} (${release})`;
+}
+
 function getMainWindow() {
   return mainWindow;
+}
+
+/**
+ * loadURL that swallows transient ERR_FAILED / ERR_ABORTED and retries.
+ * The prod host uses a self-signed IP cert; the first handshake after a
+ * debugger attach sometimes aborts (ERR_FAILED -2). did-fail-load already
+ * shows a dialog for genuine failures, so here we just avoid the noisy
+ * UnhandledPromiseRejectionWarning and give the load a couple of retries.
+ *
+ * @param {BrowserWindow} win
+ * @param {string} url
+ * @param {number} [attempts]
+ */
+async function loadUrlWithRetry(win, url, attempts = 3) {
+  for (let i = 0; i < attempts; i += 1) {
+    if (!win || win.isDestroyed()) return;
+    try {
+      await win.loadURL(url);
+      return;
+    } catch (err) {
+      const msg = String(err?.message || err);
+      // -3 ERR_ABORTED (superseded navigation) is benign; stop retrying.
+      if (/ERR_ABORTED|\(-3\)/.test(msg)) return;
+      const last = i === attempts - 1;
+      console.warn(
+        `[qchat-desktop] loadURL failed (${i + 1}/${attempts})${last ? "" : ", retrying"}:`,
+        msg
+      );
+      if (last || !win || win.isDestroyed()) return;
+      await new Promise((resolve) => setTimeout(resolve, 500 * (i + 1)));
+    }
+  }
 }
 
 function statePath() {
@@ -135,6 +189,7 @@ function createMainWindow(opts) {
       additionalArguments: [
         `--qchat-version=${appVersion}`,
         `--qchat-web-url=${webUrl}`,
+        `--qchat-platform-label=${encodeURIComponent(platformLabel())}`,
       ],
     },
   });
@@ -225,6 +280,33 @@ function createMainWindow(opts) {
   }
 
   mainWindow.webContents.on("did-finish-load", () => {
+    // Prove the sandboxed preload exposed the bridge (needed for notifyMessage).
+    mainWindow?.webContents
+      .executeJavaScript(
+        `({
+          hasDesktop: Boolean(window.qchatDesktop?.isDesktop),
+          hasNotify: typeof window.qchatDesktop?.notifyMessage,
+          platformLabel: window.qchatDesktop?.platformLabel || null,
+          path: location.pathname
+        })`
+      )
+      .then((info) => {
+        if (!info?.hasDesktop || info.hasNotify !== "function") {
+          console.error(
+            "[qchat-desktop] preload bridge missing after load — desktop notifications cannot run:",
+            info
+          );
+        } else {
+          console.log("[qchat-desktop] preload bridge ok:", info);
+        }
+      })
+      .catch((err) => {
+        console.warn(
+          "[qchat-desktop] preload bridge probe failed:",
+          err?.message || err
+        );
+      });
+
     // Don't force /login while a remembered session exists — auth gates handle expiry.
     if (hasSecureSession(webUrl)) return;
     const watchdog = `
@@ -267,13 +349,13 @@ function createMainWindow(opts) {
 
     if (remembered) {
       await prepareEarlySessionBootstrap(mainWindow.webContents, webUrl, fresh);
-      await mainWindow.loadURL(`${webOrigin}/`);
+      await loadUrlWithRetry(mainWindow, `${webOrigin}/`);
       return;
     }
 
     // No usable session — open login directly (same as web: splash only while checking).
     showOnReady = true;
-    await mainWindow.loadURL(`${webOrigin}/login`);
+    await loadUrlWithRetry(mainWindow, `${webOrigin}/login`);
     revealMainWindow();
   })();
 

@@ -71,4 +71,20 @@ assert(
   "BrowserWindow must keep webPreferences.sandbox: true"
 );
 
+const preload = fs.readFileSync(
+  path.join(ROOT, "src/preload/index.js"),
+  "utf8"
+);
+const preloadRequires = [...preload.matchAll(/require\((["'])([^"']+)\1\)/g)].map(
+  (match) => match[2]
+);
+assert(
+  preloadRequires.every((moduleName) => moduleName === "electron"),
+  `sandboxed preload may only require Electron (found: ${preloadRequires.join(", ")})`
+);
+assert(
+  !preload.includes('require("os")') && !preload.includes("require('os')"),
+  "sandboxed preload must receive OS metadata from main"
+);
+
 console.log("sandbox hardening: ok");

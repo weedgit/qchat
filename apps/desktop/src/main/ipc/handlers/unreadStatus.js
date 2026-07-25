@@ -1,14 +1,22 @@
-const { updateTrayUnreadStatus } = require("../../native/trayStatus");
+const { updateTrayUnreadStatus, getTrayUnreadStatus } = require("../../native/trayStatus");
 const { updateAppBadge } = require("../../native/badge");
+const { maybeNotifyFromUnread } = require("../../native/notifyUnread");
 
 /**
  * Tray tooltip/title (NOTI-04) + dock/taskbar badge (NOTI-03).
  * Same IPC payload drives both so web only calls setUnreadStatus once.
  *
+ * Also fires a Mattermost-style backup toast when unread rises while the
+ * window is in the background (covers remote UIs that skip notifyMessage).
+ *
  * @param {{ getMainWindow: () => Electron.BrowserWindow | null }} deps
  */
 function createUnreadStatusHandler(deps) {
+  /** Skip the first unread sync after login/reload so restoring badge doesn't toast. */
+  let seenInitial = false;
+
   return async (_event, payload) => {
+    const prev = getTrayUnreadStatus();
     const normalized =
       payload != null && typeof payload === "object"
         ? /** @type {{ unread?: number | boolean, mentions?: number }} */ (payload)
@@ -20,6 +28,15 @@ function createUnreadStatusHandler(deps) {
     } catch (err) {
       console.warn("[qchat-desktop] app badge update failed:", err?.message || err);
     }
+
+    const increased =
+      status.unread > prev.unread || status.mentions > prev.mentions;
+    if (!seenInitial) {
+      seenInitial = true;
+    } else if (increased) {
+      maybeNotifyFromUnread(status, { getMainWindow: deps.getMainWindow });
+    }
+
     return true;
   };
 }

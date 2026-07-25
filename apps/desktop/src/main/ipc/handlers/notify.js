@@ -110,6 +110,12 @@ function createNotifyHandler(deps) {
       });
       notification.on("show", () => {
         console.log("[qchat-desktop] message toast shown:", title);
+        try {
+          const { markDesktopToastShown } = require("../../native/notifyUnread");
+          markDesktopToastShown();
+        } catch {
+          /* ignore */
+        }
         if (process.platform === "win32" && win && !win.isDestroyed()) {
           try {
             win.flashFrame(true);

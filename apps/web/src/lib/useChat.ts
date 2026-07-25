@@ -653,7 +653,17 @@ export function useChat() {
             mention: isMention,
             suppressIfFocused: activeIdRef.current === msg.conversationId,
           })
-          .catch(() => {});
+          .then((ok) => {
+            if (!ok) {
+              console.warn("[qchat] desktop notifyMessage returned false", {
+                conversationId: msg.conversationId,
+                title,
+              });
+            }
+          })
+          .catch((err) => {
+            console.error("[qchat] desktop notifyMessage failed:", err);
+          });
       } else if (
         (!shellFocused || activeIdRef.current !== msg.conversationId) &&
         "Notification" in window &&
