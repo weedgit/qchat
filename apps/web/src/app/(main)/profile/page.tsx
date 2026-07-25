@@ -1,0 +1,492 @@
+"use client";
+
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Avatar from "@/components/Avatar";
+import MenuModal from "@/components/MenuModal";
+import { api } from "@/lib/api";
+import { AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
+import { useLocale } from "@/lib/locale";
+
+function RowIcon({ d }: { d: string }) {
+  return (
+    <svg
+      className="menu-modal-row-icon"
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d={d} />
+    </svg>
+  );
+}
+
+function CopyHintIcon({ copied }: { copied: boolean }) {
+  return (
+    <svg
+      className={`menu-modal-copy-hint${copied ? " is-copied" : ""}`}
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      {copied ? (
+        <path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M8.5 12l2.5 2.5 4.5-4.5" />
+      ) : (
+        <path d="M9 9h10v12H9z M5 15V3h10" />
+      )}
+    </svg>
+  );
+}
+
+const ROW_ICONS = {
+  name: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  realName:
+    "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M9 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M5.5 16.5c.6-1.6 1.9-2.5 3.5-2.5s2.9.9 3.5 2.5 M15 10h4 M15 14h3",
+  age: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 7v5l3 2",
+  region:
+    "M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z M12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+  signature: "M3 17c3-1 4-9 7-9s3 6 5 6 3-2 6-2 M3 20h18",
+  phone:
+    "M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
+  username:
+    "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M16 8v5a3 3 0 0 0 6 0v-1 M15 12a3 3 0 1 0-6 0 3 3 0 0 0 6 0z",
+  id: "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M7 9h4 M7 13h6 M15 9h2 M15 13h2",
+  changePhone:
+    "M15.05 5A5 5 0 0 1 19 8.95 M15.05 1A9 9 0 0 1 23 8.94 M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
+} as const;
+
+interface Profile {
+  id: string;
+  phone: string;
+  username: string;
+  display_name: string;
+  real_name: string;
+  age: number | null;
+  region: string;
+  signature: string;
+  avatar_url: string;
+  profile_visibility: string;
+  friend_privacy: string;
+}
+
+export default function ProfilePage() {
+  const router = useRouter();
+  const { t } = useLocale();
+  const [me, setMe] = useState<Profile | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [copiedField, setCopiedField] = useState<"phone" | "username" | "id" | null>(
+    null
+  );
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [newPhone, setNewPhone] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+  const [phoneHint, setPhoneHint] = useState<string | null>(null);
+  const [phoneOpen, setPhoneOpen] = useState(false);
+
+  async function uploadAvatar(file: File) {
+    if (!me) return;
+    if (!isAvatarFile(file)) {
+      setError(t("media.avatarMustBeImage"));
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      setError(t("media.avatarTooLarge"));
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", "avatar");
+      const up = await api<any>("/v1/media/upload", { method: "POST", body: fd });
+      const url = String(up?.url ?? "");
+      await api("/v1/me", {
+        method: "PATCH",
+        body: JSON.stringify({ avatar_url: url }),
+      });
+      setMe({ ...me, avatar_url: url });
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function load() {
+    setError(null);
+    try {
+      const u = await api<any>("/v1/me");
+      setMe({
+        id: String(u?.id ?? ""),
+        phone: String(u?.phone ?? ""),
+        username: String(u?.username ?? ""),
+        display_name: String(u?.display_name ?? u?.username ?? t("me.title")),
+        real_name: String(u?.real_name ?? ""),
+        age: typeof u?.age === "number" ? u.age : null,
+        region: String(u?.region ?? ""),
+        signature: String(u?.signature ?? ""),
+        avatar_url: String(u?.avatar_url ?? ""),
+        profile_visibility: String(u?.profile_visibility ?? "friends"),
+        friend_privacy: String(u?.friend_privacy ?? "approval"),
+      });
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
+  }, []);
+
+  async function onSave(e: FormEvent) {
+    e.preventDefault();
+    if (!me) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api("/v1/me", {
+        method: "PATCH",
+        body: JSON.stringify({
+          display_name: me.display_name,
+          real_name: me.real_name,
+          age: me.age,
+          region: me.region,
+          signature: me.signature,
+          avatar_url: me.avatar_url,
+          profile_visibility: me.profile_visibility,
+          friend_privacy: me.friend_privacy,
+        }),
+      });
+      router.push("/");
+    } catch (err: any) {
+      setError(err.message);
+      setSaving(false);
+    }
+  }
+
+  function copyField(field: "phone" | "username" | "id", value: string) {
+    const text = value.trim();
+    if (!text) return;
+    navigator.clipboard
+      ?.writeText(text)
+      .then(() => {
+        setCopiedField(field);
+        setTimeout(() => setCopiedField((cur) => (cur === field ? null : cur)), 1500);
+      })
+      .catch(() => {});
+  }
+
+  return (
+    <MenuModal
+      title={t("me.editProfile")}
+      ariaLabel={t("nav.profile")}
+      action={
+        <button
+          type="button"
+          className="menu-modal-action"
+          disabled={saving || !me}
+          onClick={() => {
+            const form = document.getElementById(
+              "profile-edit-form"
+            ) as HTMLFormElement | null;
+            form?.requestSubmit();
+          }}
+        >
+          {saving ? t("common.saving") : t("common.save")}
+        </button>
+      }
+    >
+      {error && (
+        <div className="menu-modal-error">{t("me.profileLoadError", { error })}</div>
+      )}
+
+      <div className="menu-modal-hero">
+        <button
+          type="button"
+          className="avatar-edit menu-modal-avatar"
+          title={t("me.changeAvatar")}
+          disabled={saving || !me}
+          onClick={() => avatarInputRef.current?.click()}
+        >
+          <Avatar
+            name={me?.display_name ?? "?"}
+            url={me?.avatar_url || undefined}
+            size={112}
+          />
+          <span className="avatar-edit-overlay" aria-hidden>
+            {"\u{1F4F7}"}
+          </span>
+        </button>
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) uploadAvatar(file);
+          }}
+        />
+        <div className="menu-modal-hero-name">
+          {me?.display_name ?? t("common.loading")}
+        </div>
+        {me?.username ? <div className="menu-modal-hero-sub">@{me.username}</div> : null}
+      </div>
+
+      {me && (
+        <>
+          <section className="menu-modal-section">
+            <button
+              type="button"
+              className="menu-modal-row menu-modal-row-lead"
+              title={t("me.copyPhone")}
+              disabled={!me.phone}
+              onClick={() => copyField("phone", me.phone)}
+            >
+              <RowIcon d={ROW_ICONS.phone} />
+              <span className="menu-modal-row-main">
+                <span className="menu-modal-value">{me.phone || "—"}</span>
+                <span className="menu-modal-label">
+                  {copiedField === "phone" ? t("me.idCopied") : t("me.phone")}
+                </span>
+              </span>
+              <CopyHintIcon copied={copiedField === "phone"} />
+            </button>
+            <button
+              type="button"
+              className="menu-modal-row menu-modal-row-lead"
+              title={t("me.copyUsername")}
+              disabled={!me.username}
+              onClick={() => copyField("username", me.username)}
+            >
+              <RowIcon d={ROW_ICONS.username} />
+              <span className="menu-modal-row-main">
+                <span className="menu-modal-value">
+                  {me.username ? `@${me.username}` : "—"}
+                </span>
+                <span className="menu-modal-label">
+                  {copiedField === "username" ? t("me.idCopied") : t("me.username")}
+                </span>
+              </span>
+              <CopyHintIcon copied={copiedField === "username"} />
+            </button>
+            <button
+              type="button"
+              className="menu-modal-row menu-modal-row-lead"
+              title={t("me.copyId")}
+              disabled={!me.id}
+              onClick={() => copyField("id", me.id)}
+            >
+              <span className="menu-modal-row-main">
+                <span className="menu-modal-value menu-modal-id">
+                  <span className="menu-modal-id-label">ID</span>
+                  <span className="menu-modal-id-num">{me.id}</span>
+                </span>
+                {copiedField === "id" && (
+                  <span className="menu-modal-label">{t("me.idCopied")}</span>
+                )}
+              </span>
+              <CopyHintIcon copied={copiedField === "id"} />
+            </button>
+          </section>
+
+          <form
+            id="profile-edit-form"
+            className="menu-modal-section"
+            onSubmit={onSave}
+          >
+            <label className="menu-modal-field menu-modal-field-lead">
+              <RowIcon d={ROW_ICONS.name} />
+              <div className="menu-modal-field-body">
+                <span>{t("me.displayName")}</span>
+                <input
+                  value={me.display_name}
+                  onChange={(e) => setMe({ ...me, display_name: e.target.value })}
+                />
+              </div>
+            </label>
+            <label className="menu-modal-field menu-modal-field-lead">
+              <RowIcon d={ROW_ICONS.realName} />
+              <div className="menu-modal-field-body">
+                <span>{t("me.realName")}</span>
+                <input
+                  value={me.real_name}
+                  onChange={(e) => setMe({ ...me, real_name: e.target.value })}
+                />
+              </div>
+            </label>
+            <label className="menu-modal-field menu-modal-field-lead">
+              <RowIcon d={ROW_ICONS.age} />
+              <div className="menu-modal-field-body">
+                <span>{t("me.age")}</span>
+                <input
+                  type="number"
+                  value={me.age ?? ""}
+                  onChange={(e) =>
+                    setMe({
+                      ...me,
+                      age: e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+            </label>
+            <label className="menu-modal-field menu-modal-field-lead">
+              <RowIcon d={ROW_ICONS.region} />
+              <div className="menu-modal-field-body">
+                <span>{t("me.region")}</span>
+                <input
+                  value={me.region}
+                  onChange={(e) => setMe({ ...me, region: e.target.value })}
+                />
+              </div>
+            </label>
+            <label className="menu-modal-field menu-modal-field-lead">
+              <RowIcon d={ROW_ICONS.signature} />
+              <div className="menu-modal-field-body">
+                <span>{t("me.signature")}</span>
+                <input
+                  value={me.signature}
+                  onChange={(e) => setMe({ ...me, signature: e.target.value })}
+                />
+              </div>
+            </label>
+          </form>
+
+          <section className="menu-modal-section">
+            <div className="menu-modal-section-title">{t("me.privacyTitle")}</div>
+            <label className="menu-modal-field">
+              <span>{t("me.profileVisibility")}</span>
+              <select
+                value={me.profile_visibility}
+                onChange={(e) => setMe({ ...me, profile_visibility: e.target.value })}
+              >
+                <option value="public">{t("me.visibilityPublic")}</option>
+                <option value="friends">{t("me.visibilityFriends")}</option>
+              </select>
+            </label>
+            <label className="menu-modal-field">
+              <span>{t("me.friendRequests")}</span>
+              <select
+                value={me.friend_privacy}
+                onChange={(e) => setMe({ ...me, friend_privacy: e.target.value })}
+              >
+                <option value="open">{t("me.friendOpen")}</option>
+                <option value="approval">{t("me.friendApproval")}</option>
+                <option value="closed">{t("me.friendClosed")}</option>
+              </select>
+            </label>
+          </section>
+
+          <section className="menu-modal-section">
+            <button
+              type="button"
+              className="menu-modal-row menu-modal-row-lead"
+              onClick={() => setPhoneOpen((v) => !v)}
+            >
+              <RowIcon d={ROW_ICONS.changePhone} />
+              <span className="menu-modal-row-main">
+                <span className="menu-modal-value">{t("settings.changePhone")}</span>
+                <span className="menu-modal-label">{t("me.phoneHint")}</span>
+              </span>
+            </button>
+            {phoneOpen && (
+              <div className="menu-modal-panel">
+                <input
+                  placeholder={t("settings.newPhone")}
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                />
+                {!challengeId ? (
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={saving || newPhone.length !== 11}
+                    onClick={async () => {
+                      setSaving(true);
+                      setPhoneHint(null);
+                      try {
+                        const res = await api<any>("/v1/me/phone/request", {
+                          method: "POST",
+                          body: JSON.stringify({ new_phone: newPhone }),
+                        });
+                        setChallengeId(String(res?.challenge_id ?? ""));
+                        setPhoneHint(
+                          res?.dev_code
+                            ? t("settings.smsSentDev", { code: String(res.dev_code) })
+                            : t("settings.smsSent")
+                        );
+                      } catch (err: any) {
+                        setPhoneHint(err.message);
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                  >
+                    {t("settings.sendSms")}
+                  </button>
+                ) : (
+                  <>
+                    <input
+                      placeholder={t("settings.verifyCode")}
+                      value={phoneCode}
+                      onChange={(e) => setPhoneCode(e.target.value)}
+                    />
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={saving || !phoneCode}
+                      onClick={async () => {
+                        setSaving(true);
+                        setPhoneHint(null);
+                        try {
+                          const res = await api<any>("/v1/me/phone/confirm", {
+                            method: "POST",
+                            body: JSON.stringify({
+                              challenge_id: challengeId,
+                              code: phoneCode,
+                            }),
+                          });
+                          setMe({ ...me, phone: String(res?.phone ?? newPhone) });
+                          setChallengeId("");
+                          setPhoneCode("");
+                          setNewPhone("");
+                          setPhoneHint(t("settings.phoneUpdated"));
+                          setPhoneOpen(false);
+                        } catch (err: any) {
+                          setPhoneHint(err.message);
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                    >
+                      {t("settings.confirmPhone")}
+                    </button>
+                  </>
+                )}
+                {phoneHint && <div className="muted">{phoneHint}</div>}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </MenuModal>
+  );
+}

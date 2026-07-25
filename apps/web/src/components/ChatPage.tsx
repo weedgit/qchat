@@ -2,14 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import ChatPageInner from "./ChatPageInner";
+import ChatPageInner from "@/app/ChatPageInner";
 import LoadingSplash from "@/components/LoadingSplash";
 import { ensureAccessToken, getToken, restoreDesktopSession } from "@/lib/api";
 
 /**
- * Auth gate before chat UI.
- * Stay on LoadingSplash ("Starting Qchat") until tokens are restored and usable —
- * never mount chat with a dead session (that flashes Reconnecting → /login).
+ * Auth gate + chat UI. Mounted by the (main) layout so it stays under menu overlays
+ * (Telegram-style: chat visible behind Settings / Profile / …).
  */
 export default function ChatPage() {
   const router = useRouter();

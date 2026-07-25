@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { api } from "@/lib/api";
+import { useLocale } from "@/lib/locale";
 
 type Props = {
   friendshipId: string;
@@ -11,6 +12,11 @@ type Props = {
   compact?: boolean;
   /** When true, open the editor immediately (modal use). */
   startOpen?: boolean;
+  /** Telegram sheet layout (no nested card chrome). */
+  layout?: "card" | "sheet";
+  formId?: string;
+  hideActions?: boolean;
+  onCancel?: () => void;
 };
 
 /** Edit viewer-scoped friend note/alias + tags (PATCH /v1/friends/{friendship_id}). */
@@ -21,13 +27,19 @@ export default function FriendNoteEditor({
   onSaved,
   compact,
   startOpen,
+  layout = "card",
+  formId = "friend-note-form",
+  hideActions,
+  onCancel,
 }: Props) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(!!startOpen);
   const [noteDraft, setNoteDraft] = useState(note);
   const [tagInput, setTagInput] = useState("");
   const [tagList, setTagList] = useState<string[]>(tags);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sheet = layout === "sheet";
 
   function startEdit() {
     setNoteDraft(note);
@@ -38,14 +50,19 @@ export default function FriendNoteEditor({
   }
 
   function addTag() {
-    const t = tagInput.trim().replace(/^#/, "");
-    if (!t) return;
-    if (!tagList.includes(t)) setTagList((prev) => [...prev, t]);
+    const next = tagInput.trim().replace(/^#/, "");
+    if (!next) return;
+    if (!tagList.includes(next)) setTagList((prev) => [...prev, next]);
     setTagInput("");
   }
 
-  function removeTag(t: string) {
-    setTagList((prev) => prev.filter((x) => x !== t));
+  function removeTag(tag: string) {
+    setTagList((prev) => prev.filter((x) => x !== tag));
+  }
+
+  function cancel() {
+    setOpen(false);
+    onCancel?.();
   }
 
   async function save(e: FormEvent) {
@@ -74,60 +91,75 @@ export default function FriendNoteEditor({
         style={{ marginTop: compact ? 0 : 12, width: compact ? undefined : "100%" }}
         onClick={startEdit}
       >
-        {note || tags.length ? "Edit note & tags" : "Add note & tags"}
+        {note || tags.length ? t("contacts.editNote") : t("contacts.addNote")}
       </button>
     );
   }
 
   return (
-    <form className="friend-note-editor" onSubmit={save}>
-      <label className="k">Alias / note</label>
-      <input
-        placeholder="How you refer to them"
-        value={noteDraft}
-        onChange={(e) => setNoteDraft(e.target.value)}
-        maxLength={80}
-        autoFocus
-      />
-      <label className="k">Tags</label>
-      <div className="tag-chip-row">
-        {tagList.map((t) => (
-          <button
-            key={t}
-            type="button"
-            className="tag-chip removable"
-            onClick={() => removeTag(t)}
-            title="Remove tag"
-          >
-            #{t} ×
-          </button>
-        ))}
-      </div>
-      <div className="row-inline">
+    <form
+      id={formId}
+      className={sheet ? "friend-note-sheet" : "friend-note-editor"}
+      onSubmit={save}
+    >
+      <label className={sheet ? "menu-modal-field" : undefined}>
+        {sheet ? <span>{t("contacts.alias")}</span> : <span className="k">{t("contacts.alias")}</span>}
         <input
-          placeholder="Add tag"
-          value={tagInput}
-          onChange={(e) => setTagInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addTag();
-            }
-          }}
+          placeholder={t("contacts.aliasPlaceholder")}
+          value={noteDraft}
+          onChange={(e) => setNoteDraft(e.target.value)}
+          maxLength={80}
+          autoFocus
         />
-        <button type="button" className="btn-ghost" style={{ flex: "none" }} onClick={addTag}>
-          Add
-        </button>
+      </label>
+
+      <div className={sheet ? "menu-modal-field" : undefined}>
+        {sheet ? <span>{t("contacts.tags")}</span> : <label className="k">{t("contacts.tags")}</label>}
+        {tagList.length > 0 && (
+          <div className="tag-chip-row" style={{ marginTop: sheet ? 0 : undefined }}>
+            {tagList.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className="tag-chip removable"
+                onClick={() => removeTag(tag)}
+                title={t("contacts.removeTag")}
+              >
+                #{tag} ×
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="menu-modal-search-row" style={{ marginTop: 8 }}>
+          <input
+            placeholder={t("contacts.addTagPlaceholder")}
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addTag();
+              }
+            }}
+          />
+          <button type="button" className="btn-ghost" onClick={addTag}>
+            {t("contacts.addButton")}
+          </button>
+        </div>
       </div>
-      {error && <div className="error-text">{error}</div>}
-      <div className="row-inline" style={{ justifyContent: "flex-end" }}>
-        <button type="button" className="btn-ghost" disabled={busy} onClick={() => setOpen(false)}>
-          Cancel
-        </button>
-        <button type="submit" className="btn" disabled={busy}>
-          {busy ? "Saving…" : "Save"}
-        </button>
-      </div>
+
+      {error && <div className={sheet ? "menu-modal-error" : "error-text"}>{error}</div>}
+
+      {!hideActions && (
+        <div className="row-inline" style={{ justifyContent: "flex-end" }}>
+          <button type="button" className="btn-ghost" disabled={busy} onClick={cancel}>
+            {t("common.cancel")}
+          </button>
+          <button type="submit" className="btn" disabled={busy}>
+            {busy ? t("common.saving") : t("common.save")}
+          </button>
+        </div>
+      )}
     </form>
   );
 }
