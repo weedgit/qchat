@@ -11,6 +11,7 @@ const {
 } = require("./theme");
 const { createGetNetworkOnlineHandler } = require("./networkStatus");
 const { createGetWindowFocusedHandler } = require("./windowFocus");
+const { createWriteClipboardTextHandler } = require("./clipboard");
 
 /**
  * @param {object} deps
@@ -61,6 +62,7 @@ function registerIpcHandlers(deps) {
     IPC.GET_WINDOW_FOCUSED,
     createGetWindowFocusedHandler({ getMainWindow: deps.getMainWindow })
   );
+  ipcMain.handle(IPC.WRITE_CLIPBOARD_TEXT, createWriteClipboardTextHandler());
 
   ipcMain.on(IPC.RENDERER_READY, () => {
     deps.flushPendingConversation();

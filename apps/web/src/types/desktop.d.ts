@@ -70,6 +70,8 @@ declare global {
         isSystemEvent?: boolean;
       }) => void
     ) => () => void;
+    /** Native clipboard write (menu ID copy, etc.). */
+    writeClipboardText?: (text: string) => Promise<{ ok: boolean }>;
   }
 
   interface Window {

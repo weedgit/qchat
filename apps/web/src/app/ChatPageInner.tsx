@@ -19,7 +19,8 @@ import FriendNoteEditor from "@/components/FriendNoteEditor";
 import GroupQr from "@/components/GroupQr";
 import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
-import { getAuthDevice } from "@/lib/device";
+import { getAuthDevice, isQchatDesktop } from "@/lib/device";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { useCall } from "@/lib/useCall";
 import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
@@ -248,6 +249,8 @@ const ICONS = {
   close: "M18 6L6 18 M6 6l12 12",
   menu: "M3 6h18 M3 12h18 M3 18h18",
   back: "M15 18l-6-6 6-6",
+  /** Chevron right — show conversation list when sidebar is collapsed. */
+  forwardChevron: "M9 18l6-6-6-6",
   pencil: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
   edit: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
   user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
@@ -683,9 +686,13 @@ export default function ChatPageInner() {
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinNotice, setJoinNotice] = useState<string | null>(null);
- /** Narrow layout: list ↔ chat (Telegram-style mobile channel view). */
-  const narrowLayout = useMediaQuery("(max-width: 768px)");
+  /** Electron desktop: always dual-pane + sidebar collapse (not mobile list↔chat). */
+  const desktopShell = isQchatDesktop();
+  /** Narrow web: list ↔ chat (Telegram-style mobile channel view). */
+  const narrowLayout = useMediaQuery("(max-width: 768px)") && !desktopShell;
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  /** Hide the conversation-list sidebar (menu bar); desktop + wide web. */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const wasNarrowRef = useRef(false);
   const mobileChatOpenRef = useRef(false);
   mobileChatOpenRef.current = mobileChatOpen;
@@ -928,9 +935,26 @@ export default function ChatPageInner() {
     setMainMenuOpen(false);
   }
 
+  /** Desktop / wide web: toggle conversation list. Narrow web: list ↔ chat. */
+  function toggleSidebarMenu() {
+    if (narrowLayout) {
+      backToConversationList();
+      return;
+    }
+    setSidebarCollapsed((v) => !v);
+  }
+
+  // Leaving a conversation while the list is hidden would trap the user.
+  useEffect(() => {
+    if (!chat.activeId && sidebarCollapsed) {
+      setSidebarCollapsed(false);
+    }
+  }, [chat.activeId, sidebarCollapsed]);
+
   // Entering narrow width: show chat if a conversation is already open.
   useEffect(() => {
     if (narrowLayout && !wasNarrowRef.current) {
+      setSidebarCollapsed(false);
       if (chat.activeId) {
         setMobileChatOpen(true);
         try {
@@ -998,11 +1022,7 @@ export default function ChatPageInner() {
       .filter((m) => !m.recalled)
       .map((m) => m.content)
       .join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      /* clipboard unavailable */
-    }
+    await copyTextToClipboard(text);
     clearSelection();
   }
 
@@ -1319,11 +1339,7 @@ export default function ChatPageInner() {
   }, [memberMenu]);
 
   async function copyOne(msg: Message) {
-    try {
-      await navigator.clipboard.writeText(msg.content);
-    } catch {
-      /* clipboard unavailable */
-    }
+    await copyTextToClipboard(msg.content);
   }
 
   useEffect(() => {
@@ -2023,7 +2039,11 @@ export default function ChatPageInner() {
   }
 
   return (
-    <AppShell rail={false} mobilePane={mobilePane}>
+    <AppShell
+      rail={false}
+      mobilePane={mobilePane}
+      sidebarCollapsed={!narrowLayout && sidebarCollapsed}
+    >
       <ShellConnectionBanner
         reconnectOnly
         reconnecting={!chat.connected && wsEverConnected}
@@ -2093,13 +2113,11 @@ export default function ChatPageInner() {
                         e.stopPropagation();
                         const id = chat.me?.id;
                         if (!id) return;
-                        navigator.clipboard
-                          ?.writeText(id)
-                          .then(() => {
-                            setIdCopied(true);
-                            setTimeout(() => setIdCopied(false), 1500);
-                          })
-                          .catch(() => { });
+                        void copyTextToClipboard(id).then((ok) => {
+                          if (!ok) return;
+                          setIdCopied(true);
+                          setTimeout(() => setIdCopied(false), 1500);
+                        });
                       }}
                     >
                       <MenuIcon
@@ -2419,10 +2437,30 @@ export default function ChatPageInner() {
                 <button
                   type="button"
                   className="icon-btn chat-back-btn"
-                  title={t("chat.backToChats")}
-                  onClick={backToConversationList}
+                  title={
+                    narrowLayout
+                      ? t("chat.backToChats")
+                      : sidebarCollapsed
+                        ? t("chat.showSidebar")
+                        : t("chat.hideSidebar")
+                  }
+                  aria-label={
+                    narrowLayout
+                      ? t("chat.backToChats")
+                      : sidebarCollapsed
+                        ? t("chat.showSidebar")
+                        : t("chat.hideSidebar")
+                  }
+                  aria-expanded={narrowLayout ? undefined : !sidebarCollapsed}
+                  onClick={toggleSidebarMenu}
                 >
-                  <MenuIcon d={ICONS.back} />
+                  <MenuIcon
+                    d={
+                      !narrowLayout && sidebarCollapsed
+                        ? ICONS.forwardChevron
+                        : ICONS.back
+                    }
+                  />
                 </button>
                 <div
                   className="chat-header clickable"

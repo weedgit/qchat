@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import MenuModal from "@/components/MenuModal";
 import { api } from "@/lib/api";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
 import { useLocale } from "@/lib/locale";
 
@@ -183,13 +184,11 @@ export default function ProfilePage() {
   function copyField(field: "phone" | "username" | "id", value: string) {
     const text = value.trim();
     if (!text) return;
-    navigator.clipboard
-      ?.writeText(text)
-      .then(() => {
-        setCopiedField(field);
-        setTimeout(() => setCopiedField((cur) => (cur === field ? null : cur)), 1500);
-      })
-      .catch(() => {});
+    void copyTextToClipboard(text).then((ok) => {
+      if (!ok) return;
+      setCopiedField(field);
+      setTimeout(() => setCopiedField((cur) => (cur === field ? null : cur)), 1500);
+    });
   }
 
   return (

@@ -21,6 +21,7 @@ const IPC = Object.freeze({
   USER_ACTIVITY_UPDATE: "qchat:user-activity-update",
   GET_WINDOW_FOCUSED: "qchat:get-window-focused",
   WINDOW_FOCUS_CHANGED: "qchat:window-focus-changed",
+  WRITE_CLIPBOARD_TEXT: "qchat:write-clipboard-text",
 });
 
 function argumentValue(name) {
@@ -93,4 +94,7 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
     return () =>
       ipcRenderer.removeListener(IPC.USER_ACTIVITY_UPDATE, listener);
   },
+  /** Native clipboard write — Clipboard API is often denied in the shell. */
+  writeClipboardText: (text) =>
+    ipcRenderer.invoke(IPC.WRITE_CLIPBOARD_TEXT, text),
 });

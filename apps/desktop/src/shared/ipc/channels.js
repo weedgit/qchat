@@ -18,6 +18,8 @@ const IPC = {
   /** Mattermost-style browser focus for notification gating. */
   GET_WINDOW_FOCUSED: "qchat:get-window-focused",
   WINDOW_FOCUS_CHANGED: "qchat:window-focus-changed",
+  /** Plain-text clipboard write (menu ID copy, message copy, etc.). */
+  WRITE_CLIPBOARD_TEXT: "qchat:write-clipboard-text",
 };
 
 module.exports = { IPC };

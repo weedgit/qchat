@@ -553,31 +553,40 @@ select:focus {
   }
 }
 
-/* Narrow: conversation list ↔ chat history (Telegram mobile channel view). */
+/* Chat header: toggle conversation list (wide) / back to list (narrow). */
 .chat-back-btn {
+  display: inline-flex;
+}
+
+/* Wide: collapse conversation list (menu bar) while keeping the open chat. */
+.shell[data-sidebar-collapsed="true"] > .sidebar {
   display: none;
 }
+.shell[data-sidebar-collapsed="true"] > .chat-pane {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Narrow web only: conversation list ↔ chat (Telegram mobile). Desktop stays dual-pane. */
 @media (max-width: 768px) {
-  .shell[data-mobile-pane="list"] > .sidebar {
+  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="list"] > .sidebar {
     flex: 1;
     width: auto;
     max-width: none;
     border-right: none;
   }
-  .shell[data-mobile-pane="list"] > .chat-pane,
-  .shell[data-mobile-pane="list"] > .details-panel {
+  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="list"] > .chat-pane,
+  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="list"] > .details-panel {
     display: none;
   }
-  .shell[data-mobile-pane="chat"] > .sidebar {
+  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="chat"] > .sidebar {
     display: none;
   }
-  .shell[data-mobile-pane="chat"] > .chat-pane {
+  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="chat"] > .chat-pane {
     flex: 1;
     width: 100%;
     min-width: 0;
-  }
-  .chat-back-btn {
-    display: inline-flex;
   }
 
   /* Full-bleed chat column (no desktop max-width gutter). */

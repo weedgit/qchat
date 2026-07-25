@@ -18,12 +18,15 @@ export default function AppShell({
   rail = true,
   className,
   mobilePane,
+  sidebarCollapsed = false,
 }: {
   children: React.ReactNode;
   rail?: boolean;
   className?: string;
  /** Narrow-width list/chat switch (mobile channel view). */
   mobilePane?: "list" | "chat";
+  /** Wide layout: hide conversation list (menu bar) while chat stays open. */
+  sidebarCollapsed?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -57,6 +60,7 @@ export default function AppShell({
     <div
       className={["shell", className].filter(Boolean).join(" ")}
       data-mobile-pane={mobilePane}
+      data-sidebar-collapsed={sidebarCollapsed ? "true" : undefined}
     >
       {rail && (
         <nav className="nav-rail">

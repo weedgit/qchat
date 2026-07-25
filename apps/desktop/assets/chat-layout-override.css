@@ -204,3 +204,54 @@
   background: transparent !important;
   color: var(--accent) !important;
 }
+
+/* —— Sidebar (menu bar) show / hide —— */
+.chat-back-btn {
+  display: inline-flex !important;
+}
+
+.shell[data-sidebar-collapsed="true"] > .sidebar {
+  display: none !important;
+}
+
+.shell[data-sidebar-collapsed="true"] > .chat-pane {
+  flex: 1 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+/* Desktop Electron: never collapse to single-pane mobile list/chat. */
+html[data-qchat-desktop="1"] .shell[data-mobile-pane="list"] > .sidebar,
+html[data-qchat-desktop="1"] .shell[data-mobile-pane="chat"] > .sidebar {
+  display: flex !important;
+  flex: none !important;
+  width: 320px !important;
+  max-width: 320px !important;
+  border-right: 1px solid var(--border) !important;
+}
+
+html[data-qchat-desktop="1"] .shell[data-sidebar-collapsed="true"] > .sidebar {
+  display: none !important;
+}
+
+html[data-qchat-desktop="1"] .shell[data-mobile-pane="list"] > .chat-pane,
+html[data-qchat-desktop="1"] .shell[data-mobile-pane="chat"] > .chat-pane {
+  display: flex !important;
+  flex: 1 !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+@media (max-width: 1100px) {
+  html[data-qchat-desktop="1"] .shell:not([data-sidebar-collapsed="true"]) > .sidebar {
+    width: 280px !important;
+    max-width: 280px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  html[data-qchat-desktop="1"] .shell:not([data-sidebar-collapsed="true"]) > .sidebar {
+    width: 260px !important;
+    max-width: 260px !important;
+  }
+}

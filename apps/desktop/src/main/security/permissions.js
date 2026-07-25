@@ -7,6 +7,10 @@ const ALLOWED_PERMISSIONS = new Set([
   "mediaKeySystem",
   // Screen / window capture (getDisplayMedia) — CALL-02.
   "display-capture",
+  // Clipboard API (navigator.clipboard.writeText / read).
+  "clipboard-read",
+  "clipboard-sanitized-write",
+  "clipboard-write",
   // Chromium Local Network Access (wording varies by Electron/Chromium version).
   "local-network",
   "local-network-access",
