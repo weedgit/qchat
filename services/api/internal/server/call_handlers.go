@@ -28,6 +28,12 @@ func (s *Server) userDisplayName(r *http.Request, userID string) string {
 	return name
 }
 
+func (s *Server) userAvatarURL(r *http.Request, userID string) string {
+	var avatar string
+	_ = s.db.QueryRow(r.Context(), `SELECT COALESCE(avatar_url, '') FROM users WHERE id=$1`, userID).Scan(&avatar)
+	return avatar
+}
+
 func (s *Server) mintCallToken(r *http.Request, room, userID, deviceID string) (string, error) {
 	identity := userID
 	if deviceID != "" {
@@ -129,6 +135,7 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		"conversation_id": req.ConversationID,
 		"initiator_id":    c.UserID,
 		"initiator_name":  s.userDisplayName(r, c.UserID),
+		"initiator_avatar": s.userAvatarURL(r, c.UserID),
 		"initiator_device_id": initiatorDevice,
 		"status":          "ringing",
 		"by":              c.UserID,

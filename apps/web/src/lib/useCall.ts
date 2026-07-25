@@ -37,6 +37,8 @@ export type IncomingCall = {
   kind: CallKind;
   initiatorId: string;
   initiatorName?: string;
+  /** Initiator profile photo (call.ring initiator_avatar or conversation avatar). */
+  initiatorAvatar?: string;
   livekitUrl?: string;
 };
 
@@ -48,6 +50,8 @@ export type ActiveCall = {
   role: "caller" | "callee";
   /** Remote peer display name (DM title / initiator_name / LiveKit participant name). */
   peerName?: string;
+  /** Remote peer avatar URL (DM conversation avatar / initiator_avatar). */
+  peerAvatar?: string;
 };
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
@@ -108,8 +112,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 export function useCall(opts: {
   meId?: string;
   subscribe: SubscribeFn;
+  /** Fallback avatar for an incoming/outgoing call conversation (e.g. DM list). */
+  resolvePeerAvatar?: (conversationId: string) => string | undefined;
 }) {
-  const { meId, subscribe } = opts;
+  const { meId, subscribe, resolvePeerAvatar } = opts;
+  const resolvePeerAvatarRef = useRef(resolvePeerAvatar);
+  resolvePeerAvatarRef.current = resolvePeerAvatar;
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
   const [active, setActive] = useState<ActiveCall | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -578,12 +586,18 @@ export function useCall(opts: {
         const initiatorId = String(payload?.initiator_id ?? "");
         if (!callId || (meId && initiatorId === meId)) return;
         setError(null);
+        const conversationId = String(payload?.conversation_id ?? "");
+        const fromPayload = String(payload?.initiator_avatar ?? "").trim();
+        const fromConv = conversationId
+          ? resolvePeerAvatarRef.current?.(conversationId)?.trim()
+          : undefined;
         const incomingCall = {
           callId,
-          conversationId: String(payload?.conversation_id ?? ""),
+          conversationId,
           kind: (payload?.kind === "video" ? "video" : "voice") as CallKind,
           initiatorId,
           initiatorName: String(payload?.initiator_name ?? "") || undefined,
+          initiatorAvatar: fromPayload || fromConv || undefined,
           livekitUrl: String(payload?.livekit_url ?? "") || undefined,
         };
         setIncoming(incomingCall);
@@ -617,6 +631,7 @@ export function useCall(opts: {
           status: "active",
           role: "caller",
           peerName: prev?.peerName,
+          peerAvatar: prev?.peerAvatar,
         }));
         connectLiveKit(url, token, kind, callId).catch(() => {});
         return;
@@ -692,7 +707,7 @@ export function useCall(opts: {
   }, [active?.callId, active?.status, connectionQuality]);
 
   const startCall = useCallback(
-    async (conversationId: string, kind: CallKind, peerName?: string) => {
+    async (conversationId: string, kind: CallKind, peerName?: string, peerAvatar?: string) => {
       setError(null);
       const res = await api<any>("/v1/calls", {
         method: "POST",
@@ -701,6 +716,10 @@ export function useCall(opts: {
       const callId = String(res?.call_id ?? res?.id ?? "");
       setConnectedAt(null);
       setReconnecting(false);
+      const avatar =
+        peerAvatar?.trim() ||
+        resolvePeerAvatarRef.current?.(conversationId)?.trim() ||
+        undefined;
       setActive({
         callId,
         conversationId,
@@ -708,6 +727,7 @@ export function useCall(opts: {
         status: "ringing",
         role: "caller",
         peerName: peerName?.trim() || undefined,
+        peerAvatar: avatar,
       });
       return res;
     },
@@ -721,6 +741,10 @@ export function useCall(opts: {
     const callId = incoming.callId;
     const convId = incoming.conversationId;
     const peerName = incoming.initiatorName?.trim() || undefined;
+    const peerAvatar =
+      incoming.initiatorAvatar?.trim() ||
+      resolvePeerAvatarRef.current?.(convId)?.trim() ||
+      undefined;
     clearRingAlerts();
     const res = await api<any>(`/v1/calls/${callId}/answer`, { method: "POST" });
     const token = String(res?.livekit_token ?? "");
@@ -733,6 +757,7 @@ export function useCall(opts: {
       status: "active",
       role: "callee",
       peerName,
+      peerAvatar,
     });
     try {
       await connectLiveKit(url, token, kind, callId);

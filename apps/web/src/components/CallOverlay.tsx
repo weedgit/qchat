@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Avatar from "@/components/Avatar";
 import type { useCall } from "@/lib/useCall";
 import { qualityLabel } from "@/lib/callQuality";
 
 type CallApi = ReturnType<typeof useCall>;
 
 const MIC_BAR_COUNT = 5;
+const CALL_AVATAR_SIZE = 88;
 
 type CallIconName =
   | "microphone"
@@ -187,7 +189,11 @@ export default function CallOverlay({ call }: { call: CallApi }) {
         <div className="call-overlay incoming" role="dialog" aria-label="Incoming call">
           <div className="call-overlay-card call-ringing-card">
             <div className="call-peer-avatar" aria-hidden>
-              {(incoming.initiatorName || "S").trim().charAt(0).toUpperCase()}
+              <Avatar
+                name={incoming.initiatorName || "Someone"}
+                url={incoming.initiatorAvatar}
+                size={CALL_AVATAR_SIZE}
+              />
             </div>
             <div className="call-overlay-title">
               Incoming {incoming.kind === "video" ? "video" : "voice"} call
@@ -233,7 +239,11 @@ export default function CallOverlay({ call }: { call: CallApi }) {
           >
             {active.status === "ringing" && (
               <div className="call-peer-avatar calling-pulse" aria-hidden>
-                {(active.peerName || "?").trim().charAt(0).toUpperCase()}
+                <Avatar
+                  name={active.peerName || "Calling"}
+                  url={active.peerAvatar}
+                  size={CALL_AVATAR_SIZE}
+                />
               </div>
             )}
             <div className="call-overlay-title">{statusTitle}</div>
@@ -278,7 +288,11 @@ export default function CallOverlay({ call }: { call: CallApi }) {
             {active.kind === "voice" && active.status === "active" && (
               <div className="call-voice-stage">
                 <div className="call-peer-avatar" aria-hidden>
-                  {(active.peerName || "?").trim().charAt(0).toUpperCase()}
+                  <Avatar
+                    name={active.peerName || "Voice call"}
+                    url={active.peerAvatar}
+                    size={CALL_AVATAR_SIZE}
+                  />
                 </div>
                 <div className="call-overlay-name">{active.peerName || "Voice call"}</div>
                 <div className="call-voice-placeholder muted">

@@ -8,6 +8,7 @@ import {
   type ClipboardEvent as ReactClipboardEvent,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -203,7 +204,7 @@ function ConversationRow({
   );
 }
 
-function receiptMark(msg: Message): string {
+function receiptMark(msg: Message): ReactNode {
   // JD / WeChat-style: ⏳ sending → ✓ sent/delivered → ✓✓ read
   if (msg.pending) return " \u23F3";
   if (msg.failed) return " !";
@@ -212,8 +213,8 @@ function receiptMark(msg: Message): string {
     const n = msg.readCount ?? msg.readBy?.length ?? 0;
     return ` ${n}/${msg.memberCount}`;
   }
-  if (msg.read) return " \u2713\u2713";
-  return " \u2713";
+  if (msg.read) return <span className="receipt-tick read">{" \u2713\u2713"}</span>;
+  return <span className="receipt-tick">{" \u2713"}</span>;
 }
 
 function MenuIcon({ d, style }: { d: string; style?: CSSProperties }) {
@@ -332,14 +333,30 @@ function Bubble({
 
  // Align with caller (Calls history): mine = I placed the call → right.
   if (msg.type === "call") {
+    const avatarName = msg.mine
+      ? myName || msg.senderName || "You"
+      : msg.senderName || peerName || "User";
+    const avatarUrl = msg.mine
+      ? myAvatar || msg.senderAvatar
+      : msg.senderAvatar || peerAvatar;
     return (
       <div className={`msg-row call-row ${msg.mine ? "mine" : ""}`}>
+        {!msg.mine && (
+          <div className="msg-avatar" aria-hidden>
+            <Avatar name={avatarName} url={avatarUrl} size={34} />
+          </div>
+        )}
         <div className="bubble-wrap">
           <div className="bubble call-bubble">
             <span className="call-msg">{msg.content || "Call"}</span>
             <span className="meta">{fmtTime(msg.createdAt)}</span>
           </div>
         </div>
+        {msg.mine && (
+          <div className="msg-avatar" aria-hidden>
+            <Avatar name={avatarName} url={avatarUrl} size={34} />
+          </div>
+        )}
       </div>
     );
   }
@@ -621,7 +638,12 @@ interface CtxMenuState {
 
 export default function ChatPageInner() {
   const chat = useChat();
-  const call = useCall({ meId: chat.me?.id, subscribe: chat.subscribeEvents });
+  const call = useCall({
+    meId: chat.me?.id,
+    subscribe: chat.subscribeEvents,
+    resolvePeerAvatar: (conversationId) =>
+      chat.conversations.find((c) => c.id === conversationId)?.avatarUrl,
+  });
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t, labelLocale, labelTheme } = useLocale();
   const [myStatus, setMyStatus] = useState<"online" | "away" | "dnd" | "offline">("online");
@@ -2373,7 +2395,12 @@ export default function ChatPageInner() {
                       disabled={!!call.active || !!call.incoming}
                       onClick={() => {
                         call
-                          .startCall(active.id, "voice", conversationDisplayName(active))
+                          .startCall(
+                            active.id,
+                            "voice",
+                            conversationDisplayName(active),
+                            active.avatarUrl
+                          )
                           .catch((e) => logChatError(e.message));
                       }}
                     >
@@ -2386,7 +2413,12 @@ export default function ChatPageInner() {
                       disabled={!!call.active || !!call.incoming}
                       onClick={() => {
                         call
-                          .startCall(active.id, "video", conversationDisplayName(active))
+                          .startCall(
+                            active.id,
+                            "video",
+                            conversationDisplayName(active),
+                            active.avatarUrl
+                          )
                           .catch((e) => logChatError(e.message));
                       }}
                     >

@@ -1,13 +1,15 @@
 /**
  * Desktop chat layout override.
  * Applied via insertCSS so remote web (start:server) still gets Telegram-like
- * full-pane chat chrome even when the hosted CSS still caps at ~752px.
+ * adaptive chat chrome (tdesktop Adaptive::Wide).
  *
- * Shell behavior (matches Telegram Desktop):
+ * Shell:
  * - Wide window: 2 columns (chat list + chat)
  * - Narrow window (≤768px): 1 column (list OR chat)
  *
- * Chat pane content: always 100% of the chat column (no max-width gutters).
+ * Messages (container queries on .msg-scroll):
+ * - Narrow chat column: peer left + avatar left, own right + avatar right
+ * - Wide chat column (≥880px): all rows left-stacked, all avatars on the left
  */
 .chat-pane > .chat-header,
 .msg-scroll-wrap,
@@ -36,14 +38,61 @@
   width: 100% !important;
 }
 
-/* Bubbles use a share of the full pane — not a fixed column. */
+.msg-scroll {
+  container-type: inline-size !important;
+  container-name: messages !important;
+}
+
+/* Short bubbles hug content; long ones cap (~Telegram msgMaxWidth). */
 .bubble-wrap {
-  max-width: 70% !important;
+  width: fit-content !important;
+  max-width: min(72%, 480px) !important;
 }
 
 .bubble-wrap .bubble,
 .bubble {
+  width: fit-content !important;
   max-width: 100% !important;
+}
+
+/* Narrow: two-side layout — own messages on the right. */
+.msg-row.mine {
+  justify-content: flex-end !important;
+}
+
+.msg-row.mine .msg-avatar {
+  order: 0 !important;
+}
+
+.msg-row.mine .emoji-bar {
+  right: calc(100% - 14px) !important;
+  left: auto !important;
+}
+
+/* Wide: Adaptive layout — left stack, avatars on the left for everyone. */
+@container messages (min-width: 880px) {
+  .msg-row.mine {
+    justify-content: flex-start !important;
+  }
+  .msg-row.mine .msg-avatar {
+    order: -1 !important;
+  }
+  .msg-row.mine .bubble-wrap {
+    align-items: flex-start !important;
+  }
+  .msg-row.mine .receipt-detail-toggle {
+    text-align: left !important;
+  }
+  .msg-row.mine .call-bubble {
+    align-items: flex-start !important;
+  }
+  .msg-row.mine .emoji-bar {
+    left: calc(100% - 14px) !important;
+    right: auto !important;
+  }
+  .bubble-wrap {
+    max-width: min(85%, 430px) !important;
+  }
 }
 
 /* Telegram: avatars beside messages in group and 1:1. */
