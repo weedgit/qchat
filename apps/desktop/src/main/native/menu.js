@@ -36,6 +36,13 @@ function setWebLocale(getMainWindow, mode) {
  * }} opts
  */
 function buildAppMenu(opts) {
+  // Windows / Linux: remove the menubar entirely (not auto-hide).
+  // Tray still exposes Show / Launch at login / Hide on start / Quit.
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+
   const {
     webUrl,
     isDev,
@@ -43,8 +50,6 @@ function buildAppMenu(opts) {
     onAutostartChanged,
     onHideOnStartChanged,
   } = opts;
-  /** @type {Electron.MenuItemConstructorOptions[]} */
-  const template = [];
 
   const aboutClick = () => showAbout(getMainWindow(), webUrl);
   const autostartItem = {
@@ -70,8 +75,9 @@ function buildAppMenu(opts) {
     },
   };
 
-  if (process.platform === "darwin") {
-    template.push({
+  /** @type {Electron.MenuItemConstructorOptions[]} */
+  const template = [
+    {
       label: APP_TITLE,
       submenu: [
         { label: `About ${APP_TITLE}`, click: aboutClick },
@@ -87,20 +93,7 @@ function buildAppMenu(opts) {
         { type: "separator" },
         { role: "quit" },
       ],
-    });
-  } else {
-    template.push({
-      label: "File",
-      submenu: [
-        autostartItem,
-        hideOnStartItem,
-        { type: "separator" },
-        { role: "quit", label: "Quit Qchat" },
-      ],
-    });
-  }
-
-  template.push(
+    },
     {
       label: "Edit",
       submenu: [
@@ -166,8 +159,8 @@ function buildAppMenu(opts) {
           click: aboutClick,
         },
       ],
-    }
-  );
+    },
+  ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }

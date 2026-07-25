@@ -1,0 +1,57 @@
+/**
+ * Desktop chat layout override.
+ * Applied via insertCSS so remote web (start:server) still gets Telegram-like
+ * full-pane chat chrome even when the hosted CSS still caps at ~752px.
+ *
+ * Shell behavior (matches Telegram Desktop):
+ * - Wide window: 2 columns (chat list + chat)
+ * - Narrow window (≤768px): 1 column (list OR chat)
+ *
+ * Chat pane content: always 100% of the chat column (no max-width gutters).
+ */
+.chat-pane > .chat-header,
+.msg-scroll-wrap,
+.composer,
+.pinned-banner,
+.chat-pane > .search-results,
+.chat-pane > .in-chat-search,
+.msg-scroll > * {
+  max-width: none !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.composer-box,
+.composer-row {
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+}
+
+.composer textarea {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+/* Bubbles use a share of the full pane — not a fixed column. */
+.bubble-wrap {
+  max-width: 70% !important;
+}
+
+.bubble-wrap .bubble,
+.bubble {
+  max-width: 100% !important;
+}
+
+/* Telegram: avatars beside messages in group and 1:1. */
+.msg-row {
+  align-items: flex-end !important;
+  gap: 8px !important;
+}
+.msg-avatar {
+  flex: none !important;
+  align-self: flex-end !important;
+}

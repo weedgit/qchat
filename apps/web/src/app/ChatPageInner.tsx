@@ -283,6 +283,10 @@ const QUICK_EMOJIS = [
 function Bubble({
   msg,
   isGroup,
+  peerName,
+  peerAvatar,
+  myName,
+  myAvatar,
   replyPreview,
   selectMode,
   selected,
@@ -298,6 +302,10 @@ function Bubble({
 }: {
   msg: Message;
   isGroup: boolean;
+  peerName?: string;
+  peerAvatar?: string;
+  myName?: string;
+  myAvatar?: string;
   replyPreview?: { name: string; body: string };
   selectMode: boolean;
   selected: boolean;
@@ -381,6 +389,13 @@ function Bubble({
       )}
     </span>
   );
+  const avatarName = msg.mine
+    ? myName || msg.senderName || "You"
+    : msg.senderName || peerName || "User";
+  const avatarUrl = msg.mine
+    ? myAvatar || msg.senderAvatar
+    : msg.senderAvatar || peerAvatar;
+
   return (
     <div
       className={`msg-row ${msg.mine ? "mine" : ""} ${selectMode ? "select-mode" : ""} ${selected ? "selected" : ""
@@ -400,6 +415,11 @@ function Bubble({
         >
           {selected ? "\u2713" : ""}
         </button>
+      )}
+      {!msg.mine && (
+        <div className="msg-avatar" aria-hidden>
+          <Avatar name={avatarName} url={avatarUrl} size={34} />
+        </div>
       )}
       <div className="bubble-wrap" onContextMenu={onContextMenu}>
         {canReact && (
@@ -584,6 +604,11 @@ function Bubble({
           </div>
         )}
       </div>
+      {msg.mine && (
+        <div className="msg-avatar" aria-hidden>
+          <Avatar name={avatarName} url={avatarUrl} size={34} />
+        </div>
+      )}
     </div>
   );
 }
@@ -610,10 +635,12 @@ export default function ChatPageInner() {
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinNotice, setJoinNotice] = useState<string | null>(null);
- /** Narrow layout: list ↔ chat (mobile channel view). */
+ /** Narrow layout: list ↔ chat (Telegram-style mobile channel view). */
   const narrowLayout = useMediaQuery("(max-width: 768px)");
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const wasNarrowRef = useRef(false);
+  const mobileChatOpenRef = useRef(false);
+  mobileChatOpenRef.current = mobileChatOpen;
   const [query, setQuery] = useState("");
   /** Only show "Reconnecting" after a prior successful WS connect (avoid boot flicker). */
   const [wsEverConnected, setWsEverConnected] = useState(false);
@@ -808,8 +835,17 @@ export default function ChatPageInner() {
   const mobilePane: "list" | "chat" =
     narrowLayout && mobileChatOpen && active ? "chat" : "list";
 
+  const MOBILE_PANE_STATE = "qchatMobilePane";
+
   function openChat(convId: string) {
     chat.openConversation(convId);
+    if (narrowLayout && !mobileChatOpenRef.current) {
+      try {
+        window.history.pushState({ [MOBILE_PANE_STATE]: "chat" }, "");
+      } catch {
+        /* ignore quota / security errors */
+      }
+    }
     setMobileChatOpen(true);
   }
 
@@ -827,6 +863,19 @@ export default function ChatPageInner() {
       clearSelection();
       return;
     }
+    if (pinsListOpen) {
+      setPinsListOpen(false);
+      return;
+    }
+    if (
+      narrowLayout &&
+      mobileChatOpenRef.current &&
+      typeof window !== "undefined" &&
+      window.history.state?.[MOBILE_PANE_STATE] === "chat"
+    ) {
+      window.history.back();
+      return;
+    }
     setMobileChatOpen(false);
     setMainMenuOpen(false);
   }
@@ -834,10 +883,35 @@ export default function ChatPageInner() {
   // Entering narrow width: show chat if a conversation is already open.
   useEffect(() => {
     if (narrowLayout && !wasNarrowRef.current) {
-      setMobileChatOpen(!!chat.activeId);
+      if (chat.activeId) {
+        setMobileChatOpen(true);
+        try {
+          if (window.history.state?.[MOBILE_PANE_STATE] !== "chat") {
+            window.history.pushState({ [MOBILE_PANE_STATE]: "chat" }, "");
+          }
+        } catch {
+          /* ignore */
+        }
+      }
     }
     wasNarrowRef.current = narrowLayout;
   }, [narrowLayout, chat.activeId]);
+
+  // OS / browser back → leave chat pane (Telegram-style).
+  useEffect(() => {
+    const onPopState = () => {
+      if (!wasNarrowRef.current) return;
+      setShowDetails(false);
+      setShowInChatSearch(false);
+      setInChatSearch("");
+      setPinsListOpen(false);
+      setSelectedIds(new Set());
+      setMobileChatOpen(false);
+      setMainMenuOpen(false);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const selectMode = selectedIds.size > 0;
   const selectedMessages = useMemo(
@@ -2439,6 +2513,10 @@ export default function ChatPageInner() {
                           <Bubble
                             msg={m}
                             isGroup={!!isGroup}
+                            peerName={active?.title}
+                            peerAvatar={active?.avatarUrl}
+                            myName={chat.me?.nickname || chat.me?.username || "You"}
+                            myAvatar={chat.me?.avatarUrl}
                             replyPreview={previewFor(m)}
                             selectMode={selectMode}
                             selected={selectedIds.has(m.id)}
@@ -2469,6 +2547,10 @@ export default function ChatPageInner() {
                           <Bubble
                             msg={m}
                             isGroup={!!isGroup}
+                            peerName={active?.title}
+                            peerAvatar={active?.avatarUrl}
+                            myName={chat.me?.nickname || chat.me?.username || "You"}
+                            myAvatar={chat.me?.avatarUrl}
                             replyPreview={previewFor(m)}
                             selectMode={selectMode}
                             selected={selectedIds.has(m.id)}

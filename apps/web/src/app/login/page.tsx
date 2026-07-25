@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import LoadingSplash from "@/components/LoadingSplash";
 import { ApiError, api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
 import { getAuthDevice } from "@/lib/device";
 
@@ -27,6 +28,8 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  /** Keep splash up through navigation so desktop never flashes an empty black window. */
+  const [enteringApp, setEnteringApp] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +37,7 @@ export default function LoginPage() {
       const ok = (await restoreDesktopSession()) || Boolean(getToken());
       if (cancelled) return;
       if (ok) {
+        setEnteringApp(true);
         router.replace("/");
         return;
       }
@@ -160,6 +164,7 @@ export default function LoginPage() {
       const token = data?.access_token ?? data?.token;
       if (!token) throw new Error("No access_token in response");
       setTokens(String(token), String(data?.refresh_token ?? ""), mode === "register" ? true : remember);
+      setEnteringApp(true);
       router.replace("/");
     } catch (e: any) {
       if (e instanceof ApiError && e.fields) {
@@ -175,16 +180,8 @@ export default function LoginPage() {
     }
   }
 
-  if (checkingSession) {
-    return (
-      <div className="auth-wrap">
-        <div className="auth-card">
-          <div className="auth-logo">Q</div>
-          <div className="auth-title">Signing you in…</div>
-          <div className="auth-sub">Restoring saved session</div>
-        </div>
-      </div>
-    );
+  if (checkingSession || enteringApp) {
+    return <LoadingSplash label={enteringApp ? "Opening chat" : "Starting Qchat"} />;
   }
 
   return (

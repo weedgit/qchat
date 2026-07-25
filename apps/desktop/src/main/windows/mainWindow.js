@@ -173,8 +173,9 @@ function createMainWindow(opts) {
     height: saved.height || DEFAULT_WINDOW.height,
     x: Number.isFinite(saved.x) ? saved.x : undefined,
     y: Number.isFinite(saved.y) ? saved.y : undefined,
-    minWidth: 960,
-    minHeight: 640,
+    // Telegram-like: allow shrinking into single-pane list/chat layout (~768px).
+    minWidth: 420,
+    minHeight: 480,
     show: false,
     autoHideMenuBar: false,
     title: APP_TITLE,
@@ -223,8 +224,6 @@ function createMainWindow(opts) {
     }
   });
 
-  /** @type {boolean} */
-  let showOnReady = false;
   const showMainWindow = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.setTitle(APP_TITLE);
@@ -237,9 +236,49 @@ function createMainWindow(opts) {
     showMainWindow();
   };
 
+  const splashPath = path.join(getDesktopRoot(), "assets", "splash.html");
+  const chatLayoutCssPath = path.join(
+    getDesktopRoot(),
+    "assets",
+    "chat-layout-override.css"
+  );
+
+  /** Force full-pane chat chrome (overrides remote ~752px column if still deployed). */
+  async function injectChatLayoutOverride() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const loadedUrl = mainWindow.webContents.getURL() || "";
+    if (!/^https?:/i.test(loadedUrl)) return;
+    try {
+      const css = fs.readFileSync(chatLayoutCssPath, "utf8");
+      await mainWindow.webContents.insertCSS(css);
+    } catch (err) {
+      console.warn(
+        "[qchat-desktop] chat layout CSS inject failed:",
+        err?.message || err
+      );
+    }
+  }
+
+  /** Show local "Starting Qchat" splash immediately so startup never looks frozen. */
+  async function showStartupSplash() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+      if (fs.existsSync(splashPath)) {
+        await mainWindow.loadFile(splashPath);
+      }
+    } catch (err) {
+      console.warn(
+        "[qchat-desktop] splash load failed:",
+        err?.message || err
+      );
+    }
+    revealMainWindow();
+  }
+
   mainWindow.once("ready-to-show", () => {
     mainWindow?.setTitle(APP_TITLE);
-    if (showOnReady) revealMainWindow();
+    // Splash (or first paint) should already have asked to reveal; keep as fallback.
+    if (!startHidden) revealMainWindow();
   });
 
   mainWindow.on("resize", saveWindowState);
@@ -279,36 +318,46 @@ function createMainWindow(opts) {
     mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 
+  mainWindow.webContents.on("dom-ready", () => {
+    void injectChatLayoutOverride();
+  });
+
   mainWindow.webContents.on("did-finish-load", () => {
-    // Prove the sandboxed preload exposed the bridge (needed for notifyMessage).
-    mainWindow?.webContents
-      .executeJavaScript(
-        `({
-          hasDesktop: Boolean(window.qchatDesktop?.isDesktop),
-          hasNotify: typeof window.qchatDesktop?.notifyMessage,
-          platformLabel: window.qchatDesktop?.platformLabel || null,
-          path: location.pathname
-        })`
-      )
-      .then((info) => {
-        if (!info?.hasDesktop || info.hasNotify !== "function") {
-          console.error(
-            "[qchat-desktop] preload bridge missing after load — desktop notifications cannot run:",
-            info
+    const loadedUrl = mainWindow?.webContents.getURL() || "";
+    const isAppPage = /^https?:/i.test(loadedUrl);
+    // Local splash is file:// — skip bridge probe / login watchdog there.
+    if (isAppPage) {
+      void injectChatLayoutOverride();
+      // Prove the sandboxed preload exposed the bridge (needed for notifyMessage).
+      mainWindow?.webContents
+        .executeJavaScript(
+          `({
+            hasDesktop: Boolean(window.qchatDesktop?.isDesktop),
+            hasNotify: typeof window.qchatDesktop?.notifyMessage,
+            platformLabel: window.qchatDesktop?.platformLabel || null,
+            path: location.pathname
+          })`
+        )
+        .then((info) => {
+          if (!info?.hasDesktop || info.hasNotify !== "function") {
+            console.error(
+              "[qchat-desktop] preload bridge missing after load — desktop notifications cannot run:",
+              info
+            );
+          } else {
+            console.log("[qchat-desktop] preload bridge ok:", info);
+          }
+        })
+        .catch((err) => {
+          console.warn(
+            "[qchat-desktop] preload bridge probe failed:",
+            err?.message || err
           );
-        } else {
-          console.log("[qchat-desktop] preload bridge ok:", info);
-        }
-      })
-      .catch((err) => {
-        console.warn(
-          "[qchat-desktop] preload bridge probe failed:",
-          err?.message || err
-        );
-      });
+        });
+    }
 
     // Don't force /login while a remembered session exists — auth gates handle expiry.
-    if (hasSecureSession(webUrl)) return;
+    if (!isAppPage || hasSecureSession(webUrl)) return;
     const watchdog = `
       (function () {
         try {
@@ -333,7 +382,12 @@ function createMainWindow(opts) {
   });
 
   void (async () => {
-    // Refresh/validate vault before first paint so chat never mounts with a dead token
+    // Paint waiting UI first (matches web LoadingSplash) before vault / network work.
+    if (!startHidden) {
+      await showStartupSplash();
+    }
+
+    // Refresh/validate vault before chat mounts with a dead token
     // (that path shows Reconnecting then hard-navigates to /login).
     const fresh = hasSecureSession(webUrl)
       ? await ensureVaultSessionFresh(webUrl)
@@ -342,19 +396,21 @@ function createMainWindow(opts) {
 
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
+    // Only stay hidden when launched to tray. Remembered-session boot keeps the
+    // splash visible instead of a black empty shell.
     attachSessionPersistence(mainWindow, webUrl, {
-      deferShow: remembered || startHidden,
+      deferShow: startHidden,
       reveal: revealMainWindow,
     });
 
     if (remembered) {
       await prepareEarlySessionBootstrap(mainWindow.webContents, webUrl, fresh);
       await loadUrlWithRetry(mainWindow, `${webOrigin}/`);
+      revealMainWindow();
       return;
     }
 
-    // No usable session — open login directly (same as web: splash only while checking).
-    showOnReady = true;
+    // No usable session — open login (splash already covered the wait).
     await loadUrlWithRetry(mainWindow, `${webOrigin}/login`);
     revealMainWindow();
   })();

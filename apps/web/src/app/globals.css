@@ -532,10 +532,23 @@ select:focus {
   position: relative;
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
-/* Narrow: conversation list ↔ chat history (mobile channel view). */
+/* Compact dual-pane (Telegram-like): shrink list before collapsing to one pane. */
+@media (max-width: 1100px) {
+  .sidebar {
+    width: 280px;
+  }
+}
+@media (max-width: 900px) {
+  .sidebar {
+    width: 260px;
+  }
+}
+
+/* Narrow: conversation list ↔ chat history (Telegram mobile channel view). */
 .chat-back-btn {
   display: none;
 }
@@ -546,7 +559,8 @@ select:focus {
     max-width: none;
     border-right: none;
   }
-  .shell[data-mobile-pane="list"] > .chat-pane {
+  .shell[data-mobile-pane="list"] > .chat-pane,
+  .shell[data-mobile-pane="list"] > .details-panel {
     display: none;
   }
   .shell[data-mobile-pane="chat"] > .sidebar {
@@ -559,6 +573,107 @@ select:focus {
   }
   .chat-back-btn {
     display: inline-flex;
+  }
+
+  /* Full-bleed chat column (no desktop max-width gutter). */
+  .chat-pane > .chat-header,
+  .msg-scroll-wrap,
+  .composer,
+  .chat-pane > .search-results,
+  .chat-pane > .in-chat-search {
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .chat-header {
+    height: 54px;
+    padding: 0 10px;
+    gap: 8px;
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+
+  .sidebar-header {
+    padding: 10px 12px;
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+
+  .conv-item {
+    padding: 12px 14px;
+    gap: 14px;
+  }
+
+  .msg-scroll {
+    padding: 12px 10px;
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+
+  .composer {
+    padding: 8px 10px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .composer-box {
+    border-radius: 18px;
+  }
+
+  .fab {
+    bottom: max(18px, env(safe-area-inset-bottom));
+    right: max(16px, env(safe-area-inset-right));
+  }
+
+  .compose-menu {
+    bottom: max(76px, calc(58px + env(safe-area-inset-bottom)));
+    right: max(14px, env(safe-area-inset-right));
+  }
+
+  .main-menu {
+    left: max(10px, env(safe-area-inset-left));
+  }
+
+  .mention-menu {
+    left: 8px;
+    right: 8px;
+  }
+
+  /* Profile/details: full-screen overlay like Telegram info page. */
+  .details-panel {
+    position: absolute;
+    z-index: 40;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    border-left: none;
+    box-shadow: none;
+    padding: 20px 16px max(20px, env(safe-area-inset-bottom));
+    animation: details-enter-mobile 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .page-pane {
+    padding: 16px 14px max(16px, env(safe-area-inset-bottom));
+  }
+
+  .card {
+    padding: 16px;
+    margin-bottom: 14px;
+    max-width: none;
+    border-radius: 12px;
+  }
+
+  .page-header {
+    margin-bottom: 14px;
+  }
+}
+
+@keyframes details-enter-mobile {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -795,14 +910,15 @@ select:focus {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
-/* Match message column + composer width (720px content + side padding). */
+/* Telegram-like: header spans the full chat pane (not a centered mobile column). */
 .chat-pane > .chat-header {
   width: 100%;
-  max-width: 752px;
-  margin-left: auto;
-  margin-right: auto;
-  box-sizing: border-box;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
 }
 .chat-header .title {
   font-weight: 600;
@@ -828,9 +944,9 @@ select:focus {
   flex-direction: column;
   position: relative;
   width: 100%;
-  max-width: 752px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
 }
 .jump-bottom-btn {
   position: absolute;
@@ -919,12 +1035,10 @@ select:focus {
 .media-file-wrap {
   min-width: 160px;
 }
-/* keep the chat history in a narrow centered column */
+/* Full chat-pane width (no centered column / spare sides). */
 .msg-scroll > * {
   width: 100%;
-  max-width: 720px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: none;
   box-sizing: border-box;
 }
 
@@ -936,6 +1050,17 @@ select:focus {
 }
 .msg-row.mine {
   justify-content: flex-end;
+  align-items: flex-end;
+  gap: 8px;
+}
+/* Telegram: sender avatar beside messages, aligned to bubble bottom. */
+.msg-row:not(.mine) {
+  align-items: flex-end;
+  gap: 8px;
+}
+.msg-avatar {
+  flex: none;
+  align-self: flex-end;
 }
 
 /* ---------- message multi-select (Telegram-style) ---------- */
@@ -975,7 +1100,8 @@ select:focus {
   position: relative;
   display: flex;
   flex-direction: column;
-  max-width: 62%;
+  /* Share of the full chat pane (Telegram desktop), not a fixed column. */
+  max-width: 70%;
 }
 .bubble-wrap .bubble {
   max-width: 100%;
@@ -1210,7 +1336,7 @@ select:focus {
 }
 
 .bubble {
-  max-width: 62%;
+  max-width: 100%;
   padding: 7px 12px 6px;
   border-radius: 14px;
   background: var(--bubble-in);
@@ -1438,22 +1564,26 @@ select:focus {
   flex: none;
   padding: 10px 16px 16px;
   width: 100%;
-  max-width: 752px; /* 720px column + side padding */
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
+  box-sizing: border-box;
 }
-/* single rounded box holding reply banner + input + send/mic */
+/* single rounded box holding reply banner + input + send/mic — full pane width */
 .composer-box {
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
   border-radius: 16px;
   padding: 8px 10px;
+  width: 100%;
+  box-sizing: border-box;
 }
 .composer-row {
   display: flex;
   gap: 8px;
   align-items: flex-end;
   position: relative;
+  width: 100%;
 }
 .mention-menu {
   position: absolute;
@@ -1834,8 +1964,8 @@ select:focus {
   font-size: 12px;
   color: var(--text-dim);
 }
-/* RHS behavior: preserve the center channel when space is tight. */
-@media (max-width: 1100px) {
+/* RHS behavior: preserve the center channel when space is tight (not single-pane). */
+@media (max-width: 1100px) and (min-width: 769px) {
   .details-panel {
     position: absolute;
     z-index: 30;
@@ -2027,9 +2157,9 @@ select:focus {
   background: var(--bg-panel-2);
   border-bottom: 1px solid var(--border);
   width: 100%;
-  max-width: 752px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
   box-sizing: border-box;
   min-height: 52px;
 }
@@ -2089,13 +2219,13 @@ select:focus {
   outline-offset: 2px;
   transition: outline-color 0.3s ease;
 }
-/* Keep in-chat search hits in the same column as messages. */
+/* In-chat search spans the same full chat pane as messages/composer. */
 .chat-pane > .search-results,
 .chat-pane > .in-chat-search {
   width: 100%;
-  max-width: 752px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
   box-sizing: border-box;
 }
 .md-code {
