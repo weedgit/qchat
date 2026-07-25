@@ -2,11 +2,12 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { MessageKey } from "@qchat/i18n";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import PageHeader from "@/components/PageHeader";
 import { api, clearToken, apiBaseUrl } from "@/lib/api";
-import { avatarLimitError } from "@/lib/mediaLimits";
+import { AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
 import {
   loadLocalNotifyProps,
   saveLocalNotifyProps,
@@ -36,25 +37,24 @@ interface Profile {
   friend_privacy: string;
 }
 
-function formatSessionActive(iso?: string): string {
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+
+function formatSessionActive(iso: string | undefined, t: Translate): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   const sec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
-  if (sec < 60) return "just now";
-  if (sec < 3600) {
-    const m = Math.floor(sec / 60);
-    return `${m}m ago`;
-  }
-  if (sec < 86400) {
-    const h = Math.floor(sec / 3600);
-    return `${h}h ago`;
-  }
-  if (sec < 86400 * 7) {
-    const days = Math.floor(sec / 86400);
-    return `${days}d ago`;
-  }
+  if (sec < 60) return t("time.justNow");
+  if (sec < 3600) return t("time.minutesAgo", { n: Math.floor(sec / 60) });
+  if (sec < 86400) return t("time.hoursAgo", { n: Math.floor(sec / 3600) });
+  if (sec < 86400 * 7) return t("time.daysAgo", { n: Math.floor(sec / 86400) });
   return d.toLocaleString();
+}
+
+function deviceTypeLabel(deviceType: string, t: Translate): string {
+  if (deviceType === "phone") return t("settings.deviceMobile");
+  if (deviceType === "desktop") return t("settings.deviceDesktop");
+  return t("settings.deviceWeb");
 }
 
 export default function ProfilePage() {
@@ -99,9 +99,12 @@ export default function ProfilePage() {
 
   async function uploadAvatar(file: File) {
     if (!me) return;
-    const limitErr = avatarLimitError(file);
-    if (limitErr) {
-      setError(limitErr);
+    if (!isAvatarFile(file)) {
+      setError(t("media.avatarMustBeImage"));
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      setError(t("media.avatarTooLarge"));
       return;
     }
     setSaving(true);
@@ -133,7 +136,7 @@ export default function ProfilePage() {
         id: String(u?.id ?? ""),
         phone: String(u?.phone ?? ""),
         username: String(u?.username ?? ""),
-        display_name: String(u?.display_name ?? u?.username ?? "Me"),
+        display_name: String(u?.display_name ?? u?.username ?? t("me.title")),
         real_name: String(u?.real_name ?? ""),
         age: typeof u?.age === "number" ? u.age : null,
         region: String(u?.region ?? ""),
@@ -152,7 +155,7 @@ export default function ProfilePage() {
       setPushDevices(await listPushDevices());
       setPushDeviceError(null);
     } catch (e: any) {
-      setPushDeviceError(e.message || "Could not load notification devices");
+      setPushDeviceError(e.message || t("settings.loadPushDevicesError"));
     }
   }
 
@@ -193,7 +196,7 @@ export default function ProfilePage() {
       }
       await loadLoginSessions();
     } catch (e: any) {
-      setError(e.message || "Could not revoke session");
+      setError(e.message || t("settings.revokeSessionError"));
     } finally {
       setSessionsBusy(false);
     }
@@ -206,7 +209,7 @@ export default function ProfilePage() {
       await removePushDevice(device);
       setPushDevices((prev) => prev.filter((item) => item.id !== device.id));
     } catch (e: any) {
-      setPushDeviceError(e.message || "Could not remove notification device");
+      setPushDeviceError(e.message || t("settings.removePushDeviceError"));
     } finally {
       setPushDevicesBusy(false);
     }
@@ -229,6 +232,7 @@ export default function ProfilePage() {
         saveLocalNotifyProps(next);
       })
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   async function onSave(e: FormEvent) {
@@ -267,7 +271,7 @@ export default function ProfilePage() {
 
         {error && (
           <div className="card">
-            <div className="error-text">Could not load/save profile: {error}</div>
+            <div className="error-text">{t("me.profileLoadError", { error })}</div>
           </div>
         )}
 
@@ -275,7 +279,7 @@ export default function ProfilePage() {
           <button
             type="button"
             className="avatar-edit"
-            title="Change avatar"
+            title={t("me.changeAvatar")}
             disabled={saving || !me}
             onClick={() => avatarInputRef.current?.click()}
           >
@@ -297,7 +301,7 @@ export default function ProfilePage() {
           />
           <div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>
-              {me?.display_name ?? "Loading…"}
+              {me?.display_name ?? t("common.loading")}
             </div>
             <div className="muted">@{me?.username || "—"} · {me?.phone || "—"}</div>
             <div className="muted" style={{ fontSize: 12 }}>
@@ -308,40 +312,40 @@ export default function ProfilePage() {
 
         {me && (
           <form className="card" onSubmit={onSave} style={{ display: "grid", gap: 12 }}>
-            <h2 style={{ margin: 0, fontSize: 16 }}>Edit profile</h2>
+            <h2 style={{ margin: 0, fontSize: 16 }}>{t("me.editProfile")}</h2>
 
             <label className="field">
-              <span>Username</span>
+              <span>{t("me.username")}</span>
               <input value={me.username} disabled />
               <span className="muted" style={{ fontSize: 12 }}>
-                Username is set at registration. Availability is checked when creating an account.
+                {t("me.usernameHint")}
               </span>
             </label>
 
             <label className="field">
-              <span>Phone (login ID)</span>
+              <span>{t("me.phone")}</span>
               <input value={me.phone} disabled />
               <span className="muted" style={{ fontSize: 12 }}>
-                Change phone with SMS verification below.
+                {t("me.phoneHint")}
               </span>
             </label>
 
             <label className="field">
-              <span>Display name</span>
+              <span>{t("me.displayName")}</span>
               <input
                 value={me.display_name}
                 onChange={(e) => setMe({ ...me, display_name: e.target.value })}
               />
             </label>
             <label className="field">
-              <span>Real name</span>
+              <span>{t("me.realName")}</span>
               <input
                 value={me.real_name}
                 onChange={(e) => setMe({ ...me, real_name: e.target.value })}
               />
             </label>
             <label className="field">
-              <span>Age</span>
+              <span>{t("me.age")}</span>
               <input
                 type="number"
                 value={me.age ?? ""}
@@ -354,46 +358,46 @@ export default function ProfilePage() {
               />
             </label>
             <label className="field">
-              <span>Region</span>
+              <span>{t("me.region")}</span>
               <input
                 value={me.region}
                 onChange={(e) => setMe({ ...me, region: e.target.value })}
               />
             </label>
             <label className="field">
-              <span>Signature</span>
+              <span>{t("me.signature")}</span>
               <input
                 value={me.signature}
                 onChange={(e) => setMe({ ...me, signature: e.target.value })}
               />
             </label>
             <label className="field">
-              <span>Profile visibility</span>
+              <span>{t("me.profileVisibility")}</span>
               <select
                 value={me.profile_visibility}
                 onChange={(e) => setMe({ ...me, profile_visibility: e.target.value })}
               >
-                <option value="public">Public</option>
-                <option value="friends">Friends only</option>
+                <option value="public">{t("me.visibilityPublic")}</option>
+                <option value="friends">{t("me.visibilityFriends")}</option>
               </select>
             </label>
             <label className="field">
-              <span>Friend requests</span>
+              <span>{t("me.friendRequests")}</span>
               <select
                 value={me.friend_privacy}
                 onChange={(e) => setMe({ ...me, friend_privacy: e.target.value })}
               >
-                <option value="open">Anyone can add me</option>
-                <option value="approval">Need my approval</option>
-                <option value="closed">Nobody can add me</option>
+                <option value="open">{t("me.friendOpen")}</option>
+                <option value="approval">{t("me.friendApproval")}</option>
+                <option value="closed">{t("me.friendClosed")}</option>
               </select>
             </label>
 
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <button className="btn" type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Save changes"}
+                {saving ? t("common.saving") : t("common.saveChanges")}
               </button>
-              {saved && <span className="muted">Saved</span>}
+              {saved && <span className="muted">{t("common.saved")}</span>}
             </div>
           </form>
         )}
@@ -440,7 +444,7 @@ export default function ProfilePage() {
               {t("settings.notificationsHint")}
             </div>
             <label className="field">
-              <span>Desktop notifications</span>
+              <span>{t("settings.desktopNotifications")}</span>
               <select
                 value={notify.desktop}
                 onChange={(e) =>
@@ -450,9 +454,9 @@ export default function ProfilePage() {
                   })
                 }
               >
-                <option value="all">All new messages</option>
-                <option value="mention">Mentions only</option>
-                <option value="none">Nothing</option>
+                <option value="all">{t("settings.notifyAll")}</option>
+                <option value="mention">{t("settings.notifyMention")}</option>
+                <option value="none">{t("settings.notifyNone")}</option>
               </select>
             </label>
             <label className="check-row">
@@ -461,7 +465,7 @@ export default function ProfilePage() {
                 checked={notify.sound}
                 onChange={(e) => setNotify({ ...notify, sound: e.target.checked })}
               />
-              Play notification sound
+              {t("settings.playSound")}
             </label>
             <label className="check-row">
               <input
@@ -469,7 +473,7 @@ export default function ProfilePage() {
                 checked={notify.mentions_only}
                 onChange={(e) => setNotify({ ...notify, mentions_only: e.target.checked })}
               />
-              Mentions only (overrides desktop when on)
+              {t("settings.mentionsOnlyHint")}
             </label>
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <button
@@ -493,9 +497,9 @@ export default function ProfilePage() {
                   }
                 }}
               >
-                Save notifications
+                {t("settings.saveNotifications")}
               </button>
-              {notifySaved && <span className="muted">Saved</span>}
+              {notifySaved && <span className="muted">{t("common.saved")}</span>}
             </div>
           </div>
         )}
@@ -503,15 +507,16 @@ export default function ProfilePage() {
         {me && (
           <div className="card" style={{ display: "grid", gap: 10 }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 16 }}>Login sessions</h2>
+              <h2 style={{ margin: 0, fontSize: 16 }}>{t("settings.sessions")}</h2>
               <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
-                One web, one desktop, and one phone session. Location is estimated from IP.
+                {t("settings.sessionsHint")}
               </div>
             </div>
             {loginSessions.length === 0 && (
-              <div className="muted">No active sessions.</div>
+              <div className="muted">{t("settings.noSessions")}</div>
             )}
             {loginSessions.map((s) => {
+              const typeHint = deviceTypeLabel(s.device_type, t);
               const title =
                 s.platform &&
                 !["web", "desktop", "phone", "mobile", "browser"].includes(
@@ -520,17 +525,7 @@ export default function ProfilePage() {
                   ? s.platform
                   : s.device_name && s.device_name.toLowerCase() !== "web"
                     ? s.device_name
-                    : s.device_type === "phone"
-                      ? "Mobile"
-                      : s.device_type === "desktop"
-                        ? "Desktop"
-                        : "Web";
-              const typeHint =
-                s.device_type === "phone"
-                  ? "Mobile"
-                  : s.device_type === "desktop"
-                    ? "Desktop"
-                    : "Web";
+                    : typeHint;
               return (
               <div className="list-row" key={s.id}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -538,22 +533,26 @@ export default function ProfilePage() {
                     {title}
                     {s.current && (
                       <span className="tag-chip" style={{ marginLeft: 8 }}>
-                        This device
+                        {t("settings.thisDevice")}
                       </span>
                     )}
                   </div>
                   {title !== typeHint && (
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                      {typeHint} session
+                      {t("settings.sessionType", { type: typeHint })}
                     </div>
                   )}
                   <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                    {s.location || "Unknown location"}
+                    {s.location || t("settings.unknownLocation")}
                   </div>
                   <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                    Last active {formatSessionActive(s.last_active_at || s.created_at)}
+                    {t("settings.lastActiveAt", {
+                      time: formatSessionActive(s.last_active_at || s.created_at, t),
+                    })}
                     {" · "}
-                    signed in {s.created_at ? new Date(s.created_at).toLocaleString() : "—"}
+                    {t("settings.signedIn", {
+                      time: s.created_at ? new Date(s.created_at).toLocaleString() : "—",
+                    })}
                   </div>
                 </div>
                 <button
@@ -562,7 +561,7 @@ export default function ProfilePage() {
                   disabled={sessionsBusy}
                   onClick={() => revokeLoginSession(s.id, Boolean(s.current))}
                 >
-                  {s.current ? "Sign out" : "Revoke"}
+                  {s.current ? t("nav.signOut") : t("settings.revoke")}
                 </button>
               </div>
               );
@@ -573,14 +572,14 @@ export default function ProfilePage() {
         {me && (
           <div className="card" style={{ display: "grid", gap: 10 }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: 16 }}>Notification devices</h2>
+              <h2 style={{ margin: 0, fontSize: 16 }}>{t("settings.pushDevices")}</h2>
               <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
-                Remove old browsers or forwarded localhost ports that should no longer receive push.
+                {t("settings.pushDevicesHint")}
               </div>
             </div>
             {pushDeviceError && <div className="error-text">{pushDeviceError}</div>}
             {pushDevices.length === 0 && (
-              <div className="muted">No browser push subscriptions registered.</div>
+              <div className="muted">{t("settings.noPushDevices")}</div>
             )}
             {pushDevices.map((device) => {
               const isCurrentOrigin =
@@ -589,18 +588,20 @@ export default function ProfilePage() {
                 <div className="list-row" key={device.id}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600 }}>
-                      {device.device_name || "Web browser"}
+                      {device.device_name || t("settings.webBrowser")}
                       {isCurrentOrigin && (
                         <span className="tag-chip" style={{ marginLeft: 8 }}>
-                          This origin
+                          {t("settings.thisOrigin")}
                         </span>
                       )}
                     </div>
                     <div className="muted" style={{ fontSize: 12, overflowWrap: "anywhere" }}>
-                      {device.origin || "Older registration (origin unavailable)"}
+                      {device.origin || t("settings.originUnavailable")}
                     </div>
                     <div className="muted" style={{ fontSize: 11 }}>
-                      Last registered {new Date(device.last_seen_at).toLocaleString()}
+                      {t("settings.lastRegistered", {
+                        time: new Date(device.last_seen_at).toLocaleString(),
+                      })}
                     </div>
                   </div>
                   <button
@@ -609,7 +610,7 @@ export default function ProfilePage() {
                     disabled={pushDevicesBusy}
                     onClick={() => deletePushDevice(device)}
                   >
-                    Remove
+                    {t("common.remove")}
                   </button>
                 </div>
               );
@@ -620,16 +621,16 @@ export default function ProfilePage() {
               disabled={pushDevicesBusy}
               onClick={() => loadPushDevices()}
             >
-              Refresh devices
+              {t("settings.refreshDevices")}
             </button>
           </div>
         )}
 
         {me && (
           <div className="card" style={{ display: "grid", gap: 10 }}>
-            <h2 style={{ margin: 0, fontSize: 16 }}>Change phone number</h2>
+            <h2 style={{ margin: 0, fontSize: 16 }}>{t("settings.changePhone")}</h2>
             <input
-              placeholder="New 11-digit phone"
+              placeholder={t("settings.newPhone")}
               value={newPhone}
               onChange={(e) => setNewPhone(e.target.value)}
             />
@@ -649,8 +650,8 @@ export default function ProfilePage() {
                     setChallengeId(String(res?.challenge_id ?? ""));
                     setPhoneHint(
                       res?.dev_code
-                        ? `SMS sent (dev code: ${res.dev_code})`
-                        : "SMS code sent. Enter it below."
+                        ? t("settings.smsSentDev", { code: String(res.dev_code) })
+                        : t("settings.smsSent")
                     );
                   } catch (err: any) {
                     setPhoneHint(err.message);
@@ -659,12 +660,12 @@ export default function ProfilePage() {
                   }
                 }}
               >
-                Send SMS code
+                {t("settings.sendSms")}
               </button>
             ) : (
               <>
                 <input
-                  placeholder="Verification code"
+                  placeholder={t("settings.verifyCode")}
                   value={phoneCode}
                   onChange={(e) => setPhoneCode(e.target.value)}
                 />
@@ -684,7 +685,7 @@ export default function ProfilePage() {
                       setChallengeId("");
                       setPhoneCode("");
                       setNewPhone("");
-                      setPhoneHint("Phone updated.");
+                      setPhoneHint(t("settings.phoneUpdated"));
                     } catch (err: any) {
                       setPhoneHint(err.message);
                     } finally {
@@ -692,7 +693,7 @@ export default function ProfilePage() {
                     }
                   }}
                 >
-                  Confirm phone change
+                  {t("settings.confirmPhone")}
                 </button>
               </>
             )}
@@ -703,7 +704,7 @@ export default function ProfilePage() {
         <div className="card">
           <div className="list-row">
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600 }}>API server</div>
+              <div style={{ fontWeight: 600 }}>{t("settings.apiServer")}</div>
               <div className="muted" style={{ fontSize: 12 }}>
                 {apiBaseUrl()}
               </div>
@@ -711,9 +712,9 @@ export default function ProfilePage() {
           </div>
           <div className="list-row">
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600 }}>Log out</div>
+              <div style={{ fontWeight: 600 }}>{t("nav.logOut")}</div>
               <div className="muted" style={{ fontSize: 12 }}>
-                Clears the access token on this device.
+                {t("settings.logoutHint")}
               </div>
             </div>
             <button
@@ -726,7 +727,7 @@ export default function ProfilePage() {
                 router.replace("/login");
               }}
             >
-              Log out
+              {t("nav.logOut")}
             </button>
           </div>
         </div>

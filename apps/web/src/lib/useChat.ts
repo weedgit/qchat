@@ -12,17 +12,23 @@ import {
   normalizeMessage,
 } from "./types";
 import { normalizePinnedMessages, PinnedMessage } from "./pinnedCycle";
+import type { MessageKey } from "@qchat/i18n";
 
 export type TypingUser = { userId: string; name: string };
 
 const TYPING_TTL_MS = 3500;
 const TYPING_SEND_INTERVAL_MS = 2500;
 
-export function formatTypingLabel(users: TypingUser[]): string {
+export function formatTypingLabel(
+  users: TypingUser[],
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string
+): string {
   if (users.length === 0) return "";
-  if (users.length === 1) return `${users[0].name} is typing…`;
-  if (users.length === 2) return `${users[0].name} and ${users[1].name} are typing…`;
-  return "Several people are typing…";
+  if (users.length === 1) return t("chat.typingOne", { name: users[0].name });
+  if (users.length === 2) {
+    return t("chat.typingTwo", { a: users[0].name, b: users[1].name });
+  }
+  return t("chat.typingMany");
 }
 
 export function useChat() {

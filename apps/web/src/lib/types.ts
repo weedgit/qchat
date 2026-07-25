@@ -1,4 +1,7 @@
+import type { MessageKey } from "@qchat/i18n";
 import { newUUID } from "./uuid";
+
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 export interface CurrentUser {
   id: string;
@@ -259,13 +262,15 @@ export function mediaURL(path?: string | null): string | undefined {
 }
 
 /** last-online label for offline peers. */
-export function formatLastSeen(iso?: string): string {
-  if (!iso) return "offline";
+export function formatLastSeen(iso: string | undefined, t: Translate): string {
+  if (!iso) return t("presence.offline");
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "offline";
+  if (Number.isNaN(d.getTime())) return t("presence.offline");
   const diff = Date.now() - d.getTime();
-  if (diff < 60_000) return "last seen just now";
-  if (diff < 3_600_000) return `last seen ${Math.floor(diff / 60_000)} min ago`;
-  if (diff < 86_400_000) return `last seen ${Math.floor(diff / 3_600_000)} h ago`;
-  return `last seen ${d.toLocaleDateString([], { month: "short", day: "numeric" })}`;
+  if (diff < 60_000) return t("presence.lastSeenJustNow");
+  if (diff < 3_600_000) return t("presence.lastSeenMinutes", { n: Math.floor(diff / 60_000) });
+  if (diff < 86_400_000) return t("presence.lastSeenHours", { n: Math.floor(diff / 3_600_000) });
+  return t("presence.lastSeenDate", {
+    date: d.toLocaleDateString([], { month: "short", day: "numeric" }),
+  });
 }

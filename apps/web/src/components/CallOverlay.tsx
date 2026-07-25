@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Avatar from "@/components/Avatar";
 import type { useCall } from "@/lib/useCall";
 import { qualityLabel } from "@/lib/callQuality";
+import { useLocale } from "@/lib/locale";
 
 type CallApi = ReturnType<typeof useCall>;
 
@@ -137,6 +138,7 @@ function MicLevelMeter({
 
 /** Incoming ring overlay + in-call panel (Calls UI placement). */
 export default function CallOverlay({ call }: { call: CallApi }) {
+  const { t } = useLocale();
   const {
     incoming,
     active,
@@ -289,12 +291,12 @@ export default function CallOverlay({ call }: { call: CallApi }) {
               <div className="call-voice-stage">
                 <div className="call-peer-avatar" aria-hidden>
                   <Avatar
-                    name={active.peerName || "Voice call"}
+                    name={active.peerName || t("chat.voiceCallTitle")}
                     url={active.peerAvatar}
                     size={CALL_AVATAR_SIZE}
                   />
                 </div>
-                <div className="call-overlay-name">{active.peerName || "Voice call"}</div>
+                <div className="call-overlay-name">{active.peerName || t("chat.voiceCallTitle")}</div>
                 <div className="call-voice-placeholder muted">
                   {reconnecting
                     ? "Reconnecting media…"

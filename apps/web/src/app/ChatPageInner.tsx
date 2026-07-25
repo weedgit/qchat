@@ -25,6 +25,7 @@ import { useCall } from "@/lib/useCall";
 import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
 import { useLocale } from "@/lib/locale";
+import { localizeChatLabel, isDefaultPhotoLabel } from "@/lib/localizeChatLabel";
 import { useDesktopIdleStatus } from "@/lib/useDesktopIdleStatus";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
@@ -79,7 +80,8 @@ function ConversationRow({
   onDropHover?: (hover: boolean) => void;
   onFilesDrop?: (files: File[]) => void;
 }) {
-  const typingLabel = formatTypingLabel(typing);
+  const { t } = useLocale();
+  const typingLabel = formatTypingLabel(typing, t);
   const isDM = conv.type === "dm";
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -140,9 +142,9 @@ function ConversationRow({
       <div className="conv-body">
         <div className="conv-top">
           <span className="conv-title">
-            {conv.favorite ? <span className="fav-mark" title="Favorite">★ </span> : null}
+            {conv.favorite ? <span className="fav-mark" title={t("chat.favorite")}>★ </span> : null}
             {conversationDisplayName(conv)}
-            {conv.muted ? <span className="mute-mark" title="Muted"> · muted</span> : null}
+            {conv.muted ? <span className="mute-mark" title={t("chat.muted")}> · {t("chat.muted")}</span> : null}
           </span>
           <span className="conv-time">{fmtTime(conv.lastMessageAt)}</span>
         </div>
@@ -154,13 +156,13 @@ function ConversationRow({
               <>
                 {(conv.lastMessageMine || conv.type !== "dm") && conv.lastMessageSender && (
                   <span className="conv-sender">
-                    {conv.lastMessageMine ? "You" : conv.lastMessageSender}:{" "}
+                    {conv.lastMessageMine ? t("chat.you") : conv.lastMessageSender}:{" "}
                   </span>
                 )}
-                {conv.lastMessage}
+                {localizeChatLabel(conv.lastMessage, t)}
               </>
             ) : (
-              <span className="muted">No messages yet</span>
+              <span className="muted">{t("chat.noMessagesYet")}</span>
             )}
           </span>
           {conv.unreadCount > 0 && (
@@ -320,6 +322,7 @@ function Bubble({
   onReplyPreviewClick?: (replyToId: string) => void;
   ctxOpen: boolean;
 }) {
+  const { t } = useLocale();
   const [receiptOpen, setReceiptOpen] = useState(false);
   const canReact = !!onReact && !selectMode && !msg.recalled && !msg.pending && !msg.failed && !ctxOpen;
   // Recommend the message's top reaction if it has one, otherwise the default quick emoji.
@@ -348,7 +351,9 @@ function Bubble({
         )}
         <div className="bubble-wrap">
           <div className="bubble call-bubble">
-            <span className="call-msg">{msg.content || "Call"}</span>
+            <span className="call-msg">
+              {localizeChatLabel(msg.content, t, { type: "call" }) || t("chat.call")}
+            </span>
             <span className="meta">{fmtTime(msg.createdAt)}</span>
           </div>
         </div>
@@ -364,24 +369,26 @@ function Bubble({
   const meta = (
     <span className="meta">
       {pinned && !msg.recalled && (
-        <span className="pin-mark" title="Pinned message">
+        <span className="pin-mark" title={t("chat.pinnedMessage")}>
           <MenuIcon d={ICONS.pin} style={{ width: 11, height: 11 }} />
         </span>
       )}
       {msg.recalled && (
-        <span className="recall-mark" title="This message was recalled">
+        <span className="recall-mark" title={t("chat.wasRecalled")}>
           <MenuIcon d={ICONS.trash} style={{ width: 11, height: 11 }} />
         </span>
       )}
-      {msg.editedAt && !msg.recalled && <span className="edited-mark">edited </span>}
+      {msg.editedAt && !msg.recalled && (
+        <span className="edited-mark">{t("chat.edited")} </span>
+      )}
       {fmtTime(msg.createdAt)}
       {receiptMark(msg)}
       {canCancelUpload && (
         <button
           type="button"
           className="msg-action-icon"
-          title="Cancel upload"
-          aria-label="Cancel upload"
+          title={t("chat.cancelUpload")}
+          aria-label={t("chat.cancelUpload")}
           onClick={(e) => {
             e.stopPropagation();
             onCancelUpload();
@@ -394,8 +401,8 @@ function Bubble({
         <button
           type="button"
           className="msg-action-icon"
-          title="Retry"
-          aria-label="Retry"
+          title={t("chat.retry")}
+          aria-label={t("chat.retry")}
           onClick={(e) => {
             e.stopPropagation();
             onRetry();
@@ -423,7 +430,7 @@ function Bubble({
         <button
           type="button"
           className={`select-dot ${selected ? "on" : ""}`}
-          title={selected ? "Deselect" : "Select"}
+          title={selected ? t("chat.deselect") : t("chat.select")}
           aria-pressed={selected}
           onClick={(e) => {
             e.stopPropagation();
@@ -462,7 +469,7 @@ function Bubble({
               className={`reply-preview ${msg.mine ? "mine" : "peer"}`}
               role="button"
               tabIndex={0}
-              title="Go to original message"
+              title={t("chat.goToOriginal")}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!selectMode) onReplyPreviewClick?.(msg.replyToId!);
@@ -480,17 +487,22 @@ function Bubble({
             </div>
           )}
           {msg.recalled && !msg.content && !msg.mediaUrl ? (
-            <span className="recalled-placeholder">Message recalled</span>
+            <span className="recalled-placeholder">{t("chat.messageRecalled")}</span>
           ) : msg.type === "voice" && msg.mediaUrl && !msg.recalled ? (
             <div className="voice-msg">
               <audio controls preload="metadata" src={mediaAuthURL(msg.mediaUrl)} />
-              <div className="voice-label">{msg.content || "Voice message"}</div>
+              <div className="voice-label">
+                {localizeChatLabel(msg.content, t, { type: "voice" })}
+              </div>
             </div>
           ) : msg.type === "image" && msg.mediaUrl && !msg.recalled ? (
             <div className="media-image">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={mediaAuthURL(msg.mediaUrl)} alt={msg.content || "Photo"} />
-              {msg.content && msg.content !== "Photo" && (
+              <img
+                src={mediaAuthURL(msg.mediaUrl)}
+                alt={localizeChatLabel(msg.content, t, { type: "image" })}
+              />
+              {msg.content && !isDefaultPhotoLabel(msg.content) && (
                 <div className="media-caption">
                   <MessageBody text={msg.content} />
                 </div>
@@ -515,12 +527,12 @@ function Bubble({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
-                  <span>{msg.content || "File"}</span>
+                  <span>{localizeChatLabel(msg.content, t, { type: "file" }) || t("chat.file")}</span>
                 </a>
               ) : (
                 <div className="media-file">
                   <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
-                  <span>{msg.content || "File"}</span>
+                  <span>{localizeChatLabel(msg.content, t, { type: "file" }) || t("chat.file")}</span>
                 </div>
               )}
               {msg.pending && typeof msg.uploadProgress === "number" && (
@@ -588,16 +600,19 @@ function Bubble({
                 setReceiptOpen((v) => !v);
               }}
             >
-              {(msg.readCount ?? 0)}/{msg.memberCount} read
+              {t("chat.readOfCount", {
+                n: msg.readCount ?? 0,
+                total: msg.memberCount,
+              })}
               {receiptOpen ? " ▴" : " ▾"}
             </button>
           )}
         {receiptOpen && msg.mine && isGroup && (
           <div className="receipt-detail">
             <div className="receipt-col">
-              <div className="receipt-col-title">Read</div>
+              <div className="receipt-col-title">{t("chat.read")}</div>
               {(msg.readBy?.length ?? 0) === 0 ? (
-                <div className="muted">Nobody yet</div>
+                <div className="muted">{t("chat.nobodyYet")}</div>
               ) : (
                 msg.readBy!.map((u) => (
                   <div key={u.userId} className="receipt-user">
@@ -607,9 +622,9 @@ function Bubble({
               )}
             </div>
             <div className="receipt-col">
-              <div className="receipt-col-title">Unread</div>
+              <div className="receipt-col-title">{t("chat.unread")}</div>
               {(msg.unreadBy?.length ?? 0) === 0 ? (
-                <div className="muted">Everyone</div>
+                <div className="muted">{t("chat.everyone")}</div>
               ) : (
                 msg.unreadBy!.map((u) => (
                   <div key={u.userId} className="receipt-user">
@@ -1659,9 +1674,9 @@ export default function ChatPageInner() {
 
   function mediaDraftTitle(mode: "photos" | "files", n: number): string {
     if (mode === "photos") {
-      return n === 1 ? "Send Photo" : `Send ${n} Photos`;
+      return n === 1 ? t("chat.sendPhoto") : t("chat.sendPhotos", { n });
     }
-    return n === 1 ? "Send File" : `Send ${n} files`;
+    return n === 1 ? t("chat.sendFile") : t("chat.sendFiles", { n });
   }
 
   async function openMediaDraft(files: File[], opts?: { append?: boolean }) {
@@ -1984,11 +1999,14 @@ export default function ChatPageInner() {
   function previewFor(msg: Message): { name: string; body: string } | undefined {
     if (!msg.replyToId) return undefined;
     const target = activeMessages.find((m) => m.id === msg.replyToId);
-    if (!target) return { name: "Reply", body: "Original message" };
-    const body =
-      target.type === "voice" ? target.content || "Voice message" : target.content || "Message";
+    if (!target) return { name: t("chat.reply"), body: t("chat.originalMessage") };
+    const body = localizeChatLabel(
+      target.content,
+      t,
+      { type: target.type }
+    ) || t("chat.message");
     return {
-      name: target.senderName ?? (target.mine ? "You" : "User"),
+      name: target.senderName ?? (target.mine ? t("chat.you") : t("chat.user")),
       body,
     };
   }
@@ -2108,10 +2126,10 @@ export default function ChatPageInner() {
         <div className="conv-list">
           {globalSearch.active ? (
             <div className="search-results">
-              {globalSearch.loading && <div className="muted" style={{ padding: 12 }}>Searching…</div>}
+              {globalSearch.loading && <div className="muted" style={{ padding: 12 }}>{t("chat.searching")}</div>}
               {globalSearch.users.length > 0 && (
                 <div className="search-section">
-                  <div className="search-section-title">People</div>
+                  <div className="search-section-title">{t("chat.people")}</div>
                   {globalSearch.users.map((u) => (
                     <button
                       key={u.id}
@@ -2133,7 +2151,7 @@ export default function ChatPageInner() {
               )}
               {globalSearch.messages.length > 0 && (
                 <div className="search-section">
-                  <div className="search-section-title">Messages</div>
+                  <div className="search-section-title">{t("chat.messages")}</div>
                   {globalSearch.messages.map((m) => (
                     <button
                       key={m.id}
@@ -2153,7 +2171,7 @@ export default function ChatPageInner() {
               {!globalSearch.loading &&
                 globalSearch.users.length === 0 &&
                 globalSearch.messages.length === 0 && (
-                  <div className="muted" style={{ padding: 14 }}>No results</div>
+                  <div className="muted" style={{ padding: 14 }}>{t("chat.noResults")}</div>
                 )}
             </div>
           ) : (
@@ -2161,13 +2179,13 @@ export default function ChatPageInner() {
               {chat.loadError && (
                 <div style={{ padding: 14 }}>
                   <button className="btn-ghost" onClick={chat.reload}>
-                    Retry
+                    {t("chat.retry")}
                   </button>
                 </div>
               )}
               {!chat.loadError && filtered.length === 0 && (
                 <div style={{ padding: 20 }} className="muted">
-                  No conversations yet. Add a friend or create a group.
+                  {t("chat.noConversationsYet")}
                 </div>
               )}
               {filtered.map((c) => (
@@ -2245,16 +2263,18 @@ export default function ChatPageInner() {
                 <button
                   type="button"
                   className="icon-btn chat-back-btn"
-                  title="Back to chat"
-                  aria-label="Back to chat"
+                  title={t("chat.backToChat")}
+                  aria-label={t("chat.backToChat")}
                   onClick={() => setPinsListOpen(false)}
                 >
                   <MenuIcon d={ICONS.back} />
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="title">Pinned messages</div>
+                  <div className="title">{t("chat.pinnedMessages")}</div>
                   <div className="sub">
-                    {pinnedList.length} pin{pinnedList.length === 1 ? "" : "s"}
+                    {pinnedList.length === 1
+                      ? t("chat.pinCountOne")
+                      : t("chat.pinCount", { n: pinnedList.length })}
                   </div>
                 </div>
               </div>
@@ -2263,7 +2283,7 @@ export default function ChatPageInner() {
                 <button
                   type="button"
                   className="icon-btn chat-back-btn"
-                  title="Back to chats"
+                  title={t("chat.backToChats")}
                   onClick={backToConversationList}
                 >
                   <MenuIcon d={ICONS.back} />
@@ -2272,19 +2292,21 @@ export default function ChatPageInner() {
                   className="btn-ghost"
                   style={{ borderRadius: 8, padding: "6px 10px" }}
                   onClick={clearSelection}
-                  title="Cancel selection"
+                  title={t("chat.cancelSelection")}
                 >
                   {"\u2715"}
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="title">{selectedIds.size} selected</div>
+                  <div className="title">
+                    {t("chat.selectedCount", { n: selectedIds.size })}
+                  </div>
                 </div>
                 <button
                   className="btn-ghost"
                   style={{ borderRadius: 8, padding: "6px 10px" }}
                   onClick={copySelected}
                 >
-                  Copy
+                  {t("chat.copy")}
                 </button>
                 {forwardableSelected.length > 0 && (
                   <button
@@ -2292,7 +2314,7 @@ export default function ChatPageInner() {
                     style={{ borderRadius: 8, padding: "6px 10px" }}
                     onClick={() => setForwardIds(forwardableSelected.map((m) => m.id))}
                   >
-                    Forward
+                    {t("chat.forward")}
                   </button>
                 )}
                 {recallableSelected.length > 0 && (
@@ -2301,7 +2323,7 @@ export default function ChatPageInner() {
                     style={{ borderRadius: 8, padding: "6px 10px", color: "var(--danger)" }}
                     onClick={recallSelected}
                   >
-                    Recall
+                    {t("chat.recall")}
                   </button>
                 )}
               </div>
@@ -2310,7 +2332,7 @@ export default function ChatPageInner() {
                 <button
                   type="button"
                   className="icon-btn chat-back-btn"
-                  title="Back to chats"
+                  title={t("chat.backToChats")}
                   onClick={backToConversationList}
                 >
                   <MenuIcon d={ICONS.back} />
@@ -2318,14 +2340,14 @@ export default function ChatPageInner() {
                 <input
                   className="search-input"
                   autoFocus
-                  placeholder="Search in conversation"
+                  placeholder={t("chat.searchInConversation")}
                   value={inChatSearch}
                   onChange={(e) => setInChatSearch(e.target.value)}
                 />
                 <button
                   type="button"
                   className="icon-btn"
-                  title="Close search"
+                  title={t("chat.closeSearch")}
                   onClick={() => {
                     setShowInChatSearch(false);
                     setInChatSearch("");
@@ -2339,7 +2361,7 @@ export default function ChatPageInner() {
                 <button
                   type="button"
                   className="icon-btn chat-back-btn"
-                  title="Back to chats"
+                  title={t("chat.backToChats")}
                   onClick={backToConversationList}
                 >
                   <MenuIcon d={ICONS.back} />
@@ -2347,7 +2369,7 @@ export default function ChatPageInner() {
                 <div
                   className="chat-header clickable"
                   style={{ flex: 1, border: "none", padding: 0, minWidth: 0 }}
-                  title="View details"
+                  title={t("chat.viewDetails")}
                   onClick={() => setShowDetails(true)}
                 >
                   <Avatar
@@ -2364,15 +2386,15 @@ export default function ChatPageInner() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="title">{conversationDisplayName(active)}</div>
                     <div className="sub">
-                      {formatTypingLabel(chat.typingByConv[active.id] ?? []) ||
+                      {formatTypingLabel(chat.typingByConv[active.id] ?? [], t) ||
                         (active.type === "dm"
                           ? (() => {
                             const p = active.peerId
                               ? chat.presenceByUser[active.peerId]
                               : undefined;
                             const online = p?.online ?? active.peerOnline;
-                            if (online) return "online";
-                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt);
+                            if (online) return t("presence.online");
+                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt, t);
                           })()
                           : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
                     </div>
@@ -2381,7 +2403,7 @@ export default function ChatPageInner() {
                 <button
                   type="button"
                   className="icon-btn"
-                  title="Search in chat"
+                  title={t("chat.searchInChat")}
                   onClick={() => setShowInChatSearch(true)}
                 >
                   <MenuIcon d={"M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z M21 21l-4.3-4.3"} />
@@ -2391,7 +2413,7 @@ export default function ChatPageInner() {
                     <button
                       type="button"
                       className="icon-btn"
-                      title="Voice call"
+                      title={t("chat.voiceCallTitle")}
                       disabled={!!call.active || !!call.incoming}
                       onClick={() => {
                         call
@@ -2409,7 +2431,7 @@ export default function ChatPageInner() {
                     <button
                       type="button"
                       className="icon-btn"
-                      title="Video call"
+                      title={t("chat.videoCallTitle")}
                       disabled={!!call.active || !!call.incoming}
                       onClick={() => {
                         call
@@ -2431,7 +2453,7 @@ export default function ChatPageInner() {
 
             {showInChatSearch && chatSearch.active && (
               <div className="inchat-search-results">
-                {chatSearch.loading && <div className="muted">Searching…</div>}
+                {chatSearch.loading && <div className="muted">{t("chat.searching")}</div>}
                 {chatSearch.messages.map((m) => (
                   <button
                     key={m.id}
@@ -2449,7 +2471,7 @@ export default function ChatPageInner() {
                   </button>
                 ))}
                 {!chatSearch.loading && chatSearch.messages.length === 0 && (
-                  <div className="muted">No matches in this chat</div>
+                  <div className="muted">{t("chat.noMatchesInChat")}</div>
                 )}
               </div>
             )}
@@ -2460,22 +2482,23 @@ export default function ChatPageInner() {
                 <button
                   type="button"
                   className="pinned-banner-main"
-                  title="Jump to next pinned message"
+                  title={t("chat.jumpNextPinned")}
                   onClick={jumpPinnedBar}
                 >
                   <div className="pinned-label">
-                    Pinned Message
+                    {t("chat.pinnedBannerLabel")}
                     {pinnedList.length > 1 ? ` · ${pinnedList.length}` : ""}
                   </div>
                   <div className="pinned-text">
-                    {(barPin ?? pinnedList[pinnedList.length - 1])?.body || "Pinned message"}
+                    {(barPin ?? pinnedList[pinnedList.length - 1])?.body ||
+                      t("chat.pinnedMessage")}
                   </div>
                 </button>
                 <button
                   type="button"
                   className="pinned-list-btn"
-                  title="Pinned messages"
-                  aria-label="Pinned messages"
+                  title={t("chat.pinnedMessages")}
+                  aria-label={t("chat.pinnedMessages")}
                   onClick={(e) => {
                     e.stopPropagation();
                     setPinsListOpen(true);
@@ -2522,8 +2545,8 @@ export default function ChatPageInner() {
               {chatDropActive && (
                 <div className="chat-drop-overlay" aria-hidden>
                   <div className="chat-drop-panel">
-                    <div className="chat-drop-title">Drop files here to send them</div>
-                    <div className="chat-drop-sub">without compression</div>
+                    <div className="chat-drop-title">{t("chat.dropFilesHere")}</div>
+                    <div className="chat-drop-sub">{t("chat.dropFilesSub")}</div>
                   </div>
                 </div>
               )}
@@ -2537,7 +2560,7 @@ export default function ChatPageInner() {
                     <>
                       {pinnedThreadMessages.length === 0 && (
                         <div className="empty-state" style={{ minHeight: 200 }}>
-                          <div className="muted">No pinned messages</div>
+                          <div className="muted">{t("chat.noPinnedMessages")}</div>
                         </div>
                       )}
                       {pinnedThreadMessages.map((m) => (
@@ -2571,7 +2594,7 @@ export default function ChatPageInner() {
                     <>
                       {activeMessages.length === 0 && (
                         <div className="empty-state" style={{ minHeight: 200 }}>
-                          <div className="muted">No messages here yet…</div>
+                          <div className="muted">{t("chat.noMessagesHere")}</div>
                         </div>
                       )}
                       {activeMessages.map((m) => (
@@ -2619,8 +2642,8 @@ export default function ChatPageInner() {
                   <button
                     type="button"
                     className="jump-bottom-btn"
-                    title="Scroll to bottom"
-                    aria-label="Scroll to bottom"
+                    title={t("chat.scrollToBottom")}
+                    aria-label={t("chat.scrollToBottom")}
                     onClick={jumpToBottom}
                   >
                     <MenuIcon d={ICONS.back} style={{ width: 18, height: 18, transform: "rotate(-90deg)" }} />
@@ -2634,13 +2657,13 @@ export default function ChatPageInner() {
                     <div className="reply-banner edit-banner">
                       <MenuIcon d={ICONS.edit} style={{ width: 22, height: 22 }} />
                       <div className="reply-body">
-                        <div className="reply-name">Edit message</div>
+                        <div className="reply-name">{t("chat.editMessage")}</div>
                         <div className="reply-text">{editingMessage.content}</div>
                       </div>
                       <button
                         type="button"
                         className="reply-close"
-                        title="Cancel edit"
+                        title={t("chat.cancelEdit")}
                         onClick={cancelEdit}
                       >
                         {"\u2715"}
@@ -2660,7 +2683,7 @@ export default function ChatPageInner() {
                       <button
                         type="button"
                         className="reply-close"
-                        title="Cancel reply"
+                        title={t("chat.cancelReply")}
                         onClick={() => setReplyTo(null)}
                       >
                         {"\u2715"}
@@ -2673,7 +2696,7 @@ export default function ChatPageInner() {
                         <button
                           type="button"
                           className="send-btn danger"
-                          title="Cancel recording"
+                          title={t("chat.cancelRecording")}
                           onClick={cancelRecording}
                         >
                           {"\u2715"}
@@ -2687,7 +2710,7 @@ export default function ChatPageInner() {
                         <button
                           type="button"
                           className="send-btn"
-                          title="Send voice message"
+                          title={t("chat.sendVoiceMessage")}
                           disabled={voiceBusy}
                           onClick={() => finishRecording(true)}
                         >
@@ -2735,7 +2758,7 @@ export default function ChatPageInner() {
                         <button
                           type="button"
                           className="attach-btn"
-                          title="Attach file"
+                          title={t("chat.attachFile")}
                           disabled={voiceBusy || !chat.activeId}
                           onClick={() => fileInputRef.current?.click()}
                         >
@@ -2744,7 +2767,11 @@ export default function ChatPageInner() {
                         <textarea
                           ref={draftRef}
                           rows={1}
-                          placeholder={isGroup ? "Message · try @name" : "Message"}
+                          placeholder={
+                            isGroup
+                              ? t("chat.messagePlaceholderGroup")
+                              : t("chat.messagePlaceholder")
+                          }
                           value={draft}
                           disabled={voiceBusy}
                           onChange={(e) => {
@@ -2817,13 +2844,13 @@ export default function ChatPageInner() {
                             {"\u27A4"}
                           </button>
                         ) : editingMessage ? (
-                          <button className="send-btn danger" onClick={cancelEdit} title="Cancel edit">
+                          <button className="send-btn danger" onClick={cancelEdit} title={t("chat.cancelEdit")}>
                             {"\u2715"}
                           </button>
                         ) : (
                           <button
                             className="send-btn"
-                            title="Record voice message"
+                            title={t("chat.recordVoiceMessage")}
                             disabled={voiceBusy || !chat.activeId}
                             onClick={startRecording}
                           >
@@ -2846,7 +2873,7 @@ export default function ChatPageInner() {
           <button
             type="button"
             className="details-close"
-            title="Close"
+            title={t("chat.close")}
             onClick={() => setShowDetails(false)}
           >
             {"\u2715"}
@@ -2889,9 +2916,9 @@ export default function ChatPageInner() {
             <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
               @{dmPeerProfile.username}
               {dmPeerProfile.online
-                ? " · online"
+                ? ` · ${t("presence.online")}`
                 : dmPeerProfile.last_active_at
-                  ? ` · ${formatLastSeen(dmPeerProfile.last_active_at)}`
+                  ? ` · ${formatLastSeen(dmPeerProfile.last_active_at, t)}`
                   : ""}
             </div>
           )}
@@ -2907,7 +2934,7 @@ export default function ChatPageInner() {
           ) : null}
           {active.type === "dm" && dmPeerProfile?.real_name ? (
             <div className="kv" style={{ marginTop: 10 }}>
-              <div className="k">Real name</div>
+              <div className="k">{t("details.realName")}</div>
               <div>{dmPeerProfile.real_name}</div>
             </div>
           ) : null}
@@ -2934,49 +2961,49 @@ export default function ChatPageInner() {
             />
           )}
           <div className="kv">
-            <div className="k">Type</div>
+            <div className="k">{t("details.type")}</div>
             <div>{active.type}</div>
           </div>
           <div className="kv">
-            <div className="k">Conversation ID</div>
+            <div className="k">{t("details.conversationId")}</div>
             <div style={{ wordBreak: "break-all" }}>{active.id}</div>
           </div>
           <div className="kv">
-            <div className="k">Last activity</div>
+            <div className="k">{t("details.lastActivity")}</div>
             <div>{active.lastMessageAt ? fmtTime(active.lastMessageAt) : "\u2014"}</div>
           </div>
           {isGroup && groupDetails && (
             <>
               {groupDetails.public_id && (
                 <div className="kv">
-                  <div className="k">Invite ID</div>
+                  <div className="k">{t("details.inviteId")}</div>
                   <div>{groupDetails.public_id}</div>
                 </div>
               )}
               {groupDetails.public_id && (
                 <div className="group-qr-block">
                   <div className="k" style={{ marginBottom: 8 }}>
-                    Invite QR
+                    {t("details.inviteQr")}
                   </div>
                   <GroupQr publicId={groupDetails.public_id} size={140} />
                 </div>
               )}
               {canEditGroup ? (
                 <div className="group-meta-edit">
-                  <label className="k">Group name</label>
+                  <label className="k">{t("details.groupName")}</label>
                   <input
                     value={groupEditTitle}
                     onChange={(e) => setGroupEditTitle(e.target.value)}
                     maxLength={80}
                   />
-                  <label className="k">Description</label>
+                  <label className="k">{t("details.description")}</label>
                   <textarea
                     value={groupEditDesc}
                     onChange={(e) => setGroupEditDesc(e.target.value)}
                     rows={2}
                     maxLength={500}
                   />
-                  <label className="k">Announcement</label>
+                  <label className="k">{t("details.announcement")}</label>
                   <textarea
                     value={groupEditAnnounce}
                     onChange={(e) => setGroupEditAnnounce(e.target.value)}
@@ -2989,7 +3016,7 @@ export default function ChatPageInner() {
                     disabled={groupMetaBusy}
                     onClick={() => saveGroupMeta().catch(() => { })}
                   >
-                    {groupMetaBusy ? "Saving…" : "Save group info"}
+                    {groupMetaBusy ? t("common.saving") : t("details.saveGroupInfo")}
                   </button>
                   <label className="group-toggle">
                     <input
@@ -2999,7 +3026,7 @@ export default function ChatPageInner() {
                       onChange={() => toggleForbidFriendAdd().catch(() => { })}
                     />
                     <span className="group-toggle-label">
-                      Forbid members adding each other as friends
+                      {t("details.forbidFriendAdd")}
                     </span>
                   </label>
                 </div>
@@ -3007,30 +3034,30 @@ export default function ChatPageInner() {
                 <>
                   {groupDetails.announcement && (
                     <div className="kv">
-                      <div className="k">Announcement</div>
+                      <div className="k">{t("details.announcement")}</div>
                       <div>{groupDetails.announcement}</div>
                     </div>
                   )}
                   {groupDetails.description && (
                     <div className="kv">
-                      <div className="k">Description</div>
+                      <div className="k">{t("details.description")}</div>
                       <div>{groupDetails.description}</div>
                     </div>
                   )}
                   {groupDetails.forbid_member_friend_add && (
                     <div className="muted" style={{ fontSize: 12 }}>
-                      Members cannot add each other as friends.
+                      {t("details.membersCannotAdd")}
                     </div>
                   )}
                 </>
               )}
               <div className="kv">
-                <div className="k">Your role</div>
+                <div className="k">{t("details.yourRole")}</div>
                 <div>{groupDetails.role || chat.myRole}</div>
               </div>
               {groupDetails.mute_all && (
                 <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-                  Whole group is muted (members cannot send).
+                  {t("details.groupMutedAll")}
                 </div>
               )}
               <div className="details-members">
@@ -3043,7 +3070,9 @@ export default function ChatPageInner() {
                     alignItems: "center",
                   }}
                 >
-                  <span>Members ({groupDetails.members.length})</span>
+                  <span>
+                    {t("details.membersCount", { n: groupDetails.members.length })}
+                  </span>
                   {canEditGroup && (
                     <button
                       type="button"
@@ -3052,15 +3081,15 @@ export default function ChatPageInner() {
                       disabled={addMembersBusy}
                       onClick={() => openAddMembers().catch(() => {})}
                     >
-                      Add members
+                      {t("details.addMembers")}
                     </button>
                   )}
                 </div>
                 {addMembersOpen && (
                   <div className="card" style={{ marginBottom: 12, padding: 10, display: "grid", gap: 8 }}>
-                    <div style={{ fontWeight: 600 }}>Add friends to this group</div>
+                    <div style={{ fontWeight: 600 }}>{t("details.addFriendsToGroup")}</div>
                     {addMemberFriends.length === 0 ? (
-                      <div className="muted">No friends left to add.</div>
+                      <div className="muted">{t("details.noFriendsLeft")}</div>
                     ) : (
                       addMemberFriends.map((f) => {
                         const on = addMemberPicked.has(f.user_id);
@@ -3094,14 +3123,16 @@ export default function ChatPageInner() {
                         disabled={addMembersBusy || addMemberPicked.size === 0}
                         onClick={() => confirmAddMembers().catch(() => {})}
                       >
-                        {addMembersBusy ? "Adding…" : `Add (${addMemberPicked.size})`}
+                        {addMembersBusy
+                          ? t("details.adding")
+                          : t("details.addCount", { n: addMemberPicked.size })}
                       </button>
                       <button
                         type="button"
                         className="btn-ghost"
                         onClick={() => setAddMembersOpen(false)}
                       >
-                        Cancel
+                        {t("common.cancel")}
                       </button>
                     </div>
                   </div>
@@ -3135,14 +3166,14 @@ export default function ChatPageInner() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600 }}>
                           {m.display_name}
-                          {isMe ? <span className="member-me-badge">me</span> : null}
+                          {isMe ? <span className="member-me-badge">{t("details.me")}</span> : null}
                         </div>
                         <div className="muted" style={{ fontSize: 12 }}>
                           @{m.username} · {m.role}
                           {isMuted
                             ? permanentMute
-                              ? " · muted permanently"
-                              : ` · muted until ${mutedUntil!.toLocaleString()}`
+                              ? ` · ${t("details.mutedPermanently")}`
+                              : ` · ${t("details.mutedUntil", { time: mutedUntil!.toLocaleString() })}`
                             : ""}
                         </div>
                         {canEditGroup && m.role !== "owner" && !isMe && (
@@ -3170,7 +3201,7 @@ export default function ChatPageInner() {
                               className="btn-ghost mute-chip"
                               onClick={() => muteMember(m.user_id, "permanent").catch(() => { })}
                             >
-                              Mute
+                              {t("details.mute")}
                             </button>
                             {isMuted && (
                               <button
@@ -3178,7 +3209,7 @@ export default function ChatPageInner() {
                                 className="btn-ghost mute-chip"
                                 onClick={() => muteMember(m.user_id, "off").catch(() => { })}
                               >
-                                Unmute
+                                {t("details.unmute")}
                               </button>
                             )}
                           </div>
@@ -3196,7 +3227,7 @@ export default function ChatPageInner() {
                       className="btn"
                       onClick={() => muteMember("", "all_off").catch(() => { })}
                     >
-                      Unmute whole group
+                      {t("details.unmuteGroup")}
                     </button>
                   ) : (
                     <button
@@ -3204,13 +3235,13 @@ export default function ChatPageInner() {
                       className="btn"
                       onClick={() => muteMember("", "all").catch(() => { })}
                     >
-                      Mute whole group
+                      {t("details.muteGroup")}
                     </button>
                   )}
                 </div>
               )}
               <Link className="btn-ghost" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
-                More group settings
+                {t("details.moreGroupSettings")}
               </Link>
               {!isGroupOwner && (
                 <button
@@ -3219,7 +3250,7 @@ export default function ChatPageInner() {
                   style={{ marginTop: 8, color: "var(--danger, #dc2626)" }}
                   onClick={() => leaveGroup()}
                 >
-                  Leave group
+                  {t("details.leaveGroup")}
                 </button>
               )}
             </>
@@ -3232,7 +3263,9 @@ export default function ChatPageInner() {
                 chat.updateConversationPrefs(active.id, { muted: !active.muted }).catch(() => { })
               }
             >
-              {active.muted ? "Unmute conversation" : "Mute conversation"}
+              {active.muted
+                ? t("details.unmuteConversation")
+                : t("details.muteConversation")}
             </button>
           )}
         </aside>
@@ -3252,7 +3285,7 @@ export default function ChatPageInner() {
             }}
           >
             <MenuIcon d={ICONS.copy} />
-            Copy selected
+            {t("ctx.copySelected")}
           </button>
           {forwardableSelected.length > 0 && (
             <button
@@ -3263,7 +3296,7 @@ export default function ChatPageInner() {
               }}
             >
               <MenuIcon d={ICONS.forward} />
-              Forward selected
+              {t("ctx.forwardSelected")}
             </button>
           )}
           <button
@@ -3274,7 +3307,7 @@ export default function ChatPageInner() {
             }}
           >
             <MenuIcon d={ICONS.select} />
-            Clear selection
+            {t("ctx.clearSelection")}
           </button>
           {recallableSelected.length > 0 && (
             <>
@@ -3287,7 +3320,7 @@ export default function ChatPageInner() {
                 }}
               >
                 <MenuIcon d={ICONS.trash} />
-                Recall selected
+                {t("ctx.recallSelected")}
               </button>
             </>
           )}
@@ -3308,7 +3341,7 @@ export default function ChatPageInner() {
             }}
           >
             <MenuIcon d={ICONS.select} />
-            Select
+            {t("chat.select")}
           </button>
         </div>
       )}
@@ -3348,7 +3381,7 @@ export default function ChatPageInner() {
                 }}
               >
                 <MenuIcon d={ICONS.reply} />
-                Reply
+                {t("chat.reply")}
               </button>
             )}
             <button
@@ -3359,7 +3392,7 @@ export default function ChatPageInner() {
               }}
             >
               <MenuIcon d={ICONS.copy} />
-              Copy
+              {t("ctx.copy")}
             </button>
             {!ctxMsg.recalled && !ctxMsg.failed && (
               <button
@@ -3370,7 +3403,7 @@ export default function ChatPageInner() {
                 }}
               >
                 <MenuIcon d={ICONS.forward} />
-                Forward
+                {t("chat.forward")}
               </button>
             )}
             <button
@@ -3382,7 +3415,7 @@ export default function ChatPageInner() {
               }}
             >
               <MenuIcon d={ICONS.select} />
-              Select
+              {t("chat.select")}
             </button>
             {ctxMsg.failed && chat.activeId && (
               <button
@@ -3393,7 +3426,7 @@ export default function ChatPageInner() {
                 }}
               >
                 <MenuIcon d={ICONS.retry} />
-                Retry
+                {t("chat.retry")}
               </button>
             )}
             {ctxMsg.mine && !ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
@@ -3408,7 +3441,7 @@ export default function ChatPageInner() {
                     }}
                   >
                     <MenuIcon d={ICONS.edit} />
-                    Edit
+                    {t("ctx.edit")}
                   </button>
                 )}
                 <button
@@ -3420,7 +3453,7 @@ export default function ChatPageInner() {
                   }}
                 >
                   <MenuIcon d={ICONS.pin} />
-                  {pinnedIdSet.has(ctxMsg.id) ? "Unpin" : "Pin"}
+                  {pinnedIdSet.has(ctxMsg.id) ? t("ctx.unpin") : t("ctx.pin")}
                 </button>
               </>
             )}
@@ -3433,7 +3466,7 @@ export default function ChatPageInner() {
                 }}
               >
                 <MenuIcon d={ICONS.trash} />
-                Recall
+                {t("chat.recall")}
               </button>
             )}
             {!ctxMsg.mine && !ctxMsg.recalled && chat.activeId && (
@@ -3446,7 +3479,7 @@ export default function ChatPageInner() {
                 }}
               >
                 <MenuIcon d={ICONS.pin} />
-                {pinnedIdSet.has(ctxMsg.id) ? "Unpin" : "Pin"}
+                {pinnedIdSet.has(ctxMsg.id) ? t("ctx.unpin") : t("ctx.pin")}
               </button>
             )}
           </div>
@@ -3470,7 +3503,7 @@ export default function ChatPageInner() {
                 setMemberAdminRole(id, "admin").catch(() => {});
               }}
             >
-              Promote to admin
+              {t("ctx.promoteAdmin")}
             </button>
           )}
           {isGroupOwner && memberMenu.member.role === "admin" && (
@@ -3483,7 +3516,7 @@ export default function ChatPageInner() {
                 setMemberAdminRole(id, "member").catch(() => {});
               }}
             >
-              Remove admin role
+              {t("ctx.removeAdmin")}
             </button>
           )}
           {canEditGroup &&
@@ -3496,12 +3529,12 @@ export default function ChatPageInner() {
                   const id = memberMenu.member.user_id;
                   const name = memberMenu.member.display_name;
                   setMemberMenu(null);
-                  if (window.confirm(`Remove ${name} from this group?`)) {
+                  if (window.confirm(t("ctx.removeFromGroupConfirm", { name }))) {
                     removeGroupMember(id).catch(() => {});
                   }
                 }}
               >
-                Remove from group
+                {t("ctx.removeFromGroup")}
               </button>
             )}
         </div>
@@ -3512,7 +3545,7 @@ export default function ChatPageInner() {
           className="forward-modal"
           role="dialog"
           aria-modal="true"
-          aria-label="Join a company"
+          aria-label={t("menu.joinCompany")}
           onClick={() => {
             if (!joinBusy) {
               setJoinCompanyOpen(false);
@@ -3529,12 +3562,12 @@ export default function ChatPageInner() {
               joinCompany().catch(() => {});
             }}
           >
-            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>Join a company</h3>
+            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>{t("menu.joinCompany")}</h3>
             <p className="muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
-              Enter the invite code from your organization admin.
+              {t("join.hint")}
             </p>
             <div className="field" style={{ marginBottom: 12 }}>
-              <label htmlFor="join-invite">Invite code</label>
+              <label htmlFor="join-invite">{t("join.inviteCode")}</label>
               <input
                 id="join-invite"
                 value={joinInvite}
@@ -3558,10 +3591,10 @@ export default function ChatPageInner() {
                   setJoinNotice(null);
                 }}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button className="btn" type="submit" disabled={joinBusy || !joinInvite.trim()}>
-                {joinBusy ? "Joining…" : "Join"}
+                {joinBusy ? t("join.joining") : t("join.submit")}
               </button>
             </div>
           </form>
@@ -3599,7 +3632,7 @@ export default function ChatPageInner() {
               <button
                 type="button"
                 className="photo-send-close"
-                title="Cancel"
+                title={t("common.cancel")}
                 disabled={mediaSending}
                 onClick={() => closeMediaDraft({ restoreCaption: true })}
               >
@@ -3620,7 +3653,7 @@ export default function ChatPageInner() {
                     <button
                       type="button"
                       className="photo-send-remove"
-                      title="Remove"
+                      title={t("common.remove")}
                       disabled={mediaSending}
                       onClick={() => removeMediaDraftItem(idx)}
                     >
@@ -3640,7 +3673,7 @@ export default function ChatPageInner() {
                     <button
                       type="button"
                       className="photo-send-remove inline"
-                      title="Remove"
+                      title={t("common.remove")}
                       disabled={mediaSending}
                       onClick={() => removeMediaDraftItem(idx)}
                     >
@@ -3655,7 +3688,9 @@ export default function ChatPageInner() {
                 ref={mediaCaptionRef}
                 rows={1}
                 placeholder={
-                  mediaDraft.mode === "photos" ? "Add a caption…" : "Add a message…"
+                  mediaDraft.mode === "photos"
+                    ? t("chat.addCaption")
+                    : t("chat.addMessage")
                 }
                 value={mediaDraft.caption}
                 disabled={mediaSending}
@@ -3677,7 +3712,7 @@ export default function ChatPageInner() {
               <button
                 type="button"
                 className="send-btn"
-                title="Send"
+                title={t("chat.send")}
                 disabled={mediaSending}
                 onClick={() => confirmSendMedia()}
               >
@@ -3704,6 +3739,7 @@ function ForwardPicker({
   onCancel: () => void;
   onSend: (conversationIds: string[]) => Promise<void>;
 }) {
+  const { t } = useLocale();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
@@ -3734,19 +3770,21 @@ function ForwardPicker({
   }
 
   return (
-    <div className="forward-modal" role="dialog" aria-label="Forward messages">
+    <div className="forward-modal" role="dialog" aria-label={t("chat.forwardMessages")}>
       <div className="forward-modal-card">
         <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>
-          Forward {messageCount > 1 ? `${messageCount} messages` : "message"} to…
+          {messageCount > 1
+            ? t("chat.forwardTitleMany", { n: messageCount })
+            : t("chat.forwardTitleOne")}
         </h3>
         <input
-          placeholder="Search conversations"
+          placeholder={t("chat.searchConversations")}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           style={{ marginBottom: 8 }}
         />
         <div className="forward-modal-list">
-          {filtered.length === 0 && <div className="muted">No conversations</div>}
+          {filtered.length === 0 && <div className="muted">{t("chat.noConversations")}</div>}
           {filtered.map((c) => (
             <label key={c.id} className="forward-modal-row">
               <input
@@ -3758,7 +3796,7 @@ function ForwardPicker({
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontWeight: 600 }}>{conversationDisplayName(c)}</span>
                 <span className="muted" style={{ display: "block", fontSize: 12 }}>
-                  {c.type === "dm" ? "Direct message" : "Group"}
+                  {c.type === "dm" ? t("chat.directMessage") : t("chat.group")}
                 </span>
               </span>
             </label>
@@ -3766,7 +3804,7 @@ function ForwardPicker({
         </div>
         <div className="forward-modal-actions">
           <button className="btn-ghost" type="button" onClick={onCancel} disabled={busy}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             className="btn"
@@ -3775,10 +3813,10 @@ function ForwardPicker({
             onClick={() => submit().catch(() => { })}
           >
             {busy
-              ? "Sending…"
+              ? t("chat.sending")
               : selected.size > 0
-                ? `Send to ${selected.size}`
-                : "Select targets"}
+                ? t("chat.sendToCount", { n: selected.size })
+                : t("chat.selectTargets")}
           </button>
         </div>
       </div>
