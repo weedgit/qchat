@@ -21,7 +21,7 @@ declare global {
       silent?: boolean;
       /** NOTI-05 — flash taskbar / bounce Dock when true. */
       mention?: boolean;
-      /** Skip toast when this conversation's window is OS-focused. */
+      /** True when this conversation is the open chat (main skips if OS-focused). */
       suppressIfFocused?: boolean;
     }) => Promise<boolean>;
     showAbout: () => Promise<boolean>;
@@ -32,6 +32,11 @@ declare global {
     }) => Promise<boolean>;
     signalReady: () => void;
     onOpenConversation: (handler: (conversationId: string) => void) => () => void;
+    /** Mattermost-style OS window focus for notification gating. */
+    isWindowFocused?: () => Promise<{ focused: boolean }>;
+    onWindowFocusChanged?: (
+      handler: (payload: { focused: boolean }) => void
+    ) => () => void;
     secureSessionAvailable?: () => Promise<{ available: boolean; encryption: boolean }>;
     getSecureSession?: () => Promise<QchatDesktopSecureSession | null>;
     setSecureSession?: (tokens: {

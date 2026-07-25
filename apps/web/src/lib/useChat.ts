@@ -43,6 +43,8 @@ export function useChat() {
   const eventListenersRef = useRef<Set<(type: string, payload: any) => void>>(new Set());
   const activeIdRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
+  /** Mattermost-style: OS window focus from desktop main process (not document.hasFocus). */
+  const windowFocusedRef = useRef(true);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
@@ -57,6 +59,27 @@ export function useChat() {
   meRef.current = me;
   activeIdRef.current = activeId;
   conversationsRef.current = conversations;
+
+  useEffect(() => {
+    if (!isQchatDesktop()) return;
+    const desk = window.qchatDesktop;
+    if (!desk?.onWindowFocusChanged && !desk?.isWindowFocused) return;
+
+    let detach: (() => void) | undefined;
+    void desk.isWindowFocused?.().then((s) => {
+      if (s && typeof s.focused === "boolean") {
+        windowFocusedRef.current = s.focused;
+      }
+    });
+    if (desk.onWindowFocusChanged) {
+      detach = desk.onWindowFocusChanged((payload) => {
+        windowFocusedRef.current = Boolean(payload?.focused);
+      });
+    }
+    return () => {
+      detach?.();
+    };
+  }, []);
 
   const clearTypingUser = useCallback((convId: string, userId: string) => {
     const byUser = typingExpiryRef.current[convId];
@@ -548,6 +571,12 @@ export function useChat() {
         loadConversations();
         return prev;
       }
+      // Mattermost: only treat the open chat as "read" when the window is active.
+      const shellFocused = isQchatDesktop()
+        ? windowFocusedRef.current
+        : !document.hidden;
+      const viewingHere =
+        shellFocused && activeIdRef.current === msg.conversationId;
       return prev.map((c) =>
         c.id === msg.conversationId
           ? {
@@ -559,11 +588,9 @@ export function useChat() {
                 : msg.senderName,
               lastMessageMine: Boolean(msg.mine),
               unreadCount:
-                c.id === activeIdRef.current || msg.mine
-                  ? c.unreadCount
-                  : c.unreadCount + 1,
+                viewingHere || msg.mine ? c.unreadCount : c.unreadCount + 1,
               mentionCount:
-                c.id === activeIdRef.current || msg.mine
+                viewingHere || msg.mine
                   ? c.mentionCount ?? 0
                   : (() => {
                       const isMention =
@@ -579,7 +606,13 @@ export function useChat() {
 
     if (!msg.mine && msg.id) {
       api(`/v1/messages/${msg.id}/delivered`, { method: "POST" }).catch(() => {});
-      if (activeIdRef.current === msg.conversationId) {
+      const shellFocused = isQchatDesktop()
+        ? windowFocusedRef.current
+        : !document.hidden;
+      const viewingHere =
+        shellFocused && activeIdRef.current === msg.conversationId;
+      // Mattermost MM-58567: do not mark read while the window is in the background.
+      if (viewingHere) {
         api(`/v1/messages/${msg.id}/read`, { method: "POST" }).catch(() => {});
       }
       const conversation = conversationsRef.current.find(
@@ -590,10 +623,6 @@ export function useChat() {
         Boolean((payload as any)?.mention_all) ||
         (Array.isArray((payload as any)?.mentions) &&
           (payload as any).mentions.includes(meRef.current?.id));
-      // Desktop: always hand off to main. Main suppresses only when this exact
-      // chat is focused (document.hasFocus is unreliable in Electron).
-      // Windows itself also hides toasts while the app is the foreground window —
-      // minimize or Alt+Tab away to see banners.
       if (
         !shouldNotifyDesktop(notify, {
           muted: conversation?.muted,
@@ -602,6 +631,8 @@ export function useChat() {
       ) {
         /* skip per notify_props */
       } else if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
+        // Always hand off to main; main skips only when focused on this chat
+        // (Mattermost displayMention + shouldSkipNotification).
         const sender = msg.senderName || conversation?.title || "New message";
         const target =
           conversation?.type === "dm"
@@ -624,11 +655,10 @@ export function useChat() {
           })
           .catch(() => {});
       } else if (
-        (document.hidden || activeIdRef.current !== msg.conversationId) &&
+        (!shellFocused || activeIdRef.current !== msg.conversationId) &&
         "Notification" in window &&
         Notification.permission === "granted"
       ) {
-        // Telegram-web style: "Sender → Recipient", sender avatar as icon.
         const sender = msg.senderName || conversation?.title || "New message";
         const target =
           conversation?.type === "dm"
