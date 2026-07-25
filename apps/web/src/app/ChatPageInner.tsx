@@ -251,10 +251,20 @@ const ICONS = {
   pencil: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
   edit: "M12 20h9 M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
   user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  idCard:
+    "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M9 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M5.5 16.5c.6-1.6 1.9-2.5 3.5-2.5s2.9.9 3.5 2.5 M15 10h4 M15 14h3",
   users:
     "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M23 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8",
+  // Telegram-style main-menu icons (gear / moon / globe / status face).
   settings:
-    "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9l2.1 2.1 M17 17l2.1 2.1 M19.1 4.9L17 7 M7 17l-2.1 2.1",
+    "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5 15.4a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z",
+  theme: "M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z",
+  themeSun:
+    "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M12 1v2 M12 21v2 M4.22 4.22l1.42 1.42 M18.36 18.36l1.42 1.42 M1 12h2 M21 12h2 M4.22 19.78l1.42-1.42 M18.36 5.64l1.42-1.42",
+  language:
+    "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M2 12h20 M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z",
+  status:
+    "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M8 14s1.5 2 4 2 4-2 4-2 M9 9v1.2 M15 9v1.2",
   logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
   mic: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M19 11a7 7 0 0 1-14 0 M12 18v4",
   stop: "M6 6h12v12H6z",
@@ -666,6 +676,7 @@ export default function ChatPageInner() {
   const { openConversation } = chat;
   const router = useRouter();
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
+  const [idCopied, setIdCopied] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [joinCompanyOpen, setJoinCompanyOpen] = useState(false);
   const [joinInvite, setJoinInvite] = useState("");
@@ -2048,15 +2059,62 @@ export default function ChatPageInner() {
           </div>
           {mainMenuOpen && (
             <div className="popup-menu main-menu" onClick={(e) => e.stopPropagation()}>
-              <Link className="ctx-item" href="/profile">
-                <Avatar
-                  name={chat.me?.nickname || chat.me?.username || "?"}
-                  url={chat.me?.avatarUrl}
-                  size={22}
-                />
-                {chat.me?.nickname || chat.me?.username || t("nav.profile")}
-              </Link>
+              <div className="main-menu-header">
+                <div className="main-menu-profile">
+                  <Avatar
+                    name={chat.me?.nickname || chat.me?.username || "?"}
+                    url={chat.me?.avatarUrl}
+                    size={72}
+                  />
+                  <span className="main-menu-profile-name">
+                    {chat.me?.nickname || chat.me?.username || t("nav.profile")}
+                  </span>
+                  <span className="main-menu-profile-meta">
+                    {[
+                      chat.me?.username ? `@${chat.me.username}` : null,
+                      chat.me?.phone || null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
+                  </span>
+                </div>
+                <div className="ctx-sep main-menu-profile-sep" />
+                {chat.me?.id && (
+                  <div className="main-menu-profile-id">
+                    <span className="main-menu-profile-id-label">ID</span>
+                    <span className="main-menu-profile-id-text">{chat.me.id}</span>
+                    <button
+                      type="button"
+                      className="main-menu-copy-btn"
+                      title={idCopied ? t("me.idCopied") : t("me.copyId")}
+                      aria-label={t("me.copyId")}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const id = chat.me?.id;
+                        if (!id) return;
+                        navigator.clipboard
+                          ?.writeText(id)
+                          .then(() => {
+                            setIdCopied(true);
+                            setTimeout(() => setIdCopied(false), 1500);
+                          })
+                          .catch(() => { });
+                      }}
+                    >
+                      <MenuIcon
+                        d={idCopied ? ICONS.select : ICONS.copy}
+                        style={{ width: 18, height: 18 }}
+                      />
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="ctx-sep" />
+              <Link className="ctx-item" href="/profile">
+                <MenuIcon d={ICONS.idCard} />
+                {t("nav.profile")}
+              </Link>
               <Link className="ctx-item" href="/friends">
                 <MenuIcon d={ICONS.user} />
                 {t("menu.contacts")}
@@ -2065,7 +2123,7 @@ export default function ChatPageInner() {
                 <MenuIcon d={ICONS.users} />
                 {t("menu.groups")}
               </Link>
-              <Link className="ctx-item" href="/profile">
+              <Link className="ctx-item" href="/settings">
                 <MenuIcon d={ICONS.settings} />
                 {t("menu.settings")}
               </Link>
@@ -2077,7 +2135,7 @@ export default function ChatPageInner() {
                   setTheme(order[(i + 1) % order.length]);
                 }}
               >
-                <MenuIcon d={ICONS.settings} />
+                <MenuIcon d={theme === "light" ? ICONS.themeSun : ICONS.theme} />
                 {t("menu.theme")}: {labelTheme(theme)}
               </button>
               <button
@@ -2088,7 +2146,7 @@ export default function ChatPageInner() {
                   setLocale(order[(i + 1) % order.length]);
                 }}
               >
-                <MenuIcon d={ICONS.settings} />
+                <MenuIcon d={ICONS.language} />
                 {t("menu.language")}: {labelLocale(locale)}
               </button>
               <button
@@ -2105,7 +2163,7 @@ export default function ChatPageInner() {
                   }).catch(() => { });
                 }}
               >
-                <MenuIcon d={ICONS.user} />
+                <MenuIcon d={ICONS.status} />
                 {t("status.label")}:{" "}
                 {myStatus === "online"
                   ? t("status.online")

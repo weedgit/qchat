@@ -767,6 +767,90 @@ select:focus {
 .main-menu {
   top: 54px;
   left: 12px;
+  min-width: 200px;
+  max-width: 220px;
+}
+.main-menu-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 6px 4px;
+}
+.main-menu-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  color: var(--text);
+}
+.main-menu-profile-name {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.25;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.main-menu-profile-meta {
+  font-size: 12px;
+  font-weight: 450;
+  color: var(--text-dim);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.main-menu-profile-sep {
+  margin: 4px 12px;
+}
+.main-menu-profile-id {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 4px 6px;
+  padding: 8px 8px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  text-align: center;
+  user-select: text;
+  cursor: default;
+}
+.main-menu-profile-id-label {
+  flex: none;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.main-menu-profile-id-text {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 450;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+.main-menu-copy-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.main-menu-copy-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 .compose-menu {
   bottom: 76px;

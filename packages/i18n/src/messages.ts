@@ -154,6 +154,8 @@ const en = {
   "me.friendApproval": "Need my approval",
   "me.friendClosed": "Nobody can add me",
   "me.profileLoadError": "Could not load/save profile: {error}",
+  "me.copyId": "Copy ID",
+  "me.idCopied": "Copied",
 
   "chat.you": "You",
   "chat.user": "User",
@@ -462,6 +464,8 @@ const zh: Record<MessageKey, string> = {
   "me.friendApproval": "需我同意",
   "me.friendClosed": "不允许添加",
   "me.profileLoadError": "无法加载/保存资料：{error}",
+  "me.copyId": "复制 ID",
+  "me.idCopied": "已复制",
 
   "chat.you": "我",
   "chat.user": "用户",
