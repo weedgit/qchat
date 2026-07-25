@@ -568,22 +568,22 @@ select:focus {
   min-width: 0;
 }
 
-/* Narrow web only: conversation list ↔ chat (Telegram mobile). Desktop stays dual-pane. */
+/* Narrow: conversation list ↔ chat (Telegram mobile) — web and desktop. */
 @media (max-width: 768px) {
-  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="list"] > .sidebar {
+  .shell[data-mobile-pane="list"] > .sidebar {
     flex: 1;
     width: auto;
     max-width: none;
     border-right: none;
   }
-  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="list"] > .chat-pane,
-  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="list"] > .details-panel {
+  .shell[data-mobile-pane="list"] > .chat-pane,
+  .shell[data-mobile-pane="list"] > .details-panel {
     display: none;
   }
-  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="chat"] > .sidebar {
+  .shell[data-mobile-pane="chat"] > .sidebar {
     display: none;
   }
-  html:not([data-qchat-desktop="1"]) .shell[data-mobile-pane="chat"] > .chat-pane {
+  .shell[data-mobile-pane="chat"] > .chat-pane {
     flex: 1;
     width: 100%;
     min-width: 0;

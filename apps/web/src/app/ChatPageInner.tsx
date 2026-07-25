@@ -19,7 +19,7 @@ import FriendNoteEditor from "@/components/FriendNoteEditor";
 import GroupQr from "@/components/GroupQr";
 import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
-import { getAuthDevice, isQchatDesktop } from "@/lib/device";
+import { getAuthDevice } from "@/lib/device";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { useCall } from "@/lib/useCall";
@@ -686,12 +686,10 @@ export default function ChatPageInner() {
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinNotice, setJoinNotice] = useState<string | null>(null);
-  /** Electron desktop: always dual-pane + sidebar collapse (not mobile list↔chat). */
-  const desktopShell = isQchatDesktop();
-  /** Narrow web: list ↔ chat (Telegram-style mobile channel view). */
-  const narrowLayout = useMediaQuery("(max-width: 768px)") && !desktopShell;
+  /** Narrow: list ↔ chat (Telegram-style), same on web and desktop. */
+  const narrowLayout = useMediaQuery("(max-width: 768px)");
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
-  /** Hide the conversation-list sidebar (menu bar); desktop + wide web. */
+  /** Hide the conversation-list sidebar on wide layouts only. */
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const wasNarrowRef = useRef(false);
   const mobileChatOpenRef = useRef(false);
@@ -935,7 +933,7 @@ export default function ChatPageInner() {
     setMainMenuOpen(false);
   }
 
-  /** Desktop / wide web: toggle conversation list. Narrow web: list ↔ chat. */
+  /** Wide only: toggle conversation list. Narrow: back to list (same as web). */
   function toggleSidebarMenu() {
     if (narrowLayout) {
       backToConversationList();
