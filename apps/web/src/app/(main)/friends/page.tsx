@@ -263,17 +263,12 @@ export default function FriendsPage() {
       )}
 
       {editing && (
-        <div
-          className="friend-note-modal"
-          role="presentation"
-          onClick={() => setEditingId(null)}
-        >
+        <div className="friend-note-modal" role="presentation">
           <div
             className="friend-note-modal-card"
             role="dialog"
             aria-modal="true"
             aria-label={t("contacts.editNote")}
-            onClick={(e) => e.stopPropagation()}
           >
             <header className="menu-modal-bar">
               <button

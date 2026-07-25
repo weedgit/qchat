@@ -33,12 +33,20 @@ export default function MenuModal({
   }
 
   return (
-    <div className="menu-modal-overlay" role="presentation">
+    <div
+      className="menu-modal-overlay"
+      role="presentation"
+      /* Backdrop clicks must not dismiss — only ✕ / Save close the window. */
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       <div
         className="menu-modal"
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel || title}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <header className="menu-modal-bar">
           <button

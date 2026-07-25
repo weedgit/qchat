@@ -2954,8 +2954,10 @@ select:focus {
   padding: 24px 16px;
   background: rgba(14, 22, 33, 0.72);
   animation: ui-fade-in 140ms ease;
+  pointer-events: auto;
 }
 .menu-modal {
+  pointer-events: auto;
   width: min(420px, 100%);
   max-height: min(860px, calc(100vh - 48px));
   display: flex;
