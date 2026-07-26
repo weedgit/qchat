@@ -32,6 +32,20 @@ func pinItem(id, typ, body string, seq int64) map[string]any {
 	}
 }
 
+// canManagePins reports whether role may change a conversation's pin set.
+// Groups reserve the pinned message for owners and administrators; ordinary
+// members have no group-management permissions (requirements-en §2.3 rule 2).
+// Both sides of a DM are stored as plain members, so either may pin.
+func canManagePins(convType, role string) bool {
+	if role == "" || role == "pending" {
+		return false
+	}
+	if convType == "social_group" {
+		return role == "owner" || role == "admin"
+	}
+	return true
+}
+
 // listPinnedMessages returns pins ordered by message seq ascending (top→bottom in chat).
 func (s *Server) listPinnedMessages(ctx context.Context, convID string) []map[string]any {
 	rows, err := s.db.Query(ctx, `
@@ -90,12 +104,12 @@ func (s *Server) loadPinsForConversations(ctx context.Context, convIDs []string)
 func (s *Server) handlePinMessage(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	msgID := r.PathValue("id")
-	var convID, enterpriseID, typ, body string
+	var convID, enterpriseID, convType, typ, body string
 	var seq int64
 	err := s.db.QueryRow(r.Context(), `
-		SELECT m.conversation_id::text, conv.enterprise_id::text, m.type, m.body, m.seq
+		SELECT m.conversation_id::text, conv.enterprise_id::text, conv.type, m.type, m.body, m.seq
 		FROM messages m JOIN conversations conv ON conv.id=m.conversation_id
-		WHERE m.id=$1 AND m.recalled=FALSE`, msgID).Scan(&convID, &enterpriseID, &typ, &body, &seq)
+		WHERE m.id=$1 AND m.recalled=FALSE`, msgID).Scan(&convID, &enterpriseID, &convType, &typ, &body, &seq)
 	if err != nil {
 		writeErrCode(w, 404, "not_found", "not found")
 		return
@@ -104,8 +118,7 @@ func (s *Server) handlePinMessage(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 403, "forbidden", "forbidden")
 		return
 	}
-	role := s.memberRole(r, convID, c.UserID)
-	if role == "" || role == "pending" {
+	if !canManagePins(convType, s.memberRole(r, convID, c.UserID)) {
 		writeErrCode(w, 403, "forbidden", "forbidden")
 		return
 	}
@@ -143,16 +156,16 @@ func (s *Server) handlePinMessage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUnpinMessage(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	msgID := r.PathValue("id")
-	var convID, enterpriseID string
+	var convID, enterpriseID, convType string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT m.conversation_id::text, conv.enterprise_id::text
+		SELECT m.conversation_id::text, conv.enterprise_id::text, conv.type
 		FROM messages m JOIN conversations conv ON conv.id=m.conversation_id
-		WHERE m.id=$1`, msgID).Scan(&convID, &enterpriseID)
+		WHERE m.id=$1`, msgID).Scan(&convID, &enterpriseID, &convType)
 	if err != nil {
 		writeErrCode(w, 404, "not_found", "not found")
 		return
 	}
-	if enterpriseID != c.EnterpriseID || s.memberRole(r, convID, c.UserID) == "" {
+	if enterpriseID != c.EnterpriseID || !canManagePins(convType, s.memberRole(r, convID, c.UserID)) {
 		writeErrCode(w, 403, "forbidden", "forbidden")
 		return
 	}

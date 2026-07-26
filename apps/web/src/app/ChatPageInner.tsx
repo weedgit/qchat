@@ -1068,6 +1068,8 @@ export default function ChatPageInner() {
   const isGroupOwner = myGroupRole === "owner";
   /** Group owner/admin may recall any message (API + permission matrix). */
   const canAdminRecall = isGroup && (myGroupRole === "owner" || myGroupRole === "admin");
+  /** Groups reserve the pinned message for owner/admin; either side of a DM may pin. */
+  const canPin = !isGroup || canAdminRecall;
   const canRecallMsg = (m: Message) =>
     Boolean(
       !m.recalled &&
@@ -3676,17 +3678,19 @@ export default function ChatPageInner() {
                     {t("ctx.edit")}
                   </button>
                 )}
-                <button
-                  className="ctx-item"
-                  onClick={() => {
-                    const pinned = pinnedIdSet.has(ctxMsg.id);
-                    chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => { });
-                    setCtxMenu(null);
-                  }}
-                >
-                  <MenuIcon d={ICONS.pin} />
-                  {pinnedIdSet.has(ctxMsg.id) ? t("ctx.unpin") : t("ctx.pin")}
-                </button>
+                {canPin && (
+                  <button
+                    className="ctx-item"
+                    onClick={() => {
+                      const pinned = pinnedIdSet.has(ctxMsg.id);
+                      chat.pinMessage(ctxMsg.id, chat.activeId!, !pinned).catch(() => { });
+                      setCtxMenu(null);
+                    }}
+                  >
+                    <MenuIcon d={ICONS.pin} />
+                    {pinnedIdSet.has(ctxMsg.id) ? t("ctx.unpin") : t("ctx.pin")}
+                  </button>
+                )}
               </>
             )}
             {canRecallMsg(ctxMsg) && chat.activeId && (
@@ -3701,7 +3705,7 @@ export default function ChatPageInner() {
                 {t("chat.recall")}
               </button>
             )}
-            {!ctxMsg.mine && !ctxMsg.recalled && chat.activeId && (
+            {!ctxMsg.mine && !ctxMsg.recalled && canPin && chat.activeId && (
               <button
                 className="ctx-item"
                 onClick={() => {

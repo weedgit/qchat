@@ -21,6 +21,8 @@ export type MessageActionPopupProps = {
   pinned: boolean;
   /** Group owner/admin may delete (recall) others' messages. */
   canAdminRecall?: boolean;
+  /** Groups reserve the pinned message for owner/admin; DM participants may pin. */
+  canPin?: boolean;
   onClose: () => void;
   onReact: (emoji: string) => void;
   onAction: (action: ActionKey) => void;
@@ -42,6 +44,7 @@ export function MessageActionPopup({
   msg,
   pinned,
   canAdminRecall,
+  canPin: canPinConversation = true,
   onClose,
   onReact,
   onAction,
@@ -53,7 +56,7 @@ export function MessageActionPopup({
   const canReply = canReact;
   const canCopy = !msg.recalled && Boolean((msg.content || "").trim() || msg.mediaUrl);
   const canForward = !msg.recalled && !msg.pending && !msg.failed;
-  const canPin = canForward;
+  const canPin = canForward && canPinConversation;
   const canEdit = Boolean(msg.mine && !msg.recalled && !msg.pending && !msg.failed && msg.type !== "voice");
   const canDelete = Boolean(
     !msg.recalled &&
