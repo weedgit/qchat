@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, setToken } from "@/lib/api";
+import { ApiError, api, setToken } from "@/lib/api";
 
 interface CaptchaState {
   id: string;
@@ -15,6 +15,8 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,26 +45,41 @@ export default function AdminLoginPage() {
     setBusy(true);
     setError(null);
     try {
+      const payload: Record<string, unknown> = {
+        phone,
+        password,
+        captcha_id: captcha?.id ?? "",
+        captcha: captchaCode,
+        device_type: "web",
+        device_name: "admin-web",
+        platform: "Admin · Web",
+        remember_me: remember,
+      };
+      if (mfaRequired || mfaCode.trim()) {
+        payload.mfa_code = mfaCode.trim();
+      }
       const data = await api<any>("/v1/auth/login", {
         method: "POST",
-        body: JSON.stringify({
-          phone,
-          password,
-          captcha_id: captcha?.id ?? "",
-          captcha: captchaCode,
-          device_type: "web",
-          device_name: "admin-web",
-          platform: "Admin · Web",
-          remember_me: remember,
-        }),
+        body: JSON.stringify(payload),
       });
       const token = data?.access_token ?? data?.token;
       if (!token) throw new Error("No access_token in response");
       setToken(String(token), remember);
       router.replace("/");
     } catch (e: any) {
-      setError(e.message);
+      const code =
+        e instanceof ApiError ? String((e.body as any)?.code ?? "") : "";
+      if (code === "mfa_required") {
+        setMfaRequired(true);
+        setError("Enter the 6-digit code from your authenticator app.");
+      } else if (code === "mfa_invalid") {
+        setMfaRequired(true);
+        setError("Invalid MFA code. Try again.");
+      } else {
+        setError(e.message);
+      }
       setCaptchaCode("");
+      setMfaCode("");
       loadCaptcha();
     } finally {
       setBusy(false);
@@ -84,6 +101,20 @@ export default function AdminLoginPage() {
           <label>Password</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
+        {mfaRequired ? (
+          <div className="field">
+            <label>Authenticator code</label>
+            <input
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              required
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="6-digit code"
+              autoFocus
+            />
+          </div>
+        ) : null}
         <div className="field">
           <label>Captcha</label>
           <div className="captcha-row">

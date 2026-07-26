@@ -219,6 +219,7 @@ type loginReq struct {
 	DeviceID   string `json:"device_id"`
 	Platform   string `json:"platform"`
 	RememberMe bool   `json:"remember_me"`
+	MFACode    string `json:"mfa_code"`
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -231,14 +232,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid captcha")
 		return
 	}
-	var uid, hash, role string
-	var banned bool
+	var uid, hash, role, mfaSecret string
+	var banned, mfaActive bool
 	var entNull *string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT u.id::text, u.enterprise_id::text, u.password_hash, u.role, u.banned
+		SELECT u.id::text, u.enterprise_id::text, u.password_hash, u.role, u.banned,
+		       COALESCE(u.mfa_secret,''), u.mfa_active
 		FROM users u
 		WHERE u.phone=$1`, req.Phone).
-		Scan(&uid, &entNull, &hash, &role, &banned)
+		Scan(&uid, &entNull, &hash, &role, &banned, &mfaSecret, &mfaActive)
 	if err != nil || !auth.CheckPassword(hash, req.Password) {
 		writeErr(w, 401, "invalid credentials")
 		return
@@ -249,6 +251,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if banned {
 		writeErr(w, 403, "account banned")
+		return
+	}
+	if !s.verifyLoginMFA(w, role, mfaSecret, mfaActive, req.MFACode) {
 		return
 	}
 	dtype := normalizeDevice(req.DeviceType)
@@ -334,13 +339,13 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	row := map[string]any{}
 	var id, ent, phone, username, display, realName, region, sig, avatar, vis, fp, role, status, statusText string
 	var age *int
-	var banned bool
+	var banned, mfaActive bool
 	err := s.db.QueryRow(r.Context(), `
 		SELECT id::text, COALESCE(enterprise_id::text, ''), phone, username, display_name, real_name, age, region, signature,
 		       avatar_url, profile_visibility, friend_privacy, role, banned,
-		       COALESCE(status,'offline'), COALESCE(status_text,'')
+		       COALESCE(status,'offline'), COALESCE(status_text,''), mfa_active
 		FROM users WHERE id=$1`, c.UserID).
-		Scan(&id, &ent, &phone, &username, &display, &realName, &age, &region, &sig, &avatar, &vis, &fp, &role, &banned, &status, &statusText)
+		Scan(&id, &ent, &phone, &username, &display, &realName, &age, &region, &sig, &avatar, &vis, &fp, &role, &banned, &status, &statusText, &mfaActive)
 	if err != nil {
 		writeErr(w, 404, "not found")
 		return
@@ -361,6 +366,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	row["banned"] = banned
 	row["status"] = status
 	row["status_text"] = statusText
+	row["mfa_active"] = mfaActive
 	writeJSON(w, 200, row)
 }
 

@@ -11,6 +11,7 @@ const NAV = [
   { href: "/enterprises", label: "Enterprises" },
   { href: "/audits", label: "Audit log" },
   { href: "/messages", label: "Message inspect" },
+  { href: "/security", label: "Security" },
 ];
 
 export default function AdminShell({
