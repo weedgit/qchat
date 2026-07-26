@@ -5,6 +5,19 @@ export const FILE_MAX_BYTES = 100 * 1024 * 1024;
 export const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
 export const VOICE_MAX_BYTES = 10 * 1024 * 1024;
 export const VOICE_MAX_SEC = 60;
+/** requirements-en §2.4: max text message length (Unicode characters / runes). */
+export const MESSAGE_MAX_CHARS = 1000;
+
+export function messageCharCount(text: string): number {
+  return Array.from(text).length;
+}
+
+/** Truncate to MESSAGE_MAX_CHARS by Unicode code point, matching server rune limits. */
+export function clipMessageText(text: string, max = MESSAGE_MAX_CHARS): string {
+  const chars = Array.from(text);
+  if (chars.length <= max) return text;
+  return chars.slice(0, max).join("");
+}
 
 /** Raster avatar types accepted by POST /v1/media/upload (kind=avatar). SVG excluded. */
 export const AVATAR_ACCEPT = "image/jpeg,image/png,image/gif,image/webp";

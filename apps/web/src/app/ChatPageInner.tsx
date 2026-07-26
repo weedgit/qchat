@@ -38,7 +38,7 @@ import {
   previousPinnedInCycle,
   type PinnedMessage,
 } from "@/lib/pinnedCycle";
-import { attachmentLimitError, avatarLimitError, AVATAR_ACCEPT, VOICE_MAX_SEC } from "@/lib/mediaLimits";
+import { attachmentLimitError, avatarLimitError, AVATAR_ACCEPT, VOICE_MAX_SEC, MESSAGE_MAX_CHARS, messageCharCount, clipMessageText } from "@/lib/mediaLimits";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
 import ShellConnectionBanner from "@/components/ShellConnectionBanner";
@@ -877,6 +877,7 @@ export default function ChatPageInner() {
 
   const active = chat.conversations.find((c) => c.id === chat.activeId) ?? null;
   const activeMessages = chat.activeId ? chat.messages[chat.activeId] ?? [] : [];
+  const draftChars = messageCharCount(draft);
   const isGroup = active?.type === "social_group" || active?.type === "group";
   const pinnedList: PinnedMessage[] = useMemo(() => {
     if (!active) return [];
@@ -1773,6 +1774,10 @@ export default function ChatPageInner() {
   async function send() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
+    if (messageCharCount(text) > MESSAGE_MAX_CHARS) {
+      logChatError(t("chat.messageTooLong"));
+      return;
+    }
  // edit post: reuse the composer instead of a prompt dialog.
     if (editingMessage) {
       const id = editingMessage.id;
@@ -3046,8 +3051,11 @@ export default function ChatPageInner() {
                           value={draft}
                           disabled={voiceBusy}
                           onChange={(e) => {
-                            const value = e.target.value;
-                            const cursor = e.target.selectionStart ?? value.length;
+                            const value = clipMessageText(e.target.value);
+                            const cursor = Math.min(
+                              e.target.selectionStart ?? value.length,
+                              value.length
+                            );
                             setDraft(value);
                             updateMentionMenu(value, cursor);
                             if (!chat.activeId) return;
@@ -3105,6 +3113,19 @@ export default function ChatPageInner() {
                             }
                           }}
                         />
+                        {draftChars > 0 && (
+                          <span
+                            className={`composer-char-count${
+                              draftChars >= MESSAGE_MAX_CHARS - 50 ? " warn" : ""
+                            }`}
+                            aria-live="polite"
+                          >
+                            {t("chat.charCount", {
+                              n: draftChars,
+                              max: MESSAGE_MAX_CHARS,
+                            })}
+                          </span>
+                        )}
                         {draft.trim() ? (
                           <button
                             className="send-btn"
@@ -3969,7 +3990,9 @@ export default function ChatPageInner() {
                 disabled={mediaSending}
                 onPaste={onMediaDraftPaste}
                 onChange={(e) =>
-                  setMediaDraft((prev) => (prev ? { ...prev, caption: e.target.value } : prev))
+                  setMediaDraft((prev) =>
+                    prev ? { ...prev, caption: clipMessageText(e.target.value) } : prev
+                  )
                 }
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -3982,6 +4005,20 @@ export default function ChatPageInner() {
                   }
                 }}
               />
+              {messageCharCount(mediaDraft.caption) > 0 && (
+                <span
+                  className={`composer-char-count${
+                    messageCharCount(mediaDraft.caption) >= MESSAGE_MAX_CHARS - 50
+                      ? " warn"
+                      : ""
+                  }`}
+                >
+                  {t("chat.charCount", {
+                    n: messageCharCount(mediaDraft.caption),
+                    max: MESSAGE_MAX_CHARS,
+                  })}
+                </span>
+              )}
               <button
                 type="button"
                 className="send-btn"
