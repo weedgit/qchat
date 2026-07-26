@@ -74,6 +74,14 @@ function formatLastSeen(iso?: string): string {
   return `Last seen ${d.toLocaleString()}`;
 }
 
+function formatMuteLabel(muteUntil?: string): string {
+  if (!muteUntil) return "";
+  const d = new Date(muteUntil);
+  if (Number.isNaN(d.getTime())) return "muted";
+  if (d.getFullYear() >= 9999) return "muted permanently";
+  return `muted until ${d.toLocaleString()}`;
+}
+
 export default function ChatInfoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const convId = String(id);
@@ -185,6 +193,46 @@ export default function ChatInfoScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Speak-mute (not notification mute): POST /v1/groups/{id}/mute */
+  async function muteMember(userId: string, duration: string) {
+    setBusy(true);
+    try {
+      await api(`/v1/groups/${convId}/mute`, {
+        method: "POST",
+        body: JSON.stringify({ user_id: userId, duration }),
+      });
+      await loadGroup();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not update mute");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openMuteDurations(m: GroupMember) {
+    const buttons: {
+      text: string;
+      style?: "cancel" | "destructive" | "default";
+      onPress?: () => void;
+    }[] = [
+      { text: "Mute 10 minutes", onPress: () => muteMember(m.userId, "10m") },
+      { text: "Mute 1 hour", onPress: () => muteMember(m.userId, "1h") },
+      { text: "Mute permanently", onPress: () => muteMember(m.userId, "permanent") },
+    ];
+    if (m.muteUntil) {
+      buttons.push({
+        text: "Unmute",
+        onPress: () => muteMember(m.userId, "off"),
+      });
+    }
+    buttons.push({ text: "Cancel", style: "cancel" });
+    Alert.alert(
+      `Mute ${m.displayName}`,
+      m.muteUntil ? formatMuteLabel(m.muteUntil) : "Choose how long they cannot send messages.",
+      buttons
+    );
   }
 
   async function saveFriendNote() {
@@ -318,7 +366,7 @@ export default function ChatInfoScreen() {
     ]);
   }
 
- /** Owner/admin: role + kick (channel member menu). */
+ /** Owner/admin: role, speak-mute, kick (channel member menu). */
   function onMemberLongPress(m: GroupMember) {
     if (m.userId === me?.id || m.role === "owner") return;
     const buttons: {
@@ -343,6 +391,15 @@ export default function ChatInfoScreen() {
             .catch((e: any) => Alert.alert("Error", e?.message || "Could not update role"))
             .finally(() => setBusy(false));
         },
+      });
+    }
+    const canMute =
+      canManageGroup &&
+      !(group?.role === "admin" && m.role === "admin");
+    if (canMute) {
+      buttons.push({
+        text: m.muteUntil ? "Mute / unmute…" : "Mute speaking…",
+        onPress: () => openMuteDurations(m),
       });
     }
     const canRemove =
@@ -447,7 +504,7 @@ export default function ChatInfoScreen() {
 
             <View style={styles.card}>
               <ToggleRow
-                label="Mute conversation"
+                label="Mute notifications"
                 value={Boolean(conversation.muted)}
                 onValueChange={() => toggleMute()}
                 disabled={busy}
@@ -506,7 +563,23 @@ export default function ChatInfoScreen() {
                     <InfoLine label="Announcement" value={group.announcement} />
                   ) : null}
                   {group.muteAll ? (
-                    <Text style={styles.warn}>Mute all is on</Text>
+                    <Text style={styles.warn}>Mute all is on — only owners/admins can send</Text>
+                  ) : null}
+                  {canManageGroup ? (
+                    <Pressable
+                      style={[styles.primaryBtn, group.muteAll ? styles.secondaryBtn : null]}
+                      onPress={() => muteMember("", group.muteAll ? "all_off" : "all")}
+                      disabled={busy}
+                    >
+                      <Text
+                        style={[
+                          styles.primaryBtnText,
+                          group.muteAll ? styles.secondaryBtnText : null,
+                        ]}
+                      >
+                        {group.muteAll ? "Unmute whole group" : "Mute whole group"}
+                      </Text>
+                    </Pressable>
                   ) : null}
                 </View>
 
@@ -574,7 +647,7 @@ export default function ChatInfoScreen() {
                           <Text style={styles.memberMeta}>
                             @{m.username}
                             {m.role !== "member" ? ` · ${m.role}` : ""}
-                            {m.muteUntil ? " · muted" : ""}
+                            {m.muteUntil ? ` · ${formatMuteLabel(m.muteUntil)}` : ""}
                           </Text>
                         </View>
                         {!isMe ? (
@@ -766,6 +839,12 @@ function makeStyles(c: ColorTokens) {
     marginTop: 4,
   },
   primaryBtnText: { color: "#fff", fontWeight: "700" as const },
+  secondaryBtn: {
+    backgroundColor: "transparent",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.border,
+  },
+  secondaryBtnText: { color: c.text },
   toggleRow: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
