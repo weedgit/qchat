@@ -79,3 +79,52 @@ func (s *Server) handleMarkUnread(w http.ResponseWriter, r *http.Request) {
 		convID, target, c.UserID).Scan(&unread)
 	writeJSON(w, 200, map[string]any{"id": convID, "last_read_seq": target, "unread_count": unread})
 }
+
+// handleClearHistory hides older messages for the current member only
+// by advancing history_visible_from (Telegram-style "Clear history").
+func (s *Server) handleClearHistory(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+	role := s.memberRole(r, convID, c.UserID)
+	if role == "" || role == "pending" {
+		writeErrCode(w, 403, "forbidden", "forbidden")
+		return
+	}
+	_, err := s.db.Exec(r.Context(), `
+		UPDATE conversation_members SET history_visible_from=now()
+		WHERE conversation_id=$1 AND user_id=$2`, convID, c.UserID)
+	if err != nil {
+		writeErrCode(w, 500, "update_failed", "update failed")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "id": convID})
+}
+
+// handleDeleteConversation removes the current user from the chat list
+// (membership delete). Group owners must transfer ownership / leave via group API.
+func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+	var typ, role string
+	err := s.db.QueryRow(r.Context(), `
+		SELECT conv.type, cm.role
+		FROM conversation_members cm
+		JOIN conversations conv ON conv.id=cm.conversation_id
+		WHERE cm.conversation_id=$1 AND cm.user_id=$2`, convID, c.UserID).Scan(&typ, &role)
+	if err != nil || role == "" || role == "pending" {
+		writeErrCode(w, 404, "not_found", "not found")
+		return
+	}
+	if (typ == "social_group" || typ == "group") && role == "owner" {
+		writeErrCode(w, 403, "forbidden", "owner cannot delete; transfer ownership first")
+		return
+	}
+	_, err = s.db.Exec(r.Context(), `
+		DELETE FROM conversation_members
+		WHERE conversation_id=$1 AND user_id=$2`, convID, c.UserID)
+	if err != nil {
+		writeErrCode(w, 500, "delete_failed", "delete failed")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "id": convID})
+}
