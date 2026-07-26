@@ -259,6 +259,8 @@ const en = {
 
   "chat.messagePlaceholder": "Message",
   "chat.messagePlaceholderGroup": "Message · try @name",
+  "chat.charCount": "{n}/{max}",
+  "chat.messageTooLong": "Messages are limited to 1000 characters",
   "chat.searchInConversation": "Search in conversation",
   "chat.searchInChat": "Search in chat",
   "chat.searchConversations": "Search conversations",
@@ -649,6 +651,8 @@ const zh: Record<MessageKey, string> = {
 
   "chat.messagePlaceholder": "消息",
   "chat.messagePlaceholderGroup": "消息 · 可使用 @name",
+  "chat.charCount": "{n}/{max}",
+  "chat.messageTooLong": "消息最多 1000 个字符",
   "chat.searchInConversation": "在会话中搜索",
   "chat.searchInChat": "在聊天中搜索",
   "chat.searchConversations": "搜索会话",
