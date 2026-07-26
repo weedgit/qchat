@@ -654,7 +654,14 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "join failed")
 		return
 	}
-	s.hub.PublishToUsers([]string{owner}, ws.Event{Type: "group.join_request", Payload: map[string]any{"conversation_id": convID, "user_id": c.UserID}})
+	// Owners and administrators both approve joins (handleApproveJoin), so both
+	// must see the request. adminIDs covers the owner row; fall back to the
+	// conversation's owner_id if the membership row is somehow missing.
+	approvers := s.adminIDs(r, convID)
+	if len(approvers) == 0 {
+		approvers = []string{owner}
+	}
+	s.hub.PublishToUsers(approvers, ws.Event{Type: "group.join_request", Payload: map[string]any{"conversation_id": convID, "user_id": c.UserID}})
 	writeJSON(w, 202, map[string]any{"status": "pending_approval"})
 }
 
