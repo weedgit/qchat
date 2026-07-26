@@ -10,6 +10,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -19,9 +20,11 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { Avatar } from "../../src/components/Avatar";
+import { GroupQr } from "../../src/components/GroupQr";
 import { useAuth } from "../../src/context/AuthContext";
 import { useChat } from "../../src/context/ChatContext";
 import { api, asList } from "../../src/lib/api";
+import { encodeGroupJoinPayload } from "../../src/lib/groupQr";
 import {
   Friend,
   conversationDisplayName,
@@ -37,6 +40,13 @@ type GroupMember = {
   avatarUrl?: string;
   role: string;
   muteUntil?: string;
+};
+
+type PendingUser = {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string;
 };
 
 type GroupDetails = {
@@ -80,6 +90,7 @@ export default function ChatInfoScreen() {
   const isGroup = conversation?.type === "social_group" || conversation?.type === "group";
 
   const [group, setGroup] = useState<GroupDetails | null>(null);
+  const [pending, setPending] = useState<PendingUser[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
@@ -105,6 +116,7 @@ export default function ChatInfoScreen() {
         role: String(m?.role ?? "member"),
         muteUntil: m?.mute_until ? String(m.mute_until) : undefined,
       }));
+      const role = String(g?.role ?? "member");
       setGroup({
         id: String(g?.id ?? convId),
         title: String(g?.title ?? ""),
@@ -114,10 +126,27 @@ export default function ChatInfoScreen() {
         avatarUrl: g?.avatar_url || undefined,
         muteAll: Boolean(g?.mute_all),
         forbidMemberFriendAdd: Boolean(g?.forbid_member_friend_add),
-        role: String(g?.role ?? "member"),
+        role,
         ownerId: String(g?.owner_id ?? ""),
         members,
       });
+      if (role === "owner" || role === "admin") {
+        try {
+          const pend = await api<any>(`/v1/groups/${convId}/pending`);
+          setPending(
+            asList(pend, "pending").map((p: any) => ({
+              userId: String(p?.user_id ?? p?.id ?? ""),
+              username: String(p?.username ?? ""),
+              displayName: String(p?.display_name ?? p?.nickname ?? p?.username ?? "User"),
+              avatarUrl: p?.avatar_url || undefined,
+            })).filter((p: PendingUser) => p.userId)
+          );
+        } catch {
+          setPending([]);
+        }
+      } else {
+        setPending([]);
+      }
     } catch (e: any) {
       setError(e?.message || "Could not load group");
     }
@@ -238,6 +267,33 @@ export default function ChatInfoScreen() {
       Alert.alert("Members", added ? `Added ${added} member(s).` : "No new members added.");
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Could not add members");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function shareInvite() {
+    if (!group?.publicId) return;
+    const payload = encodeGroupJoinPayload(group.publicId);
+    try {
+      await Share.share({
+        message: `Join my Qchat group with invite ${group.publicId}\n${payload}`,
+      });
+    } catch {
+      /* user dismissed */
+    }
+  }
+
+  async function approvePending(userId: string) {
+    setBusy(true);
+    try {
+      await api(`/v1/groups/${convId}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ user_id: userId }),
+      });
+      await loadGroup();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not approve");
     } finally {
       setBusy(false);
     }
@@ -433,8 +489,16 @@ export default function ChatInfoScreen() {
             {isGroup && group ? (
               <>
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Group</Text>
+                  <Text style={styles.cardTitle}>Invite</Text>
+                  {group.publicId ? <GroupQr publicId={group.publicId} /> : null}
                   <InfoLine label="Invite ID" value={group.publicId || "—"} />
+                  <Pressable
+                    style={styles.primaryBtn}
+                    onPress={shareInvite}
+                    disabled={!group.publicId || busy}
+                  >
+                    <Text style={styles.primaryBtnText}>Share invite</Text>
+                  </Pressable>
                   {group.description ? (
                     <InfoLine label="Description" value={group.description} />
                   ) : null}
@@ -445,6 +509,36 @@ export default function ChatInfoScreen() {
                     <Text style={styles.warn}>Mute all is on</Text>
                   ) : null}
                 </View>
+
+                {canManageGroup ? (
+                  <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Pending requests</Text>
+                    {pending.length === 0 ? (
+                      <Text style={styles.emptyInline}>No pending join requests.</Text>
+                    ) : (
+                      pending.map((p) => (
+                        <View key={p.userId} style={styles.memberRow}>
+                          <Avatar name={p.displayName} url={p.avatarUrl} size={40} />
+                          <View style={{ flex: 1, minWidth: 0 }}>
+                            <Text style={styles.memberName} numberOfLines={1}>
+                              {p.displayName}
+                            </Text>
+                            <Text style={styles.memberMeta}>
+                              @{p.username || "user"}
+                            </Text>
+                          </View>
+                          <Pressable
+                            style={styles.approveBtn}
+                            onPress={() => approvePending(p.userId)}
+                            disabled={busy}
+                          >
+                            <Text style={styles.approveBtnText}>Approve</Text>
+                          </Pressable>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                ) : null}
 
                 <View style={styles.card}>
                   <View style={styles.cardHeaderRow}>
@@ -739,5 +833,17 @@ function makeStyles(c: ColorTokens) {
     marginTop: spacing.xl,
     paddingHorizontal: spacing.xl,
   },
+  emptyInline: {
+    color: c.textSecondary,
+    fontSize: 13,
+    paddingVertical: 4,
+  },
+  approveBtn: {
+    backgroundColor: c.accent,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  approveBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 13 },
 };
 }

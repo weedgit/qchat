@@ -207,6 +207,13 @@ export default function ChatsScreen() {
               onChangeText={setQuery}
             />
           </View>
+          <Pressable
+            style={styles.joinBtn}
+            onPress={() => router.push("/join-group")}
+            accessibilityLabel="Join group"
+          >
+            <Ionicons name="qr-code-outline" size={20} color={colors.accent} />
+          </Pressable>
           <Pressable style={styles.newChat} onPress={() => router.push("/(tabs)/contacts")}>
             <Text style={styles.newChatText}>New</Text>
           </Pressable>
@@ -365,6 +372,14 @@ function makeStyles(c: ColorTokens) {
     borderRadius: radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 9,
+  },
+  joinBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderRadius: radius.sm,
+    backgroundColor: c.inputBg,
   },
   newChatText: { color: "#fff", fontWeight: "700" as const, fontSize: 13 },
   list: { flex: 1, backgroundColor: c.bg },
