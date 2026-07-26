@@ -25,7 +25,7 @@ type Server struct {
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
-	s := &Server{cfg: cfg, db: db, hub: hub, sms: sms.NewFromEnv(), mux: http.NewServeMux()}
+	s := &Server{cfg: cfg, db: db, hub: hub, sms: sms.New(cfg.SMSProvider), mux: http.NewServeMux()}
 	s.registerWSGauge()
 	s.routes()
 	return s

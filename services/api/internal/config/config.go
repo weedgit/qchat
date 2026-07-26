@@ -33,6 +33,9 @@ type Config struct {
 	VAPIDPublic  string
 	VAPIDPrivate string
 	VAPIDSubject string
+	// SMSProvider selects the verification-code gateway. "dev" only logs codes
+	// locally and is refused in production.
+	SMSProvider string
 }
 
 func Load() Config {
@@ -54,6 +57,7 @@ func Load() Config {
 		VAPIDPublic:      getenv("QCHAT_VAPID_PUBLIC", "BFdXB2ANYUTz51uvhyiHY690_q7gwTQugmCht6XglXgTLyoubrPvnpQVk4Jac5cP_zVayT88l0gTgnCt1gK5cfA"),
 		VAPIDPrivate:     getenv("QCHAT_VAPID_PRIVATE", "bUnBIxgamtcANH9nAryWvxT0v8s4iosetHMSeOmcB7g"),
 		VAPIDSubject:     getenv("QCHAT_VAPID_SUBJECT", "mailto:admin@qchat.local"),
+		SMSProvider:      strings.ToLower(getenv("QCHAT_SMS_PROVIDER", "dev")),
 	}
 }
 
@@ -65,6 +69,9 @@ func (c Config) ValidateSecrets() error {
 	}
 	if c.JWTSecret == "" || c.JWTSecret == DefaultJWTSecret || len(c.JWTSecret) < 32 {
 		return fmt.Errorf("QCHAT_JWT_SECRET must be a unique secret (≥32 chars); run deploy/rotate-jwt-secret.sh")
+	}
+	if c.SMSProvider == "" || c.SMSProvider == "dev" {
+		return fmt.Errorf("QCHAT_SMS_PROVIDER must name a real gateway in production; %q only logs codes locally", c.SMSProvider)
 	}
 	return nil
 }
