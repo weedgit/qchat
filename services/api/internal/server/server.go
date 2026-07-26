@@ -126,6 +126,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/admin/users", s.auth(s.handleAdminCreateUser))
 	s.mux.HandleFunc("POST /v1/admin/users/{id}/ban", s.auth(s.handleAdminBan))
 	s.mux.HandleFunc("POST /v1/admin/users/{id}/reset-password", s.auth(s.handleAdminResetPassword))
+	s.mux.HandleFunc("GET /v1/admin/users/{id}/sessions", s.auth(s.handleAdminUserSessions))
+	s.mux.HandleFunc("POST /v1/admin/users/{id}/sessions/{sessionId}/revoke", s.auth(s.handleAdminRevokeUserSession))
 	s.mux.HandleFunc("GET /v1/admin/messages", s.auth(s.handleAdminMessages))
 	s.mux.HandleFunc("GET /v1/admin/audits", s.auth(s.handleAdminAudits))
 	s.mux.HandleFunc("POST /v1/admin/invite/rotate", s.auth(s.handleAdminRotateInvite))

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AdminShell from "@/components/AdminShell";
 import { api, asList } from "@/lib/api";
 
@@ -20,6 +20,17 @@ interface AdminUser {
   createdAt: string;
 }
 
+interface AdminSession {
+  id: string;
+  deviceType: string;
+  deviceName: string;
+  platform: string;
+  ip: string;
+  location: string;
+  lastActiveAt: string;
+  expiresAt: string;
+}
+
 function normalize(raw: any): AdminUser {
   const banned = Boolean(raw?.banned);
   return {
@@ -34,6 +45,25 @@ function normalize(raw: any): AdminUser {
     registerRegion: String(raw?.register_region ?? "") || "—",
     createdAt: String(raw?.created_at ?? raw?.createdAt ?? ""),
   };
+}
+
+function normalizeSession(raw: any): AdminSession {
+  return {
+    id: String(raw?.id ?? ""),
+    deviceType: String(raw?.device_type ?? ""),
+    deviceName: String(raw?.device_name ?? ""),
+    platform: String(raw?.platform ?? ""),
+    ip: String(raw?.ip ?? "") || "—",
+    location: String(raw?.location ?? "") || "—",
+    lastActiveAt: String(raw?.last_active_at ?? ""),
+    expiresAt: String(raw?.expires_at ?? ""),
+  };
+}
+
+function formatDate(value: string): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 export default function UsersPage() {
@@ -59,6 +89,10 @@ export default function UsersPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<AdminSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const sessionsRequestRef = useRef(0);
 
   const load = useCallback(async (q: string, from: number) => {
     setLoading(true);
@@ -90,12 +124,33 @@ export default function UsersPage() {
     load(query, 0);
   }
 
+  async function loadSessions(userId: string) {
+    const request = ++sessionsRequestRef.current;
+    setSessionsLoading(true);
+    setSessionsError(null);
+    try {
+      const body = await api<any>(
+        `/v1/admin/users/${encodeURIComponent(userId)}/sessions`
+      );
+      if (request !== sessionsRequestRef.current) return;
+      setSessions(asList(body, "sessions").map(normalizeSession));
+    } catch (err: any) {
+      if (request !== sessionsRequestRef.current) return;
+      setSessions([]);
+      setSessionsError(err.message);
+    } finally {
+      if (request === sessionsRequestRef.current) setSessionsLoading(false);
+    }
+  }
+
   function openActions(u: AdminUser) {
     setTarget(u);
     setReason("");
     setNewPassword("");
     setActionErr(null);
     setActionMsg(null);
+    setSessions([]);
+    void loadSessions(u.id);
   }
 
   async function onCreate(e: FormEvent) {
@@ -179,6 +234,20 @@ export default function UsersPage() {
     }, "Password reset. All sessions were signed out; share the temporary password securely.");
   }
 
+  function revokeSession(session: AdminSession) {
+    if (!target) return;
+    runAction(async () => {
+      await api(
+        `/v1/admin/users/${encodeURIComponent(target.id)}/sessions/${encodeURIComponent(session.id)}/revoke`,
+        {
+          method: "POST",
+          body: JSON.stringify({ reason: reason.trim() }),
+        }
+      );
+      setSessions((current) => current.filter((item) => item.id !== session.id));
+    }, `Signed out ${session.platform || session.deviceType || "session"}.`);
+  }
+
   const from = total === 0 ? 0 : offset + 1;
   const to = Math.min(offset + users.length, total);
 
@@ -257,9 +326,10 @@ export default function UsersPage() {
             </button>
           </div>
           <div className="notice" style={{ marginTop: 12 }}>
-            Blocking an account and resetting a password are audited actions. Your
-            identity, the target account and the reason below are recorded
-            permanently. Existing passwords can never be viewed, only replaced.
+            Blocking an account, resetting a password and remotely signing out a
+            session are audited actions. Your identity, the target account and
+            the reason below are recorded permanently. Existing passwords can
+            never be viewed, only replaced.
           </div>
           <div className="field" style={{ marginTop: 12 }}>
             <label>Reason (required, recorded in audit log)</label>
@@ -296,6 +366,76 @@ export default function UsersPage() {
           </div>
           {actionErr && <div className="error-text" style={{ marginTop: 8 }}>{actionErr}</div>}
           {actionMsg && <div className="notice" style={{ marginTop: 8 }}>{actionMsg}</div>}
+          <div style={{ marginTop: 20 }}>
+            <div className="toolbar" style={{ justifyContent: "space-between" }}>
+              <strong>Active sessions</strong>
+              <button
+                className="btn"
+                type="button"
+                disabled={sessionsLoading}
+                onClick={() => loadSessions(target.id)}
+              >
+                {sessionsLoading ? "Refreshing…" : "Refresh"}
+              </button>
+            </div>
+            {sessionsError && (
+              <div className="error-text" style={{ marginTop: 8 }}>
+                Failed to load sessions: {sessionsError}
+              </div>
+            )}
+            <div style={{ overflowX: "auto", marginTop: 8 }}>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Device</th>
+                    <th>Platform</th>
+                    <th>IP / Location</th>
+                    <th>Last active</th>
+                    <th>Expires</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessionsLoading && sessions.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="muted">Loading sessions…</td>
+                    </tr>
+                  )}
+                  {!sessionsLoading && !sessionsError && sessions.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="muted">No active sessions.</td>
+                    </tr>
+                  )}
+                  {sessions.map((session) => (
+                    <tr key={session.id}>
+                      <td>
+                        {session.deviceName || session.deviceType || "Unknown device"}
+                      </td>
+                      <td>{session.platform || "—"}</td>
+                      <td>
+                        <div style={{ fontFamily: "monospace", fontSize: 12 }}>
+                          {session.ip}
+                        </div>
+                        <div className="muted">{session.location}</div>
+                      </td>
+                      <td className="muted">{formatDate(session.lastActiveAt)}</td>
+                      <td className="muted">{formatDate(session.expiresAt)}</td>
+                      <td>
+                        <button
+                          className="btn"
+                          type="button"
+                          disabled={actionBusy}
+                          onClick={() => revokeSession(session)}
+                        >
+                          Sign out
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
