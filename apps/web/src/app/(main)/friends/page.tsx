@@ -59,20 +59,54 @@ export default function FriendsPage() {
     setBusy(true);
     setAddMsg(null);
     try {
-      // Adding a contact links both users right away and sends the greeting,
-      // so the new chat appears in both conversation lists.
       const res = await api<any>("/v1/friends/request", {
         method: "POST",
         body: JSON.stringify({ user_id: u.id, greeting: t("chat.greetingHi") }),
       });
-      setAddMsg(t("contacts.friendAdded"));
+      const status = String(res?.status ?? "");
       setResults([]);
       setQuery("");
-      load();
+      await load();
+      if (status === "accepted") {
+        setAddMsg(t("contacts.friendAdded"));
+        const convID = String(res?.conversation_id ?? "");
+        if (convID) {
+          router.push(`/?c=${encodeURIComponent(convID)}`);
+        }
+      } else {
+        setAddMsg(t("contacts.requestSent"));
+      }
+    } catch (e: any) {
+      setAddMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function accept(f: Friend) {
+    setBusy(true);
+    setAddMsg(null);
+    try {
+      const res = await api<any>(`/v1/friends/${f.friendshipId}/accept`, { method: "POST" });
+      await load();
+      setAddMsg(t("contacts.friendAdded"));
       const convID = String(res?.conversation_id ?? "");
       if (convID) {
         router.push(`/?c=${encodeURIComponent(convID)}`);
       }
+    } catch (e: any) {
+      setAddMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reject(f: Friend) {
+    setBusy(true);
+    setAddMsg(null);
+    try {
+      await api(`/v1/friends/${f.friendshipId}/reject`, { method: "POST" });
+      await load();
     } catch (e: any) {
       setAddMsg(e.message);
     } finally {
@@ -93,6 +127,7 @@ export default function FriendsPage() {
     }
   }
 
+  const incoming = friends.filter((f) => f.status === "pending" && f.incoming);
   const blocked = friends.filter((f) => f.status === "blocked");
 
   return (
@@ -128,6 +163,30 @@ export default function FriendsPage() {
             <div className="menu-modal-list-actions">
               <button className="btn-ghost" disabled={busy} onClick={() => requestUser(u)}>
                 {t("contacts.addButton")}
+              </button>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <section className="menu-modal-section">
+        <div className="menu-modal-section-title">{t("contacts.incoming")}</div>
+        {!loadError && incoming.length === 0 && (
+          <div className="menu-modal-empty">{t("contacts.noIncoming")}</div>
+        )}
+        {incoming.map((f) => (
+          <div className="menu-modal-list-row" key={f.friendshipId}>
+            <Avatar name={f.nickname} url={f.avatarUrl} size={42} />
+            <div className="menu-modal-list-main">
+              <div className="menu-modal-list-title">{f.nickname}</div>
+              <div className="menu-modal-list-sub">@{f.username}</div>
+            </div>
+            <div className="menu-modal-list-actions">
+              <button className="btn-ghost" disabled={busy} onClick={() => accept(f)}>
+                {t("contacts.accept")}
+              </button>
+              <button className="btn-ghost" disabled={busy} onClick={() => reject(f)}>
+                {t("contacts.reject")}
               </button>
             </div>
           </div>
