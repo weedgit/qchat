@@ -19,11 +19,12 @@ import { ResizeMode, Video } from "expo-av";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
-import { ChatComposer } from "../../src/components/ChatComposer";
+import { ChatComposer, type MentionMember } from "../../src/components/ChatComposer";
+import { MessageBody } from "../../src/components/MessageBody";
 import { MessageActionPopup } from "../../src/components/MessageActionPopup";
 import { useChat } from "../../src/context/ChatContext";
 import { useCallApi } from "../../src/context/CallContext";
-import { mediaAuthURL } from "../../src/lib/api";
+import { api, mediaAuthURL } from "../../src/lib/api";
 import { isVideoAttachmentHint } from "../../src/lib/mediaLimits";
 import { Conversation, Message, Reaction, conversationDisplayName } from "../../src/lib/types";
 import {
@@ -315,9 +316,11 @@ const ChatMessageRow = memo(function ChatMessageRow({
         {isMedia ? (
           <MediaBody item={item} mine={mine} />
         ) : (
-          <Text style={[styles.body, mine ? styles.mineText : styles.peerText]}>
-            {messageBody(item)}
-          </Text>
+          <MessageBody
+            text={messageBody(item)}
+            style={[styles.body, mine ? styles.mineText : styles.peerText]}
+            mentionStyle={mine ? styles.mentionMine : styles.mentionPeer}
+          />
         )}
         {item.failed ? (
           <Text style={mine ? styles.fail : styles.failPeer}>Failed to send</Text>
@@ -644,6 +647,7 @@ export default function ChatScreen() {
   const [pinsListOpen, setPinsListOpen] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [mentionMembers, setMentionMembers] = useState<MentionMember[]>([]);
   const listRef = useRef<FlatList<Message>>(null);
   const nearBottomRef = useRef(true);
   const loadingOlderRef = useRef(false);
@@ -663,6 +667,36 @@ export default function ChatScreen() {
     isGroup && (conversation?.role === "owner" || conversation?.role === "admin");
   const canPin = !isGroup || canAdminRecall;
   const list = messages[convId] ?? [];
+
+  useEffect(() => {
+    if (!isGroup || !convId) {
+      setMentionMembers([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([api<any>(`/v1/groups/${convId}`), api<any>("/v1/me")])
+      .then(([g, me]) => {
+        if (cancelled) return;
+        const meId = String(me?.id ?? "");
+        const raw = Array.isArray(g?.members) ? g.members : [];
+        setMentionMembers(
+          raw
+            .filter((m: any) => String(m?.user_id ?? "") !== meId)
+            .map((m: any) => ({
+              userId: String(m?.user_id ?? ""),
+              username: String(m?.username ?? ""),
+              displayName: String(m?.display_name ?? m?.username ?? ""),
+            }))
+            .filter((m: MentionMember) => Boolean(m.username))
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setMentionMembers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isGroup, convId]);
 
   const selectedMsgs = useMemo(
     () => list.filter((m) => selectedIds.includes(m.id)),
@@ -1324,6 +1358,8 @@ export default function ChatScreen() {
             sendVoiceMessage(convId, uri, durationSec, replyTo?.id).catch(() => {});
             setReplyTo(null);
           }}
+          mentionEnabled={isGroup}
+          mentionMembers={mentionMembers}
         />
       ) : null}
 
@@ -1545,6 +1581,11 @@ function makeStyles(c: ColorTokens) {
   body: { fontSize: 16, lineHeight: 22 },
   mineText: { color: "#fff" },
   peerText: { color: c.text },
+  mentionMine: { fontWeight: "700" as const, textDecorationLine: "underline" as const },
+  mentionPeer: {
+    color: c.accent,
+    fontWeight: "700" as const,
+  },
   mediaRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, minWidth: 140 },
   videoCol: { gap: 6, minWidth: 200, maxWidth: 260 },
   videoPlayer: {
