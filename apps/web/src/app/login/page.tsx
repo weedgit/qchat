@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import LoadingSplash from "@/components/LoadingSplash";
 import { ApiError, api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
+import { isValidPhone, validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
 
 interface CaptchaState {
@@ -144,6 +145,10 @@ export default function LoginPage() {
     setError(null);
     setSmsHint(null);
     try {
+      if (!isValidPhone(phone)) {
+        setError("Phone must be exactly 11 digits");
+        return;
+      }
       const data = await api<any>("/v1/auth/register/otp", {
         method: "POST",
         body: JSON.stringify({
@@ -180,6 +185,16 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
+      const early = validateLoginCredentials({
+        phone,
+        password,
+        username,
+        requireUsername: mode === "register",
+      });
+      if (early) {
+        setError(early);
+        return;
+      }
       const device = await getAuthDevice();
       const payload: Record<string, any> = {
         phone,
@@ -192,7 +207,7 @@ export default function LoginPage() {
         platform: device.platform,
       };
       if (mode === "register") {
-        payload.username = username || `user_${phone.slice(-4)}`;
+        payload.username = username.trim();
         payload.sms_challenge_id = smsChallengeId;
         payload.sms_code = smsCode;
       } else {
@@ -242,8 +257,10 @@ export default function LoginPage() {
           <label>Phone (11 digits)</label>
           <input
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
             placeholder="13800000002"
+            inputMode="numeric"
+            autoComplete="tel"
             required
           />
         </div>
