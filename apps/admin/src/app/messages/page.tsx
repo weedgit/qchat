@@ -21,7 +21,7 @@ function normalize(raw: any): InspectedMessage {
 }
 
 export default function MessageInspectPage() {
-  const [conversationId, setConversationId] = useState("");
+  const [userId, setUserId] = useState("");
   const [reason, setReason] = useState("");
   const [rows, setRows] = useState<InspectedMessage[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +29,12 @@ export default function MessageInspectPage() {
 
   async function inspect(e: FormEvent) {
     e.preventDefault();
-    if (reason.trim().length < 5) {
-      setError("A meaningful reason (at least 5 characters) is required.");
+    if (!userId.trim()) {
+      setError("A user ID is required.");
+      return;
+    }
+    if (reason.trim().length < 8) {
+      setError("A meaningful reason (at least 8 characters) is required.");
       return;
     }
     setBusy(true);
@@ -38,7 +42,7 @@ export default function MessageInspectPage() {
     setRows(null);
     try {
       const qs = new URLSearchParams({
-        conversation_id: conversationId.trim(),
+        user_id: userId.trim(),
         reason: reason.trim(),
       });
       const body = await api<any>(`/v1/admin/messages?${qs.toString()}`);
@@ -54,22 +58,22 @@ export default function MessageInspectPage() {
     <AdminShell>
       <h1>Message inspect</h1>
       <div className="page-sub">
-        View messages of a conversation for compliance purposes.
+        View the messages sent by a specific user for compliance purposes.
       </div>
 
       <div className="notice">
         Message inspection is a privileged, audited action. Your identity, the
-        conversation ID and the reason you provide are permanently recorded in
-        the audit log.
+        user ID and the reason you provide are permanently recorded in the audit
+        log.
       </div>
 
       <div className="card" style={{ maxWidth: 720 }}>
         <form onSubmit={inspect} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div className="field">
-            <label>Conversation ID</label>
+            <label>User ID</label>
             <input
-              value={conversationId}
-              onChange={(e) => setConversationId(e.target.value)}
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
               placeholder="e.g. 8f2c9a…"
               required
             />
