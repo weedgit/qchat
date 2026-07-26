@@ -37,6 +37,8 @@ type ChatContextValue = {
   loadError: string | null;
   loadConversations: () => Promise<Conversation[]>;
   loadMessages: (convId: string) => Promise<void>;
+  loadOlderMessages: (convId: string) => Promise<number>;
+  hasMoreByConv: Record<string, boolean>;
   openConversation: (convId: string) => void;
   closeConversation: (convId?: string) => void;
   activeId: string | null;
@@ -74,6 +76,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { signedIn, user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  const [hasMoreByConv, setHasMoreByConv] = useState<Record<string, boolean>>({});
   const [connected, setConnected] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -82,6 +85,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const activeIdRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
   const messagesRef = useRef(messages);
+  const hasMoreRef = useRef<Record<string, boolean>>({});
+  const loadingOlderRef = useRef<Record<string, boolean>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
@@ -92,6 +97,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   activeIdRef.current = activeId;
   conversationsRef.current = conversations;
   messagesRef.current = messages;
+  hasMoreRef.current = hasMoreByConv;
 
   const loadConversations = useCallback(async () => {
     try {
@@ -108,11 +114,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const loadMessages = useCallback(async (convId: string) => {
     try {
-      const body = await api<any>(`/v1/conversations/${convId}/messages?limit=100`);
+      const body = await api<any>(`/v1/conversations/${convId}/messages?limit=50`);
       const list = asList(body, "messages")
         .map((m: any) => normalizeMessage(m, meRef.current?.id))
         .sort((a: Message, b: Message) => a.createdAt.localeCompare(b.createdAt));
       setMessages((prev) => ({ ...prev, [convId]: list }));
+      const more = Boolean(body?.has_more);
+      hasMoreRef.current = { ...hasMoreRef.current, [convId]: more };
+      setHasMoreByConv((prev) => ({ ...prev, [convId]: more }));
       const last = list[list.length - 1];
       // Only mark read while this chat is the focused screen (not prefetch / stale active).
       if (last && !last.mine && activeIdRef.current === convId) {
@@ -141,6 +150,37 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (e: any) {
       setLoadError(e.message);
+    }
+  }, []);
+
+  const loadOlderMessages = useCallback(async (convId: string): Promise<number> => {
+    if (loadingOlderRef.current[convId]) return 0;
+    if (hasMoreRef.current[convId] === false) return 0;
+    const existing = messagesRef.current[convId] ?? [];
+    const oldest = existing.find((m) => typeof m.seq === "number" && !m.pending);
+    if (!oldest?.seq) return 0;
+    loadingOlderRef.current[convId] = true;
+    try {
+      const body = await api<any>(
+        `/v1/conversations/${convId}/messages?limit=50&before_seq=${oldest.seq}`
+      );
+      const older = asList(body, "messages")
+        .map((m: any) => normalizeMessage(m, meRef.current?.id))
+        .sort((a: Message, b: Message) => a.createdAt.localeCompare(b.createdAt));
+      const more = Boolean(body?.has_more);
+      hasMoreRef.current = { ...hasMoreRef.current, [convId]: more };
+      setHasMoreByConv((prev) => ({ ...prev, [convId]: more }));
+      if (older.length === 0) return 0;
+      setMessages((prev) => {
+        const cur = prev[convId] ?? [];
+        const seen = new Set(cur.map((m) => m.id));
+        return { ...prev, [convId]: [...older.filter((m) => !seen.has(m.id)), ...cur] };
+      });
+      return older.length;
+    } catch {
+      return 0;
+    } finally {
+      loadingOlderRef.current[convId] = false;
     }
   }, []);
 
@@ -1127,10 +1167,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     () => ({
       conversations,
       messages,
+      hasMoreByConv,
       connected,
       loadError,
       loadConversations,
       loadMessages,
+      loadOlderMessages,
       openConversation,
       closeConversation,
       activeId,
@@ -1151,10 +1193,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     [
       conversations,
       messages,
+      hasMoreByConv,
       connected,
       loadError,
       loadConversations,
       loadMessages,
+      loadOlderMessages,
       openConversation,
       closeConversation,
       activeId,
