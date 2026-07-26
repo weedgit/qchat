@@ -1443,6 +1443,46 @@ export function useChat() {
     []
   );
 
+  const markUnread = useCallback(async (convId: string) => {
+    const res = await api<any>(`/v1/conversations/${convId}/unread`, { method: "POST" });
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? {
+              ...c,
+              unreadCount:
+                typeof res?.unread_count === "number"
+                  ? res.unread_count
+                  : Math.max(1, c.unreadCount || 1),
+            }
+          : c
+      )
+    );
+  }, []);
+
+  const clearHistory = useCallback(async (convId: string) => {
+    await api(`/v1/conversations/${convId}/clear`, { method: "POST" });
+    setMessages((prev) => ({ ...prev, [convId]: [] }));
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? { ...c, lastMessage: undefined, lastMessageAt: undefined, unreadCount: 0 }
+          : c
+      )
+    );
+  }, []);
+
+  const deleteConversation = useCallback(async (conversationId: string) => {
+    await api(`/v1/conversations/${conversationId}`, { method: "DELETE" });
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    setActiveId((cur) => (cur === conversationId ? null : cur));
+    setMessages((prev) => {
+      const next = { ...prev };
+      delete next[conversationId];
+      return next;
+    });
+  }, []);
+
   const leaveGroup = useCallback(async (conversationId: string) => {
     await api(`/v1/groups/${conversationId}/leave`, { method: "POST" });
     setConversations((prev) => prev.filter((c) => c.id !== conversationId));
@@ -1452,6 +1492,10 @@ export function useChat() {
       delete next[conversationId];
       return next;
     });
+  }, []);
+
+  const blockUser = useCallback(async (friendshipOrPeerId: string) => {
+    await api(`/v1/friends/${friendshipOrPeerId}/block`, { method: "POST" });
   }, []);
 
   const subscribeEvents = useCallback((handler: (type: string, payload: any) => void) => {
@@ -1504,7 +1548,11 @@ export function useChat() {
     pinMessage,
     editMessage,
     updateConversationPrefs,
+    markUnread,
+    clearHistory,
+    deleteConversation,
     leaveGroup,
+    blockUser,
     reload: loadConversations,
     refreshMe,
     subscribeEvents,

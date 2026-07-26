@@ -78,6 +78,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/conversations/dm", s.auth(s.handleOpenDM))
 	s.mux.HandleFunc("PATCH /v1/conversations/{id}/prefs", s.auth(s.handleConversationPrefs))
 	s.mux.HandleFunc("POST /v1/conversations/{id}/unread", s.auth(s.handleMarkUnread))
+	s.mux.HandleFunc("POST /v1/conversations/{id}/clear", s.auth(s.handleClearHistory))
+	s.mux.HandleFunc("DELETE /v1/conversations/{id}", s.auth(s.handleDeleteConversation))
 	s.mux.HandleFunc("GET /v1/groups/{id}", s.auth(s.handleGroupDetails))
 	s.mux.HandleFunc("PATCH /v1/groups/{id}", s.auth(s.handlePatchGroup))
 	s.mux.HandleFunc("GET /v1/groups/{id}/pending", s.auth(s.handleGroupPending))

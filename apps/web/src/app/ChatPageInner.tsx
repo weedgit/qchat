@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import Avatar from "@/components/Avatar";
 import CallOverlay from "@/components/CallOverlay";
+import ConfirmDialog, { type ConfirmRequest } from "@/components/ConfirmDialog";
 import FriendNoteEditor from "@/components/FriendNoteEditor";
 import GroupQr from "@/components/GroupQr";
 import MessageBody from "@/components/MessageBody";
@@ -67,6 +68,11 @@ function ConversationRow({
   onClick,
   onFavorite,
   onMute,
+  onMarkUnread,
+  onBlock,
+  onClearHistory,
+  onDelete,
+  onOpenNewWindow,
   onDropHover,
   onFilesDrop,
 }: {
@@ -78,12 +84,18 @@ function ConversationRow({
   onClick: () => void;
   onFavorite: () => void;
   onMute: () => void;
+  onMarkUnread: () => void;
+  onBlock?: () => void;
+  onClearHistory: () => void;
+  onDelete: () => void;
+  onOpenNewWindow: () => void;
   onDropHover?: (hover: boolean) => void;
   onFilesDrop?: (files: File[]) => void;
 }) {
   const { t } = useLocale();
   const typingLabel = formatTypingLabel(typing, t);
   const isDM = conv.type === "dm";
+  const isGroup = conv.type === "social_group" || conv.type === "group";
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -105,7 +117,12 @@ function ConversationRow({
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        setMenu({ x: e.clientX, y: e.clientY });
+        const pad = 8;
+        const menuW = 240;
+        const menuH = 320;
+        const x = Math.min(e.clientX, window.innerWidth - menuW - pad);
+        const y = Math.min(e.clientY, window.innerHeight - menuH - pad);
+        setMenu({ x: Math.max(pad, x), y: Math.max(pad, y) });
       }}
       onDragEnter={(e) => {
         if (!dataTransferHasFiles(e.dataTransfer)) return;
@@ -184,12 +201,23 @@ function ConversationRow({
           <button
             className="ctx-item"
             onClick={() => {
+              onOpenNewWindow();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.openWindow} />
+            {t("ctx.openInNewWindow")}
+          </button>
+          <div className="ctx-sep" />
+          <button
+            className="ctx-item"
+            onClick={() => {
               onFavorite();
               setMenu(null);
             }}
           >
             <MenuIcon d={ICONS.pin} />
-            {conv.favorite ? "Unfavorite" : "Favorite"}
+            {conv.favorite ? t("ctx.unpinChat") : t("ctx.pinChat")}
           </button>
           <button
             className="ctx-item"
@@ -199,7 +227,50 @@ function ConversationRow({
             }}
           >
             <MenuIcon d={conv.muted ? ICONS.unmute : ICONS.mute} />
-            {conv.muted ? "Unmute" : "Mute"}
+            {conv.muted ? t("ctx.unmuteNotifications") : t("ctx.muteNotifications")}
+          </button>
+          <div className="ctx-sep" />
+          <button
+            className="ctx-item"
+            onClick={() => {
+              onMarkUnread();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.markUnread} />
+            {t("ctx.markAsUnread")}
+          </button>
+          {isDM && onBlock && (
+            <button
+              className="ctx-item"
+              onClick={() => {
+                onBlock();
+                setMenu(null);
+              }}
+            >
+              <MenuIcon d={ICONS.block} />
+              {t("ctx.blockUser")}
+            </button>
+          )}
+          <button
+            className="ctx-item"
+            onClick={() => {
+              onClearHistory();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.clearHistory} />
+            {t("ctx.clearHistory")}
+          </button>
+          <button
+            className="ctx-item danger"
+            onClick={() => {
+              onDelete();
+              setMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.trash} />
+            {isGroup ? t("ctx.leaveChat") : t("ctx.deleteChat")}
           </button>
         </div>
       )}
@@ -278,6 +349,10 @@ const ICONS = {
     "M12 2v8l3 3H9l3-3V2z M8 14h8 M8 17h6 M8 20h4 M5 12.5V22h14V12.5",
   mute: "M11 5L6 9H2v6h4l5 4V5z M23 9l-6 6 M17 9l6 6",
   unmute: "M11 5L6 9H2v6h4l5 4V5z M15.54 8.46a5 5 0 0 1 0 7.07 M19.07 4.93a10 10 0 0 1 0 14.14",
+  openWindow: "M10 4h10a2 2 0 0 1 2 2v10h-2V6H10V4z M4 8h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z",
+  markUnread: "M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z M17.5 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z",
+  block: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M4.9 4.9l14.2 14.2",
+  clearHistory: "M4 20h16 M8 20V9l-2.5-3h13L16 9v11 M10 12v5 M14 12v5 M12 3v3",
   phone: "M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
   video:
     "M23 7l-7 5 7 5V7z M3 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z",
@@ -718,6 +793,7 @@ export default function ChatPageInner() {
   const [showDetails, setShowDetails] = useState(false);
  /** Conversation id under file drag in the sidebar list (channel drop). */
   const [dropHoverConvId, setDropHoverConvId] = useState<string | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   /** File drag over the open chat history pane. */
   const [chatDropActive, setChatDropActive] = useState(false);
   const chatDropDepthRef = useRef(0);
@@ -2065,6 +2141,10 @@ export default function ChatPageInner() {
             <MenuIcon d={ICONS.menu} />
           </button>
           <div className="search-wrap">
+            <MenuIcon
+              d="M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z M21 21l-4.3-4.3"
+              style={{ width: 16, height: 16 }}
+            />
             <input
               className="search-input"
               placeholder={
@@ -2285,6 +2365,54 @@ export default function ChatPageInner() {
                   onMute={() =>
                     chat.updateConversationPrefs(c.id, { muted: !c.muted }).catch(() => { })
                   }
+                  onMarkUnread={() => {
+                    chat.markUnread(c.id).catch(() => { });
+                  }}
+                  onBlock={
+                    c.type === "dm" && (c.friendshipId || c.peerId)
+                      ? () =>
+                          setConfirmRequest({
+                            title: t("ctx.blockUser"),
+                            message: t("ctx.blockUserConfirm"),
+                            confirmLabel: t("common.block"),
+                            danger: true,
+                            onConfirm: () => {
+                              chat.blockUser(c.friendshipId || c.peerId!).catch(() => { });
+                            },
+                          })
+                      : undefined
+                  }
+                  onClearHistory={() =>
+                    setConfirmRequest({
+                      title: t("ctx.clearHistory"),
+                      message: t("ctx.clearHistoryConfirm"),
+                      confirmLabel: t("common.clear"),
+                      danger: true,
+                      onConfirm: () => {
+                        chat.clearHistory(c.id).catch(() => { });
+                      },
+                    })
+                  }
+                  onDelete={() => {
+                    const isGroup = c.type === "social_group" || c.type === "group";
+                    setConfirmRequest({
+                      title: isGroup ? t("ctx.leaveChat") : t("ctx.deleteChat"),
+                      message: isGroup ? t("ctx.leaveChatConfirm") : t("ctx.deleteChatConfirm"),
+                      confirmLabel: isGroup ? t("common.leave") : t("common.delete"),
+                      danger: true,
+                      onConfirm: () => {
+                        const run =
+                          isGroup && c.type === "social_group"
+                            ? chat.leaveGroup(c.id)
+                            : chat.deleteConversation(c.id);
+                        run.catch(() => { });
+                      },
+                    });
+                  }}
+                  onOpenNewWindow={() => {
+                    const url = `${window.location.origin}/?c=${encodeURIComponent(c.id)}`;
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }}
                   onDropHover={(hover) => setDropHoverConvId(hover ? c.id : null)}
                   onFilesDrop={(files) => {
                     attachDroppedFiles(c.id, files).catch(() => { });
@@ -2415,13 +2543,19 @@ export default function ChatPageInner() {
                 >
                   <MenuIcon d={ICONS.back} />
                 </button>
-                <input
-                  className="search-input"
-                  autoFocus
-                  placeholder={t("chat.searchInConversation")}
-                  value={inChatSearch}
-                  onChange={(e) => setInChatSearch(e.target.value)}
-                />
+                <div className="search-wrap">
+                  <MenuIcon
+                    d="M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z M21 21l-4.3-4.3"
+                    style={{ width: 16, height: 16 }}
+                  />
+                  <input
+                    className="search-input"
+                    autoFocus
+                    placeholder={t("chat.searchInConversation")}
+                    value={inChatSearch}
+                    onChange={(e) => setInChatSearch(e.target.value)}
+                  />
+                </div>
                 <button
                   type="button"
                   className="icon-btn"
@@ -3821,6 +3955,7 @@ export default function ChatPageInner() {
         </div>
       )}
       <CallOverlay call={call} />
+      <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
     </AppShell>
   );
 }
