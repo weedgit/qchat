@@ -63,11 +63,11 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		       COALESCE(conv.is_enterprise_default, FALSE)
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
-		WHERE cm.user_id=$1 AND conv.enterprise_id=$2 AND cm.role <> 'pending'
+		WHERE cm.user_id=$1 AND cm.role <> 'pending'
 		ORDER BY cm.favorite DESC, COALESCE(
 		  (SELECT m.created_at FROM messages m WHERE m.conversation_id=conv.id ORDER BY m.seq DESC LIMIT 1),
 		  conv.created_at
-		) DESC`, c.UserID, c.EnterpriseID)
+		) DESC`, c.UserID)
 	if err != nil {
 		writeErr(w, 500, "query failed")
 		return
@@ -158,10 +158,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 					FROM friendships f
 					LEFT JOIN friendship_user_preferences p
 					  ON p.friendship_id = f.id AND p.user_id = $2
-					WHERE f.status='accepted' AND f.enterprise_id=$1
-					  AND ((f.requester_id=$2 AND f.addressee_id=$3)
-					    OR (f.requester_id=$3 AND f.addressee_id=$2))
-					LIMIT 1`, c.EnterpriseID, c.UserID, pid).Scan(&friendshipID, &note, &tags)
+					WHERE f.status='accepted'
+					  AND ((f.requester_id=$1 AND f.addressee_id=$2)
+					    OR (f.requester_id=$2 AND f.addressee_id=$1))
+					LIMIT 1`, c.UserID, pid).Scan(&friendshipID, &note, &tags)
 				if friendshipID != "" {
 					item["friendship_id"] = friendshipID
 				}
@@ -186,13 +186,14 @@ func (s *Server) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid json")
 		return
 	}
+	ent := entArg(c.EnterpriseID)
 	var accepted bool
 	_ = s.db.QueryRow(r.Context(), `
 		SELECT EXISTS(
 			SELECT 1 FROM friendships
-			WHERE status='accepted' AND enterprise_id=$1
-			  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
-		)`, c.EnterpriseID, c.UserID, req.UserID).Scan(&accepted)
+			WHERE status='accepted'
+			  AND ((requester_id=$1 AND addressee_id=$2) OR (requester_id=$2 AND addressee_id=$1))
+		)`, c.UserID, req.UserID).Scan(&accepted)
 	if !accepted {
 		writeErrCode(w, 403, "not_friends", "not friends")
 		return
@@ -207,7 +208,7 @@ func (s *Server) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 		SELECT c.id::text FROM conversations c
 		JOIN conversation_members a ON a.conversation_id=c.id AND a.user_id=$1
 		JOIN conversation_members b ON b.conversation_id=c.id AND b.user_id=$2
-		WHERE c.type='dm' AND c.enterprise_id=$3 LIMIT 1`, c.UserID, req.UserID, c.EnterpriseID).Scan(&convID)
+		WHERE c.type='dm' LIMIT 1`, c.UserID, req.UserID).Scan(&convID)
 	if err == nil {
 		writeJSON(w, 200, map[string]any{"id": convID})
 		return
@@ -215,7 +216,7 @@ func (s *Server) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 	id := uuid.New()
 	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO conversations(id, enterprise_id, type, title, owner_id)
-		VALUES ($1,$2,'dm','',$3)`, id, c.EnterpriseID, c.UserID)
+		VALUES ($1,$2,'dm','',$3)`, id, ent, c.UserID)
 	if err != nil {
 		writeErr(w, 500, "create failed")
 		return
@@ -240,7 +241,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	publicID := "G" + id.String()[:8]
 	_, err := s.db.Exec(r.Context(), `
 		INSERT INTO conversations(id, enterprise_id, type, title, description, public_id, owner_id)
-		VALUES ($1,$2,'social_group',$3,$4,$5,$6)`, id, c.EnterpriseID, req.Title, req.Description, publicID, c.UserID)
+		VALUES ($1,$2,'social_group',$3,$4,$5,$6)`, id, entArg(c.EnterpriseID), req.Title, req.Description, publicID, c.UserID)
 	if err != nil {
 		writeErrCode(w, 500, "create_failed", "create failed")
 		return
@@ -256,9 +257,9 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.QueryRow(r.Context(), `
 			SELECT EXISTS(
 				SELECT 1 FROM friendships
-				WHERE status='accepted' AND enterprise_id=$1
+				WHERE status='accepted' AND enterprise_id IS NOT DISTINCT FROM $1
 				  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
-			)`, c.EnterpriseID, c.UserID, mid).Scan(&ok)
+			)`, entArg(c.EnterpriseID), c.UserID, mid).Scan(&ok)
 		if !ok {
 			continue
 		}
@@ -304,9 +305,9 @@ func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.QueryRow(r.Context(), `
 			SELECT EXISTS(
 				SELECT 1 FROM friendships
-				WHERE status='accepted' AND enterprise_id=$1
+				WHERE status='accepted' AND enterprise_id IS NOT DISTINCT FROM $1
 				  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
-			)`, c.EnterpriseID, c.UserID, mid).Scan(&okFriend)
+			)`, entArg(c.EnterpriseID), c.UserID, mid).Scan(&okFriend)
 		if !okFriend {
 			skipped = append(skipped, mid)
 			continue
@@ -753,8 +754,8 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		SELECT cm.history_visible_from, cm.role, conv.type
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
-		WHERE cm.conversation_id=$1 AND cm.user_id=$2 AND conv.enterprise_id=$3`,
-		convID, c.UserID, c.EnterpriseID).Scan(&histFrom, &role, &convType)
+		WHERE cm.conversation_id=$1 AND cm.user_id=$2`,
+		convID, c.UserID).Scan(&histFrom, &role, &convType)
 	if err != nil || role == "pending" {
 		writeErrCode(w, 403, "not_a_member", "not a member")
 		return
@@ -1146,7 +1147,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO messages(id, conversation_id, enterprise_id, sender_id, client_msg_id, type, body, media_url, reply_to_id, mentions, mention_all)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::uuid[],$11)
 		ON CONFLICT (conversation_id, client_msg_id) DO UPDATE SET body=EXCLUDED.body
-		RETURNING id::text, seq`, newID, convID, c.EnterpriseID, c.UserID, req.ClientMsgID, req.Type, req.Body, req.MediaURL, reply, mentionLiteral, req.MentionAll).Scan(&msgID, &seq)
+		RETURNING id::text, seq`, newID, convID, entArg(c.EnterpriseID), c.UserID, req.ClientMsgID, req.Type, req.Body, req.MediaURL, reply, mentionLiteral, req.MentionAll).Scan(&msgID, &seq)
 	if err != nil {
 		writeErr(w, 500, "send failed: "+err.Error())
 		return
@@ -1197,7 +1198,8 @@ func (s *Server) parseMentions(r *http.Request, convID, enterpriseID, body strin
 	rows, err := s.db.Query(r.Context(), `
 		SELECT u.id::text FROM users u
 		JOIN conversation_members cm ON cm.user_id=u.id AND cm.conversation_id=$1 AND cm.role <> 'pending'
-		WHERE u.enterprise_id=$2 AND lower(u.username) = ANY($3::text[])`, convID, enterpriseID, list)
+		WHERE u.enterprise_id IS NOT DISTINCT FROM $2 AND lower(u.username) = ANY($3::text[])`,
+		convID, entArg(enterpriseID), list)
 	if err != nil {
 		return nil, mentionAll
 	}
@@ -1353,7 +1355,7 @@ func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
 		_, err := s.db.Exec(r.Context(), `
 			INSERT INTO messages(id, conversation_id, enterprise_id, sender_id, client_msg_id, type, body, media_url, forwarded_from)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-			id, cid, c.EnterpriseID, c.UserID, uuid.NewString(), typ, body, media, msgID)
+			id, cid, entArg(c.EnterpriseID), c.UserID, uuid.NewString(), typ, body, media, msgID)
 		if err == nil {
 			created = append(created, id.String())
 			s.hub.PublishToUsers(s.memberIDs(r, cid), ws.Event{Type: "message.new", Payload: map[string]any{
