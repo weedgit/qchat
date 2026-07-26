@@ -38,7 +38,7 @@ import {
   previousPinnedInCycle,
   type PinnedMessage,
 } from "@/lib/pinnedCycle";
-import { attachmentLimitError, avatarLimitError, VOICE_MAX_SEC } from "@/lib/mediaLimits";
+import { attachmentLimitError, avatarLimitError, AVATAR_ACCEPT, VOICE_MAX_SEC } from "@/lib/mediaLimits";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
 import ShellConnectionBanner from "@/components/ShellConnectionBanner";
@@ -3126,7 +3126,7 @@ export default function ChatPageInner() {
               <input
                 ref={groupAvatarInputRef}
                 type="file"
-                accept="image/*"
+                accept={AVATAR_ACCEPT}
                 hidden
                 onChange={(e) => {
                   const f = e.target.files?.[0];

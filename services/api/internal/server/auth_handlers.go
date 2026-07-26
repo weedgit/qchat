@@ -371,6 +371,24 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid json")
 		return
 	}
+	vis := strPtr(req, "profile_visibility")
+	if vis != nil {
+		switch *vis {
+		case "public", "friends":
+		default:
+			writeErr(w, 400, "invalid profile_visibility")
+			return
+		}
+	}
+	fp := strPtr(req, "friend_privacy")
+	if fp != nil {
+		switch *fp {
+		case "open", "approval", "closed":
+		default:
+			writeErr(w, 400, "invalid friend_privacy")
+			return
+		}
+	}
 	_, err := s.db.Exec(r.Context(), `
 		UPDATE users SET
 			display_name=COALESCE($2, display_name),
@@ -389,8 +407,8 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		strPtr(req, "region"),
 		strPtr(req, "signature"),
 		strPtr(req, "avatar_url"),
-		strPtr(req, "profile_visibility"),
-		strPtr(req, "friend_privacy"),
+		vis,
+		fp,
 	)
 	if err != nil {
 		writeErr(w, 400, "update failed")
