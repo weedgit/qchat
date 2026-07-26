@@ -278,11 +278,18 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "reason required (≥8 chars) for message access")
 		return
 	}
-	userID := r.URL.Query().Get("user_id")
+	// A specific user must be named: an empty target would dump the whole
+	// enterprise under a single audit entry. Validate the UUID here so a bad
+	// value is a clear 400 rather than a SQL cast 500.
+	userID, err := uuid.Parse(strings.TrimSpace(r.URL.Query().Get("user_id")))
+	if err != nil {
+		writeErr(w, 400, "user_id required (valid user id) for message access")
+		return
+	}
 	rows, err := s.db.Query(r.Context(), `
 		SELECT m.id::text, m.conversation_id::text, m.sender_id::text, m.body, m.type, m.created_at
 		FROM messages m
-		WHERE m.enterprise_id=$1 AND ($2='' OR m.sender_id=$2::uuid)
+		WHERE m.enterprise_id=$1 AND m.sender_id=$2
 		ORDER BY m.created_at DESC LIMIT 100`, c.EnterpriseID, userID)
 	if err != nil {
 		writeErr(w, 500, "query failed")
@@ -299,7 +306,7 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	if out == nil {
 		out = []map[string]any{}
 	}
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "messages.inspect", "user", userID, reason, clientIP(r), map[string]any{"count": len(out)})
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "messages.inspect", "user", userID.String(), reason, clientIP(r), map[string]any{"count": len(out)})
 	writeJSON(w, 200, map[string]any{"messages": out})
 }
 

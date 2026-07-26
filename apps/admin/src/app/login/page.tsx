@@ -11,8 +11,8 @@ interface CaptchaState {
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const [phone, setPhone] = useState("13800000001");
-  const [password, setPassword] = useState("admin12345");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
   const [remember, setRemember] = useState(true);
