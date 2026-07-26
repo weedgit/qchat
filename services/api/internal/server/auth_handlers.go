@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +12,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/qchat/qchat/services/api/internal/auth"
 	"github.com/qchat/qchat/services/api/internal/sms"
+)
+
+const (
+	otpCodeDigits = 6
+	// maxOTPAttempts caps guesses per challenge so a short numeric code cannot
+	// be brute-forced within its ten-minute lifetime.
+	maxOTPAttempts = 5
 )
 
 func (s *Server) handleCaptcha(w http.ResponseWriter, r *http.Request) {
@@ -79,10 +87,13 @@ func (s *Server) handleRegisterOTP(w http.ResponseWriter, r *http.Request) {
 		writeErrFields(w, 409, "conflict", "phone already registered", map[string]string{"phone": "already registered"})
 		return
 	}
-	// Fixed OTP for local testing — any unused phone, code 12345.
-	code := "12345"
+	code, err := auth.NewNumericCode(otpCodeDigits)
+	if err != nil {
+		writeErr(w, 500, "code generation failed")
+		return
+	}
 	id := uuid.New()
-	_, err := s.db.Exec(r.Context(), `
+	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO register_otp_challenges(id, phone, invite_code, code_hash, expires_at)
 		VALUES ($1,$2,'',$3,$4)`,
 		id, req.Phone, auth.HashRefresh(strings.ToUpper(code)), time.Now().Add(10*time.Minute))
@@ -91,43 +102,43 @@ func (s *Server) handleRegisterOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body := sms.FormatPhoneCode(code)
-	_ = s.sms.Send(r.Context(), req.Phone, body)
-	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,'dev')`, req.Phone, body)
-	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600, "dev_code": code}
+	if err := s.sms.Send(r.Context(), req.Phone, body); err != nil {
+		log.Printf("register otp: sms delivery failed via %q: %v", s.cfg.SMSProvider, err)
+		_, _ = s.db.Exec(r.Context(), `DELETE FROM register_otp_challenges WHERE id=$1`, id)
+		writeErr(w, 502, "sms delivery failed")
+		return
+	}
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,$3)`,
+		req.Phone, body, s.cfg.SMSProvider)
+	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600}
+	if s.cfg.Env != "production" {
+		resp["dev_code"] = code
+	}
 	writeJSON(w, 200, resp)
 }
 
 func (s *Server) consumeRegisterOTP(r *http.Request, challengeID, phone, code string) bool {
 	code = strings.TrimSpace(code)
-	if code == "" {
-		return false
-	}
-	// Local testing: fixed SMS code works for any phone (Send SMS optional).
-	if strings.EqualFold(code, "12345") {
-		if challengeID != "" {
-			_, _ = s.db.Exec(r.Context(), `
-				UPDATE register_otp_challenges SET consumed=TRUE
-				WHERE id=$1 AND phone=$2 AND consumed=FALSE`, challengeID, phone)
-		}
-		return true
-	}
-	if challengeID == "" {
+	if code == "" || challengeID == "" {
 		return false
 	}
 	var phoneDB, hash string
 	var consumed bool
+	var attempts int
 	var expires time.Time
 	err := s.db.QueryRow(r.Context(), `
-		SELECT phone, code_hash, consumed, expires_at
+		SELECT phone, code_hash, consumed, attempts, expires_at
 		FROM register_otp_challenges WHERE id=$1`, challengeID).
-		Scan(&phoneDB, &hash, &consumed, &expires)
-	if err != nil || consumed || time.Now().After(expires) {
+		Scan(&phoneDB, &hash, &consumed, &attempts, &expires)
+	if err != nil || consumed || attempts >= maxOTPAttempts || time.Now().After(expires) {
 		return false
 	}
 	if phoneDB != phone {
 		return false
 	}
 	if hash != auth.HashRefresh(strings.ToUpper(code)) {
+		_, _ = s.db.Exec(r.Context(),
+			`UPDATE register_otp_challenges SET attempts=attempts+1 WHERE id=$1`, challengeID)
 		return false
 	}
 	_, _ = s.db.Exec(r.Context(), `UPDATE register_otp_challenges SET consumed=TRUE WHERE id=$1`, challengeID)
@@ -674,10 +685,13 @@ func (s *Server) handlePhoneChangeRequest(w http.ResponseWriter, r *http.Request
 		writeErrFields(w, 409, "phone_taken", "phone already in use", map[string]string{"new_phone": "already in use"})
 		return
 	}
-	// Fixed OTP for local testing — any unused phone, code 12345.
-	code := "12345"
+	code, err := auth.NewNumericCode(otpCodeDigits)
+	if err != nil {
+		writeErrCode(w, 500, "code_failed", "could not generate verification code")
+		return
+	}
 	id := uuid.New()
-	_, err := s.db.Exec(r.Context(), `
+	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO phone_change_challenges(id, user_id, enterprise_id, new_phone, code_hash, expires_at)
 		VALUES ($1,$2,$3,$4,$5,$6)`,
 		id, c.UserID, c.EnterpriseID, req.NewPhone, auth.HashRefresh(strings.ToUpper(code)), time.Now().Add(10*time.Minute))
@@ -686,9 +700,18 @@ func (s *Server) handlePhoneChangeRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	body := sms.FormatPhoneCode(code)
-	_ = s.sms.Send(r.Context(), req.NewPhone, body)
-	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,'dev')`, req.NewPhone, body)
-	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600, "dev_code": code}
+	if err := s.sms.Send(r.Context(), req.NewPhone, body); err != nil {
+		log.Printf("phone change: sms delivery failed via %q: %v", s.cfg.SMSProvider, err)
+		_, _ = s.db.Exec(r.Context(), `DELETE FROM phone_change_challenges WHERE id=$1`, id)
+		writeErrCode(w, 502, "sms_failed", "could not deliver verification code")
+		return
+	}
+	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,$3)`,
+		req.NewPhone, body, s.cfg.SMSProvider)
+	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600}
+	if s.cfg.Env != "production" {
+		resp["dev_code"] = code
+	}
 	writeJSON(w, 200, resp)
 }
 
@@ -715,7 +738,7 @@ func (s *Server) handlePhoneChangeConfirm(w http.ResponseWriter, r *http.Request
 		writeErrCode(w, 400, "invalid_challenge", "invalid or expired challenge")
 		return
 	}
-	if attempts >= 5 {
+	if attempts >= maxOTPAttempts {
 		writeErrCode(w, 429, "too_many_attempts", "too many attempts")
 		return
 	}

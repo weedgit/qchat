@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 )
 
 // Sender is a provider-neutral SMS interface.
@@ -20,13 +19,23 @@ func (DevSender) Send(_ context.Context, phone, body string) error {
 	return nil
 }
 
-func NewFromEnv() Sender {
-	switch os.Getenv("QCHAT_SMS_PROVIDER") {
+// unconfiguredSender fails every send. A gateway that is named but has no
+// driver must surface as a delivery error rather than silently discarding
+// verification codes while the caller reports success.
+type unconfiguredSender struct{ provider string }
+
+func (u unconfiguredSender) Send(context.Context, string, string) error {
+	return fmt.Errorf("sms provider %q has no driver", u.provider)
+}
+
+// New resolves the configured gateway. Unknown providers fail closed instead
+// of falling back to DevSender.
+func New(provider string) Sender {
+	switch provider {
 	case "", "dev":
 		return DevSender{}
 	default:
-		log.Printf("unknown QCHAT_SMS_PROVIDER %q; falling back to dev", os.Getenv("QCHAT_SMS_PROVIDER"))
-		return DevSender{}
+		return unconfiguredSender{provider: provider}
 	}
 }
 

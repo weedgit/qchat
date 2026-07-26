@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -69,6 +70,24 @@ func NewRefreshToken() (raw string, hash string, err error) {
 func HashRefresh(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
+}
+
+// NewNumericCode returns a cryptographically random decimal verification code.
+// crypto/rand.Int is used rather than modulo over a random byte so every digit
+// is uniformly distributed.
+func NewNumericCode(digits int) (string, error) {
+	if digits <= 0 {
+		return "", fmt.Errorf("digits must be positive")
+	}
+	out := make([]byte, digits)
+	for i := range out {
+		n, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			return "", err
+		}
+		out[i] = byte('0' + n.Int64())
+	}
+	return string(out), nil
 }
 
 func NewCaptchaCode() string {
