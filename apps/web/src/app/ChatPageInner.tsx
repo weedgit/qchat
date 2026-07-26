@@ -38,7 +38,17 @@ import {
   previousPinnedInCycle,
   type PinnedMessage,
 } from "@/lib/pinnedCycle";
-import { attachmentLimitError, avatarLimitError, AVATAR_ACCEPT, VOICE_MAX_SEC, MESSAGE_MAX_CHARS, messageCharCount, clipMessageText } from "@/lib/mediaLimits";
+import {
+  attachmentLimitError,
+  avatarLimitError,
+  AVATAR_ACCEPT,
+  VOICE_MAX_SEC,
+  MESSAGE_MAX_CHARS,
+  messageCharCount,
+  clipMessageText,
+  isVideoAttachmentHint,
+  isVideoMime,
+} from "@/lib/mediaLimits";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
 import ShellConnectionBanner from "@/components/ShellConnectionBanner";
@@ -616,6 +626,51 @@ function Bubble({
               )}
             </div>
           ) : msg.type === "file" && (msg.mediaUrl || msg.pending || msg.failed) && !msg.recalled ? (
+            isVideoAttachmentHint(msg.content, msg.mediaUrl) ||
+            isVideoMime(msg.localFile?.type) ? (
+              <div className="media-video">
+                {msg.mediaUrl && !msg.failed ? (
+                  <video
+                    controls
+                    preload="metadata"
+                    playsInline
+                    src={mediaAuthURL(msg.mediaUrl)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : null}
+                <div className="media-video-meta">
+                  {msg.mediaUrl && !msg.failed ? (
+                    <a
+                      className="media-file"
+                      href={mediaAuthURL(msg.mediaUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
+                      <span>
+                        {localizeChatLabel(msg.content, t, { type: "file" }) || t("chat.video")}
+                      </span>
+                    </a>
+                  ) : (
+                    <div className="media-file">
+                      <MenuIcon d={ICONS.paperclip} style={{ width: 18, height: 18 }} />
+                      <span>
+                        {localizeChatLabel(msg.content, t, { type: "file" }) || t("chat.video")}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                {msg.pending && typeof msg.uploadProgress === "number" && (
+                  <div className="upload-progress" aria-hidden>
+                    <div
+                      className="upload-progress-bar"
+                      style={{ width: `${Math.round(msg.uploadProgress * 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : (
             <div className="media-file-wrap">
               {msg.mediaUrl && !msg.failed ? (
                 <a
@@ -643,6 +698,7 @@ function Bubble({
                 </div>
               )}
             </div>
+            )
           ) : (
             <MessageBody text={msg.content} />
           )}

@@ -40,10 +40,31 @@ export function avatarLimitError(file: File): string | null {
   return null;
 }
 
+export function isVideoMime(mime: string | undefined | null): boolean {
+  return (mime || "").toLowerCase().trim().startsWith("video/");
+}
+
+/** Common uploaded video extensions (message body is often the filename). */
+const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|mkv|ogv|avi)(?:$|[?#])/i;
+
+/** True when any hint looks like a video attachment (MIME, filename, or media URL). */
+export function isVideoAttachmentHint(
+  ...hints: Array<string | undefined | null>
+): boolean {
+  for (const hint of hints) {
+    if (!hint) continue;
+    const value = hint.trim();
+    if (!value) continue;
+    if (isVideoMime(value)) return true;
+    if (VIDEO_EXT_RE.test(value)) return true;
+  }
+  return false;
+}
+
 export function attachmentLimitError(file: File): string | null {
-  const max = (file.type || "").startsWith("video/") ? VIDEO_MAX_BYTES : FILE_MAX_BYTES;
+  const max = isVideoMime(file.type) ? VIDEO_MAX_BYTES : FILE_MAX_BYTES;
   if (file.size > max) {
-    return (file.type || "").startsWith("video/")
+    return isVideoMime(file.type)
       ? "Video must be 200 MB or less"
       : "File must be 100 MB or less";
   }

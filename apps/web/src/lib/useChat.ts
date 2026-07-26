@@ -974,7 +974,9 @@ export function useChat() {
     async (convId: string, file: File, replyToId?: string, caption?: string) => {
       stopTyping(convId);
       const isImage = file.type.startsWith("image/");
+      const isVideo = !isImage && file.type.startsWith("video/");
       const type = isImage ? "image" : "file";
+      const uploadKind = isImage ? "image" : isVideo ? "video" : "file";
       const trimmedCaption = caption?.trim() || "";
       const preview = isImage
         ? trimmedCaption || "Photo"
@@ -988,6 +990,8 @@ export function useChat() {
       if (isImage) {
         const { makeImagePreviewUrl } = await import("./mediaPreview");
         localUrl = await makeImagePreviewUrl(file);
+      } else if (isVideo) {
+        localUrl = URL.createObjectURL(file);
       }
       const optimistic: Message = {
         id: tempId,
@@ -1033,8 +1037,8 @@ export function useChat() {
         let lastPct = -1;
         const uploaded = await uploadMedia(
           file,
-          isImage ? "image" : "file",
-          file.name || `upload.${isImage ? "jpg" : "bin"}`,
+          uploadKind,
+          file.name || `upload.${isImage ? "jpg" : isVideo ? "mp4" : "bin"}`,
           (loaded, total) => {
             if (cancelledUploadsRef.current.has(clientMsgId)) return;
             const pct = Math.min(1, loaded / total);
