@@ -344,6 +344,16 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"status": "accepted", "conversation_id": convID})
 		return
 	}
+	if existing == "pending" {
+		var pendingID string
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT id::text FROM friendships
+			WHERE ((requester_id=$1 AND addressee_id=$2) OR (requester_id=$2 AND addressee_id=$1))
+			  AND status='pending'
+			LIMIT 1`, c.UserID, targetID).Scan(&pendingID)
+		writeJSON(w, 200, map[string]any{"id": pendingID, "status": "pending"})
+		return
+	}
 	var count int
 	_ = s.db.QueryRow(r.Context(), `
 		SELECT COUNT(*) FROM friendships
@@ -352,16 +362,30 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 400, "friend_limit", "friend limit reached")
 		return
 	}
-	// No approval step: adding a contact links both users immediately (JD flow),
-	// then the requester's greeting opens the DM on both sides.
-	const status = "accepted"
+	// Three modes (friend_privacy): open → link immediately; approval → pending
+	// until the addressee accepts; closed is rejected above.
+	status := "pending"
+	if privacy == "open" {
+		status = "accepted"
+	}
+	greeting := strings.TrimSpace(req.Greeting)
+	if greeting == "" {
+		greeting = strings.TrimSpace(req.Message)
+	}
+	if greeting == "" {
+		greeting = "Hi"
+	}
+	note := strings.TrimSpace(req.Message)
+	if note == "" {
+		note = greeting
+	}
 	id := uuid.New()
 	// Prefer updating either direction row if it exists.
 	tag, err := s.db.Exec(r.Context(), `
 		UPDATE friendships SET status=$3, note=$4, requester_id=$1, addressee_id=$2
 		WHERE ((requester_id=$1 AND addressee_id=$2) OR (requester_id=$2 AND addressee_id=$1))
 		  AND status IN ('pending','rejected')`,
-		c.UserID, targetID, status, req.Message)
+		c.UserID, targetID, status, note)
 	if err != nil {
 		writeErrCode(w, 400, "request_failed", "request failed")
 		return
@@ -371,34 +395,45 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 			INSERT INTO friendships(id, enterprise_id, requester_id, addressee_id, status, note)
 			VALUES ($1,$2,$3,$4,$5,$6)
 			ON CONFLICT (requester_id, addressee_id) DO UPDATE SET status=EXCLUDED.status, note=EXCLUDED.note`,
-			id, ent, c.UserID, targetID, status, req.Message)
+			id, ent, c.UserID, targetID, status, note)
 		if err != nil {
 			writeErrCode(w, 400, "request_failed", "request failed")
 			return
 		}
 	} else {
 		_ = s.db.QueryRow(r.Context(), `
-			SELECT id::text FROM friendships
+			SELECT id FROM friendships
 			WHERE ((requester_id=$1 AND addressee_id=$2) OR (requester_id=$2 AND addressee_id=$1))
 			LIMIT 1`, c.UserID, targetID).Scan(&id)
 	}
-	convID, dmErr := s.ensureDMConversation(r, c.UserID, targetID, ent)
-	if dmErr == nil {
-		greeting := strings.TrimSpace(req.Greeting)
-		if greeting == "" {
-			greeting = "Hi"
+	payload := map[string]any{"from": c.UserID, "status": status, "id": id.String()}
+	resp := map[string]any{"id": id.String(), "status": status}
+	if status == "accepted" {
+		convID, dmErr := s.ensureDMConversation(r, c.UserID, targetID, ent)
+		if dmErr == nil {
+			s.sendGreetingMessage(r, convID, c.UserID, greeting, ent)
+			payload["conversation_id"] = convID
+			resp["conversation_id"] = convID
 		}
-		s.sendGreetingMessage(r, convID, c.UserID, greeting, ent)
 	}
-	s.hub.PublishToUsers([]string{targetID}, ws.Event{Type: "friend.request", Payload: map[string]any{
-		"from": c.UserID, "status": status, "conversation_id": convID,
-	}})
-	writeJSON(w, 201, map[string]any{"id": id.String(), "status": status, "conversation_id": convID})
+	s.hub.PublishToUsers([]string{targetID}, ws.Event{Type: "friend.request", Payload: payload})
+	writeJSON(w, 201, resp)
 }
 
 func (s *Server) handleFriendAccept(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	id := r.PathValue("id")
+	var requesterID, note string
+	var ent any
+	err := s.db.QueryRow(r.Context(), `
+		SELECT requester_id::text, COALESCE(note,''), enterprise_id
+		FROM friendships
+		WHERE id=$1 AND addressee_id=$2 AND status='pending'`, id, c.UserID).
+		Scan(&requesterID, &note, &ent)
+	if err != nil {
+		writeErrCode(w, 404, "request_not_found", "request not found")
+		return
+	}
 	tag, err := s.db.Exec(r.Context(), `
 		UPDATE friendships SET status='accepted'
 		WHERE id=$1 AND addressee_id=$2 AND status='pending'`,
@@ -407,7 +442,18 @@ func (s *Server) handleFriendAccept(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 404, "request_not_found", "request not found")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true})
+	convID, dmErr := s.ensureDMConversation(r, requesterID, c.UserID, ent)
+	greeting := strings.TrimSpace(note)
+	if greeting == "" {
+		greeting = "Hi"
+	}
+	if dmErr == nil {
+		s.sendGreetingMessage(r, convID, requesterID, greeting, ent)
+	}
+	s.hub.PublishToUsers([]string{requesterID, c.UserID}, ws.Event{Type: "friend.request", Payload: map[string]any{
+		"from": requesterID, "status": "accepted", "id": id, "conversation_id": convID,
+	}})
+	writeJSON(w, 200, map[string]any{"ok": true, "conversation_id": convID})
 }
 
 func (s *Server) handleFriendReject(w http.ResponseWriter, r *http.Request) {
