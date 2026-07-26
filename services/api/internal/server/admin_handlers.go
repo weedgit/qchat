@@ -413,6 +413,7 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 		writeErr(w, 404, "user not found")
 		return
 	}
+	s.clearMFARecoveryCodes(r.Context(), uid)
 	s.revokeUserSessions(r, uid, "password_reset")
 	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.reset_password", "user", uid, reason, clientIP(r), nil)
 	writeJSON(w, 200, map[string]any{"ok": true, "note": "password reset; existing password is never viewable"})

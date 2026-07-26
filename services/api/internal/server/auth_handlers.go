@@ -256,7 +256,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.verifyLoginIPAllowlist(w, r, uid, entID, role) {
 		return
 	}
-	if !s.verifyLoginMFA(w, role, mfaSecret, mfaActive, req.MFACode) {
+	if !s.verifyLoginMFA(w, r, uid, role, mfaSecret, mfaActive, req.MFACode) {
 		return
 	}
 	dtype := normalizeDevice(req.DeviceType)

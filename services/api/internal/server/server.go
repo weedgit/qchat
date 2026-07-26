@@ -64,6 +64,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/me/mfa/setup", s.auth(s.handleMFASetup))
 	s.mux.HandleFunc("POST /v1/me/mfa/activate", s.auth(s.handleMFAActivate))
 	s.mux.HandleFunc("POST /v1/me/mfa/disable", s.auth(s.handleMFADisable))
+	s.mux.HandleFunc("POST /v1/me/mfa/recovery/regenerate", s.auth(s.handleMFARecoveryRegenerate))
 	s.mux.HandleFunc("PUT /v1/me/status", s.auth(s.handleUpdateStatus))
 	s.mux.HandleFunc("GET /v1/me/notify_props", s.auth(s.handleNotifyPrefs))
 	s.mux.HandleFunc("PUT /v1/me/notify_props", s.auth(s.handleNotifyPrefs))
