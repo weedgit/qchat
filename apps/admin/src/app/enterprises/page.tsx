@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/AdminShell";
 import { api, asList } from "@/lib/api";
 
@@ -31,6 +31,20 @@ export default function EnterprisesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [retentionDraft, setRetentionDraft] = useState<Record<string, string>>({});
+  const [meRole, setMeRole] = useState<string>("");
+
+  const [createName, setCreateName] = useState("");
+  const [createInvite, setCreateInvite] = useState("");
+  const [adminPhone, setAdminPhone] = useState("");
+  const [adminUsername, setAdminUsername] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+
+  const [issueFor, setIssueFor] = useState<Enterprise | null>(null);
+  const [issuePhone, setIssuePhone] = useState("");
+  const [issueUsername, setIssueUsername] = useState("");
+  const [issuePassword, setIssuePassword] = useState("");
+
+  const isPlatformOwner = meRole === "platform_owner";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,6 +65,9 @@ export default function EnterprisesPage() {
 
   useEffect(() => {
     load();
+    api<any>("/v1/me")
+      .then((me) => setMeRole(String(me?.role ?? "")))
+      .catch(() => setMeRole(""));
   }, [load]);
 
   async function rotateInvite() {
@@ -115,11 +132,70 @@ export default function EnterprisesPage() {
     }
   }
 
+  async function createEnterprise(e: FormEvent) {
+    e.preventDefault();
+    setBusy("create");
+    setNotice(null);
+    try {
+      const body = await api<any>("/v1/admin/enterprises", {
+        method: "POST",
+        body: JSON.stringify({
+          name: createName.trim(),
+          invite_code: createInvite.trim() || undefined,
+          admin_phone: adminPhone.trim(),
+          admin_password: adminPassword,
+          admin_username: adminUsername.trim() || undefined,
+        }),
+      });
+      setNotice(
+        `Created ${createName.trim()} · invite ${body?.invite_code} · admin @${body?.admin_username}`
+      );
+      setCreateName("");
+      setCreateInvite("");
+      setAdminPhone("");
+      setAdminUsername("");
+      setAdminPassword("");
+      await load();
+    } catch (err: any) {
+      setNotice(err.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function issueAdmin(e: FormEvent) {
+    e.preventDefault();
+    if (!issueFor) return;
+    setBusy("issue");
+    setNotice(null);
+    try {
+      const body = await api<any>("/v1/admin/users", {
+        method: "POST",
+        body: JSON.stringify({
+          phone: issuePhone.trim(),
+          password: issuePassword,
+          username: issueUsername.trim(),
+          role: "enterprise_admin",
+          enterprise_id: issueFor.id,
+        }),
+      });
+      setNotice(`Issued enterprise admin @${body?.username} for ${issueFor.name}.`);
+      setIssueFor(null);
+      setIssuePhone("");
+      setIssueUsername("");
+      setIssuePassword("");
+    } catch (err: any) {
+      setNotice(err.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <AdminShell>
       <h1>Enterprises</h1>
       <div className="page-sub">
- Organizations, invite codes, and 90-day history retention (DataRetention).
+        Organizations, invite codes, and 90-day history retention (DataRetention).
       </div>
 
       <div className="toolbar">
@@ -140,6 +216,91 @@ export default function EnterprisesPage() {
       {notice && <div className="notice">{notice}</div>}
       {error && <div className="notice">Failed to load enterprises: {error}</div>}
 
+      {isPlatformOwner ? (
+        <div className="card" style={{ marginBottom: 16, maxWidth: 640 }}>
+          <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Create enterprise + admin</h2>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Platform owners issue a company and its first enterprise administrator account.
+          </p>
+          <form onSubmit={createEnterprise} style={{ display: "grid", gap: 10 }}>
+            <input
+              required
+              placeholder="Company name"
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+            />
+            <input
+              placeholder="Invite code (optional)"
+              value={createInvite}
+              onChange={(e) => setCreateInvite(e.target.value)}
+            />
+            <input
+              required
+              placeholder="Admin phone (11 digits)"
+              value={adminPhone}
+              onChange={(e) => setAdminPhone(e.target.value)}
+            />
+            <input
+              placeholder="Admin username (optional)"
+              value={adminUsername}
+              onChange={(e) => setAdminUsername(e.target.value)}
+            />
+            <input
+              required
+              type="password"
+              placeholder="Admin password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+            />
+            <button className="btn" type="submit" disabled={busy === "create"}>
+              {busy === "create" ? "Creating…" : "Create enterprise"}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      {issueFor ? (
+        <div className="card" style={{ marginBottom: 16, maxWidth: 640 }}>
+          <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>
+            Issue admin for {issueFor.name}
+          </h2>
+          <form onSubmit={issueAdmin} style={{ display: "grid", gap: 10 }}>
+            <input
+              required
+              placeholder="Phone (11 digits)"
+              value={issuePhone}
+              onChange={(e) => setIssuePhone(e.target.value)}
+            />
+            <input
+              required
+              placeholder="Username"
+              value={issueUsername}
+              onChange={(e) => setIssueUsername(e.target.value)}
+            />
+            <input
+              required
+              type="password"
+              placeholder="Password"
+              value={issuePassword}
+              onChange={(e) => setIssuePassword(e.target.value)}
+            />
+            <div className="toolbar" style={{ margin: 0 }}>
+              <button className="btn" type="submit" disabled={busy === "issue"}>
+                {busy === "issue" ? "Issuing…" : "Issue enterprise admin"}
+              </button>
+              <button
+                className="btn"
+                type="button"
+                disabled={!!busy}
+                onClick={() => setIssueFor(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="data">
           <thead>
@@ -149,17 +310,22 @@ export default function EnterprisesPage() {
               <th>Invite</th>
               <th>Retention (days)</th>
               <th>Created</th>
+              {isPlatformOwner ? <th>Actions</th> : null}
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={5} className="muted">Loading…</td>
+                <td colSpan={isPlatformOwner ? 6 : 5} className="muted">
+                  Loading…
+                </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">No enterprises found.</td>
+                <td colSpan={isPlatformOwner ? 6 : 5} className="muted">
+                  No enterprises found.
+                </td>
               </tr>
             )}
             {rows.map((r) => (
@@ -191,6 +357,24 @@ export default function EnterprisesPage() {
                   </div>
                 </td>
                 <td className="muted">{r.createdAt}</td>
+                {isPlatformOwner ? (
+                  <td>
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={!!busy}
+                      onClick={() => {
+                        setIssueFor(r);
+                        setIssuePhone("");
+                        setIssueUsername("");
+                        setIssuePassword("");
+                        setNotice(null);
+                      }}
+                    >
+                      Issue admin
+                    </button>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
