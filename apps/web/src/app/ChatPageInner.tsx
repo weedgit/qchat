@@ -859,6 +859,8 @@ export default function ChatPageInner() {
   const [avatarBusy, setAvatarBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
+  const loadingOlderUIRef = useRef(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [showJumpBottom, setShowJumpBottom] = useState(false);
   const [barPin, setBarPin] = useState<PinnedMessage | null>(null);
   const [pinsListOpen, setPinsListOpen] = useState(false);
@@ -1619,6 +1621,11 @@ export default function ChatPageInner() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [activeMessages.length, chat.activeId]);
 
+  useEffect(() => {
+    loadingOlderUIRef.current = false;
+    setLoadingOlder(false);
+  }, [chat.activeId]);
+
   function updateJumpBottomVisibility() {
     const el = scrollRef.current;
     if (!el) return;
@@ -1626,6 +1633,28 @@ export default function ChatPageInner() {
     const near = distance < 80;
     nearBottomRef.current = near;
     setShowJumpBottom(!near && el.scrollHeight > el.clientHeight + 40);
+
+    if (
+      el.scrollTop < 80 &&
+      chat.activeId &&
+      chat.hasMoreByConv[chat.activeId] !== false &&
+      !loadingOlderUIRef.current
+    ) {
+      loadingOlderUIRef.current = true;
+      setLoadingOlder(true);
+      const prevHeight = el.scrollHeight;
+      const prevTop = el.scrollTop;
+      void chat.loadOlderMessages(chat.activeId).then((n) => {
+        requestAnimationFrame(() => {
+          const node = scrollRef.current;
+          if (node && n > 0) {
+            node.scrollTop = node.scrollHeight - prevHeight + prevTop;
+          }
+          loadingOlderUIRef.current = false;
+          setLoadingOlder(false);
+        });
+      });
+    }
 
     if (pinnedList.length === 0) {
       setBarPin(null);
@@ -2829,6 +2858,14 @@ export default function ChatPageInner() {
                       {activeMessages.length === 0 && (
                         <div className="empty-state" style={{ minHeight: 200 }}>
                           <div className="muted">{t("chat.noMessagesHere")}</div>
+                        </div>
+                      )}
+                      {(loadingOlder ||
+                        (chat.activeId && chat.hasMoreByConv[chat.activeId] === false && activeMessages.length > 0)) && (
+                        <div className="muted" style={{ textAlign: "center", padding: "8px 0", fontSize: 12 }}>
+                          {loadingOlder
+                            ? t("chat.loadingOlder")
+                            : t("chat.historyStart")}
                         </div>
                       )}
                       {activeMessages.map((m) => (

@@ -37,6 +37,9 @@ export function useChat() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  const [hasMoreByConv, setHasMoreByConv] = useState<Record<string, boolean>>({});
+  const hasMoreRef = useRef<Record<string, boolean>>({});
+  const messagesListRef = useRef<Record<string, Message[]>>({});
   const [connected, setConnected] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string>("member");
@@ -66,6 +69,8 @@ export function useChat() {
   meRef.current = me;
   activeIdRef.current = activeId;
   conversationsRef.current = conversations;
+  messagesListRef.current = messages;
+  hasMoreRef.current = hasMoreByConv;
 
   useEffect(() => {
     if (!isQchatDesktop()) return;
@@ -223,11 +228,14 @@ export function useChat() {
 
   const loadMessages = useCallback(async (convId: string) => {
     try {
-      const body = await api<any>(`/v1/conversations/${convId}/messages?limit=100`);
+      const body = await api<any>(`/v1/conversations/${convId}/messages?limit=50`);
       const list = asList(body, "messages")
         .map((m: any) => normalizeMessage(m, meRef.current?.id))
         .sort((a: Message, b: Message) => a.createdAt.localeCompare(b.createdAt));
       setMessages((prev) => ({ ...prev, [convId]: list }));
+      const more = Boolean(body?.has_more);
+      hasMoreRef.current = { ...hasMoreRef.current, [convId]: more };
+      setHasMoreByConv((prev) => ({ ...prev, [convId]: more }));
 
       const last = list[list.length - 1];
       if (last && !last.mine) {
@@ -236,6 +244,40 @@ export function useChat() {
     } catch (e: any) {
       console.error("[qchat] load messages failed:", e?.message || e);
       setLoadError(e.message);
+    }
+  }, []);
+
+  const loadingOlderRef = useRef<Record<string, boolean>>({});
+  const loadOlderMessages = useCallback(async (convId: string): Promise<number> => {
+    if (loadingOlderRef.current[convId]) return 0;
+    if (hasMoreRef.current[convId] === false) return 0;
+    const existing = messagesListRef.current[convId] ?? [];
+    const oldest = existing.find((m) => typeof m.seq === "number" && !m.pending);
+    if (!oldest?.seq) return 0;
+    loadingOlderRef.current[convId] = true;
+    try {
+      const body = await api<any>(
+        `/v1/conversations/${convId}/messages?limit=50&before_seq=${oldest.seq}`
+      );
+      const older = asList(body, "messages")
+        .map((m: any) => normalizeMessage(m, meRef.current?.id))
+        .sort((a: Message, b: Message) => a.createdAt.localeCompare(b.createdAt));
+      const more = Boolean(body?.has_more);
+      hasMoreRef.current = { ...hasMoreRef.current, [convId]: more };
+      setHasMoreByConv((prev) => ({ ...prev, [convId]: more }));
+      if (older.length === 0) return 0;
+      setMessages((prev) => {
+        const cur = prev[convId] ?? [];
+        const seen = new Set(cur.map((m) => m.id));
+        const merged = [...older.filter((m) => !seen.has(m.id)), ...cur];
+        return { ...prev, [convId]: merged };
+      });
+      return older.length;
+    } catch (e: any) {
+      console.error("[qchat] load older messages failed:", e?.message || e);
+      return 0;
+    } finally {
+      loadingOlderRef.current[convId] = false;
     }
   }, []);
 
@@ -1528,6 +1570,7 @@ export function useChat() {
     conversations,
     activeId,
     messages,
+    hasMoreByConv,
     connected,
     loadError,
     myRole,
@@ -1537,6 +1580,7 @@ export function useChat() {
     stopTyping,
     openConversation,
     openDM,
+    loadOlderMessages,
     sendMessage,
     sendMediaMessage,
     sendVoiceMessage,

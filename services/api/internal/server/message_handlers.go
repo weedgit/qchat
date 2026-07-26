@@ -148,7 +148,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		if pid, ok := item["peer_id"].(string); ok && pid != "" {
 			item["peer_online"] = online[pid]
 		}
- // Per-viewer friend alias for DMs (preferences).
+		// Per-viewer friend alias for DMs (preferences).
 		if typ, _ := item["type"].(string); typ == "dm" {
 			if pid, ok := item["peer_id"].(string); ok && pid != "" {
 				var note, friendshipID string
@@ -336,7 +336,7 @@ func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 		s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
 			Type: "group.updated",
 			Payload: map[string]any{
-				"conversation_id": convID,
+				"conversation_id":  convID,
 				"added_member_ids": added,
 			},
 		})
@@ -396,9 +396,9 @@ func (s *Server) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request)
 	}
 
 	payload := map[string]any{
-		"conversation_id":   convID,
-		"removed_user_id":   targetID,
-		"removed_by":        c.UserID,
+		"conversation_id": convID,
+		"removed_user_id": targetID,
+		"removed_by":      c.UserID,
 	}
 	s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.member_remove", "user", targetID, "", clientIP(r), map[string]any{
 		"conversation_id": convID,
@@ -761,6 +761,15 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
+	var beforeSeq int64
+	if raw := strings.TrimSpace(r.URL.Query().Get("before_seq")); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			writeErr(w, 400, "invalid before_seq")
+			return
+		}
+		beforeSeq = v
+	}
 	var histFrom time.Time
 	var role, convType string
 	err := s.db.QueryRow(r.Context(), `
@@ -777,6 +786,9 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	// Groups: ordinary members never see recalled messages or notices.
 	// DMs: participants see an explicit recall notice.
 	showRecalled := convType == "dm" || isAdmin
+	// Fetch one extra row so the client can tell whether older history remains
+	// without a separate COUNT query.
+	fetch := limit + 1
 	rows, err := s.db.Query(r.Context(), `
 		SELECT m.id::text, m.sender_id::text, m.client_msg_id, m.seq, m.type,
 		       CASE
@@ -789,7 +801,8 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		FROM messages m JOIN users u ON u.id=m.sender_id
 		WHERE m.conversation_id=$1 AND m.created_at >= $2
 		  AND ($3 OR m.recalled=FALSE)
-		ORDER BY m.seq DESC LIMIT $5`, convID, histFrom, showRecalled, isAdmin, limit)
+		  AND ($6::bigint = 0 OR m.seq < $6)
+		ORDER BY m.seq DESC LIMIT $5`, convID, histFrom, showRecalled, isAdmin, fetch, beforeSeq)
 	if err != nil {
 		writeErrCode(w, 500, "query_failed", "query failed")
 		return
@@ -826,13 +839,17 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	if out == nil {
 		out = []map[string]any{}
 	}
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
 	// reverse to chronological
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
 	s.attachReactions(r, out, c.UserID)
 	s.attachReceipts(r, out, c.UserID, convID)
-	writeJSON(w, 200, map[string]any{"messages": out})
+	writeJSON(w, 200, map[string]any{"messages": out, "has_more": hasMore})
 }
 
 // attachReceipts sets delivered/read on the viewer's own messages.

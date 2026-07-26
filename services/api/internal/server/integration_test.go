@@ -343,3 +343,75 @@ func TestRefreshRotationAndBlock(t *testing.T) {
 		t.Fatalf("blocked user should not re-request: %v", blockedReq)
 	}
 }
+
+func TestMessageHistoryPagination(t *testing.T) {
+	ts, cleanup := testServer(t)
+	defer cleanup()
+	base := ts.URL
+
+	aTok, _, _, _ := registerUser(t, base, "ACME2026")
+	bTok, _, bID, bName := registerUser(t, base, "ACME2026")
+	req, _ := http.NewRequest(http.MethodPatch, base+"/v1/me", bytes.NewReader([]byte(`{"friend_privacy":"open"}`)))
+	req.Header.Set("Authorization", "Bearer "+bTok)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+
+	st, _ := postJSON(t, base+"/v1/friends/request", aTok, map[string]any{"username": bName})
+	if st != 201 {
+		t.Fatalf("friend: %d", st)
+	}
+	st, dm := postJSON(t, base+"/v1/conversations/dm", aTok, map[string]any{"user_id": bID})
+	if st != 200 && st != 201 {
+		t.Fatalf("dm: %d %v", st, dm)
+	}
+	cid := fmt.Sprint(dm["id"])
+	for i := 0; i < 12; i++ {
+		st, msg := postJSON(t, base+"/v1/conversations/"+cid+"/messages", aTok, map[string]any{
+			"type": "text", "body": fmt.Sprintf("page-%d", i), "client_msg_id": fmt.Sprintf("page-%d", i),
+		})
+		if st != 201 {
+			t.Fatalf("send %d: %d %v", i, st, msg)
+		}
+	}
+
+	st, page := getJSON(t, base+"/v1/conversations/"+cid+"/messages?limit=5", aTok)
+	if st != 200 {
+		t.Fatalf("list: %d %v", st, page)
+	}
+	if page["has_more"] != true {
+		t.Fatalf("expected has_more=true: %v", page)
+	}
+	list, _ := page["messages"].([]any)
+	if len(list) != 5 {
+		t.Fatalf("page size = %d, want 5", len(list))
+	}
+	first := list[0].(map[string]any)
+	oldestSeq := int64(first["seq"].(float64))
+	if fmt.Sprint(first["body"]) != "page-7" {
+		t.Fatalf("expected oldest body page-7, got %v", first["body"])
+	}
+
+	st, older := getJSON(
+		t, fmt.Sprintf("%s/v1/conversations/%s/messages?limit=5&before_seq=%d", base, cid, oldestSeq), aTok,
+	)
+	if st != 200 {
+		t.Fatalf("older list: %d %v", st, older)
+	}
+	olderList, _ := older["messages"].([]any)
+	if len(olderList) != 5 {
+		t.Fatalf("older page size = %d, want 5", len(olderList))
+	}
+	if older["has_more"] != true {
+		t.Fatalf("expected older has_more=true: %v", older)
+	}
+	for _, item := range olderList {
+		m := item.(map[string]any)
+		if int64(m["seq"].(float64)) >= oldestSeq {
+			t.Fatalf("older page included seq >= cursor: %v", m)
+		}
+	}
+}
