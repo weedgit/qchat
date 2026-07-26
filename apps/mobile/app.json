@@ -64,6 +64,14 @@
         }
       ],
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Qchat to scan group invite QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "@livekit/react-native-expo-plugin",
         {
           "android": {
