@@ -518,7 +518,8 @@ func ensureDeviceID(id string) string {
 	return uuid.NewString()
 }
 
-// guessRegion is a coarse fallback for registration / admin (no geo lookup).
+// guessRegion stores a registration region for admin display (requirements BE#8).
+// Public IPs use the same best-effort geo lookup as session locations.
 func guessRegion(ip string) string {
 	ip = strings.TrimSpace(ip)
 	if ip == "" {
@@ -526,6 +527,9 @@ func guessRegion(ip string) string {
 	}
 	if isPrivateOrLocalIP(ip) {
 		return "local"
+	}
+	if loc := lookupEstimatedLocation(ip); loc != "" {
+		return loc
 	}
 	return "unknown"
 }
