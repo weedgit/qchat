@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "../lib/api";
+import { isVideoMime } from "../lib/mediaLimits";
 import {
   attachNotificationResponseListener,
   ensureNotificationPermissions,
@@ -779,7 +780,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       opts: { kind: "image" | "file"; name: string; mimeType?: string; replyToId?: string }
     ) => {
       const { kind, name, mimeType, replyToId } = opts;
-      const preview = kind === "image" ? "Photo" : name || "File";
+      const isVideo = kind === "file" && isVideoMime(mimeType);
+      const uploadKind = kind === "image" ? "image" : isVideo ? "video" : "file";
+      const preview = kind === "image" ? "Photo" : name || (isVideo ? "Video" : "File");
       const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const optimistic: Message = {
         id: clientMsgId,
@@ -817,9 +820,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       try {
         const uploaded = await uploadMedia(
           localUri,
-          kind,
-          name || (kind === "image" ? "photo.jpg" : "file.bin"),
-          mimeType || (kind === "image" ? "image/jpeg" : "application/octet-stream")
+          uploadKind,
+          name || (kind === "image" ? "photo.jpg" : isVideo ? "video.mp4" : "file.bin"),
+          mimeType ||
+            (kind === "image"
+              ? "image/jpeg"
+              : isVideo
+                ? "video/mp4"
+                : "application/octet-stream")
         );
         const body = await api<any>(`/v1/conversations/${convId}/messages`, {
           method: "POST",

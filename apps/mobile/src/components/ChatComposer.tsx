@@ -22,6 +22,7 @@ import {
   useAudioRecorderState,
 } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { isVideoAttachmentHint, isVideoMime } from "../lib/mediaLimits";
 import { Message } from "../lib/types";
 import { useTheme, useThemedStyles } from "../context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../theme";
@@ -35,7 +36,10 @@ const EMOJI_GRID = [
 
 function messagePreview(m: Message): string {
   if (m.type === "image") return m.content || "Photo";
-  if (m.type === "file") return m.content || "File";
+  if (m.type === "file") {
+    if (isVideoAttachmentHint(m.content, m.mediaUrl)) return m.content || "Video";
+    return m.content || "File";
+  }
   if (m.type === "voice") return m.content || "Voice message";
   return m.content || "";
 }
@@ -110,9 +114,13 @@ export function ChatComposer({
     });
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
-    const mime = a.mimeType || "application/octet-stream";
+    const name = a.name || "file";
+    let mime = a.mimeType || "application/octet-stream";
+    if (!isVideoMime(mime) && isVideoAttachmentHint(name)) {
+      mime = "video/mp4";
+    }
     const kind = mime.startsWith("image/") ? "image" : "file";
-    onPickMedia(a.uri, kind, a.name || "file", mime);
+    onPickMedia(a.uri, kind, name, mime);
   }
 
   function openAttach() {
