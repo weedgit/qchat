@@ -12,10 +12,6 @@ import (
 
 const mfaRecoveryCodeCount = 10
 
-func isAdminRole(role string) bool {
-	return role == "enterprise_admin" || role == "platform_owner"
-}
-
 func (s *Server) clearMFARecoveryCodes(ctx context.Context, userID string) {
 	_, _ = s.db.Exec(ctx, `DELETE FROM mfa_recovery_codes WHERE user_id=$1`, userID)
 }

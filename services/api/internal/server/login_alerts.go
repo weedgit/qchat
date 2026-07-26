@@ -48,7 +48,7 @@ func (s *Server) recordAdminLoginAlerts(
 }
 
 func (s *Server) handleAdminLoginAlerts(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permAdminRead)
 	if c == nil {
 		return
 	}

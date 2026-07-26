@@ -80,7 +80,7 @@ func (s *Server) handleJoinEnterprise(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminRotateInvite(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permInviteManage)
 	if c == nil {
 		return
 	}
@@ -95,7 +95,7 @@ func (s *Server) handleAdminRotateInvite(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleAdminRevokeInvite(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permInviteManage)
 	if c == nil {
 		return
 	}
@@ -109,7 +109,7 @@ func (s *Server) handleAdminRevokeInvite(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleAdminActivateInvite(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permInviteManage)
 	if c == nil {
 		return
 	}

@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AdminShell from "@/components/AdminShell";
 import { api, asList } from "@/lib/api";
+import { can } from "@/lib/rbac";
 
 const PAGE_SIZE = 50;
 const REASON_MIN = 8;
@@ -257,6 +258,10 @@ export default function UsersPage() {
 
   const from = total === 0 ? 0 : offset + 1;
   const to = Math.min(offset + users.length, total);
+  const canCreate = can(meRole, "createMember") || can(meRole, "createConsoleRole");
+  const canBan = can(meRole, "ban");
+  const canReset = can(meRole, "resetPassword");
+  const canRevoke = can(meRole, "revokeSession");
 
   return (
     <AdminShell>
@@ -275,12 +280,14 @@ export default function UsersPage() {
         <button className="btn" onClick={search}>
           Search
         </button>
-        <button className="btn" type="button" onClick={() => setCreateOpen((v) => !v)}>
-          {createOpen ? "Close form" : "Create user"}
-        </button>
+        {canCreate ? (
+          <button className="btn" type="button" onClick={() => setCreateOpen((v) => !v)}>
+            {createOpen ? "Close form" : "Create user"}
+          </button>
+        ) : null}
       </div>
 
-      {createOpen && (
+      {createOpen && canCreate && (
         <form className="card" onSubmit={onCreate} style={{ marginBottom: 16, padding: 16 }}>
           <div className="page-sub" style={{ marginBottom: 12 }}>
             Assisted registration — admin creates a member allowlist-style without self-service OTP.
@@ -311,8 +318,15 @@ export default function UsersPage() {
               required
             />
             <select value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value="member">member</option>
-              {meRole === "platform_owner" ? (
+              {can(meRole, "createMember") ? <option value="member">member</option> : null}
+              {can(meRole, "createConsoleRole") ? (
+                <>
+                  <option value="compliance">compliance</option>
+                  <option value="support">support</option>
+                  <option value="read_only">read_only</option>
+                </>
+              ) : null}
+              {can(meRole, "issueEnterpriseAdmin") ? (
                 <option value="enterprise_admin">enterprise_admin (this enterprise)</option>
               ) : null}
             </select>
@@ -350,28 +364,34 @@ export default function UsersPage() {
             />
           </div>
           <div className="toolbar" style={{ flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-            <button
-              className="btn"
-              type="button"
-              disabled={actionBusy}
-              onClick={toggleBan}
-            >
-              {target.banned ? "Unblock sign-in" : "Block sign-in"}
-            </button>
-            <input
-              type="password"
-              placeholder="New temporary password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-            />
-            <button
-              className="btn"
-              type="button"
-              disabled={actionBusy}
-              onClick={resetPassword}
-            >
-              Reset password
-            </button>
+            {canBan ? (
+              <button
+                className="btn"
+                type="button"
+                disabled={actionBusy}
+                onClick={toggleBan}
+              >
+                {target.banned ? "Unblock sign-in" : "Block sign-in"}
+              </button>
+            ) : null}
+            {canReset ? (
+              <>
+                <input
+                  type="password"
+                  placeholder="New temporary password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={resetPassword}
+                >
+                  Reset password
+                </button>
+              </>
+            ) : null}
           </div>
           {actionErr && <div className="error-text" style={{ marginTop: 8 }}>{actionErr}</div>}
           {actionMsg && <div className="notice" style={{ marginTop: 8 }}>{actionMsg}</div>}
@@ -430,14 +450,18 @@ export default function UsersPage() {
                       <td className="muted">{formatDate(session.lastActiveAt)}</td>
                       <td className="muted">{formatDate(session.expiresAt)}</td>
                       <td>
-                        <button
-                          className="btn"
-                          type="button"
-                          disabled={actionBusy}
-                          onClick={() => revokeSession(session)}
-                        >
-                          Sign out
-                        </button>
+                        {canRevoke ? (
+                          <button
+                            className="btn"
+                            type="button"
+                            disabled={actionBusy}
+                            onClick={() => revokeSession(session)}
+                          >
+                            Sign out
+                          </button>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

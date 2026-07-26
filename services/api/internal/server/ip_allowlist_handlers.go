@@ -56,7 +56,7 @@ func (s *Server) verifyLoginIPAllowlist(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) handleAdminIPAllowlistList(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permAdminRead)
 	if c == nil {
 		return
 	}
@@ -96,7 +96,7 @@ func (s *Server) handleAdminIPAllowlistList(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleAdminIPAllowlistAdd(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permSecurityWrite)
 	if c == nil {
 		return
 	}
@@ -146,7 +146,7 @@ func (s *Server) handleAdminIPAllowlistAdd(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleAdminIPAllowlistDelete(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permSecurityWrite)
 	if c == nil {
 		return
 	}

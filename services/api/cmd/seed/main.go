@@ -52,10 +52,23 @@ func main() {
 		INSERT INTO users(enterprise_id, phone, password_hash, username, display_name, role)
 		VALUES ($1,'13800000003',$2,'bob','Bob','member')
 		ON CONFLICT (enterprise_id, phone) DO NOTHING`, entA, userHash)
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO users(enterprise_id, phone, password_hash, username, display_name, role)
+		VALUES ($1,'13800000004',$2,'compliance','Compliance Officer','compliance')
+		ON CONFLICT (enterprise_id, phone) DO NOTHING`, entA, adminHash)
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO users(enterprise_id, phone, password_hash, username, display_name, role)
+		VALUES ($1,'13800000005',$2,'support','Support Agent','support')
+		ON CONFLICT (enterprise_id, phone) DO NOTHING`, entA, adminHash)
+	_, _ = pool.Exec(ctx, `
+		INSERT INTO users(enterprise_id, phone, password_hash, username, display_name, role)
+		VALUES ($1,'13800000006',$2,'readonly','Read Only','read_only')
+		ON CONFLICT (enterprise_id, phone) DO NOTHING`, entA, adminHash)
 
 	log.Println("seed complete")
 	log.Println("Enterprise A invite: ACME2026")
 	log.Println("Enterprise B invite: BETA2026")
 	log.Println("Admin phone 13800000001 / admin12345")
 	log.Println("Users alice/bob phones 13800000002|13800000003 / user12345")
+	log.Println("Console roles: compliance 13800000004, support 13800000005, read_only 13800000006 / admin12345")
 }

@@ -13,7 +13,7 @@ import (
 // administrator's enterprise. It mirrors the self-service session view while
 // deliberately omitting refresh-token material.
 func (s *Server) handleAdminUserSessions(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permAdminRead)
 	if c == nil {
 		return
 	}
@@ -84,7 +84,7 @@ func (s *Server) handleAdminUserSessions(w http.ResponseWriter, r *http.Request)
 // tenant predicate is part of the UPDATE so a cross-enterprise session cannot
 // be revoked even if its UUID is known.
 func (s *Server) handleAdminRevokeUserSession(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permUsersRevokeSession)
 	if c == nil {
 		return
 	}
