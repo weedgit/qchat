@@ -1113,6 +1113,11 @@ func (s *Server) handleReact(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"emoji": req.Emoji, "count": count, "added": added})
 }
 
+// voiceDurationOK enforces requirements-en §2.4 (max 60s recorded voice).
+func voiceDurationOK(sec int) bool {
+	return sec >= 1 && sec <= 60
+}
+
 func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
@@ -1124,6 +1129,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		ReplyToID   string   `json:"reply_to_id"`
 		Mentions    []string `json:"mentions"`
 		MentionAll  bool     `json:"mention_all"`
+		DurationSec int      `json:"duration_sec"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeErr(w, 400, "invalid json")
@@ -1137,6 +1143,11 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Type == "text" && len([]rune(req.Body)) > 1000 {
 		writeErr(w, 400, "message too long")
+		return
+	}
+	// requirements-en §2.4: recorded voice messages are capped at 60 seconds.
+	if req.Type == "voice" && !voiceDurationOK(req.DurationSec) {
+		writeErr(w, 400, "voice duration must be 1–60 seconds")
 		return
 	}
 	var role string

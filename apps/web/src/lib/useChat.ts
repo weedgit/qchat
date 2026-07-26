@@ -1224,6 +1224,7 @@ export function useChat() {
             media_url: uploaded.url,
             client_msg_id: clientMsgId,
             reply_to_id: replyToId || undefined,
+            duration_sec: Math.max(1, Math.min(60, Math.round(durationSec))),
           }),
         });
         if (cancelledUploadsRef.current.has(clientMsgId)) {
