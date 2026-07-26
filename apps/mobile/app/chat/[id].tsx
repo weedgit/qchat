@@ -595,6 +595,7 @@ export default function ChatScreen() {
     conversation?.type === "social_group" || conversation?.type === "group";
   const canAdminRecall =
     isGroup && (conversation?.role === "owner" || conversation?.role === "admin");
+  const canPin = !isGroup || canAdminRecall;
   const list = messages[convId] ?? [];
 
   const selectedMsgs = useMemo(
@@ -1093,6 +1094,7 @@ export default function ChatScreen() {
               msg={ctxMsg}
               pinned={pinnedIdSet.has(ctxMsg.id)}
               canAdminRecall={canAdminRecall}
+              canPin={canPin}
               onClose={() => setCtxMsg(null)}
               onReact={onPopupReact}
               onAction={onPopupAction}
@@ -1256,6 +1258,7 @@ export default function ChatScreen() {
             pinned={conversation?.pinnedMessages?.some((p) => p.id === ctxMsg.id) ||
               conversation?.pinnedMessageId === ctxMsg.id}
             canAdminRecall={canAdminRecall}
+            canPin={canPin}
             onClose={() => setCtxMsg(null)}
             onReact={onPopupReact}
             onAction={onPopupAction}

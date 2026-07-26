@@ -400,6 +400,10 @@ func (s *Server) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request)
 		"removed_user_id":   targetID,
 		"removed_by":        c.UserID,
 	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.member_remove", "user", targetID, "", clientIP(r), map[string]any{
+		"conversation_id": convID,
+		"target_role":     targetRole,
+	})
 	// Notify removed user so their client drops the conversation.
 	s.hub.PublishToUsers([]string{targetID}, ws.Event{Type: "group.member_removed", Payload: payload})
 	// Owners/admins see the removal; ordinary members stay silent (requirements-en).
@@ -654,7 +658,14 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "join failed")
 		return
 	}
-	s.hub.PublishToUsers([]string{owner}, ws.Event{Type: "group.join_request", Payload: map[string]any{"conversation_id": convID, "user_id": c.UserID}})
+	// Owners and administrators both approve joins (handleApproveJoin), so both
+	// must see the request. adminIDs covers the owner row; fall back to the
+	// conversation's owner_id if the membership row is somehow missing.
+	approvers := s.adminIDs(r, convID)
+	if len(approvers) == 0 {
+		approvers = []string{owner}
+	}
+	s.hub.PublishToUsers(approvers, ws.Event{Type: "group.join_request", Payload: map[string]any{"conversation_id": convID, "user_id": c.UserID}})
 	writeJSON(w, 202, map[string]any{"status": "pending_approval"})
 }
 
@@ -697,14 +708,11 @@ func (s *Server) handleMuteMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	if req.Duration == "all" {
-		_, _ = s.db.Exec(r.Context(), `UPDATE conversations SET mute_all=TRUE WHERE id=$1`, convID)
-		writeJSON(w, 200, map[string]any{"mute_all": true})
-		return
-	}
-	if req.Duration == "all_off" {
-		_, _ = s.db.Exec(r.Context(), `UPDATE conversations SET mute_all=FALSE WHERE id=$1`, convID)
-		writeJSON(w, 200, map[string]any{"mute_all": false})
+	if req.Duration == "all" || req.Duration == "all_off" {
+		on := req.Duration == "all"
+		_, _ = s.db.Exec(r.Context(), `UPDATE conversations SET mute_all=$2 WHERE id=$1`, convID, on)
+		s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.mute_all", "conversation", convID, "", clientIP(r), map[string]any{"mute_all": on})
+		writeJSON(w, 200, map[string]any{"mute_all": on})
 		return
 	}
 	if req.Duration == "off" {
@@ -715,6 +723,7 @@ func (s *Server) handleMuteMember(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "unmute failed")
 			return
 		}
+		s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.unmute", "user", req.UserID, "", clientIP(r), map[string]any{"conversation_id": convID})
 		writeJSON(w, 200, map[string]any{"mute_until": nil})
 		return
 	}
@@ -738,6 +747,10 @@ func (s *Server) handleMuteMember(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "mute failed")
 		return
 	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.mute", "user", req.UserID, "", clientIP(r), map[string]any{
+		"conversation_id": convID,
+		"duration":        req.Duration,
+	})
 	writeJSON(w, 200, map[string]any{"mute_until": until})
 }
 
@@ -1240,6 +1253,13 @@ func (s *Server) handleRecall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = s.db.Exec(r.Context(), `UPDATE messages SET recalled=TRUE, recalled_by=$2 WHERE id=$1`, msgID, c.UserID)
+	// Message bodies stay out of the audit meta; the log records who acted on
+	// what, not the content, which is reachable only through messages.inspect.
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "message.recall", "message", msgID, "", clientIP(r), map[string]any{
+		"conversation_id": convID,
+		"sender_id":       sender,
+		"by_moderator":    sender != c.UserID,
+	})
 	payload := map[string]any{"id": msgID, "conversation_id": convID}
 	if convType == "dm" {
 		// DMs: all participants see an explicit recall notice.
