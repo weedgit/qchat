@@ -122,11 +122,11 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var req struct {
-		Name              string `json:"name"`
-		InviteCode        string `json:"invite_code"`
-		AdminPhone        string `json:"admin_phone"`
-		AdminPassword     string `json:"admin_password"`
-		AdminUsername     string `json:"admin_username"`
+		Name          string `json:"name"`
+		InviteCode    string `json:"invite_code"`
+		AdminPhone    string `json:"admin_phone"`
+		AdminPassword string `json:"admin_password"`
+		AdminUsername string `json:"admin_username"`
 	}
 	if err := decodeJSON(r, &req); err != nil || req.Name == "" {
 		writeErr(w, 400, "name required")
@@ -372,11 +372,32 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "user_id required (valid user id) for message access")
 		return
 	}
+	var exists bool
+	if err := s.db.QueryRow(r.Context(), `
+		SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enterprise_id=$2)`,
+		userID, c.EnterpriseID).Scan(&exists); err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+	if !exists {
+		writeErr(w, 404, "user not found")
+		return
+	}
+
+	limit, offset := adminListRange(r)
+	var total int
+	if err := s.db.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM messages
+		WHERE enterprise_id=$1 AND sender_id=$2`, c.EnterpriseID, userID).Scan(&total); err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
 	rows, err := s.db.Query(r.Context(), `
 		SELECT m.id::text, m.conversation_id::text, m.sender_id::text, m.body, m.type, m.created_at
 		FROM messages m
 		WHERE m.enterprise_id=$1 AND m.sender_id=$2
-		ORDER BY m.created_at DESC LIMIT 100`, c.EnterpriseID, userID)
+		ORDER BY m.created_at DESC
+		LIMIT $3 OFFSET $4`, c.EnterpriseID, userID, limit, offset)
 	if err != nil {
 		writeErr(w, 500, "query failed")
 		return
@@ -392,8 +413,13 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	if out == nil {
 		out = []map[string]any{}
 	}
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "messages.inspect", "user", userID.String(), reason, clientIP(r), map[string]any{"count": len(out)})
-	writeJSON(w, 200, map[string]any{"messages": out})
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "messages.inspect", "user", userID.String(), reason, clientIP(r), map[string]any{
+		"count": len(out), "total": total, "limit": limit, "offset": offset,
+	})
+	writeJSON(w, 200, map[string]any{
+		"messages": out, "total": total, "limit": limit, "offset": offset,
+		"has_more": offset+len(out) < total,
+	})
 }
 
 func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
@@ -422,4 +448,3 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"audits": out})
 }
-
