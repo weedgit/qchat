@@ -139,6 +139,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/admin/invite/activate", s.auth(s.handleAdminActivateInvite))
 	s.mux.HandleFunc("PATCH /v1/admin/enterprises/{id}", s.auth(s.handleAdminPatchEnterprise))
 	s.mux.HandleFunc("POST /v1/admin/retention/run", s.auth(s.handleAdminRunRetention))
+	s.mux.HandleFunc("GET /v1/admin/security/ip-allowlist", s.auth(s.handleAdminIPAllowlistList))
+	s.mux.HandleFunc("POST /v1/admin/security/ip-allowlist", s.auth(s.handleAdminIPAllowlistAdd))
+	s.mux.HandleFunc("DELETE /v1/admin/security/ip-allowlist/{id}", s.auth(s.handleAdminIPAllowlistDelete))
 
 	// Calls (LiveKit 1:1) + push stubs
 	s.mux.HandleFunc("POST /v1/calls", s.auth(s.handleStartCall))

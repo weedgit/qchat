@@ -75,6 +75,8 @@ export default function AdminLoginPage() {
       } else if (code === "mfa_invalid") {
         setMfaRequired(true);
         setError("Invalid MFA code. Try again.");
+      } else if (code === "ip_not_allowed") {
+        setError("Sign-in is not allowed from this IP address.");
       } else {
         setError(e.message);
       }

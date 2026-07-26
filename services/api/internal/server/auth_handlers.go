@@ -253,6 +253,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "account banned")
 		return
 	}
+	if !s.verifyLoginIPAllowlist(w, r, uid, entID, role) {
+		return
+	}
 	if !s.verifyLoginMFA(w, role, mfaSecret, mfaActive, req.MFACode) {
 		return
 	}

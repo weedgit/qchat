@@ -2,11 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/AdminShell";
-import { api } from "@/lib/api";
+import { ApiError, api, asList } from "@/lib/api";
 
 type MFAStatus = {
   mfa_active?: boolean;
   configured?: boolean;
+};
+
+type AllowEntry = {
+  id: string;
+  cidr: string;
+  label?: string;
 };
 
 export default function SecurityPage() {
@@ -17,6 +23,11 @@ export default function SecurityPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [entries, setEntries] = useState<AllowEntry[]>([]);
+  const [enforced, setEnforced] = useState(false);
+  const [cidrInput, setCidrInput] = useState("");
+  const [labelInput, setLabelInput] = useState("");
+  const [ipError, setIpError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -28,9 +39,29 @@ export default function SecurityPage() {
     }
   }, []);
 
+  const loadAllowlist = useCallback(async () => {
+    setIpError(null);
+    try {
+      const body = await api<any>("/v1/admin/security/ip-allowlist");
+      setEnforced(Boolean(body?.enforced));
+      setEntries(
+        asList(body, "entries")
+          .map((e: any) => ({
+            id: String(e?.id ?? ""),
+            cidr: String(e?.cidr ?? ""),
+            label: String(e?.label ?? ""),
+          }))
+          .filter((e: AllowEntry) => e.id)
+      );
+    } catch (e: any) {
+      setIpError(e.message);
+    }
+  }, []);
+
   useEffect(() => {
     load();
-  }, [load]);
+    loadAllowlist();
+  }, [load, loadAllowlist]);
 
   async function startSetup() {
     setBusy(true);
@@ -88,22 +119,52 @@ export default function SecurityPage() {
     }
   }
 
+  async function addCIDR() {
+    setBusy(true);
+    setIpError(null);
+    try {
+      await api("/v1/admin/security/ip-allowlist", {
+        method: "POST",
+        body: JSON.stringify({ cidr: cidrInput.trim(), label: labelInput.trim() }),
+      });
+      setCidrInput("");
+      setLabelInput("");
+      await loadAllowlist();
+    } catch (e: any) {
+      setIpError(e instanceof ApiError ? e.message : e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeCIDR(id: string) {
+    setBusy(true);
+    setIpError(null);
+    try {
+      await api(`/v1/admin/security/ip-allowlist/${id}`, { method: "DELETE" });
+      await loadAllowlist();
+    } catch (e: any) {
+      setIpError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const active = Boolean(status?.mfa_active);
 
   return (
     <AdminShell>
       <h1>Security</h1>
-      <div className="page-sub">Administrator multi-factor authentication (TOTP)</div>
+      <div className="page-sub">Administrator MFA and IP allowlists</div>
 
-      <div className="card" style={{ maxWidth: 560 }}>
+      <div className="card" style={{ maxWidth: 560, marginBottom: 16 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Multi-factor authentication</h2>
         <p>
-          Status:{" "}
-          <strong>{active ? "Enabled" : "Disabled"}</strong>
+          Status: <strong>{active ? "Enabled" : "Disabled"}</strong>
         </p>
         <p className="muted">
           When enabled, signing in to the admin console requires a 6-digit code from an
-          authenticator app (Google Authenticator, 1Password, etc.). Password reset by
-          another admin also clears MFA as a recovery path.
+          authenticator app. Password reset by another admin also clears MFA as a recovery path.
         </p>
 
         {!active && !secret ? (
@@ -174,6 +235,74 @@ export default function SecurityPage() {
 
         {error ? <div className="error-text" style={{ marginTop: 12 }}>{error}</div> : null}
         {info ? <div className="muted" style={{ marginTop: 12 }}>{info}</div> : null}
+      </div>
+
+      <div className="card" style={{ maxWidth: 560 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Admin IP allowlist</h2>
+        <p>
+          Policy: <strong>{enforced ? "Enforced" : "Off (empty list)"}</strong>
+        </p>
+        <p className="muted">
+          When at least one CIDR is listed, administrators in this enterprise may only sign in
+          from matching client IPs. Single addresses are stored as /32 (IPv4) or /128 (IPv6).
+        </p>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <input
+            value={cidrInput}
+            onChange={(e) => setCidrInput(e.target.value)}
+            placeholder="10.0.0.0/8 or 203.0.113.10"
+            style={{ flex: "1 1 180px" }}
+          />
+          <input
+            value={labelInput}
+            onChange={(e) => setLabelInput(e.target.value)}
+            placeholder="Label (optional)"
+            style={{ flex: "1 1 120px" }}
+          />
+          <button
+            className="btn"
+            type="button"
+            disabled={busy || !cidrInput.trim()}
+            onClick={addCIDR}
+          >
+            Add
+          </button>
+        </div>
+
+        {entries.length === 0 ? (
+          <p className="muted">No entries — allowlist disabled.</p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+            {entries.map((e) => (
+              <li
+                key={e.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  borderTop: "1px solid var(--border, #333)",
+                  paddingTop: 8,
+                }}
+              >
+                <div>
+                  <code>{e.cidr}</code>
+                  {e.label ? <span className="muted"> · {e.label}</span> : null}
+                </div>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => removeCIDR(e.id)}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {ipError ? <div className="error-text" style={{ marginTop: 12 }}>{ipError}</div> : null}
       </div>
     </AdminShell>
   );
