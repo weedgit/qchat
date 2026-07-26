@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { ResizeMode, Video } from "expo-av";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
@@ -22,6 +23,8 @@ import { ChatComposer } from "../../src/components/ChatComposer";
 import { MessageActionPopup } from "../../src/components/MessageActionPopup";
 import { useChat } from "../../src/context/ChatContext";
 import { useCallApi } from "../../src/context/CallContext";
+import { mediaAuthURL } from "../../src/lib/api";
+import { isVideoAttachmentHint } from "../../src/lib/mediaLimits";
 import { Conversation, Message, Reaction, conversationDisplayName } from "../../src/lib/types";
 import {
   nextPinnedFromScroll,
@@ -33,7 +36,10 @@ import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 function messageBody(item: Message): string {
   if (item.type === "image") return item.content || "Photo";
-  if (item.type === "file") return item.content || "File";
+  if (item.type === "file") {
+    if (isVideoAttachmentHint(item.content, item.mediaUrl)) return item.content || "Video";
+    return item.content || "File";
+  }
   if (item.type === "voice") return item.content || "Voice message";
   if (item.mediaUrl && !item.content) {
     if (item.type === "image") return "Photo";
@@ -129,19 +135,61 @@ const receiptCountStyle = {
 function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const isVideo =
+    (item.type === "file" || item.type === "video") &&
+    Boolean(item.mediaUrl) &&
+    isVideoAttachmentHint(item.content, item.mediaUrl);
   const icon =
-    item.type === "image" ? "image-outline" : item.type === "voice" ? "mic-outline" : "document-outline";
+    item.type === "image"
+      ? "image-outline"
+      : item.type === "voice"
+        ? "mic-outline"
+        : isVideo
+          ? "videocam-outline"
+          : "document-outline";
   const label =
-    item.type === "image" ? "Photo" : item.type === "voice" ? "Voice message" : "File";
+    item.type === "image"
+      ? "Photo"
+      : item.type === "voice"
+        ? "Voice message"
+        : isVideo
+          ? "Video"
+          : "File";
   const detail =
     item.content &&
     item.content !== "Photo" &&
     item.content !== "File" &&
+    item.content !== "Video" &&
     item.content !== "Voice message"
       ? item.content
       : null;
   const tint = mine ? "#fff" : colors.text;
   const subTint = mine ? "rgba(255,255,255,0.8)" : colors.textMuted;
+  const videoUri = isVideo ? mediaAuthURL(item.mediaUrl) || item.mediaUrl : undefined;
+
+  if (isVideo && videoUri) {
+    return (
+      <View style={styles.videoCol}>
+        <Pressable onPress={(e) => e?.stopPropagation?.()}>
+          <Video
+            source={{ uri: videoUri }}
+            useNativeControls
+            resizeMode={ResizeMode.CONTAIN}
+            style={styles.videoPlayer}
+          />
+        </Pressable>
+        {detail ? (
+          <Text style={[styles.mediaDetail, { color: subTint }]} numberOfLines={2}>
+            {detail}
+          </Text>
+        ) : (
+          <Text style={[styles.mediaTitle, { color: tint }]} numberOfLines={1}>
+            {label}
+          </Text>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.mediaRow}>
@@ -1498,6 +1546,13 @@ function makeStyles(c: ColorTokens) {
   mineText: { color: "#fff" },
   peerText: { color: c.text },
   mediaRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, minWidth: 140 },
+  videoCol: { gap: 6, minWidth: 200, maxWidth: 260 },
+  videoPlayer: {
+    width: 240,
+    height: 180,
+    backgroundColor: "#000",
+    borderRadius: 8,
+  },
   mediaIconWrap: {
     width: 36,
     height: 36,
