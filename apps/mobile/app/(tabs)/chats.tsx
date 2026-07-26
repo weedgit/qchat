@@ -209,6 +209,13 @@ export default function ChatsScreen() {
           </View>
           <Pressable
             style={styles.joinBtn}
+            onPress={() => router.push("/create-group")}
+            accessibilityLabel="Create group"
+          >
+            <Ionicons name="people-outline" size={20} color={colors.accent} />
+          </Pressable>
+          <Pressable
+            style={styles.joinBtn}
             onPress={() => router.push("/join-group")}
             accessibilityLabel="Join group"
           >
@@ -234,7 +241,7 @@ export default function ChatsScreen() {
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
-            No conversations yet. Tap New or open Contacts to start a DM.
+            No conversations yet. Tap New for a DM, or the people icon to create a group.
           </Text>
         }
         renderItem={({ item }) => {

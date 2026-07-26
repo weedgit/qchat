@@ -1,0 +1,229 @@
+/**
+ * Create a social group: title + optional friend invites.
+ * Mirrors web Groups modal POST /v1/groups.
+ */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Stack, router } from "expo-router";
+import { Avatar } from "../src/components/Avatar";
+import { useChat } from "../src/context/ChatContext";
+import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
+import { api, asList } from "../src/lib/api";
+import { Friend, normalizeFriend } from "../src/lib/types";
+import { radius, spacing, type ColorTokens } from "../src/theme";
+
+export default function CreateGroupScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const { loadConversations } = useChat();
+  const [title, setTitle] = useState("");
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [loadingFriends, setLoadingFriends] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const loadFriends = useCallback(async () => {
+    setLoadingFriends(true);
+    try {
+      const body = await api<any>("/v1/friends");
+      setFriends(
+        asList(body, "friends", "users")
+          .map(normalizeFriend)
+          .filter((f) => f.status === "accepted")
+      );
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not load friends");
+      setFriends([]);
+    } finally {
+      setLoadingFriends(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFriends();
+  }, [loadFriends]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return friends;
+    return friends.filter((f) => {
+      const name = (f.note || f.nickname || f.username).toLowerCase();
+      return name.includes(q) || f.username.toLowerCase().includes(q);
+    });
+  }, [friends, query]);
+
+  function togglePick(userId: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  async function create() {
+    const name = title.trim();
+    if (!name) {
+      Alert.alert("Create group", "Enter a group name.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const body: Record<string, unknown> = { title: name };
+      if (picked.size > 0) body.member_ids = [...picked];
+      const res = await api<any>("/v1/groups", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      const id = String(res?.id ?? "");
+      await loadConversations();
+      if (id) {
+        router.replace(`/chat/${id}`);
+      } else {
+        router.back();
+      }
+    } catch (e: any) {
+      Alert.alert("Could not create group", e?.message || "Create failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Stack.Screen options={{ title: "New group" }} />
+      <View style={styles.root}>
+        <Text style={styles.label}>Group name</Text>
+        <TextInput
+          style={styles.input}
+          value={title}
+          onChangeText={setTitle}
+          placeholder="e.g. Project team"
+          placeholderTextColor={colors.textMuted}
+          maxLength={80}
+          editable={!busy}
+          autoFocus
+        />
+        <Text style={styles.label}>
+          Invite friends{picked.size ? ` (${picked.size})` : ""} · optional
+        </Text>
+        <TextInput
+          style={styles.input}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search friends"
+          placeholderTextColor={colors.textMuted}
+          autoCapitalize="none"
+          editable={!busy}
+        />
+        {loadingFriends ? (
+          <ActivityIndicator color={colors.accent} style={{ marginTop: 24 }} />
+        ) : (
+          <FlatList
+            style={styles.list}
+            data={filtered}
+            keyExtractor={(f) => f.userId}
+            keyboardShouldPersistTaps="handled"
+            ListEmptyComponent={
+              <Text style={styles.empty}>
+                {friends.length === 0
+                  ? "No accepted friends yet. You can still create the group alone."
+                  : "No matches."}
+              </Text>
+            }
+            renderItem={({ item: f }) => {
+              const selected = picked.has(f.userId);
+              const name = f.note || f.nickname || f.username;
+              return (
+                <Pressable
+                  style={styles.row}
+                  onPress={() => togglePick(f.userId)}
+                  disabled={busy}
+                >
+                  <Avatar name={name} url={f.avatarUrl} size={40} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.name} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    <Text style={styles.meta}>@{f.username}</Text>
+                  </View>
+                  <Ionicons
+                    name={selected ? "checkmark-circle" : "ellipse-outline"}
+                    size={24}
+                    color={selected ? colors.accent : colors.textMuted}
+                  />
+                </Pressable>
+              );
+            }}
+          />
+        )}
+        <Pressable
+          style={[styles.btn, (busy || !title.trim()) && { opacity: 0.6 }]}
+          onPress={create}
+          disabled={busy || !title.trim()}
+        >
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.btnText}>Create group</Text>
+          )}
+        </Pressable>
+      </View>
+    </>
+  );
+}
+
+function makeStyles(c: ColorTokens) {
+  return StyleSheet.create({
+    root: {
+      flex: 1,
+      backgroundColor: c.bg,
+      padding: spacing.lg,
+      gap: spacing.sm,
+    },
+    label: { fontSize: 13, fontWeight: "600", color: c.textSecondary, marginTop: 4 },
+    input: {
+      backgroundColor: c.inputBg,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: 12,
+      color: c.text,
+      fontSize: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: c.border,
+    },
+    list: { flex: 1, marginTop: 4 },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      paddingVertical: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: c.border,
+    },
+    name: { fontSize: 15, fontWeight: "600", color: c.text },
+    meta: { fontSize: 12, color: c.textMuted, marginTop: 2 },
+    empty: { color: c.textMuted, fontSize: 13, marginTop: 16, lineHeight: 18 },
+    btn: {
+      backgroundColor: c.accent,
+      borderRadius: radius.md,
+      paddingVertical: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 48,
+      marginTop: spacing.sm,
+    },
+    btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  });
+}
