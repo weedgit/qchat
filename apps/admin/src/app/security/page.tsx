@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import AdminShell from "@/components/AdminShell";
 import { ApiError, api, asList } from "@/lib/api";
+import { can } from "@/lib/rbac";
 
 type MFAStatus = {
   mfa_active?: boolean;
@@ -61,6 +62,7 @@ export default function SecurityPage() {
   const [ipError, setIpError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<LoginAlert[]>([]);
   const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [meRole, setMeRole] = useState("");
 
   const load = useCallback(async () => {
     setError(null);
@@ -114,6 +116,9 @@ export default function SecurityPage() {
     load();
     loadAllowlist();
     loadAlerts();
+    api<any>("/v1/me")
+      .then((me) => setMeRole(String(me?.role ?? "")))
+      .catch(() => setMeRole(""));
   }, [load, loadAllowlist, loadAlerts]);
 
   useEffect(() => {
@@ -260,6 +265,7 @@ export default function SecurityPage() {
 
   const active = Boolean(status?.mfa_active);
   const remaining = Number(status?.recovery_codes_remaining ?? 0);
+  const canWriteSecurity = can(meRole, "writeSecurity");
 
   return (
     <AdminShell>
@@ -407,28 +413,32 @@ export default function SecurityPage() {
           from matching client IPs. Single addresses are stored as /32 (IPv4) or /128 (IPv6).
         </p>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <input
-            value={cidrInput}
-            onChange={(e) => setCidrInput(e.target.value)}
-            placeholder="10.0.0.0/8 or 203.0.113.10"
-            style={{ flex: "1 1 180px" }}
-          />
-          <input
-            value={labelInput}
-            onChange={(e) => setLabelInput(e.target.value)}
-            placeholder="Label (optional)"
-            style={{ flex: "1 1 120px" }}
-          />
-          <button
-            className="btn"
-            type="button"
-            disabled={busy || !cidrInput.trim()}
-            onClick={addCIDR}
-          >
-            Add
-          </button>
-        </div>
+        {canWriteSecurity ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            <input
+              value={cidrInput}
+              onChange={(e) => setCidrInput(e.target.value)}
+              placeholder="10.0.0.0/8 or 203.0.113.10"
+              style={{ flex: "1 1 180px" }}
+            />
+            <input
+              value={labelInput}
+              onChange={(e) => setLabelInput(e.target.value)}
+              placeholder="Label (optional)"
+              style={{ flex: "1 1 120px" }}
+            />
+            <button
+              className="btn"
+              type="button"
+              disabled={busy || !cidrInput.trim()}
+              onClick={addCIDR}
+            >
+              Add
+            </button>
+          </div>
+        ) : (
+          <p className="muted">IP allowlist is read-only for your role.</p>
+        )}
 
         {entries.length === 0 ? (
           <p className="muted">No entries — allowlist disabled.</p>
@@ -450,14 +460,16 @@ export default function SecurityPage() {
                   <code>{e.cidr}</code>
                   {e.label ? <span className="muted"> · {e.label}</span> : null}
                 </div>
-                <button
-                  className="btn"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => removeCIDR(e.id)}
-                >
-                  Remove
-                </button>
+                {canWriteSecurity ? (
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => removeCIDR(e.id)}
+                  >
+                    Remove
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>

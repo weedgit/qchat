@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/AdminShell";
 import { api, asList } from "@/lib/api";
+import { can } from "@/lib/rbac";
 
 interface Enterprise {
   id: string;
@@ -45,6 +46,8 @@ export default function EnterprisesPage() {
   const [issuePassword, setIssuePassword] = useState("");
 
   const isPlatformOwner = meRole === "platform_owner";
+  const canInvite = can(meRole, "manageInvite");
+  const canRetention = can(meRole, "writeEnterprise");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -199,18 +202,24 @@ export default function EnterprisesPage() {
       </div>
 
       <div className="toolbar">
-        <button className="btn" type="button" disabled={!!busy} onClick={rotateInvite}>
-          {busy === "rotate" ? "Rotating…" : "Rotate invite"}
-        </button>
-        <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(false)}>
-          {busy === "revoke" ? "Revoking…" : "Revoke invite"}
-        </button>
-        <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(true)}>
-          {busy === "activate" ? "Activating…" : "Activate invite"}
-        </button>
-        <button className="btn" type="button" disabled={!!busy} onClick={runRetention}>
-          {busy === "run-retention" ? "Running…" : "Run retention now"}
-        </button>
+        {canInvite ? (
+          <>
+            <button className="btn" type="button" disabled={!!busy} onClick={rotateInvite}>
+              {busy === "rotate" ? "Rotating…" : "Rotate invite"}
+            </button>
+            <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(false)}>
+              {busy === "revoke" ? "Revoking…" : "Revoke invite"}
+            </button>
+            <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(true)}>
+              {busy === "activate" ? "Activating…" : "Activate invite"}
+            </button>
+          </>
+        ) : null}
+        {canRetention ? (
+          <button className="btn" type="button" disabled={!!busy} onClick={runRetention}>
+            {busy === "run-retention" ? "Running…" : "Run retention now"}
+          </button>
+        ) : null}
       </div>
 
       {notice && <div className="notice">{notice}</div>}
@@ -338,23 +347,27 @@ export default function EnterprisesPage() {
                   </span>
                 </td>
                 <td>
-                  <div className="toolbar" style={{ gap: 6, margin: 0 }}>
-                    <input
-                      style={{ width: 72 }}
-                      value={retentionDraft[r.id] ?? String(r.retentionDays)}
-                      onChange={(e) =>
-                        setRetentionDraft((d) => ({ ...d, [r.id]: e.target.value }))
-                      }
-                    />
-                    <button
-                      className="btn"
-                      type="button"
-                      disabled={busy === `retention-${r.id}`}
-                      onClick={() => saveRetention(r.id)}
-                    >
-                      Save
-                    </button>
-                  </div>
+                  {canRetention ? (
+                    <div className="toolbar" style={{ gap: 6, margin: 0 }}>
+                      <input
+                        style={{ width: 72 }}
+                        value={retentionDraft[r.id] ?? String(r.retentionDays)}
+                        onChange={(e) =>
+                          setRetentionDraft((d) => ({ ...d, [r.id]: e.target.value }))
+                        }
+                      />
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={busy === `retention-${r.id}`}
+                        onClick={() => saveRetention(r.id)}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  ) : (
+                    <span>{r.retentionDays} days</span>
+                  )}
                 </td>
                 <td className="muted">{r.createdAt}</td>
                 {isPlatformOwner ? (

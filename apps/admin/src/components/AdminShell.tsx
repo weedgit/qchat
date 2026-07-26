@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearToken, getToken } from "@/lib/api";
+import { api, clearToken, getToken } from "@/lib/api";
+import { can, isConsoleRole } from "@/lib/rbac";
 
 const NAV = [
-  { href: "/", label: "Overview" },
-  { href: "/users", label: "Users" },
-  { href: "/enterprises", label: "Enterprises" },
-  { href: "/audits", label: "Audit log" },
-  { href: "/messages", label: "Message inspect" },
-  { href: "/security", label: "Security" },
+  { href: "/", label: "Overview", cap: "read" as const },
+  { href: "/users", label: "Users", cap: "read" as const },
+  { href: "/enterprises", label: "Enterprises", cap: "read" as const },
+  { href: "/audits", label: "Audit log", cap: "read" as const },
+  { href: "/messages", label: "Message inspect", cap: "inspectMessages" as const },
+  { href: "/security", label: "Security", cap: "read" as const },
 ];
 
 export default function AdminShell({
@@ -21,9 +22,27 @@ export default function AdminShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [role, setRole] = useState<string>("");
 
   useEffect(() => {
-    if (!getToken()) router.replace("/login");
+    if (!getToken()) {
+      router.replace("/login");
+      return;
+    }
+    api<any>("/v1/me")
+      .then((me) => {
+        const r = String(me?.role ?? "");
+        if (!isConsoleRole(r)) {
+          clearToken();
+          router.replace("/login");
+          return;
+        }
+        setRole(r);
+      })
+      .catch(() => {
+        clearToken();
+        router.replace("/login");
+      });
   }, [router]);
 
   return (
@@ -33,16 +52,19 @@ export default function AdminShell({
           <span className="logo">Q</span>
           Qchat Admin
         </div>
-        {NAV.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`admin-nav-item ${pathname === item.href ? "active" : ""}`}
-          >
-            {item.label}
-          </Link>
-        ))}
+        {role
+          ? NAV.filter((item) => can(role, item.cap)).map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`admin-nav-item ${pathname === item.href ? "active" : ""}`}
+              >
+                {item.label}
+              </Link>
+            ))
+          : null}
         <div className="spacer" />
+        {role ? <div className="admin-nav-item muted" style={{ cursor: "default" }}>{role}</div> : null}
         <button
           className="admin-nav-item"
           onClick={() => {

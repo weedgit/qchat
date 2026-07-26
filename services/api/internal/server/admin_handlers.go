@@ -74,17 +74,8 @@ func (s *Server) revokeUserSessions(r *http.Request, userID, reason string) {
 	s.kickRevokedSessions(ids, reason)
 }
 
-func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) *auth.Claims {
-	c := claimsFrom(r)
-	if c.Role != "enterprise_admin" && c.Role != "platform_owner" {
-		writeErr(w, 403, "forbidden")
-		return nil
-	}
-	return c
-}
-
 func (s *Server) handleAdminEnterprises(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permAdminRead)
 	if c == nil {
 		return
 	}
@@ -203,7 +194,7 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permAdminRead)
 	if c == nil {
 		return
 	}
@@ -252,11 +243,9 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 
 // handleAdminCreateUser provisions a member without self-service SMS (CreateUser / assisted registration).
 // Platform owners may issue enterprise_admin accounts into a target enterprise via enterprise_id.
+// Enterprise admins / platform owners may also issue compliance, support, and read_only console roles.
 func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
-	if c == nil {
-		return
-	}
+	c := claimsFrom(r)
 	var req struct {
 		Phone        string `json:"phone"`
 		Password     string `json:"password"`
@@ -283,21 +272,29 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	role := req.Role
 	if role == "" {
-		role = "member"
+		role = roleMember
 	}
-	if role != "member" && role != "enterprise_admin" {
-		writeErr(w, 400, "role must be member or enterprise_admin")
-		return
-	}
-	// Permission matrix: only platform_owner issues enterprise administrator accounts.
-	if role == "enterprise_admin" && c.Role != "platform_owner" {
-		writeErrCode(w, 403, "forbidden", "only platform owner can issue enterprise admins")
+	switch role {
+	case roleMember:
+		if s.requirePerm(w, r, permUsersCreateMember) == nil {
+			return
+		}
+	case roleEnterpriseAdmin:
+		if s.requirePerm(w, r, permIssueEnterpriseAdmin) == nil {
+			return
+		}
+	case roleCompliance, roleSupport, roleReadOnly:
+		if s.requirePerm(w, r, permUsersCreateSubrole) == nil {
+			return
+		}
+	default:
+		writeErr(w, 400, "role must be member, enterprise_admin, compliance, support, or read_only")
 		return
 	}
 
 	entID := c.EnterpriseID
 	if req.EnterpriseID != "" {
-		if c.Role != "platform_owner" {
+		if c.Role != rolePlatformOwner {
 			writeErrCode(w, 403, "forbidden", "only platform owner can target another enterprise")
 			return
 		}
@@ -342,7 +339,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminBan(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permUsersBan)
 	if c == nil {
 		return
 	}
@@ -376,7 +373,7 @@ func (s *Server) handleAdminBan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permUsersResetPassword)
 	if c == nil {
 		return
 	}
@@ -420,7 +417,7 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permMessagesInspect)
 	if c == nil {
 		return
 	}
@@ -585,7 +582,7 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permAdminRead)
 	if c == nil {
 		return
 	}

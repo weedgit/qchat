@@ -59,7 +59,7 @@ func (s *Server) StartRetentionLoop(ctx context.Context, every time.Duration) {
 
 // handleAdminPatchEnterprise updates retention_days (DataRetention policy knob).
 func (s *Server) handleAdminPatchEnterprise(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permEnterpriseWrite)
 	if c == nil {
 		return
 	}
@@ -94,7 +94,7 @@ func (s *Server) handleAdminPatchEnterprise(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleAdminRunRetention(w http.ResponseWriter, r *http.Request) {
-	c := s.requireAdmin(w, r)
+	c := s.requirePerm(w, r, permRetention)
 	if c == nil {
 		return
 	}
