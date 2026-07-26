@@ -79,6 +79,7 @@ export default function UsersPage() {
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("member");
+  const [meRole, setMeRole] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
   const [createMsg, setCreateMsg] = useState<string | null>(null);
 
@@ -118,6 +119,12 @@ export default function UsersPage() {
     // Reloads are driven explicitly by search and paging, not by keystrokes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, offset]);
+
+  useEffect(() => {
+    api<any>("/v1/me")
+      .then((me) => setMeRole(String(me?.role ?? "")))
+      .catch(() => setMeRole(""));
+  }, []);
 
   function search() {
     setOffset(0);
@@ -305,7 +312,9 @@ export default function UsersPage() {
             />
             <select value={role} onChange={(e) => setRole(e.target.value)}>
               <option value="member">member</option>
-              <option value="enterprise_admin">enterprise_admin</option>
+              {meRole === "platform_owner" ? (
+                <option value="enterprise_admin">enterprise_admin (this enterprise)</option>
+              ) : null}
             </select>
             <button className="btn" type="submit" disabled={createBusy}>
               {createBusy ? "Creating…" : "Provision"}
