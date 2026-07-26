@@ -338,6 +338,8 @@ type ChatMessageListProps = {
   showSender: boolean;
   listRef: RefObject<FlatList<Message> | null>;
   onScroll: (e: any) => void;
+  loadingOlder?: boolean;
+  historyComplete?: boolean;
   onViewableItemsChanged: (info: {
     viewableItems: Array<{ index: number | null }>;
   }) => void;
@@ -355,6 +357,8 @@ const ChatMessageList = memo(function ChatMessageList({
   showSender,
   listRef,
   onScroll,
+  loadingOlder,
+  historyComplete,
   onViewableItemsChanged,
   viewabilityConfig,
   onPressMessage,
@@ -364,6 +368,14 @@ const ChatMessageList = memo(function ChatMessageList({
   const styles = useThemedStyles(makeStyles);
   const keyExtractor = useCallback((m: Message) => m.id, []);
   const byId = useMemo(() => new Map(list.map((m) => [m.id, m])), [list]);
+  const listHeader = useMemo(() => {
+    if (!loadingOlder && !historyComplete) return null;
+    return (
+      <Text style={styles.emptyThread}>
+        {loadingOlder ? "Loading earlier messages…" : "Beginning of history"}
+      </Text>
+    );
+  }, [historyComplete, loadingOlder, styles.emptyThread]);
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
       <ChatMessageRow
@@ -396,12 +408,14 @@ const ChatMessageList = memo(function ChatMessageList({
       data={list}
       keyExtractor={keyExtractor}
       renderItem={renderItem}
-      extraData={`${selectedSet.size}:${highlightedId ?? ""}`}
+      ListHeaderComponent={listHeader}
+      extraData={`${selectedSet.size}:${highlightedId ?? ""}:${loadingOlder ? 1 : 0}`}
       contentContainerStyle={styles.list}
       onScroll={onScroll}
       scrollEventThrottle={32}
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfig}
+      maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
       // Keep more of the list mounted so scroll-to-end can reach the real bottom
       // (variable-height bubbles + clipped views make one-shot scrollToEnd stop short).
       removeClippedSubviews={false}
@@ -557,6 +571,8 @@ export default function ChatScreen() {
   const {
     conversations,
     messages,
+    hasMoreByConv,
+    loadOlderMessages,
     openConversation,
     closeConversation,
     sendMessage,
@@ -579,8 +595,10 @@ export default function ChatScreen() {
   const [barPin, setBarPin] = useState<PinnedMessage | null>(null);
   const [pinsListOpen, setPinsListOpen] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
   const nearBottomRef = useRef(true);
+  const loadingOlderRef = useRef(false);
   /** Cancels in-flight jump-to-bottom settle retries when a newer jump starts. */
   const jumpBottomGenRef = useRef(0);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -919,7 +937,20 @@ export default function ChatScreen() {
     nearBottomRef.current = near;
     const show = !near && contentSize.height > layoutMeasurement.height + 40;
     setShowJumpBottom((prev) => (prev === show ? prev : show));
-  }, []);
+
+    if (
+      contentOffset.y < 80 &&
+      !loadingOlderRef.current &&
+      hasMoreByConv[convId] !== false
+    ) {
+      loadingOlderRef.current = true;
+      setLoadingOlder(true);
+      void loadOlderMessages(convId).finally(() => {
+        loadingOlderRef.current = false;
+        setLoadingOlder(false);
+      });
+    }
+  }, [convId, hasMoreByConv, loadOlderMessages]);
 
   const jumpToBottom = useCallback(() => {
     nearBottomRef.current = true;
@@ -1201,6 +1232,8 @@ export default function ChatScreen() {
           showSender={isGroup}
           listRef={listRef}
           onScroll={onListScroll}
+          loadingOlder={loadingOlder}
+          historyComplete={hasMoreByConv[convId] === false && list.length > 0}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
           onPressMessage={onPressMessage}
