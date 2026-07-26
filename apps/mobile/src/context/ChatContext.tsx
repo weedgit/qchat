@@ -909,6 +909,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             media_url: uploaded.url,
             client_msg_id: clientMsgId,
             reply_to_id: replyToId || undefined,
+            duration_sec: Math.max(1, Math.min(60, Math.round(durationSec))),
           }),
         });
         const saved = normalizeMessage(
