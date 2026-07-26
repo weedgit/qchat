@@ -1,12 +1,77 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/qchat/qchat/services/api/internal/auth"
 )
+
+const (
+	adminUsersDefaultLimit = 50
+	adminUsersMaxLimit     = 200
+	// adminReasonMinLen matches the message-inspect gate: every audited action
+	// against a user account must carry a usable justification.
+	adminReasonMinLen = 8
+)
+
+// escapeLike neutralises LIKE wildcards in operator-supplied search text so a
+// query for "_" or "%" matches those literal characters instead of everything.
+// Callers must pair it with ESCAPE '\'.
+func escapeLike(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
+}
+
+// adminListRange reads limit/offset paging parameters, clamping them to a sane
+// window so a malformed query cannot ask for the whole table.
+func adminListRange(r *http.Request) (limit, offset int) {
+	limit = adminUsersDefaultLimit
+	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 {
+		limit = v
+	}
+	if limit > adminUsersMaxLimit {
+		limit = adminUsersMaxLimit
+	}
+	if v, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && v > 0 {
+		offset = v
+	}
+	return limit, offset
+}
+
+// adminReason validates the mandatory justification recorded in the audit log
+// for privileged account actions (requirements-en §5).
+func adminReason(w http.ResponseWriter, raw string) (string, bool) {
+	reason := strings.TrimSpace(raw)
+	if len(reason) < adminReasonMinLen {
+		writeErr(w, 400, fmt.Sprintf("reason required (≥%d chars)", adminReasonMinLen))
+		return "", false
+	}
+	return reason, true
+}
+
+// revokeUserSessions signs a user out everywhere: it marks their sessions
+// revoked and closes any live WebSocket so the sign-out takes effect
+// immediately rather than at the next reconnect.
+func (s *Server) revokeUserSessions(r *http.Request, userID, reason string) {
+	rows, err := s.db.Query(r.Context(), `
+		SELECT id::text FROM sessions WHERE user_id=$1 AND revoked=FALSE`, userID)
+	ids := make([]string, 0)
+	if err == nil {
+		for rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil && id != "" {
+				ids = append(ids, id)
+			}
+		}
+		rows.Close()
+	}
+	_, _ = s.db.Exec(r.Context(), `UPDATE sessions SET revoked=TRUE WHERE user_id=$1`, userID)
+	s.kickRevokedSessions(ids, reason)
+}
 
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) *auth.Claims {
 	c := claimsFrom(r)
@@ -108,9 +173,27 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
-	rows, err := s.db.Query(r.Context(), `
+	where := "enterprise_id=$1"
+	args := []any{c.EnterpriseID}
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		args = append(args, "%"+escapeLike(q)+"%")
+		where += fmt.Sprintf(
+			` AND (phone ILIKE $%[1]d ESCAPE '\' OR username ILIKE $%[1]d ESCAPE '\' OR display_name ILIKE $%[1]d ESCAPE '\')`,
+			len(args))
+	}
+
+	var total int
+	if err := s.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM users WHERE `+where, args...).Scan(&total); err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+
+	limit, offset := adminListRange(r)
+	args = append(args, limit, offset)
+	rows, err := s.db.Query(r.Context(), fmt.Sprintf(`
 		SELECT id::text, phone, username, display_name, role, banned, register_ip, register_region, created_at
-		FROM users WHERE enterprise_id=$1 ORDER BY created_at DESC LIMIT 200`, c.EnterpriseID)
+		FROM users WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
+		where, len(args)-1, len(args)), args...)
 	if err != nil {
 		writeErr(w, 500, "query failed")
 		return
@@ -130,7 +213,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if out == nil {
 		out = []map[string]any{}
 	}
-	writeJSON(w, 200, map[string]any{"users": out})
+	writeJSON(w, 200, map[string]any{"users": out, "total": total, "limit": limit, "offset": offset})
 }
 
 // handleAdminCreateUser provisions a member without self-service SMS (CreateUser / assisted registration).
@@ -210,28 +293,23 @@ func (s *Server) handleAdminBan(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid json")
 		return
 	}
-	_, err := s.db.Exec(r.Context(), `UPDATE users SET banned=$3 WHERE id=$1 AND enterprise_id=$2`, uid, c.EnterpriseID, req.Banned)
+	reason, ok := adminReason(w, req.Reason)
+	if !ok {
+		return
+	}
+	tag, err := s.db.Exec(r.Context(), `UPDATE users SET banned=$3 WHERE id=$1 AND enterprise_id=$2`, uid, c.EnterpriseID, req.Banned)
 	if err != nil {
 		writeErr(w, 400, "ban failed")
 		return
 	}
-	if req.Banned {
-		rows, qerr := s.db.Query(r.Context(), `
-			SELECT id::text FROM sessions WHERE user_id=$1 AND revoked=FALSE`, uid)
-		ids := make([]string, 0)
-		if qerr == nil {
-			for rows.Next() {
-				var id string
-				if rows.Scan(&id) == nil && id != "" {
-					ids = append(ids, id)
-				}
-			}
-			rows.Close()
-		}
-		_, _ = s.db.Exec(r.Context(), `UPDATE sessions SET revoked=TRUE WHERE user_id=$1`, uid)
-		s.kickRevokedSessions(ids, "banned")
+	if tag.RowsAffected() == 0 {
+		writeErr(w, 404, "user not found")
+		return
 	}
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.ban", "user", uid, req.Reason, clientIP(r), map[string]any{"banned": req.Banned})
+	if req.Banned {
+		s.revokeUserSessions(r, uid, "banned")
+	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.ban", "user", uid, reason, clientIP(r), map[string]any{"banned": req.Banned})
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -249,6 +327,10 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 		writeErr(w, 400, "invalid json")
 		return
 	}
+	reason, ok := adminReason(w, req.Reason)
+	if !ok {
+		return
+	}
 	if err := auth.ValidatePassword(req.Password); err != nil {
 		writeErr(w, 400, err.Error())
 		return
@@ -258,13 +340,17 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 		writeErr(w, 500, "hash failed")
 		return
 	}
-	_, err = s.db.Exec(r.Context(), `UPDATE users SET password_hash=$3 WHERE id=$1 AND enterprise_id=$2`, uid, c.EnterpriseID, hash)
+	tag, err := s.db.Exec(r.Context(), `UPDATE users SET password_hash=$3 WHERE id=$1 AND enterprise_id=$2`, uid, c.EnterpriseID, hash)
 	if err != nil {
 		writeErr(w, 400, "reset failed")
 		return
 	}
-	_, _ = s.db.Exec(r.Context(), `UPDATE sessions SET revoked=TRUE WHERE user_id=$1`, uid)
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.reset_password", "user", uid, req.Reason, clientIP(r), nil)
+	if tag.RowsAffected() == 0 {
+		writeErr(w, 404, "user not found")
+		return
+	}
+	s.revokeUserSessions(r, uid, "password_reset")
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.reset_password", "user", uid, reason, clientIP(r), nil)
 	writeJSON(w, 200, map[string]any{"ok": true, "note": "password reset; existing password is never viewable"})
 }
 
