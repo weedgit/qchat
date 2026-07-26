@@ -15,6 +15,28 @@ type AllowEntry = {
   label?: string;
 };
 
+type LoginAlert = {
+  id: string;
+  action: string;
+  ip: string;
+  username: string;
+  displayName: string;
+  createdAt: string;
+};
+
+function alertLabel(action: string): string {
+  switch (action) {
+    case "admin.login_new_device":
+      return "New device";
+    case "admin.login_new_ip":
+      return "New IP address";
+    case "user.login_denied_ip":
+      return "IP allowlist blocked login";
+    default:
+      return action;
+  }
+}
+
 export default function SecurityPage() {
   const [status, setStatus] = useState<MFAStatus | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
@@ -28,6 +50,8 @@ export default function SecurityPage() {
   const [cidrInput, setCidrInput] = useState("");
   const [labelInput, setLabelInput] = useState("");
   const [ipError, setIpError] = useState<string | null>(null);
+  const [alerts, setAlerts] = useState<LoginAlert[]>([]);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -58,10 +82,30 @@ export default function SecurityPage() {
     }
   }, []);
 
+  const loadAlerts = useCallback(async () => {
+    setAlertsError(null);
+    try {
+      const body = await api<any>("/v1/admin/security/login-alerts");
+      setAlerts(
+        asList(body, "alerts").map((a: any) => ({
+          id: String(a?.id ?? ""),
+          action: String(a?.action ?? ""),
+          ip: String(a?.ip ?? "") || "—",
+          username: String(a?.username ?? ""),
+          displayName: String(a?.display_name ?? ""),
+          createdAt: String(a?.created_at ?? ""),
+        })).filter((a: LoginAlert) => a.id)
+      );
+    } catch (e: any) {
+      setAlertsError(e.message);
+    }
+  }, []);
+
   useEffect(() => {
     load();
     loadAllowlist();
-  }, [load, loadAllowlist]);
+    loadAlerts();
+  }, [load, loadAllowlist, loadAlerts]);
 
   async function startSetup() {
     setBusy(true);
@@ -303,6 +347,38 @@ export default function SecurityPage() {
           </ul>
         )}
         {ipError ? <div className="error-text" style={{ marginTop: 12 }}>{ipError}</div> : null}
+      </div>
+
+      <div className="card" style={{ maxWidth: 640, marginTop: 16 }}>
+        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Login alerts</h2>
+        <p className="muted">
+          In-console notices when an administrator signs in from a new device or IP, or when
+          the IP allowlist blocks a login. These do not send email or SMS.
+        </p>
+        {alertsError ? <div className="error-text">{alertsError}</div> : null}
+        {alerts.length === 0 && !alertsError ? (
+          <p className="muted">No recent login alerts.</p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+            {alerts.map((a) => (
+              <li
+                key={a.id}
+                style={{
+                  borderTop: "1px solid var(--border, #333)",
+                  paddingTop: 8,
+                  fontSize: 13,
+                }}
+              >
+                <strong>{alertLabel(a.action)}</strong>
+                <span className="muted">
+                  {" "}
+                  · {a.displayName || a.username || "admin"} · {a.ip}
+                </span>
+                <div className="muted">{a.createdAt}</div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </AdminShell>
   );
