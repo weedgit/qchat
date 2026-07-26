@@ -142,6 +142,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/admin/security/ip-allowlist", s.auth(s.handleAdminIPAllowlistList))
 	s.mux.HandleFunc("POST /v1/admin/security/ip-allowlist", s.auth(s.handleAdminIPAllowlistAdd))
 	s.mux.HandleFunc("DELETE /v1/admin/security/ip-allowlist/{id}", s.auth(s.handleAdminIPAllowlistDelete))
+	s.mux.HandleFunc("GET /v1/admin/security/login-alerts", s.auth(s.handleAdminLoginAlerts))
 
 	// Calls (LiveKit 1:1) + push stubs
 	s.mux.HandleFunc("POST /v1/calls", s.auth(s.handleStartCall))

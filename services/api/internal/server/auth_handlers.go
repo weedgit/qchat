@@ -261,6 +261,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	dtype := normalizeDevice(req.DeviceType)
 	deviceID := ensureDeviceID(req.DeviceID)
+	ip := clientIP(r)
+	s.recordAdminLoginAlerts(r.Context(), uid, entID, role, ip, deviceID, dtype, req.Platform)
 	// One session per surface: web, desktop, phone (new login replaces same type).
 	s.revokeSameTypeSessions(r, uid, dtype)
 	tok, err := s.issueSession(r, uid, entID, role, dtype, req.DeviceName, deviceID, req.Platform)
@@ -271,7 +273,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !req.RememberMe {
 		tok["refresh_token"] = ""
 	}
-	s.audit(r.Context(), uid, entID, "user.login", "user", uid, "", clientIP(r), map[string]any{
+	s.audit(r.Context(), uid, entID, "user.login", "user", uid, "", ip, map[string]any{
 		"device": dtype, "device_id": deviceID,
 	})
 	writeJSON(w, 200, tok)
