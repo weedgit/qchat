@@ -150,10 +150,10 @@ cat >"$WEB_ENV" <<EOF
 # Browser must reach LiveKit on this machine's reachable IP/DNS (not Cursor-forwarded localhost).
 NEXT_PUBLIC_LIVEKIT_URL=${SCHEME}://${HOST}:${LIVEKIT_PORT}
 
-# Leave unset to use apiBaseUrl() (page hostname :8080) for local/LAN next dev.
-# For nginx same-origin production builds, redeploy.sh forces NEXT_PUBLIC_API_URL="".
-# Uncomment to pin the API host explicitly:
+# Empty = same-origin (next dev rewrites /v1 → API). Avoids captcha timeout when only :3000 is forwarded.
+# Production nginx builds also use "". To pin a direct API host instead:
 # NEXT_PUBLIC_API_URL=http://${HOST}:8080
+NEXT_PUBLIC_API_URL=
 EOF
 
 # Keep systemd API env in sync with LiveKit URL/keys (merge into qchat-api.env).

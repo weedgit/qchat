@@ -226,7 +226,11 @@ export async function api<T = any>(
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${apiBaseUrl()}${path}`, { ...init, headers });
+  const res = await fetch(`${apiBaseUrl()}${path}`, {
+    ...init,
+    headers,
+    cache: init.cache ?? "no-store",
+  });
 
   let body: unknown = null;
   const text = await res.text();
@@ -259,6 +263,19 @@ export async function api<T = any>(
     return (body as any).data as T;
   }
   return body as T;
+}
+
+/** Notify the mounted chat shell that /v1/me changed (profile overlay stays mounted over chat). */
+export type MeUpdatedDetail = {
+  avatarUrl?: string;
+  nickname?: string;
+  username?: string;
+  phone?: string;
+};
+
+export function notifyMeUpdated(detail?: MeUpdatedDetail) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<MeUpdatedDetail>("qchat:me-updated", { detail }));
 }
 
 /** Extract a list from either a bare array or { items | list | users | ... } envelopes. */

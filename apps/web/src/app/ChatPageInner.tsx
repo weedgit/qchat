@@ -2055,7 +2055,11 @@ export default function ChatPageInner() {
             onClick={(e) => {
               e.stopPropagation();
               setComposeOpen(false);
-              setMainMenuOpen((v) => !v);
+              setMainMenuOpen((v) => {
+                const next = !v;
+                if (next) void chat.refreshMe();
+                return next;
+              });
             }}
           >
             <MenuIcon d={ICONS.menu} />

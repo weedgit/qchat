@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, asList, clearToken, ensureAccessToken, formatSendError, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
+import { useMe } from "./MeContext";
 import { isQchatDesktop } from "./device";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
 import {
@@ -32,7 +33,7 @@ export function formatTypingLabel(
 }
 
 export function useChat() {
-  const [me, setMe] = useState<CurrentUser | null>(null);
+  const { me, refreshMe } = useMe();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
@@ -240,19 +241,9 @@ export function useChat() {
 
   useEffect(() => {
     if (!getToken()) return;
-    api<any>("/v1/me")
-      .then((u) =>
-        setMe({
-          id: String(u?.id ?? ""),
-          phone: String(u?.phone ?? ""),
-          username: String(u?.username ?? ""),
-          nickname: String(u?.display_name ?? u?.username ?? "Me"),
-          avatarUrl: u?.avatar_url || undefined,
-        })
-      )
-      .catch(() => {});
+    void refreshMe();
     loadConversations();
-  }, [loadConversations]);
+  }, [loadConversations, refreshMe]);
 
   const handleIncoming = useCallback((raw: any) => {
     const type = String(raw?.type ?? "");
@@ -1515,6 +1506,7 @@ export function useChat() {
     updateConversationPrefs,
     leaveGroup,
     reload: loadConversations,
+    refreshMe,
     subscribeEvents,
   };
 }

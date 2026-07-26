@@ -11,15 +11,23 @@ function createCaptchaHandler(webUrl) {
 
     // Use Chromium net stack so certificate-error trust for the web host applies.
     const url = `${base}/v1/auth/captcha`;
-    const res = await net.fetch(url, { method: "GET" });
-    if (!res.ok) {
-      throw new Error(`captcha HTTP ${res.status}`);
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 8000);
+    try {
+      const res = await net.fetch(url, { method: "GET", signal: ac.signal });
+      if (!res.ok) {
+        throw new Error(`captcha HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      return {
+        captcha_id: String(data?.captcha_id ?? data?.id ?? ""),
+        image: String(data?.image ?? ""),
+        // Pass through for local auto-fill when present.
+        ...(data?.dev_answer ? { dev_answer: String(data.dev_answer) } : {}),
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    const data = await res.json();
-    return {
-      captcha_id: String(data?.captcha_id ?? data?.id ?? ""),
-      image: String(data?.image ?? ""),
-    };
   };
 }
 

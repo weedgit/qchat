@@ -65,30 +65,71 @@ export default function LoginPage() {
     setCaptcha(null);
     setCaptchaStatus("loading");
     try {
-      let data: any;
-      // In Electron, fetch captcha via main process (avoids renderer/network quirks).
+      let data: any = null;
+      let lastErr: unknown = null;
+
+      const withTimeout = <T,>(p: Promise<T>, ms: number, label: string) =>
+        new Promise<T>((resolve, reject) => {
+          const t = window.setTimeout(
+            () => reject(Object.assign(new Error(label), { name: "AbortError" })),
+            ms
+          );
+          p.then(
+            (v) => {
+              window.clearTimeout(t);
+              resolve(v);
+            },
+            (e) => {
+              window.clearTimeout(t);
+              reject(e);
+            }
+          );
+        });
+
+      // Desktop IPC can hang on a bad API URL — bound it, then fall back to same-origin fetch.
       if (typeof window !== "undefined" && window.qchatDesktop?.fetchCaptcha) {
-        data = await window.qchatDesktop.fetchCaptcha();
-      } else {
-        const ctrl = new AbortController();
-        const timer = window.setTimeout(() => ctrl.abort(), 10000);
-        data = await api<any>("/v1/auth/captcha", { signal: ctrl.signal });
-        window.clearTimeout(timer);
+        try {
+          data = await withTimeout(
+            window.qchatDesktop.fetchCaptcha(),
+            4000,
+            "desktop captcha timed out"
+          );
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (!data) {
+        try {
+          data = await withTimeout(
+            api<any>("/v1/auth/captcha"),
+            12000,
+            "captcha timed out"
+          );
+        } catch (e) {
+          lastErr = e;
+          throw e;
+        }
       }
       const id = String(data?.captcha_id ?? data?.id ?? "");
       const image = String(data?.image ?? "").trim();
       if (!id || !image.startsWith("data:image/")) {
-        throw new Error("empty captcha from server");
+        throw lastErr instanceof Error
+          ? lastErr
+          : new Error("empty captcha from server");
       }
       setCaptcha({ id, image });
       setCaptchaStatus("ready");
+      // Local/dev API returns the answer — auto-fill so register isn't blocked.
+      const answer = String(data?.dev_answer ?? "").trim();
+      if (answer) setCaptchaCode(answer);
+      setError(null);
     } catch (e: any) {
       setCaptcha(null);
       setCaptchaStatus("error");
       const msg =
         e?.name === "AbortError"
-          ? "Captcha timed out — try again later"
-          : `Captcha unavailable: ${e.message || "network error"}`;
+          ? "Captcha timed out — click image to retry"
+          : `Captcha unavailable: ${e.message || "network error"} (click to retry)`;
       setError(msg);
     }
   }, []);
@@ -194,7 +235,7 @@ export default function LoginPage() {
         <div className="auth-sub">
           {mode === "login"
             ? "Secure enterprise messaging"
-            : "After signing up, use Join a company in chat to enter with an invite code"}
+            : "After signing up, use Join a company in chat to enter with an invite code. Test SMS code: 12345 (Send SMS optional)"}
         </div>
 
         <div className="field">
@@ -252,10 +293,22 @@ export default function LoginPage() {
             <div
               className={`captcha-image-wrap ${captchaStatus === "error" ? "error" : ""}`}
               aria-label="Captcha image"
+              title="Click to refresh captcha"
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                if (captchaStatus !== "loading") void loadCaptcha();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  if (captchaStatus !== "loading") void loadCaptcha();
+                }
+              }}
             >
               {captchaStatus === "loading" && <span className="captcha-image-fallback">…</span>}
               {captchaStatus === "error" && (
-                <span className="captcha-image-fallback">Unavailable</span>
+                <span className="captcha-image-fallback">Unavailable — click</span>
               )}
               {captchaStatus === "ready" && captcha?.image ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -309,9 +362,9 @@ export default function LoginPage() {
             onClick={() => {
               setMode(mode === "login" ? "register" : "login");
               setError(null);
-              setSmsCode("");
+              setSmsCode(mode === "login" ? "12345" : "");
               setSmsChallengeId("");
-              setSmsHint(null);
+              setSmsHint(mode === "login" ? "Test SMS code: 12345" : null);
             }}
           >
             {mode === "login" ? "Need an account?" : "Have an account?"}

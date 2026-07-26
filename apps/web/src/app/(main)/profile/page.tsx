@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import MenuModal from "@/components/MenuModal";
 import { api } from "@/lib/api";
+import { useMe } from "@/lib/MeContext";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
 import { useLocale } from "@/lib/locale";
@@ -85,6 +86,7 @@ interface Profile {
 export default function ProfilePage() {
   const router = useRouter();
   const { t } = useLocale();
+  const { patchMe, refreshMe } = useMe();
   const [me, setMe] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -121,6 +123,8 @@ export default function ProfilePage() {
         body: JSON.stringify({ avatar_url: url }),
       });
       setMe({ ...me, avatar_url: url });
+      patchMe({ avatarUrl: url });
+      void refreshMe();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -174,6 +178,13 @@ export default function ProfilePage() {
           friend_privacy: me.friend_privacy,
         }),
       });
+      patchMe({
+        avatarUrl: me.avatar_url || undefined,
+        nickname: me.display_name,
+        username: me.username,
+        phone: me.phone,
+      });
+      void refreshMe();
       router.push("/");
     } catch (err: any) {
       setError(err.message);

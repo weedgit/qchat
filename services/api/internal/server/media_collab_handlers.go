@@ -83,7 +83,12 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "file too large")
 		return
 	}
-	key := filepath.Join(c.EnterpriseID, kind, uuid.NewString()+extFor(ct, hdr.Filename))
+	// Users without a company store under personal/{userID}/...
+	scope := c.EnterpriseID
+	if scope == "" {
+		scope = filepath.Join("personal", c.UserID)
+	}
+	key := filepath.Join(scope, kind, uuid.NewString()+extFor(ct, hdr.Filename))
 	root := s.uploadRoot()
 	dir := filepath.Join(root, filepath.Dir(key))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -105,10 +110,14 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := uuid.New()
+	var ent any
+	if c.EnterpriseID != "" {
+		ent = c.EnterpriseID
+	}
 	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO media_objects(id, enterprise_id, uploader_id, kind, content_type, size_bytes, storage_key, checksum, scanned)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)`,
-		id, c.EnterpriseID, c.UserID, kind, ct, written, key, hex.EncodeToString(hash.Sum(nil)))
+		id, ent, c.UserID, kind, ct, written, key, hex.EncodeToString(hash.Sum(nil)))
 	if err != nil {
 		_ = os.Remove(destPath)
 		writeErr(w, 500, "db failed")
@@ -152,7 +161,9 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid path")
 		return
 	}
-	if !strings.HasPrefix(rel, c.EnterpriseID+"/") {
+	entOK := c.EnterpriseID != "" && strings.HasPrefix(rel, c.EnterpriseID+"/")
+	personalOK := strings.HasPrefix(rel, "personal/"+c.UserID+"/")
+	if !entOK && !personalOK {
 		writeErr(w, 403, "forbidden")
 		return
 	}
