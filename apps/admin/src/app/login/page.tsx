@@ -71,10 +71,10 @@ export default function AdminLoginPage() {
         e instanceof ApiError ? String((e.body as any)?.code ?? "") : "";
       if (code === "mfa_required") {
         setMfaRequired(true);
-        setError("Enter the 6-digit code from your authenticator app.");
+        setError("Enter an authenticator code or a one-time recovery code.");
       } else if (code === "mfa_invalid") {
         setMfaRequired(true);
-        setError("Invalid MFA code. Try again.");
+        setError("Invalid MFA or recovery code. Try again.");
       } else if (code === "ip_not_allowed") {
         setError("Sign-in is not allowed from this IP address.");
       } else {
@@ -105,14 +105,13 @@ export default function AdminLoginPage() {
         </div>
         {mfaRequired ? (
           <div className="field">
-            <label>Authenticator code</label>
+            <label>Authenticator or recovery code</label>
             <input
               value={mfaCode}
-              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) => setMfaCode(e.target.value.toUpperCase().slice(0, 16))}
               required
-              inputMode="numeric"
               autoComplete="one-time-code"
-              placeholder="6-digit code"
+              placeholder="6-digit or XXXX-XXXX"
               autoFocus
             />
           </div>
