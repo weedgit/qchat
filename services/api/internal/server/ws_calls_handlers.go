@@ -12,8 +12,13 @@ import (
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+// wsOriginAllowed ties WebSocket upgrades to the same origin policy as HTTP
+// CORS (corsAllowOrigin). An empty Origin — sent by native clients such as the
+// React Native app — is always permitted; browser origins must be allowed by
+// QCHAT_CORS_ORIGIN. With the default "*" this stays fully permissive, so it is
+// a no-op until an operator configures a real origin list.
+func wsOriginAllowed(corsCfg, origin string) bool {
+	return corsAllowOrigin(corsCfg, strings.TrimSpace(origin)) != ""
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +36,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "session revoked")
 		return
 	}
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

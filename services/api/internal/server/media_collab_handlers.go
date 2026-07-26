@@ -114,9 +114,12 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if c.EnterpriseID != "" {
 		ent = c.EnterpriseID
 	}
+	// scanned defaults to FALSE (see migration 001): no malware scanner runs yet,
+	// so uploads must not claim to have been scanned. A future scan pipeline
+	// flips this flag once it actually inspects the object.
 	_, err = s.db.Exec(r.Context(), `
-		INSERT INTO media_objects(id, enterprise_id, uploader_id, kind, content_type, size_bytes, storage_key, checksum, scanned)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)`,
+		INSERT INTO media_objects(id, enterprise_id, uploader_id, kind, content_type, size_bytes, storage_key, checksum)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 		id, ent, c.UserID, kind, ct, written, key, hex.EncodeToString(hash.Sum(nil)))
 	if err != nil {
 		_ = os.Remove(destPath)
