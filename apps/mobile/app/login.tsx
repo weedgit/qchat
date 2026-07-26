@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { Redirect, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ApiError, api } from "../src/lib/api";
+import { ApiError, api, takeSessionRevokedReason } from "../src/lib/api";
 import { getAuthDevice, useAuth } from "../src/context/AuthContext";
 import { useLocale } from "../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
@@ -51,6 +51,22 @@ export default function LoginScreen() {
   useEffect(() => {
     loadCaptcha();
   }, [loadCaptcha]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const reason = await takeSessionRevokedReason();
+      if (cancelled || !reason) return;
+      setError(
+        reason === "banned"
+          ? "Your account was banned. Contact an administrator."
+          : "Signed out — another device of this type signed in."
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (ready && signedIn) {
     return <Redirect href="/(tabs)/chats" />;

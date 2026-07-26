@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, clearToken, getToken, initTokens, setOnUnauthorized, setTokens } from "../lib/api";
+import { api, clearToken, getToken, initTokens, setOnUnauthorized, setSessionRevokedReason, setTokens } from "../lib/api";
 import { getAuthDevice } from "../lib/device";
 import type { CurrentUser } from "../lib/types";
 
@@ -10,6 +10,8 @@ type AuthContextValue = {
   refreshMe: () => Promise<void>;
   signIn: (access: string, refresh: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Clear local session without calling logout (remote revoke / kick). */
+  forceLocalSignOut: (reason?: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -54,6 +56,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const forceLocalSignOut = useCallback(async (reason?: string) => {
+    if (reason) {
+      await setSessionRevokedReason(reason).catch(() => {});
+    }
+    await clearToken();
+    setUser(null);
+  }, []);
+
   useEffect(() => {
     setOnUnauthorized(() => {
       setUser(null);
@@ -81,8 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshMe,
       signIn,
       signOut,
+      forceLocalSignOut,
     }),
-    [ready, user, refreshMe, signIn, signOut]
+    [ready, user, refreshMe, signIn, signOut, forceLocalSignOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
