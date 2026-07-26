@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/qchat/qchat/services/api/internal/auth"
 )
 
@@ -435,10 +436,43 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "user_id required (valid user id) for message access")
 		return
 	}
+
+	scope := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("scope")))
+	if scope == "" {
+		scope = "all"
+	}
+	if scope != "all" && scope != "sent" {
+		writeErrCode(w, 400, "invalid_scope", "scope must be all or sent")
+		return
+	}
+
+	entID := c.EnterpriseID
+	if rawEnt := strings.TrimSpace(r.URL.Query().Get("enterprise_id")); rawEnt != "" {
+		if c.Role != "platform_owner" {
+			writeErrCode(w, 403, "forbidden", "only platform owner can set enterprise_id")
+			return
+		}
+		if _, err := uuid.Parse(rawEnt); err != nil {
+			writeErrCode(w, 400, "invalid_enterprise", "enterprise_id must be a valid uuid")
+			return
+		}
+		entID = rawEnt
+	}
+
+	var convFilter *uuid.UUID
+	if rawConv := strings.TrimSpace(r.URL.Query().Get("conversation_id")); rawConv != "" {
+		parsed, err := uuid.Parse(rawConv)
+		if err != nil {
+			writeErrCode(w, 400, "invalid_conversation", "conversation_id must be a valid uuid")
+			return
+		}
+		convFilter = &parsed
+	}
+
 	var exists bool
 	if err := s.db.QueryRow(r.Context(), `
 		SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enterprise_id=$2)`,
-		userID, c.EnterpriseID).Scan(&exists); err != nil {
+		userID, entID).Scan(&exists); err != nil {
 		writeErr(w, 500, "query failed")
 		return
 	}
@@ -448,19 +482,70 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit, offset := adminListRange(r)
+
 	var total int
-	if err := s.db.QueryRow(r.Context(), `
-		SELECT COUNT(*) FROM messages
-		WHERE enterprise_id=$1 AND sender_id=$2`, c.EnterpriseID, userID).Scan(&total); err != nil {
-		writeErr(w, 500, "query failed")
-		return
+	var rows pgx.Rows
+	if scope == "sent" {
+		countQ := `SELECT COUNT(*) FROM messages WHERE enterprise_id=$1 AND sender_id=$2`
+		countArgs := []any{entID, userID}
+		listQ := `
+			SELECT m.id::text, m.conversation_id::text, m.sender_id::text,
+			       COALESCE(u.username,''), COALESCE(u.display_name,''),
+			       COALESCE(c.title,''), COALESCE(c.type,''),
+			       m.body, m.type, m.recalled, m.created_at
+			FROM messages m
+			JOIN users u ON u.id = m.sender_id
+			JOIN conversations c ON c.id = m.conversation_id
+			WHERE m.enterprise_id=$1 AND m.sender_id=$2`
+		listArgs := []any{entID, userID}
+		if convFilter != nil {
+			countQ += ` AND conversation_id=$3`
+			countArgs = append(countArgs, *convFilter)
+			listQ += ` AND m.conversation_id=$3`
+			listArgs = append(listArgs, *convFilter)
+		}
+		if err := s.db.QueryRow(r.Context(), countQ, countArgs...).Scan(&total); err != nil {
+			writeErr(w, 500, "query failed")
+			return
+		}
+		listArgs = append(listArgs, limit, offset)
+		listQ += fmt.Sprintf(` ORDER BY m.created_at DESC LIMIT $%d OFFSET $%d`, len(listArgs)-1, len(listArgs))
+		rows, err = s.db.Query(r.Context(), listQ, listArgs...)
+	} else {
+		countQ := `
+			SELECT COUNT(*) FROM messages m
+			WHERE m.enterprise_id=$1
+			  AND m.conversation_id IN (
+			      SELECT conversation_id FROM conversation_members WHERE user_id=$2
+			  )`
+		countArgs := []any{entID, userID}
+		listQ := `
+			SELECT m.id::text, m.conversation_id::text, m.sender_id::text,
+			       COALESCE(u.username,''), COALESCE(u.display_name,''),
+			       COALESCE(c.title,''), COALESCE(c.type,''),
+			       m.body, m.type, m.recalled, m.created_at
+			FROM messages m
+			JOIN users u ON u.id = m.sender_id
+			JOIN conversations c ON c.id = m.conversation_id
+			WHERE m.enterprise_id=$1
+			  AND m.conversation_id IN (
+			      SELECT conversation_id FROM conversation_members WHERE user_id=$2
+			  )`
+		listArgs := []any{entID, userID}
+		if convFilter != nil {
+			countQ += ` AND m.conversation_id=$3`
+			countArgs = append(countArgs, *convFilter)
+			listQ += ` AND m.conversation_id=$3`
+			listArgs = append(listArgs, *convFilter)
+		}
+		if err := s.db.QueryRow(r.Context(), countQ, countArgs...).Scan(&total); err != nil {
+			writeErr(w, 500, "query failed")
+			return
+		}
+		listArgs = append(listArgs, limit, offset)
+		listQ += fmt.Sprintf(` ORDER BY m.created_at DESC LIMIT $%d OFFSET $%d`, len(listArgs)-1, len(listArgs))
+		rows, err = s.db.Query(r.Context(), listQ, listArgs...)
 	}
-	rows, err := s.db.Query(r.Context(), `
-		SELECT m.id::text, m.conversation_id::text, m.sender_id::text, m.body, m.type, m.created_at
-		FROM messages m
-		WHERE m.enterprise_id=$1 AND m.sender_id=$2
-		ORDER BY m.created_at DESC
-		LIMIT $3 OFFSET $4`, c.EnterpriseID, userID, limit, offset)
 	if err != nil {
 		writeErr(w, 500, "query failed")
 		return
@@ -468,20 +553,33 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var id, cid, sid, body, typ string
+		var id, cid, sid, sun, sdn, title, ctype, body, typ string
+		var recalled bool
 		var created any
-		_ = rows.Scan(&id, &cid, &sid, &body, &typ, &created)
-		out = append(out, map[string]any{"id": id, "conversation_id": cid, "sender_id": sid, "body": body, "type": typ, "created_at": created})
+		if rows.Scan(&id, &cid, &sid, &sun, &sdn, &title, &ctype, &body, &typ, &recalled, &created) != nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"id": id, "conversation_id": cid, "sender_id": sid,
+			"sender_username": sun, "sender_display_name": sdn,
+			"conversation_title": title, "conversation_type": ctype,
+			"body": body, "type": typ, "recalled": recalled, "created_at": created,
+		})
 	}
 	if out == nil {
 		out = []map[string]any{}
 	}
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "messages.inspect", "user", userID.String(), reason, clientIP(r), map[string]any{
+	meta := map[string]any{
 		"count": len(out), "total": total, "limit": limit, "offset": offset,
-	})
+		"scope": scope, "enterprise_id": entID,
+	}
+	if convFilter != nil {
+		meta["conversation_id"] = convFilter.String()
+	}
+	s.audit(r.Context(), c.UserID, entID, "messages.inspect", "user", userID.String(), reason, clientIP(r), meta)
 	writeJSON(w, 200, map[string]any{
 		"messages": out, "total": total, "limit": limit, "offset": offset,
-		"has_more": offset+len(out) < total,
+		"has_more": offset+len(out) < total, "scope": scope,
 	})
 }
 

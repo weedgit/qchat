@@ -9,17 +9,30 @@ const PAGE_SIZE = 50;
 interface InspectedMessage {
   id: string;
   conversationId: string;
+  conversationTitle: string;
+  conversationType: string;
   senderId: string;
+  senderLabel: string;
   content: string;
+  type: string;
+  recalled: boolean;
   createdAt: string;
 }
 
 function normalize(raw: any): InspectedMessage {
+  const username = String(raw?.sender_username ?? "");
+  const display = String(raw?.sender_display_name ?? "");
+  const senderId = String(raw?.sender_id ?? raw?.from_user_id ?? raw?.user_id ?? "");
   return {
     id: String(raw?.id ?? raw?.message_id ?? ""),
     conversationId: String(raw?.conversation_id ?? ""),
-    senderId: String(raw?.sender_id ?? raw?.from_user_id ?? raw?.user_id ?? ""),
+    conversationTitle: String(raw?.conversation_title ?? "") || "—",
+    conversationType: String(raw?.conversation_type ?? ""),
+    senderId,
+    senderLabel: display || (username ? `@${username}` : senderId) || "—",
     content: String(raw?.content ?? raw?.text ?? raw?.body ?? ""),
+    type: String(raw?.type ?? "text"),
+    recalled: Boolean(raw?.recalled),
     createdAt: String(raw?.created_at ?? raw?.createdAt ?? raw?.timestamp ?? ""),
   };
 }
@@ -27,6 +40,7 @@ function normalize(raw: any): InspectedMessage {
 export default function MessageInspectPage() {
   const [userId, setUserId] = useState("");
   const [reason, setReason] = useState("");
+  const [scope, setScope] = useState<"all" | "sent">("all");
   const [rows, setRows] = useState<InspectedMessage[] | null>(null);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -34,14 +48,21 @@ export default function MessageInspectPage() {
   const [busy, setBusy] = useState(false);
   const [inspectedUserId, setInspectedUserId] = useState("");
   const [inspectedReason, setInspectedReason] = useState("");
+  const [inspectedScope, setInspectedScope] = useState<"all" | "sent">("all");
 
-  async function loadPage(targetUserId: string, targetReason: string, from: number) {
+  async function loadPage(
+    targetUserId: string,
+    targetReason: string,
+    targetScope: "all" | "sent",
+    from: number
+  ) {
     setBusy(true);
     setError(null);
     try {
       const qs = new URLSearchParams({
         user_id: targetUserId,
         reason: targetReason,
+        scope: targetScope,
         limit: String(PAGE_SIZE),
         offset: String(from),
       });
@@ -51,6 +72,7 @@ export default function MessageInspectPage() {
       setOffset(from);
       setInspectedUserId(targetUserId);
       setInspectedReason(targetReason);
+      setInspectedScope(targetScope);
     } catch (e: any) {
       setError(e.message);
       setRows(null);
@@ -69,7 +91,7 @@ export default function MessageInspectPage() {
       setError("A meaningful reason (at least 8 characters) is required.");
       return;
     }
-    await loadPage(userId.trim(), reason.trim(), 0);
+    await loadPage(userId.trim(), reason.trim(), scope, 0);
   }
 
   const from = total === 0 || !rows ? 0 : offset + 1;
@@ -79,13 +101,13 @@ export default function MessageInspectPage() {
     <AdminShell>
       <h1>Message inspect</h1>
       <div className="page-sub">
-        View the messages sent by a specific user for compliance purposes.
+        View the complete chat history for a user within an enterprise (compliance).
       </div>
 
       <div className="notice">
         Message inspection is a privileged, audited action. Your identity, the
-        user ID and the reason you provide are permanently recorded in the audit
-        log for every page viewed.
+        user ID, scope, and the reason you provide are permanently recorded in the
+        audit log for every page viewed. Recalled messages are shown flagged.
       </div>
 
       <div className="card" style={{ maxWidth: 720 }}>
@@ -98,6 +120,13 @@ export default function MessageInspectPage() {
               placeholder="e.g. 8f2c9a…"
               required
             />
+          </div>
+          <div className="field">
+            <label>Scope</label>
+            <select value={scope} onChange={(e) => setScope(e.target.value as "all" | "sent")}>
+              <option value="all">All messages in their conversations</option>
+              <option value="sent">Only messages they sent</option>
+            </select>
           </div>
           <div className="field">
             <label>Reason (required, recorded in audit log)</label>
@@ -124,8 +153,8 @@ export default function MessageInspectPage() {
                 <tr>
                   <th>Time</th>
                   <th>Conversation</th>
-                  <th>Message ID</th>
                   <th>Sender</th>
+                  <th>Type</th>
                   <th>Content</th>
                 </tr>
               </thead>
@@ -138,10 +167,29 @@ export default function MessageInspectPage() {
                 {rows.map((m) => (
                   <tr key={m.id}>
                     <td className="muted">{m.createdAt}</td>
-                    <td style={{ wordBreak: "break-all" }}>{m.conversationId || "—"}</td>
-                    <td style={{ wordBreak: "break-all" }}>{m.id}</td>
-                    <td style={{ wordBreak: "break-all" }}>{m.senderId}</td>
-                    <td style={{ whiteSpace: "pre-wrap" }}>{m.content}</td>
+                    <td>
+                      <div>{m.conversationTitle}</div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {m.conversationType || "—"} · {m.conversationId || "—"}
+                      </div>
+                    </td>
+                    <td>
+                      <div>{m.senderLabel}</div>
+                      <div className="muted" style={{ fontSize: 12, wordBreak: "break-all" }}>
+                        {m.senderId}
+                      </div>
+                    </td>
+                    <td className="muted">
+                      {m.type}
+                      {m.recalled ? " · recalled" : ""}
+                    </td>
+                    <td style={{ whiteSpace: "pre-wrap" }}>
+                      {m.recalled && !m.content ? (
+                        <span className="muted">(recalled)</span>
+                      ) : (
+                        m.content
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -149,7 +197,9 @@ export default function MessageInspectPage() {
           </div>
           <div className="toolbar" style={{ justifyContent: "space-between", marginTop: 12 }}>
             <span className="muted">
-              {total === 0 ? "No messages" : `Showing ${from}–${to} of ${total}`}
+              {total === 0
+                ? "No messages"
+                : `Showing ${from}–${to} of ${total} · scope=${inspectedScope}`}
             </span>
             <span style={{ display: "flex", gap: 8 }}>
               <button
@@ -157,7 +207,12 @@ export default function MessageInspectPage() {
                 type="button"
                 disabled={busy || offset === 0}
                 onClick={() =>
-                  loadPage(inspectedUserId, inspectedReason, Math.max(0, offset - PAGE_SIZE))
+                  loadPage(
+                    inspectedUserId,
+                    inspectedReason,
+                    inspectedScope,
+                    Math.max(0, offset - PAGE_SIZE)
+                  )
                 }
               >
                 Previous
@@ -167,7 +222,7 @@ export default function MessageInspectPage() {
                 type="button"
                 disabled={busy || to >= total}
                 onClick={() =>
-                  loadPage(inspectedUserId, inspectedReason, offset + PAGE_SIZE)
+                  loadPage(inspectedUserId, inspectedReason, inspectedScope, offset + PAGE_SIZE)
                 }
               >
                 Next
