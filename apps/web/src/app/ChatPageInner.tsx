@@ -343,6 +343,8 @@ const ICONS = {
   mic: "M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z M19 11a7 7 0 0 1-14 0 M12 18v4",
   stop: "M6 6h12v12H6z",
   paperclip: "M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48",
+  smile:
+    "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M8 14s1.5 2 4 2 4-2 4-2 M9 9h.01 M15 9h.01",
   pin: "M12 17v5 M9 10.76V3h6v7.76L19 14v1H5v-1l4-3.24z",
   /** Pin + list affordance for opening the pinned messages panel. */
   pinList:
@@ -369,6 +371,15 @@ const QUICK_EMOJIS = [
   "\u{1F44F}", // 👏
   "\u{1F602}", // 😂
   "\u{1F62E}", // 😮
+] as const;
+
+/** Built-in composer emoji set (requirements: no custom sticker packs). */
+const COMPOSER_EMOJIS = [
+  "😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘",
+  "😎", "🤔", "🙄", "😢", "😭", "😡", "👍", "👎",
+  "👏", "🙏", "🔥", "❤️", "💯", "🎉", "✨", "⭐",
+  "🤝", "💪", "🫡", "🥳", "😴", "🤯", "😅", "😇",
+  "😮", "🤗", "😏", "😜", "🤩", "💔", "👌", "✌️",
 ] as const;
 
 function Bubble({
@@ -778,6 +789,7 @@ export default function ChatPageInner() {
   const [inChatSearch, setInChatSearch] = useState("");
   const [showInChatSearch, setShowInChatSearch] = useState(false);
   const [draft, setDraft] = useState("");
+  const [emojiOpen, setEmojiOpen] = useState(false);
   /** Pending media from paste / attach / drop before send. */
   const [mediaDraft, setMediaDraft] = useState<{
     items: { file: File; url: string }[];
@@ -1625,7 +1637,24 @@ export default function ChatPageInner() {
   useEffect(() => {
     loadingOlderUIRef.current = false;
     setLoadingOlder(false);
+    setEmojiOpen(false);
   }, [chat.activeId]);
+
+  function insertComposerEmoji(emoji: string) {
+    const el = draftRef.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? draft.length;
+    const next = clipMessageText(draft.slice(0, start) + emoji + draft.slice(end));
+    setDraft(next);
+    if (chat.activeId && next.trim()) chat.notifyTyping(chat.activeId);
+    requestAnimationFrame(() => {
+      const node = draftRef.current;
+      if (!node) return;
+      node.focus();
+      const pos = Math.min(start + emoji.length, next.length);
+      node.setSelectionRange(pos, pos);
+    });
+  }
 
   function updateJumpBottomVisibility() {
     const el = scrollRef.current;
@@ -1778,6 +1807,7 @@ export default function ChatPageInner() {
       logChatError(t("chat.messageTooLong"));
       return;
     }
+    setEmojiOpen(false);
  // edit post: reuse the composer instead of a prompt dialog.
     if (editingMessage) {
       const id = editingMessage.id;
@@ -3040,6 +3070,35 @@ export default function ChatPageInner() {
                         >
                           <MenuIcon d={ICONS.paperclip} style={{ width: 20, height: 20 }} />
                         </button>
+                        <button
+                          type="button"
+                          className={`attach-btn${emojiOpen ? " active" : ""}`}
+                          title={t("chat.emoji")}
+                          disabled={voiceBusy || !chat.activeId}
+                          aria-expanded={emojiOpen}
+                          onClick={() => setEmojiOpen((v) => !v)}
+                        >
+                          <MenuIcon d={ICONS.smile} style={{ width: 20, height: 20 }} />
+                        </button>
+                        {emojiOpen && (
+                          <div className="emoji-picker" role="dialog" aria-label={t("chat.emoji")}>
+                            <div className="emoji-picker-grid">
+                              {COMPOSER_EMOJIS.map((em) => (
+                                <button
+                                  key={em}
+                                  type="button"
+                                  className="emoji-picker-cell"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    insertComposerEmoji(em);
+                                  }}
+                                >
+                                  {em}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         <textarea
                           ref={draftRef}
                           rows={1}
@@ -3057,6 +3116,7 @@ export default function ChatPageInner() {
                               value.length
                             );
                             setDraft(value);
+                            setEmojiOpen(false);
                             updateMentionMenu(value, cursor);
                             if (!chat.activeId) return;
                             if (value.trim()) chat.notifyTyping(chat.activeId);
@@ -3064,10 +3124,16 @@ export default function ChatPageInner() {
                           }}
                           onClick={(e) => {
                             const t = e.currentTarget;
+                            setEmojiOpen(false);
                             updateMentionMenu(t.value, t.selectionStart ?? t.value.length);
                           }}
                           onPaste={onComposerPaste}
                           onKeyDown={(e) => {
+                            if (e.key === "Escape" && emojiOpen) {
+                              e.preventDefault();
+                              setEmojiOpen(false);
+                              return;
+                            }
                             if (mentionMenu && mentionSuggestions.length > 0) {
                               if (e.key === "ArrowDown") {
                                 e.preventDefault();
