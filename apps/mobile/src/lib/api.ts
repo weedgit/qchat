@@ -2,11 +2,13 @@ import * as SecureStore from "expo-secure-store";
 
 const ACCESS_KEY = "qchat.access_token";
 const REFRESH_KEY = "qchat.refresh_token";
+const SESSION_REVOKED_KEY = "qchat.session_revoked";
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
 let ready: Promise<void> | null = null;
 let onUnauthorized: (() => void) | null = null;
+let sessionRevokedReason: string | null = null;
 
 export function setOnUnauthorized(fn: (() => void) | null) {
   onUnauthorized = fn;
@@ -50,6 +52,28 @@ export async function clearToken(): Promise<void> {
   refreshToken = null;
   await SecureStore.deleteItemAsync(ACCESS_KEY);
   await SecureStore.deleteItemAsync(REFRESH_KEY);
+}
+
+/** Persist why this device was signed out (same-type kick / ban). */
+export async function setSessionRevokedReason(reason: string): Promise<void> {
+  sessionRevokedReason = reason || "replaced";
+  await SecureStore.setItemAsync(SESSION_REVOKED_KEY, sessionRevokedReason);
+}
+
+/** Consume and clear the revoke banner reason (login screen). */
+export async function takeSessionRevokedReason(): Promise<string | null> {
+  if (sessionRevokedReason) {
+    const r = sessionRevokedReason;
+    sessionRevokedReason = null;
+    await SecureStore.deleteItemAsync(SESSION_REVOKED_KEY).catch(() => {});
+    return r;
+  }
+  const stored = await SecureStore.getItemAsync(SESSION_REVOKED_KEY);
+  if (stored) {
+    await SecureStore.deleteItemAsync(SESSION_REVOKED_KEY).catch(() => {});
+    return stored;
+  }
+  return null;
 }
 
 export class ApiError extends Error {

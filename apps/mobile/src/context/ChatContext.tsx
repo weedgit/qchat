@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { router } from "expo-router";
 import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "../lib/api";
 import { isVideoMime } from "../lib/mediaLimits";
 import {
@@ -74,7 +75,7 @@ type ChatContextValue = {
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const { signedIn, user } = useAuth();
+  const { signedIn, user, forceLocalSignOut } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [hasMoreByConv, setHasMoreByConv] = useState<Record<string, boolean>>({});
@@ -91,6 +92,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
+  const kickedRef = useRef(false);
   const handleIncomingRef = useRef<(raw: any) => void>(() => {});
   const eventListenersRef = useRef(new Set<(type: string, payload: any) => void>());
 
@@ -99,6 +101,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   conversationsRef.current = conversations;
   messagesRef.current = messages;
   hasMoreRef.current = hasMoreByConv;
+
+  useEffect(() => {
+    if (signedIn) kickedRef.current = false;
+  }, [signedIn]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -208,6 +214,33 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     (raw: any) => {
       const type = String(raw?.type ?? "");
       const payload = raw?.payload ?? raw?.data ?? raw;
+
+      // Same-type login / remote revoke — sign out immediately (mirror web).
+      if (type === "session.revoked") {
+        kickedRef.current = true;
+        if (retryRef.current) {
+          clearTimeout(retryRef.current);
+          retryRef.current = null;
+        }
+        const ws = wsRef.current;
+        if (ws) {
+          try {
+            ws.onclose = null;
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          wsRef.current = null;
+        }
+        setConnected(false);
+        void forceLocalSignOut(String(payload?.reason || "replaced"));
+        try {
+          router.replace("/login");
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
 
  // Calls signaling → useCall (mirror web useChat).
       if (type.startsWith("call.")) {
@@ -606,7 +639,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [loadConversations]
+    [loadConversations, forceLocalSignOut]
   );
 
   handleIncomingRef.current = handleIncoming;
@@ -671,7 +704,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           wsRef.current = null;
           setConnected(false);
         }
-        if (!disposed) {
+        if (!disposed && !kickedRef.current) {
           const delay = Math.min(backoffRef.current, 15000);
           backoffRef.current = Math.min(delay * 2, 15000);
           retryRef.current = setTimeout(connect, delay);
