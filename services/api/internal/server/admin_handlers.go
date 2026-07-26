@@ -340,7 +340,9 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 		writeErr(w, 500, "hash failed")
 		return
 	}
-	tag, err := s.db.Exec(r.Context(), `UPDATE users SET password_hash=$3 WHERE id=$1 AND enterprise_id=$2`, uid, c.EnterpriseID, hash)
+	tag, err := s.db.Exec(r.Context(), `
+		UPDATE users SET password_hash=$3, mfa_active=FALSE, mfa_secret=''
+		WHERE id=$1 AND enterprise_id=$2`, uid, c.EnterpriseID, hash)
 	if err != nil {
 		writeErr(w, 400, "reset failed")
 		return
