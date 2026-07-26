@@ -76,9 +76,34 @@ func captcha(t *testing.T, base string) (id, code string) {
 
 func postJSON(t *testing.T, url, token string, payload any) (int, map[string]any) {
 	t.Helper()
+	return postJSONWithIP(t, url, token, "", payload)
+}
+
+func postJSONWithIP(t *testing.T, url, token, realIP string, payload any) (int, map[string]any) {
+	t.Helper()
 	b, _ := json.Marshal(payload)
 	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if realIP != "" {
+		req.Header.Set("X-Real-IP", realIP)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	var body map[string]any
+	_ = json.Unmarshal(raw, &body)
+	return res.StatusCode, body
+}
+
+func deleteJSON(t *testing.T, url, token string) (int, map[string]any) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodDelete, url, nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
