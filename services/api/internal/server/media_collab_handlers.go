@@ -22,6 +22,21 @@ var (
 	maxVoiceBytes  = int64(10 << 20) // ~60s recorded voice
 )
 
+// allowedAvatarTypes are raster formats named by requirements-en §2.2 (JPG/PNG/GIF)
+// plus WebP. SVG is excluded: image/svg+xml is scriptable and would be served from
+// the same origin as the app when used as an avatar.
+var allowedAvatarTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
+}
+
+// allowedAvatarContentType reports whether ct is a permitted avatar MIME type.
+func allowedAvatarContentType(ct string) bool {
+	return allowedAvatarTypes[strings.ToLower(strings.TrimSpace(ct))]
+}
+
 // maxUploadBytes sizes by kind. Any content type is accepted for chat attachments.
 func maxUploadBytes(kind, contentType string) int64 {
 	switch kind {
@@ -73,10 +88,20 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
 		ct = strings.TrimSpace(ct[:i])
 	}
-	// Avatars must be images and ≤ 100 MB (profile image upload).
-	if kind == "avatar" && !strings.HasPrefix(ct, "image/") {
-		writeErr(w, 400, "avatar must be an image")
-		return
+	ct = strings.ToLower(ct)
+	// Avatars: whitelist raster types only (no SVG). Size capped at 100 MB.
+	if kind == "avatar" {
+		if !allowedAvatarContentType(ct) {
+			writeErr(w, 400, "avatar must be jpeg, png, gif, or webp")
+			return
+		}
+		// Reject SVG even when the client lies about Content-Type but keeps a
+		// .svg filename — ServeFile would then label the response as SVG.
+		ext := strings.ToLower(filepath.Ext(hdr.Filename))
+		if ext == ".svg" || ext == ".svgz" {
+			writeErr(w, 400, "avatar must be jpeg, png, gif, or webp")
+			return
+		}
 	}
 	max := maxUploadBytes(kind, ct)
 	if hdr.Size > 0 && hdr.Size > max {
@@ -189,6 +214,8 @@ func extFor(ct, name string) string {
 		return ".png"
 	case "image/gif":
 		return ".gif"
+	case "image/webp":
+		return ".webp"
 	case "video/mp4":
 		return ".mp4"
 	case "audio/mpeg":

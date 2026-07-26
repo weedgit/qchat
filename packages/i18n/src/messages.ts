@@ -120,7 +120,7 @@ const en = {
   "time.hoursAgo": "{n}h ago",
   "time.daysAgo": "{n}d ago",
 
-  "media.avatarMustBeImage": "Avatar must be an image",
+  "media.avatarMustBeImage": "Avatar must be JPEG, PNG, GIF, or WebP",
   "media.avatarTooLarge": "Avatar must be 100 MB or less",
 
   "login.title": "Sign in",
@@ -510,7 +510,7 @@ const zh: Record<MessageKey, string> = {
   "time.hoursAgo": "{n} 小时前",
   "time.daysAgo": "{n} 天前",
 
-  "media.avatarMustBeImage": "头像必须是图片",
+  "media.avatarMustBeImage": "头像须为 JPEG、PNG、GIF 或 WebP",
   "media.avatarTooLarge": "头像不能超过 100 MB",
 
   "login.title": "登录",

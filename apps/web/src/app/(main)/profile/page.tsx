@@ -7,7 +7,7 @@ import MenuModal from "@/components/MenuModal";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/MeContext";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import { AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
+import { AVATAR_ACCEPT, AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
 import { useLocale } from "@/lib/locale";
 
 function RowIcon({ d }: { d: string }) {
@@ -246,7 +246,7 @@ export default function ProfilePage() {
         <input
           ref={avatarInputRef}
           type="file"
-          accept="image/*"
+          accept={AVATAR_ACCEPT}
           style={{ display: "none" }}
           onChange={(e) => {
             const file = e.target.files?.[0];

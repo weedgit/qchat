@@ -6,12 +6,23 @@ export const VIDEO_MAX_BYTES = 200 * 1024 * 1024;
 export const VOICE_MAX_BYTES = 10 * 1024 * 1024;
 export const VOICE_MAX_SEC = 60;
 
+/** Raster avatar types accepted by POST /v1/media/upload (kind=avatar). SVG excluded. */
+export const AVATAR_ACCEPT = "image/jpeg,image/png,image/gif,image/webp";
+
+const AVATAR_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
 export function isAvatarFile(file: File | Blob): boolean {
-  return (file.type || "").startsWith("image/");
+  const type = (file.type || "").toLowerCase().trim();
+  return AVATAR_TYPES.has(type);
 }
 
 export function avatarLimitError(file: File): string | null {
-  if (!isAvatarFile(file)) return "Avatar must be an image";
+  if (!isAvatarFile(file)) return "Avatar must be JPEG, PNG, GIF, or WebP";
   if (file.size > AVATAR_MAX_BYTES) return "Avatar must be 100 MB or less";
   return null;
 }
