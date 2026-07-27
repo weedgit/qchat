@@ -226,6 +226,19 @@ func (s *Server) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]any{"id": id.String()})
 }
 
+// maxSocialGroupMembers is the soft capacity for social groups. Requirements
+// call for support of more than 1,000 members; 5,000 leaves headroom while
+// bounding fan-out and storage cost.
+const maxSocialGroupMembers = 5000
+
+func (s *Server) activeGroupMemberCount(r *http.Request, convID string) (int, error) {
+	var n int
+	err := s.db.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM conversation_members
+		WHERE conversation_id=$1 AND role <> 'pending'`, convID).Scan(&n)
+	return n, err
+}
+
 func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	var req struct {
@@ -235,6 +248,27 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &req); err != nil || req.Title == "" {
 		writeErrCode(w, 400, "invalid_request", "title required")
+		return
+	}
+	unique := map[string]struct{}{c.UserID: {}}
+	for _, mid := range req.MemberIDs {
+		mid = strings.TrimSpace(mid)
+		if mid == "" || mid == c.UserID {
+			continue
+		}
+		var ok bool
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT EXISTS(
+				SELECT 1 FROM friendships
+				WHERE status='accepted' AND enterprise_id IS NOT DISTINCT FROM $1
+				  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
+			)`, entArg(c.EnterpriseID), c.UserID, mid).Scan(&ok)
+		if ok {
+			unique[mid] = struct{}{}
+		}
+	}
+	if len(unique) > maxSocialGroupMembers {
+		writeErrCode(w, 400, "group_full", fmt.Sprintf("group member limit is %d", maxSocialGroupMembers))
 		return
 	}
 	id := uuid.New()
@@ -249,18 +283,8 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	_, _ = s.db.Exec(r.Context(), `
 		INSERT INTO conversation_members(conversation_id, user_id, role, history_visible_from)
 		VALUES ($1,$2,'owner', TIMESTAMPTZ '1970-01-01')`, id, c.UserID)
-	for _, mid := range req.MemberIDs {
+	for mid := range unique {
 		if mid == c.UserID {
-			continue
-		}
-		var ok bool
-		_ = s.db.QueryRow(r.Context(), `
-			SELECT EXISTS(
-				SELECT 1 FROM friendships
-				WHERE status='accepted' AND enterprise_id IS NOT DISTINCT FROM $1
-				  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
-			)`, entArg(c.EnterpriseID), c.UserID, mid).Scan(&ok)
-		if !ok {
 			continue
 		}
 		_, _ = s.db.Exec(r.Context(), `
@@ -293,12 +317,21 @@ func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
 	}
+	current, err := s.activeGroupMemberCount(r, convID)
+	if err != nil {
+		writeErrCode(w, 500, "member_count_failed", "member count failed")
+		return
+	}
 
 	added := make([]string, 0)
 	skipped := make([]string, 0)
 	for _, mid := range req.MemberIDs {
 		mid = strings.TrimSpace(mid)
 		if mid == "" || mid == c.UserID {
+			continue
+		}
+		if current+len(added) >= maxSocialGroupMembers {
+			skipped = append(skipped, mid)
 			continue
 		}
 		var okFriend bool
@@ -683,7 +716,16 @@ func (s *Server) handleApproveJoin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	_, err := s.db.Exec(r.Context(), `
+	current, err := s.activeGroupMemberCount(r, convID)
+	if err != nil {
+		writeErrCode(w, 500, "member_count_failed", "member count failed")
+		return
+	}
+	if current >= maxSocialGroupMembers {
+		writeErrCode(w, 400, "group_full", fmt.Sprintf("group member limit is %d", maxSocialGroupMembers))
+		return
+	}
+	_, err = s.db.Exec(r.Context(), `
 		UPDATE conversation_members SET role='member', history_visible_from=now(), joined_at=now()
 		WHERE conversation_id=$1 AND user_id=$2 AND role='pending'`, convID, req.UserID)
 	if err != nil {
