@@ -140,6 +140,31 @@ export default function GroupsPage() {
     }
   }
 
+  const refreshPending = useCallback(async (groupId: string) => {
+    try {
+      const [details, pend] = await Promise.all([
+        api<any>(`/v1/groups/${groupId}`),
+        api<any>(`/v1/groups/${groupId}/pending`).catch(() => ({ pending: [] })),
+      ]);
+      setRole(String(details?.role ?? ""));
+      setMembers(asList(details, "members"));
+      setPending(asList(pend, "pending"));
+    } catch {
+      /* keep existing pending UI */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeGroup) return;
+    const onPending = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ conversation_id?: string }>).detail;
+      if (detail?.conversation_id !== activeGroup) return;
+      void refreshPending(activeGroup);
+    };
+    window.addEventListener("qchat:group-pending", onPending);
+    return () => window.removeEventListener("qchat:group-pending", onPending);
+  }, [activeGroup, refreshPending]);
+
   async function approve(userId: string) {
     if (!activeGroup) return;
     await api(`/v1/groups/${activeGroup}/approve`, {
