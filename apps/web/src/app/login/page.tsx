@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
   const [captchaStatus, setCaptchaStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -195,6 +196,10 @@ export default function LoginPage() {
         setError(early);
         return;
       }
+      if (mode === "register" && !inviteCode.trim()) {
+        setError("Company invite code is required");
+        return;
+      }
       const device = await getAuthDevice();
       const payload: Record<string, any> = {
         phone,
@@ -208,6 +213,7 @@ export default function LoginPage() {
       };
       if (mode === "register") {
         payload.username = username.trim();
+        payload.invite_code = inviteCode.trim().toUpperCase();
         payload.sms_challenge_id = smsChallengeId;
         payload.sms_code = smsCode;
       } else {
@@ -250,7 +256,7 @@ export default function LoginPage() {
         <div className="auth-sub">
           {mode === "login"
             ? "Secure enterprise messaging"
-            : "After signing up, use Join a company in chat to enter with an invite code. Test SMS code: 12345 (Send SMS optional)"}
+            : "Join your company with an invite code. SMS verification required."}
         </div>
 
         <div className="field">
@@ -277,6 +283,21 @@ export default function LoginPage() {
           </div>
         )}
 
+        {mode === "register" && (
+          <div className="field">
+            <label>Company invite code</label>
+            <input
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              placeholder="ACME2026"
+              autoComplete="off"
+              required
+            />
+            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+              From your organization admin. You can still switch companies later from chat.
+            </div>
+          </div>
+        )}
         <div className="field">
           <label>Password</label>
           <input

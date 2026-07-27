@@ -22,7 +22,7 @@ func (s *Server) handleJoinEnterprise(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invite_code required")
 		return
 	}
-	code := strings.TrimSpace(req.InviteCode)
+	code := strings.ToUpper(strings.TrimSpace(req.InviteCode))
 	var entID string
 	var active bool
 	var name string

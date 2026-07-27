@@ -146,12 +146,16 @@ func registerUser(t *testing.T, base, invite string) (token, refresh, userID, us
 		t.Fatalf("register otp %s: %d %v", username, st, otpBody)
 	}
 	cid2, code2 := captcha(t, base)
-	status, body := postJSON(t, base+"/v1/auth/register", "", map[string]any{
+	regPayload := map[string]any{
 		"phone": phone, "password": "user12345", "username": username,
 		"captcha_id": cid2, "captcha": code2,
 		"sms_challenge_id": otpBody["challenge_id"], "sms_code": otpBody["dev_code"],
 		"device_type": "web", "device_name": "test", "device_id": "test-device-" + username,
-	})
+	}
+	if invite != "" {
+		regPayload["invite_code"] = invite
+	}
+	status, body := postJSON(t, base+"/v1/auth/register", "", regPayload)
 	if status != 201 {
 		t.Fatalf("register %s: %d %v", username, status, body)
 	}
@@ -159,18 +163,8 @@ func registerUser(t *testing.T, base, invite string) (token, refresh, userID, us
 	refresh = fmt.Sprint(body["refresh_token"])
 	userID = fmt.Sprint(body["user_id"])
 	if invite != "" {
-		st, join := postJSON(t, base+"/v1/enterprises/join", token, map[string]any{
-			"invite_code": invite,
-			"device_type": "web", "device_name": "test", "device_id": "test-device-" + username,
-		})
-		if st != 200 {
-			t.Fatalf("join %s: %d %v", username, st, join)
-		}
-		if join["access_token"] != nil {
-			token = fmt.Sprint(join["access_token"])
-		}
-		if join["refresh_token"] != nil {
-			refresh = fmt.Sprint(join["refresh_token"])
+		if body["enterprise_id"] == nil || fmt.Sprint(body["enterprise_id"]) == "" {
+			t.Fatalf("register %s: expected enterprise_id from invite, got %v", username, body)
 		}
 	}
 	return token, refresh, userID, username

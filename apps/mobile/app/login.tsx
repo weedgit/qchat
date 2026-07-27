@@ -29,6 +29,7 @@ export default function LoginScreen() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
   const [captchaId, setCaptchaId] = useState("");
   const [captchaImage, setCaptchaImage] = useState("");
@@ -122,6 +123,10 @@ export default function LoginScreen() {
         setError(early);
         return;
       }
+      if (mode === "register" && !inviteCode.trim()) {
+        setError(t("login.inviteRequired"));
+        return;
+      }
       const device = await getAuthDevice();
       const payload: Record<string, unknown> = {
         phone,
@@ -135,6 +140,7 @@ export default function LoginScreen() {
       };
       if (mode === "register") {
         payload.username = username.trim();
+        payload.invite_code = inviteCode.trim().toUpperCase();
         payload.sms_challenge_id = smsChallengeId;
         payload.sms_code = smsCode;
       } else {
@@ -193,7 +199,7 @@ export default function LoginScreen() {
             colors={colors}
           />
           {mode === "register" && (
-            <Text style={styles.hint}>After signup, join a company with an invite code in chat.</Text>
+            <Text style={styles.hint}>{t("login.subtitleRegister")}</Text>
           )}
           {mode === "register" && (
             <Field
@@ -204,6 +210,20 @@ export default function LoginScreen() {
               styles={styles}
               colors={colors}
             />
+          )}
+          {mode === "register" && (
+            <Field
+              label={t("login.inviteCode")}
+              value={inviteCode}
+              onChangeText={(v) => setInviteCode(v.toUpperCase())}
+              placeholder="ACME2026"
+              autoCapitalize="characters"
+              styles={styles}
+              colors={colors}
+            />
+          )}
+          {mode === "register" && (
+            <Text style={styles.hint}>{t("login.inviteHint")}</Text>
           )}
           <Field
             label={t("login.password")}
