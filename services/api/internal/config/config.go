@@ -39,6 +39,9 @@ type Config struct {
 	// SMSProvider selects the verification-code gateway. "dev" only logs codes
 	// locally and is refused in production.
 	SMSProvider string
+	// GiphyAPIKey powers composer GIF search via GET /v1/gifs. Empty disables
+	// the feature with a clear API error (Tenor third-party API is shut down).
+	GiphyAPIKey string
 }
 
 func Load() Config {
@@ -63,6 +66,7 @@ func Load() Config {
 		VAPIDPrivate:           getenv("QCHAT_VAPID_PRIVATE", "bUnBIxgamtcANH9nAryWvxT0v8s4iosetHMSeOmcB7g"),
 		VAPIDSubject:           getenv("QCHAT_VAPID_SUBJECT", "mailto:admin@qchat.local"),
 		SMSProvider:            strings.ToLower(getenv("QCHAT_SMS_PROVIDER", "dev")),
+		GiphyAPIKey:            strings.TrimSpace(getenv("QCHAT_GIPHY_API_KEY", "")),
 	}
 }
 

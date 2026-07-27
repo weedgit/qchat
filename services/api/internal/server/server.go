@@ -155,6 +155,7 @@ func (s *Server) routes() {
 
 	// Media
 	s.mux.HandleFunc("POST /v1/media/upload", s.auth(s.handleMediaUpload))
+	s.mux.HandleFunc("GET /v1/gifs", s.auth(s.handleGifSearch))
 
 	// Collaboration
 	s.mux.HandleFunc("POST /v1/spaces", s.auth(s.handleCreateSpace))
