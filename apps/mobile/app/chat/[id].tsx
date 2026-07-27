@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -22,6 +23,7 @@ import { Avatar } from "../../src/components/Avatar";
 import { ChatComposer, type MentionMember } from "../../src/components/ChatComposer";
 import { MessageBody } from "../../src/components/MessageBody";
 import { MessageActionPopup } from "../../src/components/MessageActionPopup";
+import { VoiceNotePlayer } from "../../src/components/VoiceNotePlayer";
 import { useChat } from "../../src/context/ChatContext";
 import { useCallApi } from "../../src/context/CallContext";
 import { api, mediaAuthURL } from "../../src/lib/api";
@@ -167,6 +169,42 @@ function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
   const tint = mine ? "#fff" : colors.text;
   const subTint = mine ? "rgba(255,255,255,0.8)" : colors.textMuted;
   const videoUri = isVideo ? mediaAuthURL(item.mediaUrl) || item.mediaUrl : undefined;
+  const imageUri =
+    item.type === "image" && item.mediaUrl
+      ? mediaAuthURL(item.mediaUrl) || item.mediaUrl
+      : undefined;
+  const voiceUri =
+    item.type === "voice" && item.mediaUrl
+      ? mediaAuthURL(item.mediaUrl) || item.mediaUrl
+      : undefined;
+
+  if (imageUri) {
+    return (
+      <View style={styles.videoCol}>
+        <Pressable onPress={(e) => e?.stopPropagation?.()}>
+          <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="cover" />
+        </Pressable>
+        {detail ? (
+          <Text style={[styles.mediaDetail, { color: subTint }]} numberOfLines={2}>
+            {detail}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+
+  if (voiceUri) {
+    return (
+      <VoiceNotePlayer
+        uri={voiceUri}
+        label={label}
+        detail={detail}
+        tint={tint}
+        subTint={subTint}
+        mine={mine}
+      />
+    );
+  }
 
   if (isVideo && videoUri) {
     return (
@@ -1592,6 +1630,12 @@ function makeStyles(c: ColorTokens) {
     width: 240,
     height: 180,
     backgroundColor: "#000",
+    borderRadius: 8,
+  },
+  imagePreview: {
+    width: 240,
+    height: 180,
+    backgroundColor: "rgba(0,0,0,0.08)",
     borderRadius: 8,
   },
   mediaIconWrap: {
