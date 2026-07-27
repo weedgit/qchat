@@ -29,3 +29,18 @@ func TestPhoneAndHash(t *testing.T) {
 		t.Fatal("check")
 	}
 }
+
+func TestValidateDisplayName(t *testing.T) {
+	ok := []string{"Alice", "李明", "cool_user", "hi 👋", "A B"}
+	for _, name := range ok {
+		if err := ValidateDisplayName(name); err != nil {
+			t.Fatalf("%q: %v", name, err)
+		}
+	}
+	bad := []string{"", "x", "bad!", "at@name", "hash#tag", "a\tb"}
+	for _, name := range bad {
+		if err := ValidateDisplayName(name); err == nil {
+			t.Fatalf("%q: expected invalid", name)
+		}
+	}
+}

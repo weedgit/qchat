@@ -20,6 +20,7 @@ import { useAuth } from "../../src/context/AuthContext";
 import { useLocale } from "../../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { api, uploadMedia } from "../../src/lib/api";
+import { displayNameError } from "../../src/lib/credentials";
 import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 type Profile = {
@@ -121,6 +122,11 @@ export default function MeScreen() {
 
   async function onSaveProfile() {
     if (!me) return;
+    const dnErr = displayNameError(me.display_name);
+    if (dnErr) {
+      setError(dnErr);
+      return;
+    }
     setSaving(true);
     setSaved(false);
     setError(null);
@@ -128,7 +134,7 @@ export default function MeScreen() {
       await api("/v1/me", {
         method: "PATCH",
         body: JSON.stringify({
-          display_name: me.display_name,
+          display_name: me.display_name.trim(),
           real_name: me.real_name,
           age: me.age,
           region: me.region,

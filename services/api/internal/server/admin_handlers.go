@@ -311,9 +311,20 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	display := req.DisplayName
+	display := strings.TrimSpace(req.DisplayName)
 	if display == "" {
 		display = req.Username
+	}
+	if err := auth.ValidateDisplayName(display); err != nil {
+		writeErrFields(w, 400, "invalid_display_name", err.Error(), map[string]string{"display_name": err.Error()})
+		return
+	}
+	if taken, err := s.displayNameTaken(r, display, ""); err != nil {
+		writeErr(w, 500, "lookup failed")
+		return
+	} else if taken {
+		writeErrFields(w, 409, "conflict", "display name already taken", map[string]string{"display_name": "already taken"})
+		return
 	}
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {

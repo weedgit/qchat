@@ -7,6 +7,7 @@ import MenuModal from "@/components/MenuModal";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/MeContext";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { displayNameError } from "@/lib/credentials";
 import { AVATAR_ACCEPT, AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
 import { useLocale } from "@/lib/locale";
 
@@ -162,13 +163,18 @@ export default function ProfilePage() {
   async function onSave(e: FormEvent) {
     e.preventDefault();
     if (!me) return;
+    const dnErr = displayNameError(me.display_name);
+    if (dnErr) {
+      setError(dnErr);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       await api("/v1/me", {
         method: "PATCH",
         body: JSON.stringify({
-          display_name: me.display_name,
+          display_name: me.display_name.trim(),
           real_name: me.real_name,
           age: me.age,
           region: me.region,

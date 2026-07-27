@@ -35,6 +35,37 @@ export function isValidUsername(name: string): boolean {
   return true;
 }
 
+/**
+ * Display name: 2–64 letters/digits/spaces/underscore/emoji; no ASCII special symbols.
+ * Mirrors auth.ValidateDisplayName.
+ */
+export function isValidDisplayName(name: string): boolean {
+  const s = name.trim();
+  const len = codePointCount(s);
+  if (len < 2 || len > 64) return false;
+  for (let i = 0; i < s.length; ) {
+    const cp = s.codePointAt(i);
+    if (cp === undefined) return false;
+    const ch = String.fromCodePoint(cp);
+    if (ch === " " || /^[0-9A-Za-z_]$/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    if (cp <= 127) {
+      return false;
+    }
+    i += cp > 0xffff ? 2 : 1;
+  }
+  return true;
+}
+
+export function displayNameError(name: string): string | null {
+  if (!isValidDisplayName(name)) {
+    return "Display name must be 2–64 letters, digits, spaces, underscores, or emoji (no special symbols)";
+  }
+  return null;
+}
+
 export function passwordError(password: string): string | null {
   if (!passwordRe.test(password)) {
     return "Password must be at least 8 characters and contain only letters and digits";
