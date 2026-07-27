@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/qchat/qchat/services/api/internal/auth"
+	"github.com/qchat/qchat/services/api/internal/blobstore"
 )
 
 var (
@@ -64,6 +66,13 @@ func (s *Server) uploadRoot() string {
 	return filepath.Join(dir, "uploads")
 }
 
+func (s *Server) blobStore() blobstore.Store {
+	if s.blobs != nil {
+		return s.blobs
+	}
+	return blobstore.NewLocal(s.cfg.DataDir)
+}
+
 func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	// Keep most of the multipart in temp files so large uploads don't pin RAM.
@@ -113,25 +122,32 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	if scope == "" {
 		scope = filepath.Join("personal", c.UserID)
 	}
-	key := filepath.Join(scope, kind, uuid.NewString()+extFor(ct, hdr.Filename))
-	root := s.uploadRoot()
-	dir := filepath.Join(root, filepath.Dir(key))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		writeErr(w, 500, "store failed")
-		return
-	}
-	destPath := filepath.Join(root, key)
-	out, err := os.Create(destPath)
+	key := filepath.ToSlash(filepath.Join(scope, kind, uuid.NewString()+extFor(ct, hdr.Filename)))
+
+	// Buffer through a temp file so we know the exact size for S3 PutObject and
+	// can hash without holding the full body in memory twice.
+	tmp, err := os.CreateTemp("", "qchat-upload-*")
 	if err != nil {
 		writeErr(w, 500, "store failed")
 		return
 	}
+	tmpName := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+	}()
 	hash := sha256.New()
-	written, err := io.Copy(io.MultiWriter(out, hash), io.LimitReader(file, max+1))
-	closeErr := out.Close()
-	if err != nil || closeErr != nil || written > max {
-		_ = os.Remove(destPath)
+	written, err := io.Copy(io.MultiWriter(tmp, hash), io.LimitReader(file, max+1))
+	if err != nil || written > max {
 		writeErr(w, 400, "read failed or too large")
+		return
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		writeErr(w, 500, "store failed")
+		return
+	}
+	if err := s.blobStore().Put(r.Context(), key, tmp, written, ct); err != nil {
+		writeErr(w, 500, "store failed")
 		return
 	}
 	id := uuid.New()
@@ -147,13 +163,14 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
 		id, ent, c.UserID, kind, ct, written, key, hex.EncodeToString(hash.Sum(nil)))
 	if err != nil {
-		_ = os.Remove(destPath)
+		_ = s.blobStore().Delete(r.Context(), key)
 		writeErr(w, 500, "db failed")
 		return
 	}
-	url := "/v1/media/files/" + filepath.ToSlash(key)
+	url := "/v1/media/files/" + key
 	writeJSON(w, 201, map[string]any{
 		"id": id.String(), "url": url, "content_type": ct, "size": written, "kind": kind,
+		"storage": s.blobStore().Name(),
 	})
 }
 
@@ -195,12 +212,20 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
-	full := filepath.Join(s.uploadRoot(), filepath.FromSlash(rel))
-	if _, err := os.Stat(full); err != nil {
+	rc, contentType, size, err := s.blobStore().Open(r.Context(), rel)
+	if err != nil {
 		writeErr(w, 404, "file not found")
 		return
 	}
-	http.ServeFile(w, r, full)
+	defer rc.Close()
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	if size > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, rc)
 }
 
 func extFor(ct, name string) string {

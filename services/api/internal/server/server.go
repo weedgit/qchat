@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/qchat/qchat/services/api/internal/auth"
+	"github.com/qchat/qchat/services/api/internal/blobstore"
 	"github.com/qchat/qchat/services/api/internal/config"
 	"github.com/qchat/qchat/services/api/internal/sms"
 	"github.com/qchat/qchat/services/api/internal/ws"
@@ -23,6 +24,7 @@ type Server struct {
 	db         *pgxpool.Pool
 	hub        *ws.Hub
 	sms        sms.Sender
+	blobs      blobstore.Store
 	mux        *http.ServeMux
 	upgrader   websocket.Upgrader
 	limitAPI   *ipLimiter
@@ -33,11 +35,19 @@ type Server struct {
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
+	blobs := blobstore.Open(context.Background(), blobstore.Config{
+		Endpoint:  cfg.ObjectStorageURL,
+		Bucket:    cfg.Bucket,
+		AccessKey: cfg.ObjectStorageAccessKey,
+		SecretKey: cfg.ObjectStorageSecretKey,
+		DataDir:   cfg.DataDir,
+	})
 	s := &Server{
 		cfg:        cfg,
 		db:         db,
 		hub:        hub,
 		sms:        sms.New(cfg.SMSProvider),
+		blobs:      blobs,
 		mux:        http.NewServeMux(),
 		limitAPI:   newIPLimiter(apiRatePerSec, apiBurst),
 		limitAuth:  newIPLimiter(authRatePerSec, authBurst),

@@ -40,6 +40,7 @@ func testServer(t *testing.T) (*httptest.Server, func()) {
 	cfg.AccessTTL = time.Minute
 	cfg.RefreshTTL = time.Hour
 	cfg.Env = "test" // expose captcha dev_answer for automated tests
+	cfg.ObjectStorageURL = "" // force local disk in tests
 	hub := ws.NewHub()
 	srv := server.New(cfg, pool, hub)
 	ts := httptest.NewServer(srv.Handler())
