@@ -661,6 +661,14 @@ func (s *Server) handleAppointAdmin(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 404, "not_found", "member not found")
 		return
 	}
+	action := "group.admin_appoint"
+	if req.Role == "member" {
+		action = "group.admin_demote"
+	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, action, "user", req.UserID, "", clientIP(r), map[string]any{
+		"conversation_id": convID,
+		"role":            req.Role,
+	})
 	writeJSON(w, 200, map[string]any{"ok": true, "role": req.Role})
 }
 
@@ -749,6 +757,9 @@ func (s *Server) handleApproveJoin(w http.ResponseWriter, r *http.Request) {
 			"user_id":         req.UserID,
 			"action":          "approved",
 		},
+	})
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.join_approve", "user", req.UserID, "", clientIP(r), map[string]any{
+		"conversation_id": convID,
 	})
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
