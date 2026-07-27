@@ -106,6 +106,10 @@ export default function ChatInfoScreen() {
   const [tagsText, setTagsText] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [lookupHits, setLookupHits] = useState<
+    { userId: string; username: string; displayName: string; avatarUrl?: string }[]
+  >([]);
+  const [lookupBusy, setLookupBusy] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [friendQuery, setFriendQuery] = useState("");
 
@@ -282,6 +286,7 @@ export default function ChatInfoScreen() {
   async function openAddMembers() {
     setPicked(new Set());
     setFriendQuery("");
+    setLookupHits([]);
     setBusy(true);
     try {
       const body = await api<any>("/v1/friends");
@@ -302,15 +307,66 @@ export default function ChatInfoScreen() {
     [group]
   );
 
-  const addableFriends = useMemo(() => {
+  useEffect(() => {
+    if (!addOpen) return;
+    const q = friendQuery.trim();
+    if (!q) {
+      setLookupHits([]);
+      setLookupBusy(false);
+      return;
+    }
+    let cancelled = false;
+    setLookupBusy(true);
+    const timer = setTimeout(() => {
+      api<any>(`/v1/users/lookup?q=${encodeURIComponent(q)}`)
+        .then((body) => {
+          if (cancelled) return;
+          setLookupHits(
+            asList(body, "users")
+              .map((u: any) => ({
+                userId: String(u?.id ?? ""),
+                username: String(u?.username ?? ""),
+                displayName: String(u?.display_name ?? u?.username ?? ""),
+                avatarUrl: u?.avatar_url || undefined,
+              }))
+              .filter((u: { userId: string }) => u.userId && !memberIds.has(u.userId))
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setLookupHits([]);
+        })
+        .finally(() => {
+          if (!cancelled) setLookupBusy(false);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [addOpen, friendQuery, memberIds]);
+
+  const addablePeople = useMemo(() => {
     const q = friendQuery.trim().toLowerCase();
-    return friends.filter((f) => {
-      if (memberIds.has(f.userId)) return false;
-      if (!q) return true;
-      const name = (f.note || f.nickname || f.username).toLowerCase();
-      return name.includes(q) || f.username.toLowerCase().includes(q);
-    });
-  }, [friends, memberIds, friendQuery]);
+    const friendRows = friends
+      .filter((f) => {
+        if (memberIds.has(f.userId)) return false;
+        if (!q) return true;
+        const name = (f.note || f.nickname || f.username).toLowerCase();
+        return name.includes(q) || f.username.toLowerCase().includes(q);
+      })
+      .map((f) => ({
+        userId: f.userId,
+        username: f.username,
+        displayName: f.note || f.nickname || f.username,
+        avatarUrl: f.avatarUrl,
+        isFriend: true,
+      }));
+    const friendIds = new Set(friends.map((f) => f.userId));
+    const extra = lookupHits
+      .filter((u) => !friendIds.has(u.userId))
+      .map((u) => ({ ...u, isFriend: false }));
+    return [...friendRows, ...extra];
+  }, [friends, memberIds, friendQuery, lookupHits]);
 
   function togglePick(userId: string) {
     setPicked((prev) => {
@@ -716,27 +772,31 @@ export default function ChatInfoScreen() {
           </View>
           <TextInput
             style={styles.search}
-            placeholder="Search friends"
+            placeholder="Search friends or exact username"
             placeholderTextColor={colors.textMuted}
             value={friendQuery}
             onChangeText={setFriendQuery}
             autoCapitalize="none"
           />
           <FlatList
-            data={addableFriends}
+            data={addablePeople}
             keyExtractor={(f) => f.userId}
             ListEmptyComponent={
-              <Text style={styles.empty}>No friends left to add.</Text>
+              <Text style={styles.empty}>
+                {lookupBusy ? "Searching…" : "No matches. Try an exact username."}
+              </Text>
             }
             renderItem={({ item: f }) => {
               const selected = picked.has(f.userId);
-              const name = f.note || f.nickname || f.username;
               return (
                 <Pressable style={styles.pickRow} onPress={() => togglePick(f.userId)}>
-                  <Avatar name={name} url={f.avatarUrl} size={40} />
+                  <Avatar name={f.displayName} url={f.avatarUrl} size={40} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.memberName}>{name}</Text>
-                    <Text style={styles.memberMeta}>@{f.username}</Text>
+                    <Text style={styles.memberName}>{f.displayName}</Text>
+                    <Text style={styles.memberMeta}>
+                      @{f.username}
+                      {!f.isFriend ? " · Not a friend" : ""}
+                    </Text>
                   </View>
                   <Ionicons
                     name={selected ? "checkmark-circle" : "ellipse-outline"}

@@ -296,6 +296,9 @@ paths:
     post:
       security: [{ bearerAuth: [] }]
       summary: Create group
+      description: |
+        Creates a social group. Optional member_ids may include any same-tenant
+        user (friendship not required). Blocked users are skipped.
       responses:
         "201":
           description: Created
@@ -852,6 +855,9 @@ paths:
     post:
       security: [{ bearerAuth: [] }]
       summary: Add group members
+      description: |
+        Owner or admin may add any same-tenant user (friendship not required).
+        Blocked or unknown users are skipped.
       parameters:
         - in: path
           name: id

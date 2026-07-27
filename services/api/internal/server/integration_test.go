@@ -435,3 +435,51 @@ func TestMessageHistoryPagination(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupInviteNonFriend(t *testing.T) {
+	ts, cleanup := testServer(t)
+	defer cleanup()
+	base := ts.URL
+
+	ownerTok, _, _, _ := registerUser(t, base, "ACME2026")
+	// Peer keeps default approval privacy — no friendship with owner.
+	_, _, peerID, peerName := registerUser(t, base, "ACME2026")
+
+	st, g := postJSON(t, base+"/v1/groups", ownerTok, map[string]any{
+		"title": "Open Invite", "member_ids": []string{peerID},
+	})
+	if st != 201 {
+		t.Fatalf("create with non-friend: %d %v", st, g)
+	}
+	gid := fmt.Sprint(g["id"])
+
+	st, details := getJSON(t, base+"/v1/groups/"+gid, ownerTok)
+	if st != 200 {
+		t.Fatalf("group details: %d %v", st, details)
+	}
+	members, _ := details["members"].([]any)
+	found := false
+	for _, item := range members {
+		m, _ := item.(map[string]any)
+		if fmt.Sprint(m["user_id"]) == peerID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("non-friend %s (%s) should be a member after create: %v", peerName, peerID, details)
+	}
+
+	extraTok, _, extraID, _ := registerUser(t, base, "ACME2026")
+	_ = extraTok
+	st, add := postJSON(t, base+"/v1/groups/"+gid+"/members", ownerTok, map[string]any{
+		"member_ids": []string{extraID},
+	})
+	if st != 200 {
+		t.Fatalf("add non-friend: %d %v", st, add)
+	}
+	added, _ := add["added"].([]any)
+	if len(added) != 1 || fmt.Sprint(added[0]) != extraID {
+		t.Fatalf("expected added=[%s], got %v", extraID, add)
+	}
+}

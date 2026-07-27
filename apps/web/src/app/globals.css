@@ -3413,6 +3413,14 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 .menu-modal-check:last-child {
   border-bottom: none;
 }
+.menu-modal-list-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.menu-modal-invite-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .menu-modal-list-row {
   display: flex;
   align-items: center;

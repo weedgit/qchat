@@ -256,14 +256,8 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		if mid == "" || mid == c.UserID {
 			continue
 		}
-		var ok bool
-		_ = s.db.QueryRow(r.Context(), `
-			SELECT EXISTS(
-				SELECT 1 FROM friendships
-				WHERE status='accepted' AND enterprise_id IS NOT DISTINCT FROM $1
-				  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
-			)`, entArg(c.EnterpriseID), c.UserID, mid).Scan(&ok)
-		if ok {
+		// Invite any same-tenant user (friendship not required). Skip blocked / unknown.
+		if s.canInviteUserToGroup(r, c.UserID, mid, c.EnterpriseID) {
 			unique[mid] = struct{}{}
 		}
 	}
@@ -295,7 +289,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAddGroupMembers AddChannelMember / invite —
-// owner or admin may add accepted friends into an existing social group.
+// owner or admin may add any same-tenant user (friendship not required).
 func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
@@ -334,14 +328,7 @@ func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 			skipped = append(skipped, mid)
 			continue
 		}
-		var okFriend bool
-		_ = s.db.QueryRow(r.Context(), `
-			SELECT EXISTS(
-				SELECT 1 FROM friendships
-				WHERE status='accepted' AND enterprise_id IS NOT DISTINCT FROM $1
-				  AND ((requester_id=$2 AND addressee_id=$3) OR (requester_id=$3 AND addressee_id=$2))
-			)`, entArg(c.EnterpriseID), c.UserID, mid).Scan(&okFriend)
-		if !okFriend {
+		if !s.canInviteUserToGroup(r, c.UserID, mid, c.EnterpriseID) {
 			skipped = append(skipped, mid)
 			continue
 		}

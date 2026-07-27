@@ -1,5 +1,5 @@
 /**
- * Create a social group: title + optional friend invites.
+ * Create a social group: title + optional member invites (friends or exact username lookup).
  * Mirrors web Groups modal POST /v1/groups.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -22,12 +22,22 @@ import { api, asList } from "../src/lib/api";
 import { Friend, normalizeFriend } from "../src/lib/types";
 import { radius, spacing, type ColorTokens } from "../src/theme";
 
+type InviteCandidate = {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string;
+  isFriend: boolean;
+};
+
 export default function CreateGroupScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { loadConversations } = useChat();
   const [title, setTitle] = useState("");
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [lookupHits, setLookupHits] = useState<InviteCandidate[]>([]);
+  const [lookupBusy, setLookupBusy] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [loadingFriends, setLoadingFriends] = useState(true);
@@ -54,14 +64,63 @@ export default function CreateGroupScreen() {
     loadFriends();
   }, [loadFriends]);
 
-  const filtered = useMemo(() => {
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setLookupHits([]);
+      setLookupBusy(false);
+      return;
+    }
+    let cancelled = false;
+    setLookupBusy(true);
+    const timer = setTimeout(() => {
+      api<any>(`/v1/users/lookup?q=${encodeURIComponent(q)}`)
+        .then((body) => {
+          if (cancelled) return;
+          setLookupHits(
+            asList(body, "users")
+              .map((u: any) => ({
+                userId: String(u?.id ?? ""),
+                username: String(u?.username ?? ""),
+                displayName: String(u?.display_name ?? u?.username ?? ""),
+                avatarUrl: u?.avatar_url || undefined,
+                isFriend: false,
+              }))
+              .filter((u: InviteCandidate) => u.userId)
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setLookupHits([]);
+        })
+        .finally(() => {
+          if (!cancelled) setLookupBusy(false);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return friends;
-    return friends.filter((f) => {
-      const name = (f.note || f.nickname || f.username).toLowerCase();
-      return name.includes(q) || f.username.toLowerCase().includes(q);
-    });
-  }, [friends, query]);
+    const friendRows: InviteCandidate[] = friends
+      .filter((f) => {
+        if (!q) return true;
+        const name = (f.note || f.nickname || f.username).toLowerCase();
+        return name.includes(q) || f.username.toLowerCase().includes(q);
+      })
+      .map((f) => ({
+        userId: f.userId,
+        username: f.username,
+        displayName: f.note || f.nickname || f.username,
+        avatarUrl: f.avatarUrl,
+        isFriend: true,
+      }));
+    const friendIds = new Set(friends.map((f) => f.userId));
+    const extra = lookupHits.filter((u) => !friendIds.has(u.userId));
+    return [...friendRows, ...extra];
+  }, [friends, query, lookupHits]);
 
   function togglePick(userId: string) {
     setPicked((prev) => {
@@ -116,13 +175,13 @@ export default function CreateGroupScreen() {
           autoFocus
         />
         <Text style={styles.label}>
-          Invite friends{picked.size ? ` (${picked.size})` : ""} · optional
+          Invite members{picked.size ? ` (${picked.size})` : ""} · optional
         </Text>
         <TextInput
           style={styles.input}
           value={query}
           onChangeText={setQuery}
-          placeholder="Search friends"
+          placeholder="Search friends or exact username"
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           editable={!busy}
@@ -132,31 +191,35 @@ export default function CreateGroupScreen() {
         ) : (
           <FlatList
             style={styles.list}
-            data={filtered}
+            data={rows}
             keyExtractor={(f) => f.userId}
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               <Text style={styles.empty}>
-                {friends.length === 0
-                  ? "No accepted friends yet. You can still create the group alone."
-                  : "No matches."}
+                {lookupBusy
+                  ? "Searching…"
+                  : friends.length === 0 && !query.trim()
+                    ? "No friends yet. Search an exact username to invite anyone, or create alone."
+                    : "No matches."}
               </Text>
             }
             renderItem={({ item: f }) => {
               const selected = picked.has(f.userId);
-              const name = f.note || f.nickname || f.username;
               return (
                 <Pressable
                   style={styles.row}
                   onPress={() => togglePick(f.userId)}
                   disabled={busy}
                 >
-                  <Avatar name={name} url={f.avatarUrl} size={40} />
+                  <Avatar name={f.displayName} url={f.avatarUrl} size={40} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={styles.name} numberOfLines={1}>
-                      {name}
+                      {f.displayName}
                     </Text>
-                    <Text style={styles.meta}>@{f.username}</Text>
+                    <Text style={styles.meta}>
+                      @{f.username}
+                      {!f.isFriend ? " · Not a friend" : ""}
+                    </Text>
                   </View>
                   <Ionicons
                     name={selected ? "checkmark-circle" : "ellipse-outline"}
