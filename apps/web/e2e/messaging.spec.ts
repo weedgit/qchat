@@ -24,6 +24,8 @@ async function injectSession(page: import("@playwright/test").Page) {
       localStorage.setItem("qchat.access_token", access);
       localStorage.setItem("qchat.refresh_token", refresh);
       localStorage.setItem("qchat.remember", "1");
+      // Force English so selectors match packages/i18n English strings.
+      localStorage.setItem("qchat.locale", "en");
     },
     { access: tokens.access_token, refresh: tokens.refresh_token }
   );
@@ -45,16 +47,20 @@ test.describe("Qchat core flows", () => {
     await expect(page.locator(".sidebar")).toBeVisible();
   });
 
-  test("friends page supports search UI", async ({ page }) => {
+  test("contacts page supports search UI", async ({ page }) => {
     await injectSession(page);
     await page.goto("/friends");
-    await expect(page.locator("h1", { hasText: "Friends" })).toBeVisible();
-    await expect(page.getByPlaceholder(/username or user ID/i)).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Contacts" })).toBeVisible();
+    await expect(page.locator("h1", { hasText: "Contacts" })).toBeVisible();
+    await expect(
+      page.getByPlaceholder(/Search by username, phone, or user ID/i)
+    ).toBeVisible();
   });
 
   test("groups page loads", async ({ page }) => {
     await injectSession(page);
     await page.goto("/groups");
+    await expect(page.getByRole("dialog", { name: "Groups" })).toBeVisible();
     await expect(page.locator("h1", { hasText: "Groups" })).toBeVisible();
     await expect(page.getByPlaceholder(/Group title/i)).toBeVisible();
   });
@@ -62,7 +68,8 @@ test.describe("Qchat core flows", () => {
   test("profile shows phone change flow", async ({ page }) => {
     await injectSession(page);
     await page.goto("/profile");
-    await expect(page.locator("h1", { hasText: "Profile" })).toBeVisible();
-    await expect(page.locator("h2", { hasText: "Change phone number" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: /profile/i })).toBeVisible();
+    await expect(page.locator("h1", { hasText: "Edit Profile" })).toBeVisible();
+    await expect(page.getByText("Change phone number")).toBeVisible();
   });
 });
