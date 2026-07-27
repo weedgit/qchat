@@ -893,6 +893,18 @@ export default function ChatPageInner() {
   const [addMemberQuery, setAddMemberQuery] = useState("");
   const [addMemberLookupBusy, setAddMemberLookupBusy] = useState(false);
   const [addMemberPicked, setAddMemberPicked] = useState<Set<string>>(new Set());
+  const [addMemberProfiles, setAddMemberProfiles] = useState<
+    Record<
+      string,
+      {
+        user_id: string;
+        username: string;
+        display_name: string;
+        avatar_url?: string;
+        isFriend: boolean;
+      }
+    >
+  >({});
   const [addMembersBusy, setAddMembersBusy] = useState(false);
   const [memberMenu, setMemberMenu] = useState<{
     x: number;
@@ -1286,6 +1298,7 @@ export default function ChatPageInner() {
       setAddMemberLookup([]);
       setAddMemberQuery("");
       setAddMemberPicked(new Set());
+      setAddMemberProfiles({});
       setAddMembersOpen(true);
     } catch (e: any) {
       logChatError(e?.message || "Could not load friends");
@@ -3558,14 +3571,27 @@ export default function ChatPageInner() {
                     />
                     {(() => {
                       const q = addMemberQuery.trim().toLocaleLowerCase();
+                      const friendIds = new Set(addMemberFriends.map((f) => f.user_id));
+                      const selectedRows = Array.from(addMemberPicked)
+                        .map((id) => addMemberProfiles[id])
+                        .filter(Boolean) as {
+                        user_id: string;
+                        username: string;
+                        display_name: string;
+                        avatar_url?: string;
+                        isFriend: boolean;
+                      }[];
                       const friendRows = addMemberFriends.filter((f) => {
+                        if (addMemberPicked.has(f.user_id)) return false;
                         if (!q) return true;
                         const hay = `${f.display_name} ${f.username} ${f.user_id}`.toLocaleLowerCase();
                         return hay.includes(q);
                       });
-                      const friendIds = new Set(addMemberFriends.map((f) => f.user_id));
-                      const extra = addMemberLookup.filter((u) => !friendIds.has(u.user_id));
+                      const extra = addMemberLookup.filter(
+                        (u) => !friendIds.has(u.user_id) && !addMemberPicked.has(u.user_id)
+                      );
                       const rows = [
+                        ...selectedRows,
                         ...friendRows.map((f) => ({ ...f, isFriend: true })),
                         ...extra.map((u) => ({ ...u, isFriend: false })),
                       ];
@@ -3587,6 +3613,23 @@ export default function ChatPageInner() {
                                       if (next.has(f.user_id)) next.delete(f.user_id);
                                       else next.add(f.user_id);
                                       return next;
+                                    });
+                                    setAddMemberProfiles((prev) => {
+                                      if (prev[f.user_id]) {
+                                        const next = { ...prev };
+                                        delete next[f.user_id];
+                                        return next;
+                                      }
+                                      return {
+                                        ...prev,
+                                        [f.user_id]: {
+                                          user_id: f.user_id,
+                                          username: f.username,
+                                          display_name: f.display_name,
+                                          avatar_url: f.avatar_url,
+                                          isFriend: f.isFriend,
+                                        },
+                                      };
                                     });
                                   }}
                                 />

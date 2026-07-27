@@ -39,6 +39,7 @@ export default function CreateGroupScreen() {
   const [lookupHits, setLookupHits] = useState<InviteCandidate[]>([]);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [pickedProfiles, setPickedProfiles] = useState<Record<string, InviteCandidate>>({});
   const [query, setQuery] = useState("");
   const [loadingFriends, setLoadingFriends] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -104,8 +105,12 @@ export default function CreateGroupScreen() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const selectedRows = Array.from(picked)
+      .map((id) => pickedProfiles[id])
+      .filter(Boolean) as InviteCandidate[];
     const friendRows: InviteCandidate[] = friends
       .filter((f) => {
+        if (picked.has(f.userId)) return false;
         if (!q) return true;
         const name = (f.note || f.nickname || f.username).toLowerCase();
         return name.includes(q) || f.username.toLowerCase().includes(q);
@@ -118,16 +123,24 @@ export default function CreateGroupScreen() {
         isFriend: true,
       }));
     const friendIds = new Set(friends.map((f) => f.userId));
-    const extra = lookupHits.filter((u) => !friendIds.has(u.userId));
-    return [...friendRows, ...extra];
-  }, [friends, query, lookupHits]);
+    const extra = lookupHits.filter((u) => !friendIds.has(u.userId) && !picked.has(u.userId));
+    return [...selectedRows, ...friendRows, ...extra];
+  }, [friends, query, lookupHits, picked, pickedProfiles]);
 
-  function togglePick(userId: string) {
+  function togglePick(user: InviteCandidate) {
     setPicked((prev) => {
       const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+      if (next.has(user.userId)) next.delete(user.userId);
+      else next.add(user.userId);
       return next;
+    });
+    setPickedProfiles((prev) => {
+      if (prev[user.userId]) {
+        const next = { ...prev };
+        delete next[user.userId];
+        return next;
+      }
+      return { ...prev, [user.userId]: user };
     });
   }
 
@@ -208,7 +221,7 @@ export default function CreateGroupScreen() {
               return (
                 <Pressable
                   style={styles.row}
-                  onPress={() => togglePick(f.userId)}
+                  onPress={() => togglePick(f)}
                   disabled={busy}
                 >
                   <Avatar name={f.displayName} url={f.avatarUrl} size={40} />

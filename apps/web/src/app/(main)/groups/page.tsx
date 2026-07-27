@@ -39,6 +39,13 @@ export default function GroupsPage() {
     { id: string; username: string; display_name: string; avatar_url?: string }[]
   >([]);
   const [lookupBusy, setLookupBusy] = useState(false);
+  /** Keep display info for selected users so they stay visible while searching. */
+  const [selectedProfiles, setSelectedProfiles] = useState<
+    Record<
+      string,
+      { id: string; username: string; display_name: string; avatar_url?: string; isFriend: boolean }
+    >
+  >({});
   /** Title-only form first; Create opens the invite-friends step (Telegram-style). */
   const [createStep, setCreateStep] = useState<"form" | "invite">("form");
   const [joinId, setJoinId] = useState("");
@@ -88,6 +95,7 @@ export default function GroupsPage() {
     setTitle(trimmed);
     setMsg(null);
     setSelected([]);
+    setSelectedProfiles({});
     setFriendQuery("");
     setLookupHits([]);
     setCreateStep("invite");
@@ -97,15 +105,30 @@ export default function GroupsPage() {
   function cancelInviteStep() {
     setCreateStep("form");
     setSelected([]);
+    setSelectedProfiles({});
     setFriendQuery("");
     setLookupHits([]);
     setMsg(null);
   }
 
-  function toggleFriend(userId: string) {
+  function toggleInvite(user: {
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+    isFriend: boolean;
+  }) {
     setSelected((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+      prev.includes(user.id) ? prev.filter((id) => id !== user.id) : [...prev, user.id]
     );
+    setSelectedProfiles((prev) => {
+      if (prev[user.id]) {
+        const next = { ...prev };
+        delete next[user.id];
+        return next;
+      }
+      return { ...prev, [user.id]: user };
+    });
   }
 
   function friendLabel(f: Friend): string {
@@ -137,6 +160,7 @@ export default function GroupsPage() {
       setMsg(`Group created. ID: ${res?.public_id}`);
       setTitle("");
       setSelected([]);
+      setSelectedProfiles({});
       setFriendQuery("");
       setLookupHits([]);
       setCreateStep("form");
@@ -149,9 +173,28 @@ export default function GroupsPage() {
     }
   }
 
-  const inviteFriends = friends.filter((f) => friendMatchesQuery(f, friendQuery));
+  const selectedSet = new Set(selected);
   const friendIds = new Set(friends.map((f) => f.userId));
-  const nonFriendHits = lookupHits.filter((u) => !friendIds.has(u.id));
+  const selectedRows = selected
+    .map((id) => selectedProfiles[id])
+    .filter(Boolean) as {
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+    isFriend: boolean;
+  }[];
+  const inviteFriends = friends.filter(
+    (f) => !selectedSet.has(f.userId) && friendMatchesQuery(f, friendQuery)
+  );
+  const nonFriendHits = lookupHits.filter(
+    (u) => !friendIds.has(u.id) && !selectedSet.has(u.id)
+  );
+  const inviteEmpty =
+    selectedRows.length === 0 &&
+    inviteFriends.length === 0 &&
+    nonFriendHits.length === 0 &&
+    !lookupBusy;
 
   useEffect(() => {
     if (createStep !== "invite") return;
@@ -326,24 +369,52 @@ export default function GroupsPage() {
           <div className="menu-modal-hint" style={{ fontSize: 12 }}>
             {t("groups.inviteFriendsOnly")}
           </div>
-          {inviteFriends.length === 0 && nonFriendHits.length === 0 && !lookupBusy && (
+          {inviteEmpty && (
             <div className="menu-modal-empty">
               {friends.length === 0 && !friendQuery.trim()
                 ? t("groups.noFriendsToInvite")
                 : t("chat.noResults")}
             </div>
           )}
+          {selectedRows.map((u) => {
+            const label = u.display_name;
+            return (
+              <button
+                type="button"
+                key={`sel-${u.id}`}
+                className="menu-modal-list-row is-selected"
+                onClick={() => toggleInvite(u)}
+              >
+                <input type="checkbox" checked readOnly tabIndex={-1} aria-hidden />
+                <Avatar name={label} url={u.avatar_url} size={42} />
+                <div className="menu-modal-list-main">
+                  <div className="menu-modal-list-title">{label}</div>
+                  <div className="menu-modal-list-sub">
+                    @{u.username}
+                    {!u.isFriend ? ` · ${t("groups.notAFriend")}` : ""}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
           {inviteFriends.map((f) => {
-            const checked = selected.includes(f.userId);
             const label = friendLabel(f);
             return (
               <button
                 type="button"
                 key={f.userId}
-                className={`menu-modal-list-row${checked ? " is-selected" : ""}`}
-                onClick={() => toggleFriend(f.userId)}
+                className="menu-modal-list-row"
+                onClick={() =>
+                  toggleInvite({
+                    id: f.userId,
+                    username: f.username,
+                    display_name: label,
+                    avatar_url: f.avatarUrl,
+                    isFriend: true,
+                  })
+                }
               >
-                <input type="checkbox" checked={checked} readOnly tabIndex={-1} aria-hidden />
+                <input type="checkbox" checked={false} readOnly tabIndex={-1} aria-hidden />
                 <Avatar name={label} url={f.avatarUrl} size={42} />
                 <div className="menu-modal-list-main">
                   <div className="menu-modal-list-title">{label}</div>
@@ -352,26 +423,31 @@ export default function GroupsPage() {
               </button>
             );
           })}
-          {nonFriendHits.map((u) => {
-            const checked = selected.includes(u.id);
-            return (
-              <button
-                type="button"
-                key={u.id}
-                className={`menu-modal-list-row${checked ? " is-selected" : ""}`}
-                onClick={() => toggleFriend(u.id)}
-              >
-                <input type="checkbox" checked={checked} readOnly tabIndex={-1} aria-hidden />
-                <Avatar name={u.display_name} url={u.avatar_url} size={42} />
-                <div className="menu-modal-list-main">
-                  <div className="menu-modal-list-title">{u.display_name}</div>
-                  <div className="menu-modal-list-sub">
-                    @{u.username} · {t("groups.notAFriend")}
-                  </div>
+          {nonFriendHits.map((u) => (
+            <button
+              type="button"
+              key={u.id}
+              className="menu-modal-list-row"
+              onClick={() =>
+                toggleInvite({
+                  id: u.id,
+                  username: u.username,
+                  display_name: u.display_name,
+                  avatar_url: u.avatar_url,
+                  isFriend: false,
+                })
+              }
+            >
+              <input type="checkbox" checked={false} readOnly tabIndex={-1} aria-hidden />
+              <Avatar name={u.display_name} url={u.avatar_url} size={42} />
+              <div className="menu-modal-list-main">
+                <div className="menu-modal-list-title">{u.display_name}</div>
+                <div className="menu-modal-list-sub">
+                  @{u.username} · {t("groups.notAFriend")}
                 </div>
-              </button>
-            );
-          })}
+              </div>
+            </button>
+          ))}
           {lookupBusy && friendQuery.trim() && (
             <div className="menu-modal-empty">{t("chat.searching")}</div>
           )}

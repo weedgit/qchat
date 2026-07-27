@@ -111,6 +111,12 @@ export default function ChatInfoScreen() {
   >([]);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [pickedProfiles, setPickedProfiles] = useState<
+    Record<
+      string,
+      { userId: string; username: string; displayName: string; avatarUrl?: string; isFriend: boolean }
+    >
+  >({});
   const [friendQuery, setFriendQuery] = useState("");
 
   const canManageGroup = group?.role === "owner" || group?.role === "admin";
@@ -285,6 +291,7 @@ export default function ChatInfoScreen() {
 
   async function openAddMembers() {
     setPicked(new Set());
+    setPickedProfiles({});
     setFriendQuery("");
     setLookupHits([]);
     setBusy(true);
@@ -347,9 +354,18 @@ export default function ChatInfoScreen() {
 
   const addablePeople = useMemo(() => {
     const q = friendQuery.trim().toLowerCase();
+    const selectedRows = Array.from(picked)
+      .map((id) => pickedProfiles[id])
+      .filter(Boolean) as {
+      userId: string;
+      username: string;
+      displayName: string;
+      avatarUrl?: string;
+      isFriend: boolean;
+    }[];
     const friendRows = friends
       .filter((f) => {
-        if (memberIds.has(f.userId)) return false;
+        if (memberIds.has(f.userId) || picked.has(f.userId)) return false;
         if (!q) return true;
         const name = (f.note || f.nickname || f.username).toLowerCase();
         return name.includes(q) || f.username.toLowerCase().includes(q);
@@ -363,17 +379,31 @@ export default function ChatInfoScreen() {
       }));
     const friendIds = new Set(friends.map((f) => f.userId));
     const extra = lookupHits
-      .filter((u) => !friendIds.has(u.userId))
+      .filter((u) => !friendIds.has(u.userId) && !picked.has(u.userId))
       .map((u) => ({ ...u, isFriend: false }));
-    return [...friendRows, ...extra];
-  }, [friends, memberIds, friendQuery, lookupHits]);
+    return [...selectedRows, ...friendRows, ...extra];
+  }, [friends, memberIds, friendQuery, lookupHits, picked, pickedProfiles]);
 
-  function togglePick(userId: string) {
+  function togglePick(user: {
+    userId: string;
+    username: string;
+    displayName: string;
+    avatarUrl?: string;
+    isFriend: boolean;
+  }) {
     setPicked((prev) => {
       const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+      if (next.has(user.userId)) next.delete(user.userId);
+      else next.add(user.userId);
       return next;
+    });
+    setPickedProfiles((prev) => {
+      if (prev[user.userId]) {
+        const next = { ...prev };
+        delete next[user.userId];
+        return next;
+      }
+      return { ...prev, [user.userId]: user };
     });
   }
 
@@ -789,7 +819,7 @@ export default function ChatInfoScreen() {
             renderItem={({ item: f }) => {
               const selected = picked.has(f.userId);
               return (
-                <Pressable style={styles.pickRow} onPress={() => togglePick(f.userId)}>
+                <Pressable style={styles.pickRow} onPress={() => togglePick(f)}>
                   <Avatar name={f.displayName} url={f.avatarUrl} size={40} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.memberName}>{f.displayName}</Text>
