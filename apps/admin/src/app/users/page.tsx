@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AdminShell from "@/components/AdminShell";
 import { api, asList } from "@/lib/api";
+import { displayNameError } from "@/lib/credentials";
 import { can } from "@/lib/rbac";
 
 const PAGE_SIZE = 50;
@@ -163,6 +164,12 @@ export default function UsersPage() {
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
+    const dn = (displayName || username).trim();
+    const dnErr = displayNameError(dn);
+    if (dnErr) {
+      setCreateMsg(dnErr);
+      return;
+    }
     setCreateBusy(true);
     setCreateMsg(null);
     try {
@@ -171,7 +178,7 @@ export default function UsersPage() {
         body: JSON.stringify({
           phone,
           username,
-          display_name: displayName || username,
+          display_name: dn,
           password,
           role,
         }),

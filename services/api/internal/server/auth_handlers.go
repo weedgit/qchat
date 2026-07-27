@@ -434,6 +434,24 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	display := strPtr(req, "display_name")
+	if display != nil {
+		trimmed := strings.TrimSpace(*display)
+		if err := auth.ValidateDisplayName(trimmed); err != nil {
+			writeErrFields(w, 400, "invalid_display_name", err.Error(), map[string]string{"display_name": err.Error()})
+			return
+		}
+		taken, err := s.displayNameTaken(r, trimmed, c.UserID)
+		if err != nil {
+			writeErr(w, 500, "lookup failed")
+			return
+		}
+		if taken {
+			writeErrFields(w, 409, "conflict", "display name already taken", map[string]string{"display_name": "already taken"})
+			return
+		}
+		display = &trimmed
+	}
 	_, err := s.db.Exec(r.Context(), `
 		UPDATE users SET
 			display_name=COALESCE($2, display_name),
@@ -446,7 +464,7 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 			friend_privacy=COALESCE($9, friend_privacy)
 		WHERE id=$1`,
 		c.UserID,
-		strPtr(req, "display_name"),
+		display,
 		strPtr(req, "real_name"),
 		intPtr(req, "age"),
 		strPtr(req, "region"),
@@ -460,6 +478,16 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.handleMe(w, r)
+}
+
+func (s *Server) displayNameTaken(r *http.Request, name, exceptUserID string) (bool, error) {
+	var taken bool
+	err := s.db.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM users
+			WHERE lower(display_name)=lower($1) AND ($2='' OR id::text<>$2)
+		)`, name, exceptUserID).Scan(&taken)
+	return taken, err
 }
 
 func (s *Server) consumeCaptcha(r *http.Request, id, answer string) bool {
