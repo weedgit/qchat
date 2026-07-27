@@ -376,27 +376,6 @@ export default function GroupsPage() {
                 : t("chat.noResults")}
             </div>
           )}
-          {selectedRows.map((u) => {
-            const label = u.display_name;
-            return (
-              <button
-                type="button"
-                key={`sel-${u.id}`}
-                className="menu-modal-list-row is-selected"
-                onClick={() => toggleInvite(u)}
-              >
-                <input type="checkbox" checked readOnly tabIndex={-1} aria-hidden />
-                <Avatar name={label} url={u.avatar_url} size={42} />
-                <div className="menu-modal-list-main">
-                  <div className="menu-modal-list-title">{label}</div>
-                  <div className="menu-modal-list-sub">
-                    @{u.username}
-                    {!u.isFriend ? ` · ${t("groups.notAFriend")}` : ""}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
           {inviteFriends.map((f) => {
             const label = friendLabel(f);
             return (
@@ -448,6 +427,27 @@ export default function GroupsPage() {
               </div>
             </button>
           ))}
+          {selectedRows.map((u) => {
+            const label = u.display_name;
+            return (
+              <button
+                type="button"
+                key={`sel-${u.id}`}
+                className="menu-modal-list-row is-selected"
+                onClick={() => toggleInvite(u)}
+              >
+                <input type="checkbox" checked readOnly tabIndex={-1} aria-hidden />
+                <Avatar name={label} url={u.avatar_url} size={42} />
+                <div className="menu-modal-list-main">
+                  <div className="menu-modal-list-title">{label}</div>
+                  <div className="menu-modal-list-sub">
+                    @{u.username}
+                    {!u.isFriend ? ` · ${t("groups.notAFriend")}` : ""}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
           {lookupBusy && friendQuery.trim() && (
             <div className="menu-modal-empty">{t("chat.searching")}</div>
           )}

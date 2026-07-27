@@ -3591,9 +3591,9 @@ export default function ChatPageInner() {
                         (u) => !friendIds.has(u.user_id) && !addMemberPicked.has(u.user_id)
                       );
                       const rows = [
-                        ...selectedRows,
                         ...friendRows.map((f) => ({ ...f, isFriend: true })),
                         ...extra.map((u) => ({ ...u, isFriend: false })),
+                        ...selectedRows,
                       ];
                       if (rows.length === 0 && !addMemberLookupBusy) {
                         return <div className="muted">{t("details.noFriendsLeft")}</div>;

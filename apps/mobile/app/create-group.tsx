@@ -124,7 +124,7 @@ export default function CreateGroupScreen() {
       }));
     const friendIds = new Set(friends.map((f) => f.userId));
     const extra = lookupHits.filter((u) => !friendIds.has(u.userId) && !picked.has(u.userId));
-    return [...selectedRows, ...friendRows, ...extra];
+    return [...friendRows, ...extra, ...selectedRows];
   }, [friends, query, lookupHits, picked, pickedProfiles]);
 
   function togglePick(user: InviteCandidate) {

@@ -381,7 +381,7 @@ export default function ChatInfoScreen() {
     const extra = lookupHits
       .filter((u) => !friendIds.has(u.userId) && !picked.has(u.userId))
       .map((u) => ({ ...u, isFriend: false }));
-    return [...selectedRows, ...friendRows, ...extra];
+    return [...friendRows, ...extra, ...selectedRows];
   }, [friends, memberIds, friendQuery, lookupHits, picked, pickedProfiles]);
 
   function togglePick(user: {
