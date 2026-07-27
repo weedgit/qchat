@@ -13,6 +13,7 @@ import (
 	"github.com/qchat/qchat/services/api/internal/config"
 	"github.com/qchat/qchat/services/api/internal/db"
 	"github.com/qchat/qchat/services/api/internal/migrate"
+	"github.com/qchat/qchat/services/api/internal/redisx"
 	"github.com/qchat/qchat/services/api/internal/server"
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
@@ -46,6 +47,10 @@ func main() {
 	srv := server.New(cfg, pool, hub)
 	runCtx, runCancel := context.WithCancel(context.Background())
 	defer runCancel()
+	if rdb := redisx.MustConnectOrNil(runCtx, cfg.RedisURL); rdb != nil {
+		srv.AttachRedis(runCtx, rdb)
+		defer rdb.Close()
+	}
 	srv.StartRetentionLoop(runCtx, 24*time.Hour)
 
 	httpServer := &http.Server{

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 )
 
 type Event struct {
@@ -26,6 +27,8 @@ type Client struct {
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[string]map[*Client]struct{} // userID -> clients
+	rdb     *redis.Client
+	origin  string
 }
 
 func NewHub() *Hub {
@@ -85,7 +88,7 @@ func (h *Hub) clientsForUsers(userIDs []string) []*Client {
 	return out
 }
 
-func (h *Hub) PublishToUsers(userIDs []string, ev Event) {
+func (h *Hub) publishToUsersLocal(userIDs []string, ev Event) {
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return
@@ -95,9 +98,12 @@ func (h *Hub) PublishToUsers(userIDs []string, ev Event) {
 	h.publishLocked(h.clientsForUsers(userIDs), b)
 }
 
-// PublishToUserDevice sends only to WS clients for userID with matching deviceID.
-// Empty deviceID falls back to all of that user's connections (legacy tokens).
-func (h *Hub) PublishToUserDevice(userID, deviceID string, ev Event) {
+func (h *Hub) PublishToUsers(userIDs []string, ev Event) {
+	h.publishToUsersLocal(userIDs, ev)
+	h.broadcast(clusterEnvelope{Kind: "users", UserIDs: userIDs, Event: ev})
+}
+
+func (h *Hub) publishToUserDeviceLocal(userID, deviceID string, ev Event) {
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return
@@ -110,7 +116,6 @@ func (h *Hub) PublishToUserDevice(userID, deviceID string, ev Event) {
 			targets = append(targets, c)
 		}
 	}
-	// Prefer exact device match when any client has DeviceID set.
 	if deviceID != "" {
 		exact := make([]*Client, 0, len(targets))
 		for _, c := range targets {
@@ -125,8 +130,14 @@ func (h *Hub) PublishToUserDevice(userID, deviceID string, ev Event) {
 	h.publishLocked(targets, b)
 }
 
-// PublishToUserExceptDevice notifies other devices of the same user (e.g. call answered elsewhere).
-func (h *Hub) PublishToUserExceptDevice(userID, deviceID string, ev Event) {
+// PublishToUserDevice sends only to WS clients for userID with matching deviceID.
+// Empty deviceID falls back to all of that user's connections (legacy tokens).
+func (h *Hub) PublishToUserDevice(userID, deviceID string, ev Event) {
+	h.publishToUserDeviceLocal(userID, deviceID, ev)
+	h.broadcast(clusterEnvelope{Kind: "device", UserID: userID, DeviceID: deviceID, Event: ev})
+}
+
+func (h *Hub) publishToUserExceptDeviceLocal(userID, deviceID string, ev Event) {
 	b, err := json.Marshal(ev)
 	if err != nil {
 		return
@@ -141,6 +152,12 @@ func (h *Hub) PublishToUserExceptDevice(userID, deviceID string, ev Event) {
 		targets = append(targets, c)
 	}
 	h.publishLocked(targets, b)
+}
+
+// PublishToUserExceptDevice notifies other devices of the same user (e.g. call answered elsewhere).
+func (h *Hub) PublishToUserExceptDevice(userID, deviceID string, ev Event) {
+	h.publishToUserExceptDeviceLocal(userID, deviceID, ev)
+	h.broadcast(clusterEnvelope{Kind: "except_device", UserID: userID, DeviceID: deviceID, Event: ev})
 }
 
 func (h *Hub) OnlineUserIDs(ids []string) map[string]bool {
@@ -175,8 +192,7 @@ func (h *Hub) TotalConnections() int {
 	return n
 }
 
-// KickSessions notifies matching clients then closes their sockets (same-type login / admin revoke).
-func (h *Hub) KickSessions(sessionIDs []string, ev Event) {
+func (h *Hub) kickSessionsLocal(sessionIDs []string, ev Event) {
 	if len(sessionIDs) == 0 {
 		return
 	}
@@ -214,4 +230,10 @@ func (h *Hub) KickSessions(sessionIDs []string, ev Event) {
 			_ = cl.Conn.Close()
 		}(c)
 	}
+}
+
+// KickSessions notifies matching clients then closes their sockets (same-type login / admin revoke).
+func (h *Hub) KickSessions(sessionIDs []string, ev Event) {
+	h.kickSessionsLocal(sessionIDs, ev)
+	h.broadcast(clusterEnvelope{Kind: "kick", SessionIDs: sessionIDs, Event: ev})
 }

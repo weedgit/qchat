@@ -8,7 +8,7 @@ import (
 )
 
 // In-process limits mirror deploy/nginx-qchat.conf zones so direct-to-API
-// deployments still throttle. Per-process only — Redis-backed limits come with
+// deployments still throttle. Per-process only unless Redis is attached for
 // multi-instance fan-out (Phase 6).
 
 const (
