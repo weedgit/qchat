@@ -9,6 +9,7 @@ import { can, isConsoleRole } from "@/lib/rbac";
 const NAV = [
   { href: "/", label: "Overview", cap: "read" as const },
   { href: "/users", label: "Users", cap: "read" as const },
+  { href: "/groups", label: "Groups", cap: "read" as const },
   { href: "/enterprises", label: "Enterprises", cap: "read" as const },
   { href: "/audits", label: "Audit log", cap: "read" as const },
   { href: "/messages", label: "Message inspect", cap: "inspectMessages" as const },

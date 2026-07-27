@@ -165,6 +165,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/admin/enterprises", s.auth(s.handleAdminEnterprises))
 	s.mux.HandleFunc("POST /v1/admin/enterprises", s.auth(s.handleAdminCreateEnterprise))
 	s.mux.HandleFunc("GET /v1/admin/users", s.auth(s.handleAdminUsers))
+	s.mux.HandleFunc("GET /v1/admin/groups", s.auth(s.handleAdminGroups))
 	s.mux.HandleFunc("POST /v1/admin/users", s.auth(s.handleAdminCreateUser))
 	s.mux.HandleFunc("POST /v1/admin/users/{id}/ban", s.auth(s.handleAdminBan))
 	s.mux.HandleFunc("POST /v1/admin/users/{id}/reset-password", s.auth(s.handleAdminResetPassword))

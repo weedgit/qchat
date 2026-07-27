@@ -692,6 +692,23 @@ paths:
       responses:
         "201":
           description: Created
+  /v1/admin/groups:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List social groups in the operator enterprise
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer }
+        - in: query
+          name: offset
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OK
   /v1/admin/users/{id}/ban:
     post:
       security: [{ bearerAuth: [] }]
