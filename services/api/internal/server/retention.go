@@ -7,10 +7,15 @@ import (
 	"time"
 )
 
+// personalRetentionDays matches the enterprise default in migrations/001_init.sql
+// and the brief's three-month history window for accounts without an enterprise.
+const personalRetentionDays = 90
+
 // RunRetention deletes messages older than each enterprise's retention_days
-// (DataRetentionJob / RunDataRetention).
+// (DataRetentionJob / RunDataRetention), and personal (null enterprise_id)
+// messages older than personalRetentionDays.
 func (s *Server) RunRetention(ctx context.Context) (int64, error) {
-	tag, err := s.db.Exec(ctx, `
+	entTag, err := s.db.Exec(ctx, `
 		DELETE FROM messages m
 		USING enterprises e
 		WHERE m.enterprise_id = e.id
@@ -18,7 +23,14 @@ func (s *Server) RunRetention(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return tag.RowsAffected(), nil
+	personalTag, err := s.db.Exec(ctx, `
+		DELETE FROM messages
+		WHERE enterprise_id IS NULL
+		  AND created_at < now() - make_interval(days => $1)`, personalRetentionDays)
+	if err != nil {
+		return entTag.RowsAffected(), err
+	}
+	return entTag.RowsAffected() + personalTag.RowsAffected(), nil
 }
 
 // StartRetentionLoop runs RunRetention on an interval (default 24h).
