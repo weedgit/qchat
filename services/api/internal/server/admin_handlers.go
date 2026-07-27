@@ -241,6 +241,69 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"users": out, "total": total, "limit": limit, "offset": offset})
 }
 
+// handleAdminGroups lists social groups in the operator's enterprise (read-only).
+func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
+	c := s.requirePerm(w, r, permAdminRead)
+	if c == nil {
+		return
+	}
+	where := "conv.type='social_group' AND conv.enterprise_id IS NOT DISTINCT FROM $1"
+	args := []any{entArg(c.EnterpriseID)}
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		args = append(args, "%"+escapeLike(q)+"%")
+		where += fmt.Sprintf(
+			` AND (conv.title ILIKE $%[1]d ESCAPE '\' OR COALESCE(conv.public_id,'') ILIKE $%[1]d ESCAPE '\')`,
+			len(args))
+	}
+
+	var total int
+	if err := s.db.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM conversations conv WHERE `+where, args...).Scan(&total); err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+
+	limit, offset := adminListRange(r)
+	args = append(args, limit, offset)
+	rows, err := s.db.Query(r.Context(), fmt.Sprintf(`
+		SELECT conv.id::text,
+		       COALESCE(conv.public_id, ''),
+		       COALESCE(conv.title, ''),
+		       COALESCE(conv.owner_id::text, ''),
+		       COALESCE(ou.display_name, ou.username, ''),
+		       (SELECT COUNT(*)::bigint FROM conversation_members cm
+		         WHERE cm.conversation_id=conv.id AND cm.role <> 'pending'),
+		       conv.created_at
+		FROM conversations conv
+		LEFT JOIN users ou ON ou.id=conv.owner_id
+		WHERE %s
+		ORDER BY conv.created_at DESC
+		LIMIT $%d OFFSET $%d`, where, len(args)-1, len(args)), args...)
+	if err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var id, publicID, title, ownerID, ownerName string
+		var memberCount int64
+		var created any
+		if rows.Scan(&id, &publicID, &title, &ownerID, &ownerName, &memberCount, &created) != nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"id": id, "public_id": publicID, "title": title,
+			"owner_id": ownerID, "owner_display_name": ownerName,
+			"member_count": memberCount, "created_at": created,
+		})
+	}
+	if out == nil {
+		out = []map[string]any{}
+	}
+	writeJSON(w, 200, map[string]any{"groups": out, "total": total, "limit": limit, "offset": offset})
+}
+
 // handleAdminCreateUser provisions a member without self-service SMS (CreateUser / assisted registration).
 // Platform owners may issue enterprise_admin accounts into a target enterprise via enterprise_id.
 // Enterprise admins / platform owners may also issue compliance, support, and read_only console roles.
