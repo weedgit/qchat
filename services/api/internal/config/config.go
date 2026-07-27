@@ -21,10 +21,13 @@ type Config struct {
 	CORSOrigin       string
 	ObjectStorageURL string
 	Bucket           string
+	// Object storage credentials (MinIO / S3). Defaults match docker-compose minio.
+	ObjectStorageAccessKey string
+	ObjectStorageSecretKey string
 	// DataDir holds local uploads (…/uploads). Override with QCHAT_DATA_DIR.
-	DataDir          string
-	MigrateOnly      bool
-	Env              string
+	DataDir     string
+	MigrateOnly bool
+	Env         string
 	// LiveKit SFU (Phase 6 voice/video). Defaults match deploy/livekit.yaml.
 	LiveKitURL       string
 	LiveKitAPIKey    string
@@ -40,24 +43,26 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		HTTPAddr:         getenv("QCHAT_HTTP_ADDR", ":8080"),
-		DatabaseURL:      getenv("QCHAT_DATABASE_URL", "postgres://qchat:qchat@localhost:5432/qchat?sslmode=disable"),
-		RedisURL:         getenv("QCHAT_REDIS_URL", "redis://localhost:6379/0"),
-		JWTSecret:        getenv("QCHAT_JWT_SECRET", DefaultJWTSecret),
-		AccessTTL:        durationEnv("QCHAT_ACCESS_TTL", 15*time.Minute),
-		RefreshTTL:       durationEnv("QCHAT_REFRESH_TTL", 60*24*time.Hour),
-		CORSOrigin:       getenv("QCHAT_CORS_ORIGIN", "*"),
-		ObjectStorageURL: getenv("QCHAT_OBJECT_STORAGE_URL", "http://localhost:9000"),
-		Bucket:           getenv("QCHAT_BUCKET", "qchat"),
-		DataDir:          resolveDataDir(),
-		Env:              strings.ToLower(getenv("QCHAT_ENV", "development")),
-		LiveKitURL:       getenv("LIVEKIT_URL", "ws://localhost:7880"),
-		LiveKitAPIKey:    getenv("LIVEKIT_API_KEY", "devkey"),
-		LiveKitAPISecret: getenv("LIVEKIT_API_SECRET", "secret-that-is-at-least-32-characters-long"),
-		VAPIDPublic:      getenv("QCHAT_VAPID_PUBLIC", "BFdXB2ANYUTz51uvhyiHY690_q7gwTQugmCht6XglXgTLyoubrPvnpQVk4Jac5cP_zVayT88l0gTgnCt1gK5cfA"),
-		VAPIDPrivate:     getenv("QCHAT_VAPID_PRIVATE", "bUnBIxgamtcANH9nAryWvxT0v8s4iosetHMSeOmcB7g"),
-		VAPIDSubject:     getenv("QCHAT_VAPID_SUBJECT", "mailto:admin@qchat.local"),
-		SMSProvider:      strings.ToLower(getenv("QCHAT_SMS_PROVIDER", "dev")),
+		HTTPAddr:               getenv("QCHAT_HTTP_ADDR", ":8080"),
+		DatabaseURL:            getenv("QCHAT_DATABASE_URL", "postgres://qchat:qchat@localhost:5432/qchat?sslmode=disable"),
+		RedisURL:               getenv("QCHAT_REDIS_URL", "redis://localhost:6379/0"),
+		JWTSecret:              getenv("QCHAT_JWT_SECRET", DefaultJWTSecret),
+		AccessTTL:              durationEnv("QCHAT_ACCESS_TTL", 15*time.Minute),
+		RefreshTTL:             durationEnv("QCHAT_REFRESH_TTL", 60*24*time.Hour),
+		CORSOrigin:             getenv("QCHAT_CORS_ORIGIN", "*"),
+		ObjectStorageURL:       getenv("QCHAT_OBJECT_STORAGE_URL", "http://localhost:9000"),
+		Bucket:                 getenv("QCHAT_BUCKET", "qchat"),
+		ObjectStorageAccessKey: getenv("QCHAT_OBJECT_STORAGE_ACCESS_KEY", "qchatminio"),
+		ObjectStorageSecretKey: getenv("QCHAT_OBJECT_STORAGE_SECRET_KEY", "qchatminio123"),
+		DataDir:                resolveDataDir(),
+		Env:                    strings.ToLower(getenv("QCHAT_ENV", "development")),
+		LiveKitURL:             getenv("LIVEKIT_URL", "ws://localhost:7880"),
+		LiveKitAPIKey:          getenv("LIVEKIT_API_KEY", "devkey"),
+		LiveKitAPISecret:       getenv("LIVEKIT_API_SECRET", "secret-that-is-at-least-32-characters-long"),
+		VAPIDPublic:            getenv("QCHAT_VAPID_PUBLIC", "BFdXB2ANYUTz51uvhyiHY690_q7gwTQugmCht6XglXgTLyoubrPvnpQVk4Jac5cP_zVayT88l0gTgnCt1gK5cfA"),
+		VAPIDPrivate:           getenv("QCHAT_VAPID_PRIVATE", "bUnBIxgamtcANH9nAryWvxT0v8s4iosetHMSeOmcB7g"),
+		VAPIDSubject:           getenv("QCHAT_VAPID_SUBJECT", "mailto:admin@qchat.local"),
+		SMSProvider:            strings.ToLower(getenv("QCHAT_SMS_PROVIDER", "dev")),
 	}
 }
 
