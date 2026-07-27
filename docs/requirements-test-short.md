@@ -18,7 +18,7 @@
 10. One-to-one private chat (desk/web/mobile)
 11. Group chat (desk/web/mobile)
 12. Conversation / message list (desk/web/mobile)
-13. Text + built-in emoji (desk/web/mobile)
+13. Text + built-in emoji, stickers, GIFs (desk/web/mobile)
 14. Voice messages (≤60s) (desk/web/mobile)
 15. File / image transfer (desk/web/mobile)
 16. Upload / send video files (desk/web/mobile)

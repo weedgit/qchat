@@ -1,4 +1,4 @@
-/** Built-in emoji catalog for the composer picker (no custom sticker packs). */
+/** Built-in emoji catalog for the composer picker. */
 
 export type EmojiCategoryId =
   | "recent"

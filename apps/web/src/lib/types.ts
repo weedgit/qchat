@@ -16,6 +16,8 @@ export interface Conversation {
   type: "dm" | "social_group" | "group" | string;
   title: string;
   avatarUrl?: string;
+  /** Membership role for the current user (groups). */
+  role?: string;
   lastMessage?: string;
   lastMessageAt?: string;
   lastMessageSender?: string;
@@ -124,6 +126,7 @@ export function normalizeConversation(raw: any): Conversation {
     type: typ,
     title,
     avatarUrl: str(raw?.avatar_url ?? raw?.avatarUrl) || undefined,
+    role: str(raw?.role) || undefined,
     lastMessage:
       typeof last === "string" ? last : str(last?.content ?? last?.body ?? last?.text) || undefined,
     lastMessageAt: str(raw?.last_message_at ?? raw?.updated_at ?? last?.created_at) || undefined,

@@ -198,7 +198,7 @@ Include:
 - Enterprise invitation and secure login
 - Profiles, friend relationships, and presence
 - One-to-one and 1,000-member group chat
-- Text, built-in emoji, images, files, recorded voice, and uploaded video
+- Text, built-in emoji, stickers, GIFs, images, files, recorded voice, and uploaded video
 - Mentions, quoted replies, forwarding, recall, mute, read states, and push notifications
 - Essential enterprise and platform administration
 - Three-month configurable retention, audit logs, backups, and monitoring
@@ -210,7 +210,7 @@ Defer:
 - Group calling, screen sharing, and call recording
 - End-to-end encryption
 - Advanced legal hold/eDiscovery
-- Custom stickers and nonessential social features
+- Nonessential social features beyond stickers/GIFs
 
 ## 6. Quality and Acceptance Strategy
 

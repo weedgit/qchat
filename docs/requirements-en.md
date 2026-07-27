@@ -86,12 +86,13 @@ Additional rules:
 
 ### 2.4 Messaging and Calls
 
-The chat screen supports text, standard emoji, voice messages, video calls, and voice calls.
+The chat screen supports text, standard emoji, stickers, GIFs, voice messages, video calls, and voice calls.
 
 - Maximum text message length: 1,000 Chinese characters/characters.
 - Maximum voice-message recording length: 60 seconds.
 - A voice message can be recorded before it is sent.
 - Users can send uploaded video files.
+- The composer includes built-in emoji, sticker packs, and GIF search/send.
 - Real-time video calling is also requested, but the client indicates that sending video files may be chosen instead depending on scope.
 - Supported image/file formats and the maximum size per file must be defined.
 - One-to-one messages show a successful-send indicator and read/unread status.
