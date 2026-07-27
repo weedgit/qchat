@@ -737,13 +737,29 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid json")
 		return
 	}
-	var convID, owner string
+	req.PublicID = strings.TrimSpace(req.PublicID)
+	if req.PublicID == "" {
+		writeErr(w, 400, "public_id required")
+		return
+	}
+	// Look up by public_id only (case-insensitive). Tenant scope is applied
+	// after the row is found so personal↔enterprise joins match canInviteUserToGroup,
+	// while still hiding other-enterprise groups behind a generic 404.
+	var convID, owner, groupEnt string
+	var isDefault bool
 	err := s.db.QueryRow(r.Context(), `
-		SELECT id::text, owner_id::text FROM conversations
-		WHERE public_id=$1 AND enterprise_id IS NOT DISTINCT FROM $2 AND type='social_group'`,
-		req.PublicID, entArg(c.EnterpriseID)).
-		Scan(&convID, &owner)
-	if err != nil {
+		SELECT id::text, COALESCE(owner_id::text, ''), COALESCE(enterprise_id::text, ''),
+		       COALESCE(is_enterprise_default, FALSE)
+		FROM conversations
+		WHERE LOWER(public_id)=LOWER($1) AND type='social_group'`,
+		req.PublicID).
+		Scan(&convID, &owner, &groupEnt, &isDefault)
+	if err != nil || isDefault {
+		writeErr(w, 404, "group not found")
+		return
+	}
+	joinerEnt := strings.TrimSpace(c.EnterpriseID)
+	if groupEnt != "" && joinerEnt != "" && groupEnt != joinerEnt {
 		writeErr(w, 404, "group not found")
 		return
 	}
@@ -760,7 +776,7 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 	// must see the request. adminIDs covers the owner row; fall back to the
 	// conversation's owner_id if the membership row is somehow missing.
 	approvers := s.adminIDs(r, convID)
-	if len(approvers) == 0 {
+	if len(approvers) == 0 && owner != "" {
 		approvers = []string{owner}
 	}
 	s.hub.PublishToUsers(approvers, ws.Event{Type: "group.join_request", Payload: map[string]any{"conversation_id": convID, "user_id": c.UserID}})
