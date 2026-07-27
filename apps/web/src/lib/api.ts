@@ -278,6 +278,18 @@ export function notifyMeUpdated(detail?: MeUpdatedDetail) {
   window.dispatchEvent(new CustomEvent<MeUpdatedDetail>("qchat:me-updated", { detail }));
 }
 
+/** Notify the mounted chat shell to reload the conversation list (e.g. after group create). */
+export type ConversationsChangedDetail = {
+  selectId?: string;
+};
+
+export function notifyConversationsChanged(detail?: ConversationsChangedDetail) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<ConversationsChangedDetail>("qchat:conversations-changed", { detail })
+  );
+}
+
 /** Extract a list from either a bare array or { items | list | users | ... } envelopes. */
 export function asList(body: any, ...keys: string[]): any[] {
   if (Array.isArray(body)) return body;

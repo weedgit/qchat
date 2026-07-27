@@ -892,7 +892,7 @@ export default function ChatPageInner() {
   >([]);
   const [addMemberQuery, setAddMemberQuery] = useState("");
   const [addMemberLookupBusy, setAddMemberLookupBusy] = useState(false);
-  const [addMemberPicked, setAddMemberPicked] = useState<Set<string>>(new Set());
+  const [addMemberPicked, setAddMemberPicked] = useState<string[]>([]);
   const [addMemberProfiles, setAddMemberProfiles] = useState<
     Record<
       string,
@@ -1297,7 +1297,7 @@ export default function ChatPageInner() {
       setAddMemberFriends(list.filter((f: { user_id: string }) => !memberIds.has(f.user_id)));
       setAddMemberLookup([]);
       setAddMemberQuery("");
-      setAddMemberPicked(new Set());
+      setAddMemberPicked([]);
       setAddMemberProfiles({});
       setAddMembersOpen(true);
     } catch (e: any) {
@@ -1308,7 +1308,7 @@ export default function ChatPageInner() {
   }
 
   async function confirmAddMembers() {
-    if (!active || addMemberPicked.size === 0) {
+    if (!active || addMemberPicked.length === 0) {
       setAddMembersOpen(false);
       return;
     }
@@ -1316,7 +1316,7 @@ export default function ChatPageInner() {
     try {
       await api(`/v1/groups/${active.id}/members`, {
         method: "POST",
-        body: JSON.stringify({ member_ids: Array.from(addMemberPicked) }),
+        body: JSON.stringify({ member_ids: addMemberPicked }),
       });
       setAddMembersOpen(false);
       await reloadGroupDetails();
@@ -1743,6 +1743,19 @@ export default function ChatPageInner() {
       setMobileChatOpen(true);
     }
   }, [openConversation]);
+
+  useEffect(() => {
+    const onChanged = (ev: Event) => {
+      const selectId = String(
+        (ev as CustomEvent<{ selectId?: string }>).detail?.selectId ?? ""
+      );
+      if (!selectId) return;
+      openedFromQuery.current = selectId;
+      setMobileChatOpen(true);
+    };
+    window.addEventListener("qchat:conversations-changed", onChanged);
+    return () => window.removeEventListener("qchat:conversations-changed", onChanged);
+  }, []);
 
   useEffect(() => {
     if (!nearBottomRef.current) return;
@@ -2392,25 +2405,26 @@ export default function ChatPageInner() {
                 )}
               </div>
               <div className="ctx-sep" />
-              <Link className="ctx-item" href="/profile">
+              <Link className="ctx-item" href="/profile" onClick={() => setMainMenuOpen(false)}>
                 <MenuIcon d={ICONS.idCard} />
                 {t("nav.profile")}
               </Link>
-              <Link className="ctx-item" href="/friends">
+              <Link className="ctx-item" href="/friends" onClick={() => setMainMenuOpen(false)}>
                 <MenuIcon d={ICONS.user} />
                 {t("menu.contacts")}
               </Link>
-              <Link className="ctx-item" href="/groups">
+              <Link className="ctx-item" href="/groups" onClick={() => setMainMenuOpen(false)}>
                 <MenuIcon d={ICONS.users} />
                 {t("menu.groups")}
               </Link>
-              <Link className="ctx-item" href="/settings">
+              <Link className="ctx-item" href="/settings" onClick={() => setMainMenuOpen(false)}>
                 <MenuIcon d={ICONS.settings} />
                 {t("menu.settings")}
               </Link>
               <button
                 className="ctx-item"
                 onClick={() => {
+                  setMainMenuOpen(false);
                   const order = ["dark", "light", "system"] as const;
                   const i = order.indexOf(theme);
                   setTheme(order[(i + 1) % order.length]);
@@ -2422,6 +2436,7 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item"
                 onClick={() => {
+                  setMainMenuOpen(false);
                   const order = ["en", "zh", "system"] as const;
                   const i = order.indexOf(locale);
                   setLocale(order[(i + 1) % order.length]);
@@ -2433,6 +2448,7 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item"
                 onClick={() => {
+                  setMainMenuOpen(false);
                   const order = ["online", "away", "dnd", "offline"] as const;
                   const i = order.indexOf(myStatus);
                   const next = order[(i + 1) % order.length];
@@ -2455,7 +2471,7 @@ export default function ChatPageInner() {
                       : t("status.offline")}
               </button>
               <div className="ctx-sep" />
-              <button className="ctx-item" onClick={logout}>
+              <button className="ctx-item" onClick={() => { setMainMenuOpen(false); logout(); }}>
                 <MenuIcon d={ICONS.logout} />
                 {t("nav.logOut")}
               </button>
@@ -2630,11 +2646,19 @@ export default function ChatPageInner() {
               <MenuIcon d={ICONS.building} />
               {t("menu.joinCompany")}
             </button>
-            <Link className="ctx-item" href="/groups">
+            <Link
+              className="ctx-item"
+              href="/groups"
+              onClick={() => setComposeOpen(false)}
+            >
               <MenuIcon d={ICONS.users} />
               {t("menu.newGroup")}
             </Link>
-            <Link className="ctx-item" href="/friends">
+            <Link
+              className="ctx-item"
+              href="/friends"
+              onClick={() => setComposeOpen(false)}
+            >
               <MenuIcon d={ICONS.user} />
               {t("menu.newPrivateChat")}
             </Link>
@@ -3185,35 +3209,6 @@ export default function ChatPageInner() {
                         >
                           <MenuIcon d={ICONS.paperclip} style={{ width: 20, height: 20 }} />
                         </button>
-                        <button
-                          type="button"
-                          className={`attach-btn${emojiOpen ? " active" : ""}`}
-                          title={t("chat.emoji")}
-                          disabled={voiceBusy || !chat.activeId}
-                          aria-expanded={emojiOpen}
-                          onClick={() => setEmojiOpen((v) => !v)}
-                        >
-                          <MenuIcon d={ICONS.smile} style={{ width: 20, height: 20 }} />
-                        </button>
-                        {emojiOpen && (
-                          <div className="emoji-picker" role="dialog" aria-label={t("chat.emoji")}>
-                            <div className="emoji-picker-grid">
-                              {COMPOSER_EMOJIS.map((em) => (
-                                <button
-                                  key={em}
-                                  type="button"
-                                  className="emoji-picker-cell"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    insertComposerEmoji(em);
-                                  }}
-                                >
-                                  {em}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                         <textarea
                           ref={draftRef}
                           rows={1}
@@ -3306,6 +3301,35 @@ export default function ChatPageInner() {
                               max: MESSAGE_MAX_CHARS,
                             })}
                           </span>
+                        )}
+                        <button
+                          type="button"
+                          className={`attach-btn${emojiOpen ? " active" : ""}`}
+                          title={t("chat.emoji")}
+                          disabled={voiceBusy || !chat.activeId}
+                          aria-expanded={emojiOpen}
+                          onClick={() => setEmojiOpen((v) => !v)}
+                        >
+                          <MenuIcon d={ICONS.smile} style={{ width: 20, height: 20 }} />
+                        </button>
+                        {emojiOpen && (
+                          <div className="emoji-picker" role="dialog" aria-label={t("chat.emoji")}>
+                            <div className="emoji-picker-grid">
+                              {COMPOSER_EMOJIS.map((em) => (
+                                <button
+                                  key={em}
+                                  type="button"
+                                  className="emoji-picker-cell"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    insertComposerEmoji(em);
+                                  }}
+                                >
+                                  {em}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         )}
                         {draft.trim() ? (
                           <button
@@ -3571,8 +3595,9 @@ export default function ChatPageInner() {
                     />
                     {(() => {
                       const q = addMemberQuery.trim().toLocaleLowerCase();
+                      const pickedSet = new Set(addMemberPicked);
                       const friendIds = new Set(addMemberFriends.map((f) => f.user_id));
-                      const selectedRows = Array.from(addMemberPicked)
+                      const selectedRows = addMemberPicked
                         .map((id) => addMemberProfiles[id])
                         .filter(Boolean) as {
                         user_id: string;
@@ -3582,13 +3607,13 @@ export default function ChatPageInner() {
                         isFriend: boolean;
                       }[];
                       const friendRows = addMemberFriends.filter((f) => {
-                        if (addMemberPicked.has(f.user_id)) return false;
+                        if (pickedSet.has(f.user_id)) return false;
                         if (!q) return true;
                         const hay = `${f.display_name} ${f.username} ${f.user_id}`.toLocaleLowerCase();
                         return hay.includes(q);
                       });
                       const extra = addMemberLookup.filter(
-                        (u) => !friendIds.has(u.user_id) && !addMemberPicked.has(u.user_id)
+                        (u) => !friendIds.has(u.user_id) && !pickedSet.has(u.user_id)
                       );
                       const rows = [
                         ...friendRows.map((f) => ({ ...f, isFriend: true })),
@@ -3601,19 +3626,18 @@ export default function ChatPageInner() {
                       return (
                         <>
                           {rows.map((f) => {
-                            const on = addMemberPicked.has(f.user_id);
+                            const on = pickedSet.has(f.user_id);
                             return (
                               <label key={f.user_id} className="check-row" style={{ gap: 8 }}>
                                 <input
                                   type="checkbox"
                                   checked={on}
                                   onChange={() => {
-                                    setAddMemberPicked((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(f.user_id)) next.delete(f.user_id);
-                                      else next.add(f.user_id);
-                                      return next;
-                                    });
+                                    setAddMemberPicked((prev) =>
+                                      prev.includes(f.user_id)
+                                        ? prev.filter((id) => id !== f.user_id)
+                                        : [f.user_id, ...prev]
+                                    );
                                     setAddMemberProfiles((prev) => {
                                       if (prev[f.user_id]) {
                                         const next = { ...prev };
@@ -3654,12 +3678,12 @@ export default function ChatPageInner() {
                       <button
                         type="button"
                         className="btn"
-                        disabled={addMembersBusy || addMemberPicked.size === 0}
+                        disabled={addMembersBusy || addMemberPicked.length === 0}
                         onClick={() => confirmAddMembers().catch(() => {})}
                       >
                         {addMembersBusy
                           ? t("details.adding")
-                          : t("details.addCount", { n: addMemberPicked.size })}
+                          : t("details.addCount", { n: addMemberPicked.length })}
                       </button>
                       <button
                         type="button"

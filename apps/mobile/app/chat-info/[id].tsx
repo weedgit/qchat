@@ -110,7 +110,7 @@ export default function ChatInfoScreen() {
     { userId: string; username: string; displayName: string; avatarUrl?: string }[]
   >([]);
   const [lookupBusy, setLookupBusy] = useState(false);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<string[]>([]);
   const [pickedProfiles, setPickedProfiles] = useState<
     Record<
       string,
@@ -290,7 +290,7 @@ export default function ChatInfoScreen() {
   }
 
   async function openAddMembers() {
-    setPicked(new Set());
+    setPicked([]);
     setPickedProfiles({});
     setFriendQuery("");
     setLookupHits([]);
@@ -354,7 +354,8 @@ export default function ChatInfoScreen() {
 
   const addablePeople = useMemo(() => {
     const q = friendQuery.trim().toLowerCase();
-    const selectedRows = Array.from(picked)
+    const pickedSet = new Set(picked);
+    const selectedRows = picked
       .map((id) => pickedProfiles[id])
       .filter(Boolean) as {
       userId: string;
@@ -365,7 +366,7 @@ export default function ChatInfoScreen() {
     }[];
     const friendRows = friends
       .filter((f) => {
-        if (memberIds.has(f.userId) || picked.has(f.userId)) return false;
+        if (memberIds.has(f.userId) || pickedSet.has(f.userId)) return false;
         if (!q) return true;
         const name = (f.note || f.nickname || f.username).toLowerCase();
         return name.includes(q) || f.username.toLowerCase().includes(q);
@@ -379,7 +380,7 @@ export default function ChatInfoScreen() {
       }));
     const friendIds = new Set(friends.map((f) => f.userId));
     const extra = lookupHits
-      .filter((u) => !friendIds.has(u.userId) && !picked.has(u.userId))
+      .filter((u) => !friendIds.has(u.userId) && !pickedSet.has(u.userId))
       .map((u) => ({ ...u, isFriend: false }));
     return [...friendRows, ...extra, ...selectedRows];
   }, [friends, memberIds, friendQuery, lookupHits, picked, pickedProfiles]);
@@ -391,12 +392,11 @@ export default function ChatInfoScreen() {
     avatarUrl?: string;
     isFriend: boolean;
   }) {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(user.userId)) next.delete(user.userId);
-      else next.add(user.userId);
-      return next;
-    });
+    setPicked((prev) =>
+      prev.includes(user.userId)
+        ? prev.filter((id) => id !== user.userId)
+        : [user.userId, ...prev]
+    );
     setPickedProfiles((prev) => {
       if (prev[user.userId]) {
         const next = { ...prev };
@@ -408,7 +408,7 @@ export default function ChatInfoScreen() {
   }
 
   async function confirmAddMembers() {
-    if (picked.size === 0) {
+    if (picked.length === 0) {
       setAddOpen(false);
       return;
     }
@@ -416,7 +416,7 @@ export default function ChatInfoScreen() {
     try {
       const res = await api<any>(`/v1/groups/${convId}/members`, {
         method: "POST",
-        body: JSON.stringify({ member_ids: [...picked] }),
+        body: JSON.stringify({ member_ids: picked }),
       });
       const added = Array.isArray(res?.added) ? res.added.length : 0;
       setAddOpen(false);
@@ -794,9 +794,9 @@ export default function ChatInfoScreen() {
               <Text style={styles.link}>Cancel</Text>
             </Pressable>
             <Text style={styles.modalTitle}>Add members</Text>
-            <Pressable onPress={confirmAddMembers} disabled={busy || picked.size === 0} hitSlop={8}>
-              <Text style={[styles.link, picked.size === 0 && { opacity: 0.4 }]}>
-                Add{picked.size ? ` (${picked.size})` : ""}
+            <Pressable onPress={confirmAddMembers} disabled={busy || picked.length === 0} hitSlop={8}>
+              <Text style={[styles.link, picked.length === 0 && { opacity: 0.4 }]}>
+                Add{picked.length ? ` (${picked.length})` : ""}
               </Text>
             </Pressable>
           </View>
@@ -817,7 +817,7 @@ export default function ChatInfoScreen() {
               </Text>
             }
             renderItem={({ item: f }) => {
-              const selected = picked.has(f.userId);
+              const selected = picked.includes(f.userId);
               return (
                 <Pressable style={styles.pickRow} onPress={() => togglePick(f)}>
                   <Avatar name={f.displayName} url={f.avatarUrl} size={40} />

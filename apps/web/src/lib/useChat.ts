@@ -879,6 +879,19 @@ export function useChat() {
   );
 
   useEffect(() => {
+    const onChanged = (ev: Event) => {
+      const selectId = String(
+        (ev as CustomEvent<{ selectId?: string }>).detail?.selectId ?? ""
+      );
+      void loadConversations().then(() => {
+        if (selectId) void openConversation(selectId);
+      });
+    };
+    window.addEventListener("qchat:conversations-changed", onChanged);
+    return () => window.removeEventListener("qchat:conversations-changed", onChanged);
+  }, [loadConversations, openConversation]);
+
+  useEffect(() => {
     if (!isQchatDesktop()) return;
     const detach = window.qchatDesktop?.onOpenConversation((conversationId) => {
       window.focus();

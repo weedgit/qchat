@@ -38,7 +38,7 @@ export default function CreateGroupScreen() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [lookupHits, setLookupHits] = useState<InviteCandidate[]>([]);
   const [lookupBusy, setLookupBusy] = useState(false);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<string[]>([]);
   const [pickedProfiles, setPickedProfiles] = useState<Record<string, InviteCandidate>>({});
   const [query, setQuery] = useState("");
   const [loadingFriends, setLoadingFriends] = useState(true);
@@ -105,12 +105,13 @@ export default function CreateGroupScreen() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const selectedRows = Array.from(picked)
+    const pickedSet = new Set(picked);
+    const selectedRows = picked
       .map((id) => pickedProfiles[id])
       .filter(Boolean) as InviteCandidate[];
     const friendRows: InviteCandidate[] = friends
       .filter((f) => {
-        if (picked.has(f.userId)) return false;
+        if (pickedSet.has(f.userId)) return false;
         if (!q) return true;
         const name = (f.note || f.nickname || f.username).toLowerCase();
         return name.includes(q) || f.username.toLowerCase().includes(q);
@@ -123,17 +124,16 @@ export default function CreateGroupScreen() {
         isFriend: true,
       }));
     const friendIds = new Set(friends.map((f) => f.userId));
-    const extra = lookupHits.filter((u) => !friendIds.has(u.userId) && !picked.has(u.userId));
+    const extra = lookupHits.filter((u) => !friendIds.has(u.userId) && !pickedSet.has(u.userId));
     return [...friendRows, ...extra, ...selectedRows];
   }, [friends, query, lookupHits, picked, pickedProfiles]);
 
   function togglePick(user: InviteCandidate) {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(user.userId)) next.delete(user.userId);
-      else next.add(user.userId);
-      return next;
-    });
+    setPicked((prev) =>
+      prev.includes(user.userId)
+        ? prev.filter((id) => id !== user.userId)
+        : [user.userId, ...prev]
+    );
     setPickedProfiles((prev) => {
       if (prev[user.userId]) {
         const next = { ...prev };
@@ -153,7 +153,7 @@ export default function CreateGroupScreen() {
     setBusy(true);
     try {
       const body: Record<string, unknown> = { title: name };
-      if (picked.size > 0) body.member_ids = [...picked];
+      if (picked.length > 0) body.member_ids = picked;
       const res = await api<any>("/v1/groups", {
         method: "POST",
         body: JSON.stringify(body),
@@ -188,7 +188,7 @@ export default function CreateGroupScreen() {
           autoFocus
         />
         <Text style={styles.label}>
-          Invite members{picked.size ? ` (${picked.size})` : ""} · optional
+          Invite members{picked.length ? ` (${picked.length})` : ""} · optional
         </Text>
         <TextInput
           style={styles.input}
@@ -217,7 +217,7 @@ export default function CreateGroupScreen() {
               </Text>
             }
             renderItem={({ item: f }) => {
-              const selected = picked.has(f.userId);
+              const selected = picked.includes(f.userId);
               return (
                 <Pressable
                   style={styles.row}

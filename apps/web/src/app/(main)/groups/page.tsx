@@ -6,7 +6,7 @@ import Avatar from "@/components/Avatar";
 import GroupQr from "@/components/GroupQr";
 import GroupQrScanner, { isGroupQrCameraSupported } from "@/components/GroupQrScanner";
 import MenuModal from "@/components/MenuModal";
-import { api, asList } from "@/lib/api";
+import { api, asList, notifyConversationsChanged } from "@/lib/api";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
 import { useLocale } from "@/lib/locale";
 import { Conversation, Friend, normalizeConversation, normalizeFriend } from "@/lib/types";
@@ -119,7 +119,7 @@ export default function GroupsPage() {
     isFriend: boolean;
   }) {
     setSelected((prev) =>
-      prev.includes(user.id) ? prev.filter((id) => id !== user.id) : [...prev, user.id]
+      prev.includes(user.id) ? prev.filter((id) => id !== user.id) : [user.id, ...prev]
     );
     setSelectedProfiles((prev) => {
       if (prev[user.id]) {
@@ -165,7 +165,11 @@ export default function GroupsPage() {
       setLookupHits([]);
       setCreateStep("form");
       await load();
-      if (res?.id) router.push(`/?c=${encodeURIComponent(res.id)}`);
+      if (res?.id) {
+        const id = String(res.id);
+        notifyConversationsChanged({ selectId: id });
+        router.push(`/?c=${encodeURIComponent(id)}`);
+      }
     } catch (err: any) {
       setMsg(err.message);
     } finally {
