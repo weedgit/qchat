@@ -177,6 +177,17 @@ paths:
       responses:
         "200":
           description: Availability
+  /v1/display-names/available:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Check display name availability
+      parameters:
+        - in: query
+          name: display_name
+          schema: { type: string }
+      responses:
+        "200":
+          description: Availability
   /v1/me/phone/request:
     post:
       security: [{ bearerAuth: [] }]
@@ -201,7 +212,11 @@ paths:
   /v1/users/lookup:
     get:
       security: [{ bearerAuth: [] }]
-      summary: Lookup user by username or ID
+      summary: Lookup user by username, display name, or ID
+      description: |
+        Case-insensitive prefix/contains match on username and display_name;
+        exact match on user id or phone. Enterprise callers also see personal
+        (no-enterprise) accounts. Other enterprises are not leaked.
       parameters:
         - in: query
           name: q
@@ -298,7 +313,8 @@ paths:
       summary: Create group
       description: |
         Creates a social group. Optional member_ids may include any same-tenant
-        user (friendship not required). Blocked users are skipped.
+        user (friendship not required). Blocked users are skipped. Optional
+        avatar_url sets the group photo at create time.
       responses:
         "201":
           description: Created
@@ -476,10 +492,10 @@ paths:
   /v1/calls:
     post:
       security: [{ bearerAuth: [] }]
-      summary: Start a 1:1 DM voice or video call (LiveKit)
+      summary: Start a DM or group voice/video call (LiveKit)
       description: |
-        Calls-style start. Creates call_sessions (ringing) and
-        emits WS call.ring to the peer. DM only.
+        Creates call_sessions (ringing) and emits WS call.ring.
+        DM rings the peer. Group requires invitee_ids and rings only those members.
       requestBody:
         required: true
         content:
@@ -490,6 +506,10 @@ paths:
               properties:
                 conversation_id: { type: string, format: uuid }
                 kind: { type: string, enum: [voice, video], default: voice }
+                invitee_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+                  description: Required for group calls — members to ring
       responses:
         "201":
           description: Call created (caller receives livekit_token)
@@ -518,11 +538,11 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: Declined; emits call.ended
+          description: Declined; emits call.ended (DM) or participant_declined (group)
   /v1/calls/{id}/hangup:
     post:
       security: [{ bearerAuth: [] }]
-      summary: Cancel ringing or end an active call
+      summary: Cancel ringing, leave group call, or end call (host)
       parameters:
         - in: path
           name: id
@@ -530,7 +550,51 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: Ended; emits call.ended
+          description: Ended or left; emits call.ended or call.participant_left
+  /v1/calls/{id}/invite:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Invite more members to an active group call
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [invitee_ids]
+              properties:
+                invitee_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Invites sent (call.ring)
+  /v1/calls/{id}/kick:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Host removes a participant from a group call
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Kicked; emits call.participant_kicked
   /v1/ws:
     get:
       summary: WebSocket realtime channel

@@ -17,11 +17,16 @@ import Avatar from "@/components/Avatar";
 import CallOverlay from "@/components/CallOverlay";
 import ConfirmDialog, { type ConfirmRequest } from "@/components/ConfirmDialog";
 import FriendNoteEditor from "@/components/FriendNoteEditor";
+import GroupCallInviteModal from "@/components/GroupCallInviteModal";
 import GroupQr from "@/components/GroupQr";
+import GroupQrScanner from "@/components/GroupQrScanner";
+import UserQr from "@/components/UserQr";
+import EmojiPicker from "@/components/EmojiPicker";
 import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
 import { getAuthDevice } from "@/lib/device";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { parseGroupJoinPayload } from "@/lib/groupQr";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { useCall } from "@/lib/useCall";
 import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
@@ -40,8 +45,6 @@ import {
 } from "@/lib/pinnedCycle";
 import {
   attachmentLimitError,
-  avatarLimitError,
-  AVATAR_ACCEPT,
   VOICE_MAX_SEC,
   MESSAGE_MAX_CHARS,
   messageCharCount,
@@ -112,10 +115,12 @@ function ConversationRow({
     if (!menu) return;
     const close = () => setMenu(null);
     window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
+    // Capture: another row's contextmenu uses stopPropagation, so bubble
+    // never reaches window — without capture, two menus can stay open.
+    window.addEventListener("contextmenu", close, true);
     return () => {
       window.removeEventListener("click", close);
-      window.removeEventListener("contextmenu", close);
+      window.removeEventListener("contextmenu", close, true);
     };
   }, [menu]);
 
@@ -301,9 +306,18 @@ function receiptMark(msg: Message): ReactNode {
   return <span className="receipt-tick">{" \u2713"}</span>;
 }
 
-function MenuIcon({ d, style }: { d: string; style?: CSSProperties }) {
+function MenuIcon({
+  d,
+  style,
+  className,
+}: {
+  d: string;
+  style?: CSSProperties;
+  className?: string;
+}) {
   return (
     <svg
+      className={className}
       width="17"
       height="17"
       viewBox="0 0 24 24"
@@ -370,6 +384,8 @@ const ICONS = {
     "M23 7l-7 5 7 5V7z M3 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z",
   building:
     "M3 21h18 M5 21V7l7-4 7 4v14 M9 21v-6h6v6 M9 10h.01 M15 10h.01 M9 14h.01 M15 14h.01",
+  scanQr:
+    "M3 7V5a2 2 0 0 1 2-2h2 M17 3h2a2 2 0 0 1 2 2v2 M21 17v2a2 2 0 0 1-2 2h-2 M7 21H5a2 2 0 0 1-2-2v-2 M7 7h4v4H7z M13 7h4v2h-2v2h-2z M7 13h2v2H7z M11 11h2v2h-2z M13 13h4v4h-4z",
 } as const;
 
 const QUICK_EMOJIS = [
@@ -383,14 +399,7 @@ const QUICK_EMOJIS = [
   "\u{1F62E}", // 😮
 ] as const;
 
-/** Built-in composer emoji set (requirements: no custom sticker packs). */
-const COMPOSER_EMOJIS = [
-  "😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘",
-  "😎", "🤔", "🙄", "😢", "😭", "😡", "👍", "👎",
-  "👏", "🙏", "🔥", "❤️", "💯", "🎉", "✨", "⭐",
-  "🤝", "💪", "🫡", "🥳", "😴", "🤯", "😅", "😇",
-  "😮", "🤗", "😏", "😜", "🤩", "💔", "👌", "✌️",
-] as const;
+/** Built-in composer emoji set lives in EmojiPicker / emojiData. */
 
 function Bubble({
   msg,
@@ -722,16 +731,21 @@ function Bubble({
                           : "React too"
                     }
                   >
-                    <span className="chip-emoji">{rx.emoji}</span>
-                    {rx.users.length > 0 && rx.count <= 3 ? (
-                      <span className="chip-avatars">
-                        {rx.users.slice(0, 3).map((u) => (
-                          <Avatar key={u.id} name={u.name} url={u.avatarUrl} size={20} />
-                        ))}
-                      </span>
-                    ) : (
+                    <span className="chip-emoji-wrap">
+                      <span className="chip-emoji">{rx.emoji}</span>
+                      {rx.users.slice(0, 3).map((u, i) => (
+                        <span
+                          key={u.id}
+                          className="chip-avatar-badge"
+                          style={{ left: `${Math.max(0, i) * 10}px`, zIndex: 4 - i }}
+                        >
+                          <Avatar name={u.name} url={u.avatarUrl} size={16} />
+                        </span>
+                      ))}
+                    </span>
+                    {rx.count > 3 ? (
                       <span className="chip-count">{rx.count}</span>
-                    )}
+                    ) : null}
                   </button>
                 ))}
               </div>
@@ -806,6 +820,39 @@ interface CtxMenuState {
   msgId: string;
 }
 
+type MuteDuration = "10m" | "1h" | "permanent";
+
+function muteUntilDate(raw?: string): Date | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+function isPermanentMute(until: Date | null): boolean {
+  return until != null && until.getUTCFullYear() >= 9999;
+}
+
+/** Infer which mute chip is active from remaining mute_until. */
+function inferActiveMuteDuration(until: Date | null, nowMs: number): MuteDuration | null {
+  if (!until || until.getTime() <= nowMs) return null;
+  if (isPermanentMute(until)) return "permanent";
+  const remaining = until.getTime() - nowMs;
+  if (remaining <= 10 * 60 * 1000 + 1500) return "10m";
+  return "1h";
+}
+
+function formatMuteCountdown(until: Date, nowMs: number): string {
+  const totalSec = Math.max(0, Math.ceil((until.getTime() - nowMs) / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function ChatPageInner() {
   const chat = useChat();
   const call = useCall({
@@ -821,7 +868,11 @@ export default function ChatPageInner() {
   const { openConversation } = chat;
   const router = useRouter();
   const [mainMenuOpen, setMainMenuOpen] = useState(false);
-  const [idCopied, setIdCopied] = useState(false);
+  const [menuCopiedField, setMenuCopiedField] = useState<"username" | "phone" | null>(null);
+  const [menuScanOpen, setMenuScanOpen] = useState(false);
+  const [menuScanBusy, setMenuScanBusy] = useState(false);
+  const [menuScanError, setMenuScanError] = useState<string | null>(null);
+  const [menuScanNotice, setMenuScanNotice] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [joinCompanyOpen, setJoinCompanyOpen] = useState(false);
   const [joinInvite, setJoinInvite] = useState("");
@@ -873,7 +924,16 @@ export default function ChatPageInner() {
   const [recordSecs, setRecordSecs] = useState(0);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [groupDetails, setGroupDetails] = useState<{
-    members: { user_id: string; display_name: string; username: string; role: string; avatar_url?: string; mute_until?: string }[];
+    members: {
+      user_id: string;
+      display_name: string;
+      username: string;
+      role: string;
+      avatar_url?: string;
+      mute_until?: string;
+      online?: boolean;
+      last_active_at?: string;
+    }[];
     public_id?: string;
     description?: string;
     announcement?: string;
@@ -883,29 +943,10 @@ export default function ChatPageInner() {
     mute_all?: boolean;
     forbid_member_friend_add?: boolean;
   } | null>(null);
-  const [addMembersOpen, setAddMembersOpen] = useState(false);
-  const [addMemberFriends, setAddMemberFriends] = useState<
-    { user_id: string; username: string; display_name: string; avatar_url?: string }[]
-  >([]);
-  const [addMemberLookup, setAddMemberLookup] = useState<
-    { user_id: string; username: string; display_name: string; avatar_url?: string }[]
-  >([]);
-  const [addMemberQuery, setAddMemberQuery] = useState("");
-  const [addMemberLookupBusy, setAddMemberLookupBusy] = useState(false);
-  const [addMemberPicked, setAddMemberPicked] = useState<string[]>([]);
-  const [addMemberProfiles, setAddMemberProfiles] = useState<
-    Record<
-      string,
-      {
-        user_id: string;
-        username: string;
-        display_name: string;
-        avatar_url?: string;
-        isFriend: boolean;
-      }
-    >
-  >({});
-  const [addMembersBusy, setAddMembersBusy] = useState(false);
+  const [inviteIdCopied, setInviteIdCopied] = useState(false);
+  const [groupCallInvite, setGroupCallInvite] = useState<"voice" | "video" | "mid" | null>(null);
+  const [groupCallInviteBusy, setGroupCallInviteBusy] = useState(false);
+  const [muteNowMs, setMuteNowMs] = useState(() => Date.now());
   const [memberMenu, setMemberMenu] = useState<{
     x: number;
     y: number;
@@ -925,9 +966,26 @@ export default function ChatPageInner() {
     real_name?: string;
     signature?: string;
     region?: string;
+    age?: number | null;
     online?: boolean;
     last_active_at?: string;
   } | null>(null);
+  const [dmUsernameCopied, setDmUsernameCopied] = useState(false);
+  const [memberProfile, setMemberProfile] = useState<{
+    id: string;
+    username: string;
+    display_name: string;
+    avatar_url?: string;
+    real_name?: string;
+    signature?: string;
+    region?: string;
+    age?: number | null;
+    online?: boolean;
+    last_active_at?: string;
+    role?: string;
+    is_friend?: boolean;
+  } | null>(null);
+  const [memberProfileBusy, setMemberProfileBusy] = useState(false);
  /** Members available for @ autocomplete (suggestion box). */
   const [mentionMembers, setMentionMembers] = useState<
     { userId: string; username: string; displayName: string; avatarUrl?: string }[]
@@ -937,11 +995,8 @@ export default function ChatPageInner() {
     start: number;
     index: number;
   } | null>(null);
-  const [groupEditTitle, setGroupEditTitle] = useState("");
-  const [groupEditDesc, setGroupEditDesc] = useState("");
   const [groupEditAnnounce, setGroupEditAnnounce] = useState("");
   const [groupMetaBusy, setGroupMetaBusy] = useState(false);
-  const [avatarBusy, setAvatarBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const loadingOlderUIRef = useRef(false);
@@ -951,7 +1006,6 @@ export default function ChatPageInner() {
   const [pinsListOpen, setPinsListOpen] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const groupAvatarInputRef = useRef<HTMLInputElement>(null);
   const openedFromQuery = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -1212,8 +1266,55 @@ export default function ChatPageInner() {
       await chat.openDM(userId);
       setMobileChatOpen(true);
       setShowDetails(true);
+      setMemberProfile(null);
     } catch (e: any) {
       logChatError(e?.message || "Could not open chat");
+    }
+  }
+
+  /** Show a group member's profile inside the right details panel. */
+  async function openMemberProfile(member: {
+    user_id: string;
+    display_name: string;
+    username: string;
+    role: string;
+    avatar_url?: string;
+    online?: boolean;
+    last_active_at?: string;
+  }) {
+    if (!member.user_id || member.user_id === chat.me?.id) return;
+    setMemberProfileBusy(true);
+    setMemberProfile({
+      id: member.user_id,
+      username: member.username,
+      display_name: member.display_name,
+      avatar_url: member.avatar_url,
+      role: member.role,
+      online: member.online,
+      last_active_at: member.last_active_at,
+    });
+    try {
+      const u = await api<any>(`/v1/users/${member.user_id}`);
+      setMemberProfile({
+        id: String(u?.id ?? member.user_id),
+        username: String(u?.username ?? member.username),
+        display_name: String(u?.display_name ?? member.display_name),
+        avatar_url: u?.avatar_url || member.avatar_url,
+        real_name: u?.real_name != null ? String(u.real_name) : undefined,
+        signature: u?.signature != null ? String(u.signature) : undefined,
+        region: u?.region != null ? String(u.region) : undefined,
+        age: typeof u?.age === "number" ? u.age : null,
+        online: Boolean(u?.online ?? member.online),
+        last_active_at: u?.last_active_at
+          ? String(u.last_active_at)
+          : member.last_active_at,
+        role: member.role,
+        is_friend: Boolean(u?.is_friend),
+      });
+    } catch (e: any) {
+      logChatError(e?.message || "Could not load profile");
+    } finally {
+      setMemberProfileBusy(false);
     }
   }
 
@@ -1279,122 +1380,6 @@ export default function ChatPageInner() {
     }
   }
 
-  async function openAddMembers() {
-    if (!active || !canEditGroup) return;
-    setAddMembersBusy(true);
-    try {
-      const body = await api<any>("/v1/friends");
-      const list = (Array.isArray(body?.friends) ? body.friends : Array.isArray(body) ? body : [])
-        .filter((f: any) => String(f?.status ?? "accepted") === "accepted")
-        .map((f: any) => ({
-          user_id: String(f?.user_id ?? f?.friend_id ?? f?.id ?? ""),
-          username: String(f?.username ?? ""),
-          display_name: String(f?.display_name ?? f?.username ?? "Friend"),
-          avatar_url: f?.avatar_url || undefined,
-        }))
-        .filter((f: { user_id: string }) => f.user_id);
-      const memberIds = new Set((groupDetails?.members ?? []).map((m) => m.user_id));
-      setAddMemberFriends(list.filter((f: { user_id: string }) => !memberIds.has(f.user_id)));
-      setAddMemberLookup([]);
-      setAddMemberQuery("");
-      setAddMemberPicked([]);
-      setAddMemberProfiles({});
-      setAddMembersOpen(true);
-    } catch (e: any) {
-      logChatError(e?.message || "Could not load friends");
-    } finally {
-      setAddMembersBusy(false);
-    }
-  }
-
-  async function confirmAddMembers() {
-    if (!active || addMemberPicked.length === 0) {
-      setAddMembersOpen(false);
-      return;
-    }
-    setAddMembersBusy(true);
-    try {
-      await api(`/v1/groups/${active.id}/members`, {
-        method: "POST",
-        body: JSON.stringify({ member_ids: addMemberPicked }),
-      });
-      setAddMembersOpen(false);
-      await reloadGroupDetails();
-    } catch (e: any) {
-      logChatError(e?.message || "Could not add members");
-    } finally {
-      setAddMembersBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!addMembersOpen) return;
-    const q = addMemberQuery.trim();
-    if (!q) {
-      setAddMemberLookup([]);
-      setAddMemberLookupBusy(false);
-      return;
-    }
-    let cancelled = false;
-    setAddMemberLookupBusy(true);
-    const timer = window.setTimeout(() => {
-      api<any>(`/v1/users/lookup?q=${encodeURIComponent(q)}`)
-        .then((body) => {
-          if (cancelled) return;
-          const memberIds = new Set((groupDetails?.members ?? []).map((m) => m.user_id));
-          setAddMemberLookup(
-            (Array.isArray(body?.users) ? body.users : [])
-              .map((u: any) => ({
-                user_id: String(u?.id ?? ""),
-                username: String(u?.username ?? ""),
-                display_name: String(u?.display_name ?? u?.username ?? ""),
-                avatar_url: u?.avatar_url || undefined,
-              }))
-              .filter((u: { user_id: string }) => u.user_id && !memberIds.has(u.user_id))
-          );
-        })
-        .catch(() => {
-          if (!cancelled) setAddMemberLookup([]);
-        })
-        .finally(() => {
-          if (!cancelled) setAddMemberLookupBusy(false);
-        });
-    }, 200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [addMembersOpen, addMemberQuery, groupDetails?.members]);
-
-  async function uploadGroupAvatar(file: File) {
-    if (!active || !canEditGroup) return;
-    const limitErr = avatarLimitError(file);
-    if (limitErr) {
-      logChatError(limitErr);
-      return;
-    }
-    setAvatarBusy(true);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("kind", "avatar");
-      const up = await api<{ url?: string }>("/v1/media/upload", { method: "POST", body: fd });
-      const url = String(up?.url ?? "");
-      const g = await api<any>(`/v1/groups/${active.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ avatar_url: url }),
-      });
-      setGroupDetails((prev) =>
-        prev ? { ...prev, avatar_url: String(g?.avatar_url ?? url) } : prev
-      );
-      await chat.reload();
-    } catch (err: any) {
-      logChatError(err.message);
-    } finally {
-      setAvatarBusy(false);
-    }
-  }
-
   async function reloadGroupDetails() {
     if (!active || (active.type !== "social_group" && active.type !== "group")) return;
     const g = await api<any>(`/v1/groups/${active.id}`);
@@ -1409,8 +1394,6 @@ export default function ChatPageInner() {
       mute_all: Boolean(g?.mute_all),
       forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
     });
-    setGroupEditTitle(String(g?.title ?? ""));
-    setGroupEditDesc(String(g?.description ?? ""));
     setGroupEditAnnounce(String(g?.announcement ?? ""));
   }
 
@@ -1421,8 +1404,6 @@ export default function ChatPageInner() {
       await api(`/v1/groups/${active.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          title: groupEditTitle.trim(),
-          description: groupEditDesc,
           announcement: groupEditAnnounce,
         }),
       });
@@ -1462,6 +1443,22 @@ export default function ChatPageInner() {
     });
     await reloadGroupDetails();
   }
+
+  async function toggleMemberMute(userId: string, duration: MuteDuration, activeDuration: MuteDuration | null) {
+    await muteMember(userId, activeDuration === duration ? "off" : duration);
+  }
+
+  useEffect(() => {
+    if (!showDetails || !groupDetails?.members?.length) return;
+    const hasTimedMute = groupDetails.members.some((m) => {
+      const until = muteUntilDate(m.mute_until);
+      return until != null && until.getTime() > Date.now() && !isPermanentMute(until);
+    });
+    if (!hasTimedMute) return;
+    setMuteNowMs(Date.now());
+    const id = window.setInterval(() => setMuteNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [showDetails, groupDetails?.members]);
 
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
   const ctxMsg = ctxMenu
@@ -1553,6 +1550,7 @@ export default function ChatPageInner() {
     const close = () => {
       setMainMenuOpen(false);
       setComposeOpen(false);
+      setMenuCopiedField(null);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
@@ -1603,6 +1601,42 @@ export default function ChatPageInner() {
     }
   }
 
+  function copyMenuField(field: "username" | "phone", value: string) {
+    const text = value.trim();
+    if (!text) return;
+    void copyTextToClipboard(text).then((ok) => {
+      if (!ok) return;
+      setMenuCopiedField(field);
+      window.setTimeout(() => {
+        setMenuCopiedField((cur) => (cur === field ? null : cur));
+      }, 1500);
+    });
+  }
+
+  async function joinFromMenuScan(publicIdRaw: string) {
+    const parsed = parseGroupJoinPayload(publicIdRaw) ?? publicIdRaw.trim();
+    if (!parsed || menuScanBusy) return;
+    setMenuScanBusy(true);
+    setMenuScanError(null);
+    setMenuScanNotice(null);
+    try {
+      const res = await api<any>("/v1/groups/join", {
+        method: "POST",
+        body: JSON.stringify({ public_id: parsed }),
+      });
+      setMenuScanNotice(`Join request: ${res?.status ?? "submitted"}`);
+      window.setTimeout(() => {
+        setMenuScanOpen(false);
+        setMenuScanNotice(null);
+        router.push("/groups");
+      }, 900);
+    } catch (err: any) {
+      setMenuScanError(err?.message || t("groups.invalidJoin"));
+    } finally {
+      setMenuScanBusy(false);
+    }
+  }
+
   async function logout() {
     try {
       await unregisterWebPush();
@@ -1628,7 +1662,7 @@ export default function ChatPageInner() {
  // channel info RHS: load group members when details open.
   useEffect(() => {
     if (!showDetails || !active || (active.type !== "social_group" && active.type !== "group")) {
-      setGroupDetails(null);
+      if (!groupCallInvite) setGroupDetails(null);
       return;
     }
     let cancelled = false;
@@ -1646,8 +1680,6 @@ export default function ChatPageInner() {
           mute_all: Boolean(g?.mute_all),
           forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
         });
-        setGroupEditTitle(String(g?.title ?? ""));
-        setGroupEditDesc(String(g?.description ?? ""));
         setGroupEditAnnounce(String(g?.announcement ?? ""));
       })
       .catch(() => {
@@ -1656,12 +1688,46 @@ export default function ChatPageInner() {
     return () => {
       cancelled = true;
     };
-  }, [showDetails, active]);
+  }, [showDetails, active, groupCallInvite]);
+
+  // Prefetch group members for call invite picker (without opening RHS).
+  useEffect(() => {
+    if (!groupCallInvite || !active || (active.type !== "social_group" && active.type !== "group")) {
+      return;
+    }
+    if (groupDetails?.members?.length) return;
+    let cancelled = false;
+    api<any>(`/v1/groups/${active.id}`)
+      .then((g) => {
+        if (cancelled) return;
+        setGroupDetails({
+          members: Array.isArray(g?.members) ? g.members : [],
+          public_id: g?.public_id,
+          description: g?.description,
+          announcement: g?.announcement,
+          title: g?.title,
+          role: g?.role,
+          avatar_url: g?.avatar_url,
+          mute_all: Boolean(g?.mute_all),
+          forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [groupCallInvite, active?.id, active?.type, groupDetails?.members?.length]);
+
+  useEffect(() => {
+    setMemberProfile(null);
+    setMemberProfileBusy(false);
+  }, [active?.id, showDetails]);
 
  // DM RHS: load peer profile (user profile popover / RHS).
   useEffect(() => {
     if (!showDetails || !active || active.type !== "dm" || !active.peerId) {
       setDmPeerProfile(null);
+      setDmUsernameCopied(false);
       return;
     }
     let cancelled = false;
@@ -1676,6 +1742,7 @@ export default function ChatPageInner() {
           real_name: u?.real_name != null ? String(u.real_name) : undefined,
           signature: u?.signature != null ? String(u.signature) : undefined,
           region: u?.region != null ? String(u.region) : undefined,
+          age: typeof u?.age === "number" ? u.age : u?.age == null ? null : undefined,
           online: Boolean(u?.online),
           last_active_at: u?.last_active_at ? String(u.last_active_at) : undefined,
         });
@@ -2365,44 +2432,64 @@ export default function ChatPageInner() {
                   <span className="main-menu-profile-name">
                     {chat.me?.nickname || chat.me?.username || t("nav.profile")}
                   </span>
-                  <span className="main-menu-profile-meta">
-                    {[
-                      chat.me?.username ? `@${chat.me.username}` : null,
-                      chat.me?.phone || null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "—"}
-                  </span>
-                </div>
-                <div className="ctx-sep main-menu-profile-sep" />
-                {chat.me?.id && (
-                  <div className="main-menu-profile-id">
-                    <span className="main-menu-profile-id-label">ID</span>
-                    <span className="main-menu-profile-id-text">{chat.me.id}</span>
+                  <div className="main-menu-id-list">
                     <button
                       type="button"
-                      className="main-menu-copy-btn"
-                      title={idCopied ? t("me.idCopied") : t("me.copyId")}
-                      aria-label={t("me.copyId")}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const id = chat.me?.id;
-                        if (!id) return;
-                        void copyTextToClipboard(id).then((ok) => {
-                          if (!ok) return;
-                          setIdCopied(true);
-                          setTimeout(() => setIdCopied(false), 1500);
-                        });
-                      }}
+                      className="main-menu-id-row"
+                      title={t("me.copyUsername")}
+                      disabled={!chat.me?.username}
+                      onClick={() => copyMenuField("username", chat.me?.username || "")}
                     >
+                      <span className="main-menu-id-text">
+                        <span className="main-menu-id-value">
+                          {chat.me?.username ? `@${chat.me.username}` : "—"}
+                        </span>
+                        {menuCopiedField === "username" ? (
+                          <span className="main-menu-id-copied">{t("me.idCopied")}</span>
+                        ) : null}
+                      </span>
                       <MenuIcon
-                        d={idCopied ? ICONS.select : ICONS.copy}
-                        style={{ width: 18, height: 18 }}
+                        d={menuCopiedField === "username" ? ICONS.select : ICONS.copy}
+                        className={
+                          menuCopiedField === "username" ? "main-menu-copy-hint is-copied" : "main-menu-copy-hint"
+                        }
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      className="main-menu-id-row"
+                      title={t("me.copyPhone")}
+                      disabled={!chat.me?.phone}
+                      onClick={() => copyMenuField("phone", chat.me?.phone || "")}
+                    >
+                      <span className="main-menu-id-text">
+                        <span className="main-menu-id-value">{chat.me?.phone || "—"}</span>
+                        {menuCopiedField === "phone" ? (
+                          <span className="main-menu-id-copied">{t("me.idCopied")}</span>
+                        ) : null}
+                      </span>
+                      <MenuIcon
+                        d={menuCopiedField === "phone" ? ICONS.select : ICONS.copy}
+                        className={
+                          menuCopiedField === "phone" ? "main-menu-copy-hint is-copied" : "main-menu-copy-hint"
+                        }
                       />
                     </button>
                   </div>
-                )}
+                  <button
+                    type="button"
+                    className="main-menu-scan-btn"
+                    onClick={() => {
+                      setMainMenuOpen(false);
+                      setMenuScanError(null);
+                      setMenuScanNotice(null);
+                      setMenuScanOpen(true);
+                    }}
+                  >
+                    <MenuIcon d={ICONS.scanQr} />
+                    {t("menu.scanQR")}
+                  </button>
+                </div>
               </div>
               <div className="ctx-sep" />
               <Link className="ctx-item" href="/profile" onClick={() => setMainMenuOpen(false)}>
@@ -2845,7 +2932,7 @@ export default function ChatPageInner() {
                 >
                   <MenuIcon d={"M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z M21 21l-4.3-4.3"} />
                 </button>
-                {active.type === "dm" && (
+                {(active.type === "dm" || isGroup) && (
                   <>
                     <button
                       type="button"
@@ -2853,6 +2940,10 @@ export default function ChatPageInner() {
                       title={t("chat.voiceCallTitle")}
                       disabled={!!call.active || !!call.incoming}
                       onClick={() => {
+                        if (isGroup) {
+                          setGroupCallInvite("voice");
+                          return;
+                        }
                         call
                           .startCall(
                             active.id,
@@ -2871,6 +2962,10 @@ export default function ChatPageInner() {
                       title={t("chat.videoCallTitle")}
                       disabled={!!call.active || !!call.incoming}
                       onClick={() => {
+                        if (isGroup) {
+                          setGroupCallInvite("video");
+                          return;
+                        }
                         call
                           .startCall(
                             active.id,
@@ -3313,23 +3408,10 @@ export default function ChatPageInner() {
                           <MenuIcon d={ICONS.smile} style={{ width: 20, height: 20 }} />
                         </button>
                         {emojiOpen && (
-                          <div className="emoji-picker" role="dialog" aria-label={t("chat.emoji")}>
-                            <div className="emoji-picker-grid">
-                              {COMPOSER_EMOJIS.map((em) => (
-                                <button
-                                  key={em}
-                                  type="button"
-                                  className="emoji-picker-cell"
-                                  onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    insertComposerEmoji(em);
-                                  }}
-                                >
-                                  {em}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                          <EmojiPicker
+                            onPick={insertComposerEmoji}
+                            onClose={() => setEmojiOpen(false)}
+                          />
                         )}
                         {draft.trim() ? (
                           <button
@@ -3371,12 +3453,99 @@ export default function ChatPageInner() {
             type="button"
             className="details-close"
             title={t("chat.close")}
-            onClick={() => setShowDetails(false)}
+            onClick={() => {
+              if (memberProfile) {
+                setMemberProfile(null);
+                return;
+              }
+              setShowDetails(false);
+            }}
           >
             {"\u2715"}
           </button>
+          {memberProfile || memberProfileBusy ? (
+            <div className="member-profile-panel">
+              <button
+                type="button"
+                className="member-profile-back"
+                onClick={() => setMemberProfile(null)}
+              >
+                {t("details.backToGroup")}
+              </button>
+              {memberProfileBusy && !memberProfile ? (
+                <div className="muted" style={{ marginTop: 24 }}>
+                  {t("common.loading")}
+                </div>
+              ) : memberProfile ? (
+                <>
+                  <Avatar
+                    name={memberProfile.display_name}
+                    url={memberProfile.avatar_url}
+                    size={96}
+                  />
+                  <div className="member-profile-name">{memberProfile.display_name}</div>
+                  <div className="member-profile-meta">
+                    @{memberProfile.username}
+                    {memberProfile.online
+                      ? ` · ${t("presence.online")}`
+                      : memberProfile.last_active_at
+                        ? ` · ${formatLastSeen(memberProfile.last_active_at, t)}`
+                        : ""}
+                  </div>
+                  {memberProfile.role ? (
+                    <div className="kv kv-inline" style={{ marginTop: 12 }}>
+                      <div className="k">{t("details.memberRole")}</div>
+                      <div className="kv-value">
+                        {(memberProfile.role === "owner" || memberProfile.role === "admin") ? (
+                          <span className={`members-role-pill is-${memberProfile.role}`}>
+                            {memberProfile.role}
+                          </span>
+                        ) : (
+                          memberProfile.role
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  {memberProfile.signature ? (
+                    <div className="member-profile-signature">{memberProfile.signature}</div>
+                  ) : null}
+                  {memberProfile.real_name ? (
+                    <div className="kv kv-inline">
+                      <div className="k">{t("details.realName")}</div>
+                      <div className="kv-value">{memberProfile.real_name}</div>
+                    </div>
+                  ) : null}
+                  {memberProfile.region ? (
+                    <div className="kv kv-inline">
+                      <div className="k">{t("me.region")}</div>
+                      <div className="kv-value">{memberProfile.region}</div>
+                    </div>
+                  ) : null}
+                  {typeof memberProfile.age === "number" ? (
+                    <div className="kv kv-inline">
+                      <div className="k">{t("me.age")}</div>
+                      <div className="kv-value">{memberProfile.age}</div>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn member-profile-message"
+                    disabled={memberProfileBusy}
+                    onClick={() => openMemberChat(memberProfile.id).catch(() => {})}
+                  >
+                    {t("details.sendMessage")}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : (
+            <>
           <Avatar
-            name={conversationDisplayName(active)}
+            name={
+              active.type === "dm"
+                ? dmPeerProfile?.display_name || conversationDisplayName(active)
+                : conversationDisplayName(active)
+            }
             url={
               active.type === "dm"
                 ? dmPeerProfile?.avatar_url || active.avatarUrl
@@ -3384,395 +3553,315 @@ export default function ChatPageInner() {
             }
             size={96}
           />
-          {canEditGroup && (
-            <>
-              <input
-                ref={groupAvatarInputRef}
-                type="file"
-                accept={AVATAR_ACCEPT}
-                hidden
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) uploadGroupAvatar(f).catch(() => { });
-                }}
-              />
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ marginTop: 8 }}
-                disabled={avatarBusy}
-                onClick={() => groupAvatarInputRef.current?.click()}
-              >
-                {avatarBusy ? "Uploading…" : "Change group avatar"}
-              </button>
-            </>
-          )}
-          <div style={{ fontSize: 17, fontWeight: 700 }}>{conversationDisplayName(active)}</div>
-          {active.type === "dm" && dmPeerProfile && (
-            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-              @{dmPeerProfile.username}
-              {dmPeerProfile.online
-                ? ` · ${t("presence.online")}`
-                : dmPeerProfile.last_active_at
-                  ? ` · ${formatLastSeen(dmPeerProfile.last_active_at, t)}`
-                  : ""}
-            </div>
-          )}
-          {active.type === "dm" && dmPeerProfile?.signature ? (
-            <div style={{ marginTop: 10, fontSize: 13, textAlign: "center", maxWidth: 260 }}>
-              {dmPeerProfile.signature}
-            </div>
-          ) : null}
-          {active.type === "dm" && dmPeerProfile?.region ? (
-            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-              {dmPeerProfile.region}
-            </div>
-          ) : null}
-          {active.type === "dm" && dmPeerProfile?.real_name ? (
-            <div className="kv" style={{ marginTop: 10 }}>
-              <div className="k">{t("details.realName")}</div>
-              <div>{dmPeerProfile.real_name}</div>
-            </div>
-          ) : null}
-          {active.type === "dm" && active.friendNote && (
-            <div className="muted" style={{ fontSize: 13 }}>
-              {active.title}
-            </div>
-          )}
-          {active.type === "dm" && active.friendTags && active.friendTags.length > 0 && (
-            <div className="tag-chip-row" style={{ marginTop: 8 }}>
-              {active.friendTags.map((t) => (
-                <span key={t} className="tag-chip">
-                  #{t}
-                </span>
-              ))}
-            </div>
-          )}
-          {active.type === "dm" && active.friendshipId && (
-            <FriendNoteEditor
-              friendshipId={active.friendshipId}
-              note={active.friendNote ?? ""}
-              tags={active.friendTags ?? []}
-              onSaved={() => chat.reload()}
-            />
-          )}
-          <div className="kv">
-            <div className="k">{t("details.type")}</div>
-            <div>{active.type}</div>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>
+            {active.type === "dm"
+              ? dmPeerProfile?.display_name || conversationDisplayName(active)
+              : conversationDisplayName(active)}
           </div>
-          <div className="kv">
-            <div className="k">{t("details.conversationId")}</div>
-            <div style={{ wordBreak: "break-all" }}>{active.id}</div>
-          </div>
-          <div className="kv">
+          {isGroup && groupDetails?.description ? (
+            <div
+              className="group-header-description"
+              title={t("details.description")}
+            >
+              {groupDetails.description}
+            </div>
+          ) : null}
+          {active.type === "dm" && (
+            <div className="dm-profile-block">
+              {dmPeerProfile ? (
+                <>
+                  <div className="member-profile-meta">
+                    @{dmPeerProfile.username}
+                    {dmPeerProfile.online
+                      ? ` · ${t("presence.online")}`
+                      : dmPeerProfile.last_active_at
+                        ? ` · ${formatLastSeen(dmPeerProfile.last_active_at, t)}`
+                        : ""}
+                  </div>
+                  {dmPeerProfile.signature ? (
+                    <div className="member-profile-signature">{dmPeerProfile.signature}</div>
+                  ) : null}
+                  {dmPeerProfile.real_name ? (
+                    <div className="kv kv-inline">
+                      <div className="k">{t("details.realName")}</div>
+                      <div className="kv-value">{dmPeerProfile.real_name}</div>
+                    </div>
+                  ) : null}
+                  {dmPeerProfile.region ? (
+                    <div className="kv kv-inline">
+                      <div className="k">{t("me.region")}</div>
+                      <div className="kv-value">{dmPeerProfile.region}</div>
+                    </div>
+                  ) : null}
+                  {typeof dmPeerProfile.age === "number" ? (
+                    <div className="kv kv-inline">
+                      <div className="k">{t("me.age")}</div>
+                      <div className="kv-value">{dmPeerProfile.age}</div>
+                    </div>
+                  ) : null}
+                  {dmPeerProfile.username ? (
+                    <div className="group-qr-block dm-user-qr-block">
+                      <div className="group-invite-id-label">{t("details.userQr")}</div>
+                      <button
+                        type="button"
+                        className="group-invite-id-copy"
+                        title={dmUsernameCopied ? t("me.idCopied") : t("me.copyUsername")}
+                        onClick={() => {
+                          void copyTextToClipboard(dmPeerProfile.username).then((ok) => {
+                            if (!ok) return;
+                            setDmUsernameCopied(true);
+                            window.setTimeout(() => setDmUsernameCopied(false), 1500);
+                          });
+                        }}
+                      >
+                        <span className="group-invite-id-value">@{dmPeerProfile.username}</span>
+                        <span
+                          className={`group-invite-id-action${dmUsernameCopied ? " is-copied" : ""}`}
+                          aria-hidden
+                        >
+                          <MenuIcon d={dmUsernameCopied ? ICONS.select : ICONS.copy} />
+                        </span>
+                      </button>
+                      <UserQr username={dmPeerProfile.username} size={140} />
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="muted" style={{ marginTop: 8, fontSize: 13 }}>
+                  {t("common.loading")}
+                </div>
+              )}
+              {active.friendNote ? (
+                <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+                  {active.title}
+                </div>
+              ) : null}
+              {active.friendTags && active.friendTags.length > 0 && (
+                <div className="tag-chip-row" style={{ marginTop: 8 }}>
+                  {active.friendTags.map((tag) => (
+                    <span key={tag} className="tag-chip">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {active.friendshipId && (
+                <FriendNoteEditor
+                  friendshipId={active.friendshipId}
+                  note={active.friendNote ?? ""}
+                  tags={active.friendTags ?? []}
+                  onSaved={() => chat.reload()}
+                />
+              )}
+            </div>
+          )}
+          {isGroup && groupDetails && (
+            <div className="kv kv-inline">
+              <div className="k">{t("details.yourRole")}</div>
+              <div className="kv-value">{groupDetails.role || chat.myRole}</div>
+            </div>
+          )}
+          <div className="kv kv-inline">
             <div className="k">{t("details.lastActivity")}</div>
-            <div>{active.lastMessageAt ? fmtTime(active.lastMessageAt) : "\u2014"}</div>
+            <div className="kv-value">
+              {active.lastMessageAt ? fmtTime(active.lastMessageAt) : "\u2014"}
+            </div>
           </div>
           {isGroup && groupDetails && (
             <>
               {groupDetails.public_id && (
-                <div className="kv">
-                  <div className="k">{t("details.inviteId")}</div>
-                  <div>{groupDetails.public_id}</div>
-                </div>
-              )}
-              {groupDetails.public_id && (
                 <div className="group-qr-block">
-                  <div className="k" style={{ marginBottom: 8 }}>
-                    {t("details.inviteQr")}
+                  <div className="group-invite-id-label">
+                    {t("details.inviteId")}
                   </div>
+                  <button
+                    type="button"
+                    className="group-invite-id-copy"
+                    title={inviteIdCopied ? t("me.idCopied") : t("chat.copy")}
+                    onClick={() => {
+                      const id = groupDetails.public_id;
+                      if (!id) return;
+                      void copyTextToClipboard(id).then((ok) => {
+                        if (!ok) return;
+                        setInviteIdCopied(true);
+                        window.setTimeout(() => setInviteIdCopied(false), 1500);
+                      });
+                    }}
+                  >
+                    <span className="group-invite-id-value">{groupDetails.public_id}</span>
+                    <span
+                      className={`group-invite-id-action${inviteIdCopied ? " is-copied" : ""}`}
+                      aria-hidden
+                    >
+                      <MenuIcon
+                        d={inviteIdCopied ? ICONS.select : ICONS.copy}
+                        style={{ width: 18, height: 18 }}
+                      />
+                    </span>
+                  </button>
                   <GroupQr publicId={groupDetails.public_id} size={140} />
                 </div>
               )}
+              {groupDetails.public_id &&
+                (canEditGroup ||
+                  Boolean(groupDetails.announcement) ||
+                  Boolean(groupDetails.forbid_member_friend_add)) && (
+                  <div className="details-split" role="separator" />
+                )}
               {canEditGroup ? (
-                <div className="group-meta-edit">
-                  <label className="k">{t("details.groupName")}</label>
-                  <input
-                    value={groupEditTitle}
-                    onChange={(e) => setGroupEditTitle(e.target.value)}
-                    maxLength={80}
-                  />
-                  <label className="k">{t("details.description")}</label>
-                  <textarea
-                    value={groupEditDesc}
-                    onChange={(e) => setGroupEditDesc(e.target.value)}
-                    rows={2}
-                    maxLength={500}
-                  />
-                  <label className="k">{t("details.announcement")}</label>
-                  <textarea
-                    value={groupEditAnnounce}
-                    onChange={(e) => setGroupEditAnnounce(e.target.value)}
-                    rows={2}
-                    maxLength={1000}
-                  />
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={groupMetaBusy}
-                    onClick={() => saveGroupMeta().catch(() => { })}
-                  >
-                    {groupMetaBusy ? t("common.saving") : t("details.saveGroupInfo")}
-                  </button>
-                  <label className="group-toggle">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(groupDetails.forbid_member_friend_add)}
-                      disabled={groupMetaBusy}
-                      onChange={() => toggleForbidFriendAdd().catch(() => { })}
+                <>
+                  <div className="group-meta-edit">
+                    <label className="group-announcement-label">{t("details.announcement")}</label>
+                    <textarea
+                      value={groupEditAnnounce}
+                      onChange={(e) => setGroupEditAnnounce(e.target.value)}
+                      rows={2}
+                      maxLength={1000}
                     />
-                    <span className="group-toggle-label">
-                      {t("details.forbidFriendAdd")}
-                    </span>
-                  </label>
-                </div>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={groupMetaBusy}
+                      onClick={() => saveGroupMeta().catch(() => { })}
+                    >
+                      {groupMetaBusy ? t("common.saving") : t("details.saveGroupInfo")}
+                    </button>
+                  </div>
+                  <div className="group-meta-edit">
+                    <label className="group-toggle">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(groupDetails.forbid_member_friend_add)}
+                        disabled={groupMetaBusy}
+                        onChange={() => toggleForbidFriendAdd().catch(() => { })}
+                      />
+                      <span className="group-toggle-label">
+                        {t("details.forbidFriendAdd")}
+                      </span>
+                    </label>
+                  </div>
+                </>
               ) : (
                 <>
                   {groupDetails.announcement && (
-                    <div className="kv">
-                      <div className="k">{t("details.announcement")}</div>
+                    <div className="kv" style={{ textAlign: "center" }}>
+                      <div className="group-announcement-label">{t("details.announcement")}</div>
                       <div>{groupDetails.announcement}</div>
                     </div>
                   )}
-                  {groupDetails.description && (
-                    <div className="kv">
-                      <div className="k">{t("details.description")}</div>
-                      <div>{groupDetails.description}</div>
-                    </div>
-                  )}
                   {groupDetails.forbid_member_friend_add && (
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      {t("details.membersCannotAdd")}
+                    <div className="group-meta-edit">
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {t("details.membersCannotAdd")}
+                      </div>
                     </div>
                   )}
                 </>
               )}
-              <div className="kv">
-                <div className="k">{t("details.yourRole")}</div>
-                <div>{groupDetails.role || chat.myRole}</div>
-              </div>
-              {groupDetails.mute_all && (
-                <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-                  {t("details.groupMutedAll")}
-                </div>
-              )}
               <div className="details-members">
-                <div
-                  className="k"
-                  style={{
-                    marginBottom: 8,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <span>
-                    {t("details.membersCount", { n: groupDetails.members.length })}
+                <div className="details-members-heading">
+                  <span className="details-members-label">{t("details.members")}</span>
+                  <span className="details-members-count">
+                    {t("details.membersCapacity", {
+                      n: groupDetails.members.length,
+                      max: 1000,
+                    })}
                   </span>
-                  {canEditGroup && (
-                    <button
-                      type="button"
-                      className="btn-ghost"
-                      style={{ padding: "2px 8px" }}
-                      disabled={addMembersBusy}
-                      onClick={() => openAddMembers().catch(() => {})}
-                    >
-                      {t("details.addMembers")}
-                    </button>
-                  )}
                 </div>
-                {addMembersOpen && (
-                  <div className="card" style={{ marginBottom: 12, padding: 10, display: "grid", gap: 8 }}>
-                    <div style={{ fontWeight: 600 }}>{t("details.addFriendsToGroup")}</div>
-                    <input
-                      type="search"
-                      placeholder={t("details.searchUsersPlaceholder")}
-                      value={addMemberQuery}
-                      onChange={(e) => setAddMemberQuery(e.target.value)}
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    {(() => {
-                      const q = addMemberQuery.trim().toLocaleLowerCase();
-                      const pickedSet = new Set(addMemberPicked);
-                      const friendIds = new Set(addMemberFriends.map((f) => f.user_id));
-                      const selectedRows = addMemberPicked
-                        .map((id) => addMemberProfiles[id])
-                        .filter(Boolean) as {
-                        user_id: string;
-                        username: string;
-                        display_name: string;
-                        avatar_url?: string;
-                        isFriend: boolean;
-                      }[];
-                      const friendRows = addMemberFriends.filter((f) => {
-                        if (pickedSet.has(f.user_id)) return false;
-                        if (!q) return true;
-                        const hay = `${f.display_name} ${f.username} ${f.user_id}`.toLocaleLowerCase();
-                        return hay.includes(q);
-                      });
-                      const extra = addMemberLookup.filter(
-                        (u) => !friendIds.has(u.user_id) && !pickedSet.has(u.user_id)
-                      );
-                      const rows = [
-                        ...friendRows.map((f) => ({ ...f, isFriend: true })),
-                        ...extra.map((u) => ({ ...u, isFriend: false })),
-                        ...selectedRows,
-                      ];
-                      if (rows.length === 0 && !addMemberLookupBusy) {
-                        return <div className="muted">{t("details.noFriendsLeft")}</div>;
-                      }
-                      return (
-                        <>
-                          {rows.map((f) => {
-                            const on = pickedSet.has(f.user_id);
-                            return (
-                              <label key={f.user_id} className="check-row" style={{ gap: 8 }}>
-                                <input
-                                  type="checkbox"
-                                  checked={on}
-                                  onChange={() => {
-                                    setAddMemberPicked((prev) =>
-                                      prev.includes(f.user_id)
-                                        ? prev.filter((id) => id !== f.user_id)
-                                        : [f.user_id, ...prev]
-                                    );
-                                    setAddMemberProfiles((prev) => {
-                                      if (prev[f.user_id]) {
-                                        const next = { ...prev };
-                                        delete next[f.user_id];
-                                        return next;
-                                      }
-                                      return {
-                                        ...prev,
-                                        [f.user_id]: {
-                                          user_id: f.user_id,
-                                          username: f.username,
-                                          display_name: f.display_name,
-                                          avatar_url: f.avatar_url,
-                                          isFriend: f.isFriend,
-                                        },
-                                      };
-                                    });
-                                  }}
-                                />
-                                <Avatar name={f.display_name} url={f.avatar_url} size={24} />
-                                <span>
-                                  {f.display_name}{" "}
-                                  <span className="muted">
-                                    @{f.username}
-                                    {!f.isFriend ? ` · ${t("groups.notAFriend")}` : ""}
-                                  </span>
-                                </span>
-                              </label>
-                            );
-                          })}
-                          {addMemberLookupBusy && (
-                            <div className="muted">{t("details.searchingUsers")}</div>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={addMembersBusy || addMemberPicked.length === 0}
-                        onClick={() => confirmAddMembers().catch(() => {})}
-                      >
-                        {addMembersBusy
-                          ? t("details.adding")
-                          : t("details.addCount", { n: addMemberPicked.length })}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-ghost"
-                        onClick={() => setAddMembersOpen(false)}
-                      >
-                        {t("common.cancel")}
-                      </button>
-                    </div>
-                  </div>
-                )}
                 {groupDetails.members.map((m) => {
-                  const mutedUntil = m.mute_until ? new Date(m.mute_until) : null;
-                  const isMuted =
-                    mutedUntil != null && !Number.isNaN(mutedUntil.getTime()) && mutedUntil.getTime() > Date.now();
-                  const permanentMute =
-                    mutedUntil != null && mutedUntil.getUTCFullYear() >= 9999;
+                  const mutedUntil = muteUntilDate(m.mute_until);
+                  const isMuted = mutedUntil != null && mutedUntil.getTime() > muteNowMs;
+                  const permanentMute = isPermanentMute(mutedUntil);
+                  const activeMute = inferActiveMuteDuration(mutedUntil, muteNowMs);
                   const isMe = m.user_id === chat.me?.id;
+                  const presence = chat.presenceByUser[m.user_id];
+                  const statusOnline = Boolean(presence?.online ?? m.online);
+                  const statusText = statusOnline
+                    ? t("presence.online")
+                    : formatLastSeen(presence?.lastActiveAt || m.last_active_at, t);
                   return (
-                    <div
-                      key={m.user_id}
-                      className={`details-member details-member-admin${isMe ? " is-me" : " is-clickable"}`}
-                      role={isMe ? undefined : "button"}
-                      tabIndex={isMe ? undefined : 0}
-                      onClick={() => {
-                        if (!isMe) openMemberChat(m.user_id).catch(() => {});
-                      }}
-                      onKeyDown={(e) => {
-                        if (isMe) return;
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          openMemberChat(m.user_id).catch(() => {});
-                        }
-                      }}
-                      onContextMenu={(e) => openMemberMenu(e, m)}
-                    >
-                      <Avatar name={m.display_name} url={m.avatar_url} size={28} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600 }}>
-                          {m.display_name}
-                          {isMe ? <span className="member-me-badge">{t("details.me")}</span> : null}
-                        </div>
-                        <div className="muted" style={{ fontSize: 12 }}>
-                          @{m.username} · {m.role}
-                          {isMuted
-                            ? permanentMute
-                              ? ` · ${t("details.mutedPermanently")}`
-                              : ` · ${t("details.mutedUntil", { time: mutedUntil!.toLocaleString() })}`
-                            : ""}
-                        </div>
-                        {canEditGroup && m.role !== "owner" && !isMe && (
-                          <div
-                            className="mute-actions"
-                            onClick={(e) => e.stopPropagation()}
-                            onContextMenu={(e) => e.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              className="btn-ghost mute-chip"
-                              onClick={() => muteMember(m.user_id, "10m").catch(() => { })}
-                            >
-                              10m
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-ghost mute-chip"
-                              onClick={() => muteMember(m.user_id, "1h").catch(() => { })}
-                            >
-                              1h
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-ghost mute-chip"
-                              onClick={() => muteMember(m.user_id, "permanent").catch(() => { })}
-                            >
-                              {t("details.mute")}
-                            </button>
-                            {isMuted && (
-                              <button
-                                type="button"
-                                className="btn-ghost mute-chip"
-                                onClick={() => muteMember(m.user_id, "off").catch(() => { })}
-                              >
-                                {t("details.unmute")}
-                              </button>
-                            )}
+                    <div key={m.user_id} className="details-member-block">
+                      <div
+                        className={`members-row details-members-row${isMe ? " is-me" : " is-clickable"}`}
+                        role={isMe ? undefined : "button"}
+                        tabIndex={isMe ? undefined : 0}
+                        onClick={() => {
+                          if (!isMe) openMemberProfile(m).catch(() => {});
+                        }}
+                        onKeyDown={(e) => {
+                          if (isMe) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openMemberProfile(m).catch(() => {});
+                          }
+                        }}
+                        onContextMenu={(e) => openMemberMenu(e, m)}
+                      >
+                        <Avatar name={m.display_name} url={m.avatar_url} size={42} />
+                        <div className="members-row-main">
+                          <div className="members-row-name">
+                            {m.display_name}
+                            {isMe ? <span className="member-me-badge">{t("details.me")}</span> : null}
                           </div>
+                          <div
+                            className={`members-row-status${statusOnline ? " is-online" : ""}`}
+                          >
+                            {statusText}
+                          </div>
+                        </div>
+                        {(m.role === "owner" || m.role === "admin") && (
+                          <span className={`members-role-pill is-${m.role}`}>
+                            {m.role}
+                          </span>
                         )}
                       </div>
+                      {canEditGroup && m.role !== "owner" && !isMe && (
+                        <div
+                          className="mute-actions"
+                          onClick={(e) => e.stopPropagation()}
+                          onContextMenu={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className={`btn-ghost mute-chip${activeMute === "10m" ? " is-active" : ""}`}
+                            aria-pressed={activeMute === "10m"}
+                            onClick={() =>
+                              toggleMemberMute(m.user_id, "10m", activeMute).catch(() => { })
+                            }
+                          >
+                            10m
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn-ghost mute-chip${activeMute === "1h" ? " is-active" : ""}`}
+                            aria-pressed={activeMute === "1h"}
+                            onClick={() =>
+                              toggleMemberMute(m.user_id, "1h", activeMute).catch(() => { })
+                            }
+                          >
+                            1h
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn-ghost mute-chip${activeMute === "permanent" ? " is-active" : ""}`}
+                            aria-pressed={activeMute === "permanent"}
+                            onClick={() =>
+                              toggleMemberMute(m.user_id, "permanent", activeMute).catch(() => { })
+                            }
+                          >
+                            {t("details.mute")}
+                          </button>
+                          {isMuted ? (
+                            <span className="mute-remaining">
+                              {permanentMute
+                                ? t("details.mutedPermanently")
+                                : t("details.muteRemaining", {
+                                    time: formatMuteCountdown(mutedUntil!, muteNowMs),
+                                  })}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -3825,6 +3914,8 @@ export default function ChatPageInner() {
                 ? t("details.unmuteConversation")
                 : t("details.muteConversation")}
             </button>
+          )}
+            </>
           )}
         </aside>
       )}
@@ -4100,6 +4191,49 @@ export default function ChatPageInner() {
         </div>
       )}
 
+      {menuScanOpen && (
+        <div
+          className="forward-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("menu.scanQR")}
+          onClick={() => {
+            if (!menuScanBusy) {
+              setMenuScanOpen(false);
+              setMenuScanError(null);
+              setMenuScanNotice(null);
+            }
+          }}
+        >
+          <div
+            className="forward-modal-card"
+            style={{ maxWidth: 360, width: "min(360px, 92vw)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>{t("menu.scanQR")}</h3>
+            {menuScanError && <div className="error-text">{menuScanError}</div>}
+            {menuScanNotice && (
+              <div className="muted" style={{ marginBottom: 8 }}>
+                {menuScanNotice}
+              </div>
+            )}
+            {!menuScanNotice && (
+              <GroupQrScanner
+                onClose={() => {
+                  if (!menuScanBusy) {
+                    setMenuScanOpen(false);
+                    setMenuScanError(null);
+                  }
+                }}
+                onDetected={(publicId) => {
+                  void joinFromMenuScan(publicId);
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       {joinCompanyOpen && (
         <div
           className="forward-modal"
@@ -4298,7 +4432,65 @@ export default function ChatPageInner() {
           </div>
         </div>
       )}
-      <CallOverlay call={call} />
+      <CallOverlay
+        call={call}
+        onInviteClick={
+          call.active?.isGroup
+            ? () => {
+                setGroupCallInvite("mid");
+              }
+            : undefined
+        }
+      />
+      {groupCallInvite && active && isGroup && (
+        <GroupCallInviteModal
+          title={
+            groupCallInvite === "mid"
+              ? t("call.invite")
+              : groupCallInvite === "video"
+                ? t("call.startVideo")
+                : t("call.startVoice")
+          }
+          confirmLabel={groupCallInvite === "mid" ? t("call.invite") : t("call.start")}
+          busy={groupCallInviteBusy}
+          excludeIds={[
+            chat.me?.id ?? "",
+            ...(call.remotePeers?.map((p) => p.userId) ?? []),
+          ].filter(Boolean)}
+          members={(groupDetails?.members ?? []).map((m) => ({
+            userId: m.user_id,
+            displayName: m.display_name,
+            username: m.username,
+            avatarUrl: m.avatar_url,
+          }))}
+          onCancel={() => {
+            if (!groupCallInviteBusy) setGroupCallInvite(null);
+          }}
+          onConfirm={(ids) => {
+            void (async () => {
+              setGroupCallInviteBusy(true);
+              try {
+                if (groupCallInvite === "mid") {
+                  await call.inviteToCall(ids);
+                } else {
+                  await call.startCall(
+                    active.id,
+                    groupCallInvite,
+                    conversationDisplayName(active),
+                    active.avatarUrl,
+                    ids
+                  );
+                }
+                setGroupCallInvite(null);
+              } catch (e: any) {
+                logChatError(e?.message || "Could not start call");
+              } finally {
+                setGroupCallInviteBusy(false);
+              }
+            })();
+          }}
+        />
+      )}
       <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
     </AppShell>
   );

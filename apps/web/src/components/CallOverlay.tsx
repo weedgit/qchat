@@ -137,7 +137,14 @@ function MicLevelMeter({
 }
 
 /** Incoming ring overlay + in-call panel (Calls UI placement). */
-export default function CallOverlay({ call }: { call: CallApi }) {
+export default function CallOverlay({
+  call,
+  onInviteClick,
+}: {
+  call: CallApi;
+  /** Open member picker to invite more people (group calls). */
+  onInviteClick?: () => void;
+}) {
   const { t } = useLocale();
   const {
     incoming,
@@ -155,12 +162,15 @@ export default function CallOverlay({ call }: { call: CallApi }) {
     micMuted,
     cameraOff,
     screenSharing,
+    remotePeers,
     setRemoteVideoEl,
     setLocalVideoEl,
     setRemoteAudioEl,
+    bindPeerVideoEl,
     answerCall,
     declineCall,
     hangup,
+    kickFromCall,
     toggleMic,
     toggleCamera,
     toggleScreenShare,
@@ -176,7 +186,9 @@ export default function CallOverlay({ call }: { call: CallApi }) {
         ? "Reconnecting…"
         : connecting
           ? "Connecting…"
-          : `${active?.kind === "video" ? "Video" : "Voice"} call`;
+          : active?.isGroup
+            ? `${active.kind === "video" ? "Group video" : "Group voice"} · ${remotePeers.length + 1}`
+            : `${active?.kind === "video" ? "Video" : "Voice"} call`;
 
   return (
     <>
@@ -271,23 +283,99 @@ export default function CallOverlay({ call }: { call: CallApi }) {
               </div>
             )}
             {(active.kind === "video" || screenSharing) && active.status === "active" && (
-              <div className="call-videos">
-                <video
-                  className="call-video remote"
-                  ref={(el) => setRemoteVideoEl(el)}
-                  autoPlay
-                  playsInline
-                />
-                <video
-                  className="call-video local"
-                  ref={(el) => setLocalVideoEl(el)}
-                  autoPlay
-                  playsInline
-                  muted
-                />
+              <div
+                className={`call-videos${active.isGroup ? " is-group" : ""}${
+                  remotePeers.length > 1 ? " is-multi" : ""
+                }`}
+              >
+                {active.isGroup ? (
+                  <>
+                    <div className="call-video-grid">
+                      {remotePeers.map((p) => (
+                        <div key={p.identity} className="call-video-tile">
+                          <video
+                            className="call-video remote"
+                            ref={(el) => bindPeerVideoEl(p.identity, el)}
+                            autoPlay
+                            playsInline
+                          />
+                          <div className="call-video-tile-label">
+                            <span>{p.name}</span>
+                            {active.isHost ? (
+                              <button
+                                type="button"
+                                className="call-kick-btn"
+                                title={t("call.kick")}
+                                onClick={() => kickFromCall(p.userId).catch(() => {})}
+                              >
+                                {t("call.kick")}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
+                      <div className="call-video-tile is-local">
+                        <video
+                          className="call-video local"
+                          ref={(el) => setLocalVideoEl(el)}
+                          autoPlay
+                          playsInline
+                          muted
+                        />
+                        <div className="call-video-tile-label">
+                          <span>{t("chat.you")}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <video
+                      className="call-video remote"
+                      ref={(el) => setRemoteVideoEl(el)}
+                      autoPlay
+                      playsInline
+                    />
+                    <video
+                      className="call-video local"
+                      ref={(el) => setLocalVideoEl(el)}
+                      autoPlay
+                      playsInline
+                      muted
+                    />
+                  </>
+                )}
               </div>
             )}
-            {active.kind === "voice" && active.status === "active" && (
+            {active.kind === "voice" && active.status === "active" && active.isGroup && (
+              <div className="call-voice-group">
+                {remotePeers.map((p) => (
+                  <div key={p.identity} className="call-voice-peer">
+                    <Avatar name={p.name} size={56} />
+                    <div className="call-overlay-name" style={{ fontSize: 13 }}>
+                      {p.name}
+                    </div>
+                    {active.isHost ? (
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        style={{ fontSize: 12 }}
+                        onClick={() => kickFromCall(p.userId).catch(() => {})}
+                      >
+                        {t("call.kick")}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                <div className="call-voice-peer">
+                  <Avatar name={t("chat.you")} size={56} />
+                  <div className="call-overlay-name" style={{ fontSize: 13 }}>
+                    {t("chat.you")}
+                  </div>
+                </div>
+              </div>
+            )}
+            {active.kind === "voice" && active.status === "active" && !active.isGroup && (
               <div className="call-voice-stage">
                 <div className="call-peer-avatar" aria-hidden>
                   <Avatar
@@ -382,6 +470,17 @@ export default function CallOverlay({ call }: { call: CallApi }) {
                       <CallIcon name={cameraOff ? "cameraOff" : "camera"} />
                     </button>
                   )}
+                  {active.isGroup && onInviteClick ? (
+                    <button
+                      type="button"
+                      className="call-control"
+                      aria-label={t("call.invite")}
+                      title={t("call.invite")}
+                      onClick={onInviteClick}
+                    >
+                      <CallIcon name="phone" />
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className={`call-control ${screenSharing ? "active" : ""}`}

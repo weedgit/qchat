@@ -12,6 +12,7 @@ export default function MenuModal({
   children,
   onClose,
   backHref = "/",
+  overlayClassName,
 }: {
   title: string;
   ariaLabel?: string;
@@ -19,6 +20,8 @@ export default function MenuModal({
   children: ReactNode;
   onClose?: () => void;
   backHref?: string;
+  /** Extra class on the overlay (e.g. stacked manage window). */
+  overlayClassName?: string;
 }) {
   const router = useRouter();
   const { t } = useLocale();
@@ -34,7 +37,7 @@ export default function MenuModal({
 
   return (
     <div
-      className="menu-modal-overlay"
+      className={`menu-modal-overlay${overlayClassName ? ` ${overlayClassName}` : ""}`}
       role="presentation"
       /* Backdrop clicks must not dismiss — only ✕ / Save close the window. */
       onMouseDown={(e) => e.stopPropagation()}

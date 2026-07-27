@@ -483,3 +483,50 @@ func TestGroupInviteNonFriend(t *testing.T) {
 		t.Fatalf("expected added=[%s], got %v", extraID, add)
 	}
 }
+
+func TestUserLookupPrefixAndPersonal(t *testing.T) {
+	ts, cleanup := testServer(t)
+	defer cleanup()
+	base := ts.URL
+
+	entTok, _, _, _ := registerUser(t, base, "ACME2026")
+	// Personal account (no invite / no enterprise).
+	_, _, _, personalName := registerUser(t, base, "")
+
+	// Prefix search from enterprise account should find the personal user.
+	prefix := personalName
+	if len(prefix) > 3 {
+		prefix = prefix[:3]
+	}
+	st, look := getJSON(t, base+"/v1/users/lookup?q="+prefix, entTok)
+	if st != 200 {
+		t.Fatalf("lookup: %d %v", st, look)
+	}
+	users, _ := look["users"].([]any)
+	found := false
+	for _, item := range users {
+		m, _ := item.(map[string]any)
+		if fmt.Sprint(m["username"]) == personalName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("prefix %q should find personal user %s: %v", prefix, personalName, look)
+	}
+
+	// Cross-enterprise still blocked for other-tenant members.
+	otherTok, _, _, otherName := registerUser(t, base, "BETA2026")
+	st, look = getJSON(t, base+"/v1/users/lookup?q="+otherName, entTok)
+	if st != 200 {
+		t.Fatalf("cross lookup: %d", st)
+	}
+	users, _ = look["users"].([]any)
+	for _, item := range users {
+		m, _ := item.(map[string]any)
+		if fmt.Sprint(m["username"]) == otherName {
+			t.Fatalf("enterprise lookup leaked other-tenant user: %v", look)
+		}
+	}
+	_ = otherTok
+}

@@ -452,18 +452,38 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		}
 		display = &trimmed
 	}
+	username := strPtr(req, "username")
+	if username != nil {
+		trimmed := strings.TrimSpace(*username)
+		if !auth.ValidateUsername(trimmed) {
+			writeErrFields(w, 400, "invalid_username", "invalid username", map[string]string{"username": "must be 2-32 letters, digits, underscore, or emoji"})
+			return
+		}
+		taken, err := s.usernameTaken(r, trimmed, c.UserID)
+		if err != nil {
+			writeErr(w, 500, "lookup failed")
+			return
+		}
+		if taken {
+			writeErrFields(w, 409, "conflict", "username already taken", map[string]string{"username": "already taken"})
+			return
+		}
+		username = &trimmed
+	}
 	_, err := s.db.Exec(r.Context(), `
 		UPDATE users SET
-			display_name=COALESCE($2, display_name),
-			real_name=COALESCE($3, real_name),
-			age=COALESCE($4, age),
-			region=COALESCE($5, region),
-			signature=COALESCE($6, signature),
-			avatar_url=COALESCE($7, avatar_url),
-			profile_visibility=COALESCE($8, profile_visibility),
-			friend_privacy=COALESCE($9, friend_privacy)
+			username=COALESCE($2, username),
+			display_name=COALESCE($3, display_name),
+			real_name=COALESCE($4, real_name),
+			age=COALESCE($5, age),
+			region=COALESCE($6, region),
+			signature=COALESCE($7, signature),
+			avatar_url=COALESCE($8, avatar_url),
+			profile_visibility=COALESCE($9, profile_visibility),
+			friend_privacy=COALESCE($10, friend_privacy)
 		WHERE id=$1`,
 		c.UserID,
+		username,
 		display,
 		strPtr(req, "real_name"),
 		intPtr(req, "age"),
@@ -486,6 +506,16 @@ func (s *Server) displayNameTaken(r *http.Request, name, exceptUserID string) (b
 		SELECT EXISTS(
 			SELECT 1 FROM users
 			WHERE lower(display_name)=lower($1) AND ($2='' OR id::text<>$2)
+		)`, name, exceptUserID).Scan(&taken)
+	return taken, err
+}
+
+func (s *Server) usernameTaken(r *http.Request, name, exceptUserID string) (bool, error) {
+	var taken bool
+	err := s.db.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM users
+			WHERE lower(username)=lower($1) AND ($2='' OR id::text<>$2)
 		)`, name, exceptUserID).Scan(&taken)
 	return taken, err
 }
@@ -756,12 +786,27 @@ func (s *Server) handleUsernameAvailable(w http.ResponseWriter, r *http.Request)
 		writeErrFields(w, 400, "invalid_username", "invalid username", map[string]string{"username": "must be 2-32 letters, digits, or underscore"})
 		return
 	}
-	var taken bool
-	_ = s.db.QueryRow(r.Context(), `
-		SELECT EXISTS(
-			SELECT 1 FROM users WHERE enterprise_id=$1 AND username=$2 AND id<>$3
-		)`, c.EnterpriseID, username, c.UserID).Scan(&taken)
+	taken, err := s.usernameTaken(r, username, c.UserID)
+	if err != nil {
+		writeErr(w, 500, "lookup failed")
+		return
+	}
 	writeJSON(w, 200, map[string]any{"username": username, "available": !taken})
+}
+
+func (s *Server) handleDisplayNameAvailable(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	name := strings.TrimSpace(r.URL.Query().Get("display_name"))
+	if err := auth.ValidateDisplayName(name); err != nil {
+		writeErrFields(w, 400, "invalid_display_name", err.Error(), map[string]string{"display_name": err.Error()})
+		return
+	}
+	taken, err := s.displayNameTaken(r, name, c.UserID)
+	if err != nil {
+		writeErr(w, 500, "lookup failed")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"display_name": name, "available": !taken})
 }
 
 func (s *Server) handlePhoneChangeRequest(w http.ResponseWriter, r *http.Request) {

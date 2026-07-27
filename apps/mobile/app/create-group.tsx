@@ -194,7 +194,7 @@ export default function CreateGroupScreen() {
           style={styles.input}
           value={query}
           onChangeText={setQuery}
-          placeholder="Search friends or exact username"
+          placeholder="Search friends or username"
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           editable={!busy}
@@ -212,7 +212,7 @@ export default function CreateGroupScreen() {
                 {lookupBusy
                   ? "Searching…"
                   : friends.length === 0 && !query.trim()
-                    ? "No friends yet. Search an exact username to invite anyone, or create alone."
+                    ? "No friends yet. Search a username to invite anyone, or create alone."
                     : "No matches."}
               </Text>
             }

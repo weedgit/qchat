@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,7 +12,7 @@ import (
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
-// ringTimeout is 30s — unanswered ringing ends as missed.
+// ringTimeout is 30s — unanswered ringing ends as missed (DM / group with no join).
 const ringTimeout = 30 * time.Second
 
 func (s *Server) livekitCfg() livekit.TokenConfig {
@@ -42,12 +43,38 @@ func (s *Server) mintCallToken(r *http.Request, room, userID, deviceID string) (
 	return livekit.MintJoinToken(s.livekitCfg(), room, identity, s.userDisplayName(r, userID), time.Hour)
 }
 
-// handleStartCall Calls start / call_start for DM 1:1 (LiveKit SFU).
+func (s *Server) upsertCallParticipant(ctx context.Context, callID, userID, status, invitedBy string) {
+	_, _ = s.db.Exec(ctx, `
+		INSERT INTO call_participants(call_id, user_id, status, invited_by)
+		VALUES ($1,$2,$3, NULLIF($4,'')::uuid)
+		ON CONFLICT (call_id, user_id) DO UPDATE
+		SET status=$3, updated_at=now(),
+		    invited_by=COALESCE(NULLIF($4,'')::uuid, call_participants.invited_by)`,
+		callID, userID, status, invitedBy)
+}
+
+func (s *Server) callParticipantStatus(ctx context.Context, callID, userID string) string {
+	var st string
+	_ = s.db.QueryRow(ctx, `
+		SELECT status FROM call_participants WHERE call_id=$1 AND user_id=$2`,
+		callID, userID).Scan(&st)
+	return st
+}
+
+func (s *Server) callIsGroup(ctx context.Context, conversationID string) bool {
+	var typ string
+	_ = s.db.QueryRow(ctx, `SELECT type FROM conversations WHERE id=$1`, conversationID).Scan(&typ)
+	return typ == "social_group" || typ == "group"
+}
+
+// handleStartCall starts a DM 1:1 or group call (LiveKit SFU).
+// Group requires invitee_ids (selected members); only those are rung.
 func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	var req struct {
-		ConversationID string `json:"conversation_id"`
-		Kind           string `json:"kind"` // voice|video
+		ConversationID string   `json:"conversation_id"`
+		Kind           string   `json:"kind"` // voice|video
+		InviteeIDs     []string `json:"invitee_ids"`
 	}
 	if err := decodeJSON(r, &req); err != nil || req.ConversationID == "" {
 		writeErrCode(w, 400, "invalid_request", "conversation_id required")
@@ -68,12 +95,50 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	}
 	var convType string
 	_ = s.db.QueryRow(r.Context(), `SELECT type FROM conversations WHERE id=$1`, req.ConversationID).Scan(&convType)
-	if convType != "dm" {
-		writeErrCode(w, 400, "dm_only", "1:1 calls are only supported in DMs")
+	isGroup := convType == "social_group" || convType == "group"
+	if convType != "dm" && !isGroup {
+		writeErrCode(w, 400, "unsupported", "calls only supported in DM or group chats")
 		return
 	}
 
-	// 1:1: replace any leftover ringing/active session so redial works after media failures.
+	members := s.memberIDs(r, req.ConversationID)
+	memberSet := map[string]bool{}
+	for _, m := range members {
+		memberSet[m] = true
+	}
+
+	var invitees []string
+	if isGroup {
+		seen := map[string]bool{}
+		for _, id := range req.InviteeIDs {
+			id = trimSpace(id)
+			if id == "" || id == c.UserID || seen[id] {
+				continue
+			}
+			if !memberSet[id] {
+				writeErrCode(w, 400, "invalid_invitee", "invitee must be a group member")
+				return
+			}
+			seen[id] = true
+			invitees = append(invitees, id)
+		}
+		if len(invitees) == 0 {
+			writeErrCode(w, 400, "invitees_required", "select at least one member to invite")
+			return
+		}
+	} else {
+		for _, m := range members {
+			if m != c.UserID {
+				invitees = append(invitees, m)
+			}
+		}
+		if len(invitees) == 0 {
+			writeErrCode(w, 400, "no_peer", "DM has no peer")
+			return
+		}
+	}
+
+	// Replace leftover ringing/active sessions in this conversation.
 	rows, _ := s.db.Query(r.Context(), `
 		SELECT id::text FROM call_sessions
 		WHERE conversation_id=$1 AND status IN ('ringing','active')`, req.ConversationID)
@@ -92,7 +157,7 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 			UPDATE call_sessions SET status='ended', ended_at=COALESCE(ended_at, now())
 			WHERE conversation_id=$1 AND status IN ('ringing','active')`, req.ConversationID)
 		for _, sid := range staleIDs {
-			s.hub.PublishToUsers(s.memberIDs(r, req.ConversationID), ws.Event{
+			s.hub.PublishToUsers(members, ws.Event{
 				Type: "call.ended",
 				Payload: map[string]any{
 					"id": sid, "call_id": sid, "conversation_id": req.ConversationID,
@@ -101,7 +166,6 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-
 
 	if !s.livekitCfg().Enabled() {
 		writeErrCode(w, 503, "livekit_unavailable", "livekit not configured")
@@ -119,61 +183,64 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	callID := id.String()
+	s.upsertCallParticipant(r.Context(), callID, c.UserID, "joined", c.UserID)
+	for _, uid := range invitees {
+		s.upsertCallParticipant(r.Context(), callID, uid, "invited", c.UserID)
+	}
+
 	token, tokErr := s.mintCallToken(r, room, c.UserID, initiatorDevice)
 	if tokErr != nil {
 		writeErrCode(w, 503, "livekit_unavailable", "token mint failed")
 		return
 	}
 
-	// Ring payload without caller's media token (callee gets token on answer).
 	ringPayload := map[string]any{
-		"id":              id.String(),
-		"call_id":         id.String(),
-		"room_name":       room,
-		"kind":            req.Kind,
-		"livekit_url":     s.cfg.LiveKitURL,
-		"conversation_id": req.ConversationID,
-		"initiator_id":    c.UserID,
-		"initiator_name":  s.userDisplayName(r, c.UserID),
-		"initiator_avatar": s.userAvatarURL(r, c.UserID),
+		"id":                  callID,
+		"call_id":             callID,
+		"room_name":           room,
+		"kind":                req.Kind,
+		"livekit_url":         s.cfg.LiveKitURL,
+		"conversation_id":     req.ConversationID,
+		"initiator_id":        c.UserID,
+		"initiator_name":      s.userDisplayName(r, c.UserID),
+		"initiator_avatar":    s.userAvatarURL(r, c.UserID),
 		"initiator_device_id": initiatorDevice,
-		"status":          "ringing",
-		"by":              c.UserID,
+		"status":              "ringing",
+		"by":                  c.UserID,
+		"is_group":            isGroup,
 	}
-	members := s.memberIDs(r, req.ConversationID)
-	var others []string
-	for _, m := range members {
-		if m != c.UserID {
-			others = append(others, m)
-		}
-	}
-	s.hub.PublishToUsers(others, ws.Event{Type: "call.ring", Payload: ringPayload})
+	s.hub.PublishToUsers(invitees, ws.Event{Type: "call.ring", Payload: ringPayload})
 
-	// Calls: wake backgrounded / closed tabs (Web Push + client Notification).
 	go s.notifyCallRingPush(
 		context.Background(),
-		others,
+		invitees,
 		req.Kind,
 		s.userDisplayName(r, c.UserID),
-		id.String(),
+		callID,
 		req.ConversationID,
 	)
 
-	// Auto-end unanswered rings after ringTimeout so caller/callee UIs clear.
-	s.scheduleRingTimeout(id.String())
+	s.scheduleRingTimeout(callID)
 
 	writeJSON(w, 201, map[string]any{
-		"id":              id.String(),
-		"call_id":         id.String(),
-		"room_name":       room,
-		"kind":            req.Kind,
-		"livekit_url":     s.cfg.LiveKitURL,
-		"livekit_token":   token,
-		"conversation_id": req.ConversationID,
-		"initiator_id":    c.UserID,
+		"id":                  callID,
+		"call_id":             callID,
+		"room_name":           room,
+		"kind":                req.Kind,
+		"livekit_url":         s.cfg.LiveKitURL,
+		"livekit_token":       token,
+		"conversation_id":     req.ConversationID,
+		"initiator_id":        c.UserID,
 		"initiator_device_id": initiatorDevice,
-		"status":          "ringing",
+		"status":              "ringing",
+		"is_group":            isGroup,
+		"invitee_ids":         invitees,
 	})
+}
+
+func trimSpace(s string) string {
+	return strings.TrimSpace(s)
 }
 
 func (s *Server) scheduleRingTimeout(callID string) {
@@ -182,7 +249,7 @@ func (s *Server) scheduleRingTimeout(callID string) {
 	})
 }
 
-// expireMissedRing ends a still-ringing session after ringTimeout (missed call).
+// expireMissedRing ends a still-ringing session after ringTimeout (nobody joined).
 func (s *Server) expireMissedRing(callID string) {
 	ctx := context.Background()
 	var call callRow
@@ -251,7 +318,6 @@ func (s *Server) loadCall(r *http.Request, callID string) (*callRow, error) {
 	return &row, nil
 }
 
-// postCallSystemMessage custom_calls posts in the timeline.
 func (s *Server) postCallSystemMessage(r *http.Request, call *callRow, body string, byUserID string) {
 	s.postCallSystemMessageCtx(r.Context(), call, body, byUserID)
 }
@@ -297,7 +363,7 @@ func formatCallDuration(sec int) string {
 	return fmt.Sprintf("%dm %ds", m, s)
 }
 
-// handleAnswerCall join / accept incoming ring.
+// handleAnswerCall accepts an invite (DM or group). Group allows answer while ringing or active.
 func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	callID := r.PathValue("id")
@@ -306,8 +372,9 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 404, "not_found", "call not found")
 		return
 	}
-	if call.Status != "ringing" {
-		writeErrCode(w, 409, "invalid_state", "call is not ringing")
+	isGroup := s.callIsGroup(r.Context(), call.ConversationID)
+	if call.Status != "ringing" && !(isGroup && call.Status == "active") {
+		writeErrCode(w, 409, "invalid_state", "call is not joinable")
 		return
 	}
 	if call.InitiatorID == c.UserID {
@@ -320,51 +387,102 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := s.db.Exec(r.Context(), `
-		UPDATE call_sessions
-		SET status='active', answered_at=now(), answerer_device_id=$2
-		WHERE id=$1 AND status='ringing'`, callID, c.DeviceID)
-	if err != nil || tag.RowsAffected() == 0 {
-		writeErrCode(w, 409, "invalid_state", "call is not ringing")
+	partStatus := s.callParticipantStatus(r.Context(), callID, c.UserID)
+	if partStatus == "kicked" {
+		writeErrCode(w, 403, "denied", "host removed you from this call")
 		return
 	}
-	call.AnswererDeviceID = c.DeviceID
+	if isGroup && partStatus != "invited" && partStatus != "joined" {
+		// Allow legacy rows without participants for DM; group must be invited.
+		if partStatus == "" {
+			writeErrCode(w, 403, "not_invited", "you were not invited to this call")
+			return
+		}
+		if partStatus == "declined" || partStatus == "left" {
+			writeErrCode(w, 403, "not_invited", "invite no longer valid")
+			return
+		}
+	}
+
+	if call.Status == "ringing" {
+		tag, err := s.db.Exec(r.Context(), `
+			UPDATE call_sessions
+			SET status='active', answered_at=now(), answerer_device_id=$2
+			WHERE id=$1 AND status='ringing'`, callID, c.DeviceID)
+		if err != nil || tag.RowsAffected() == 0 {
+			// Another answer may have won the race — reload if now active (group).
+			call2, err2 := s.loadCall(r, callID)
+			if err2 != nil || call2.Status != "active" || !isGroup {
+				writeErrCode(w, 409, "invalid_state", "call is not ringing")
+				return
+			}
+			call = call2
+		} else {
+			call.AnswererDeviceID = c.DeviceID
+			call.Status = "active"
+		}
+	}
+
+	s.upsertCallParticipant(r.Context(), callID, c.UserID, "joined", "")
 
 	calleeTok, err := s.mintCallToken(r, call.RoomName, c.UserID, c.DeviceID)
 	if err != nil {
 		writeErrCode(w, 503, "livekit_unavailable", "token mint failed")
 		return
 	}
-	callerTok, err := s.mintCallToken(r, call.RoomName, call.InitiatorID, call.InitiatorDeviceID)
-	if err != nil {
-		writeErrCode(w, 503, "livekit_unavailable", "token mint failed")
-		return
-	}
 
 	base := map[string]any{
-		"id":              call.ID,
-		"call_id":         call.ID,
-		"room_name":       call.RoomName,
-		"kind":            call.Kind,
-		"livekit_url":     s.cfg.LiveKitURL,
-		"conversation_id": call.ConversationID,
-		"initiator_id":    call.InitiatorID,
+		"id":                  call.ID,
+		"call_id":             call.ID,
+		"room_name":           call.RoomName,
+		"kind":                call.Kind,
+		"livekit_url":         s.cfg.LiveKitURL,
+		"conversation_id":     call.ConversationID,
+		"initiator_id":        call.InitiatorID,
 		"initiator_device_id": call.InitiatorDeviceID,
 		"answerer_device_id":  c.DeviceID,
-		"status":          "active",
-		"by":              c.UserID,
+		"status":              "active",
+		"by":                  c.UserID,
+		"is_group":            isGroup,
+		"participant_name":    s.userDisplayName(r, c.UserID),
+		"participant_avatar":  s.userAvatarURL(r, c.UserID),
 	}
-	callerPayload := map[string]any{}
-	for k, v := range base {
-		callerPayload[k] = v
-	}
-	callerPayload["livekit_token"] = callerTok
-	// Media + live UI only on the device that started the call.
-	s.hub.PublishToUserDevice(call.InitiatorID, call.InitiatorDeviceID, ws.Event{
-		Type: "call.answered", Payload: callerPayload,
-	})
 
-	// Clear ringing UI on the callee's other devices (answered here).
+	if !isGroup {
+		callerTok, err := s.mintCallToken(r, call.RoomName, call.InitiatorID, call.InitiatorDeviceID)
+		if err != nil {
+			writeErrCode(w, 503, "livekit_unavailable", "token mint failed")
+			return
+		}
+		callerPayload := map[string]any{}
+		for k, v := range base {
+			callerPayload[k] = v
+		}
+		callerPayload["livekit_token"] = callerTok
+		s.hub.PublishToUserDevice(call.InitiatorID, call.InitiatorDeviceID, ws.Event{
+			Type: "call.answered", Payload: callerPayload,
+		})
+	} else {
+		// Notify existing participants that someone joined (no token).
+		s.hub.PublishToUsers(s.memberIDs(r, call.ConversationID), ws.Event{
+			Type: "call.participant_joined", Payload: base,
+		})
+		// First answer: tell initiator to connect if still ringing-side.
+		if call.InitiatorDeviceID != "" {
+			callerTok, err := s.mintCallToken(r, call.RoomName, call.InitiatorID, call.InitiatorDeviceID)
+			if err == nil {
+				callerPayload := map[string]any{}
+				for k, v := range base {
+					callerPayload[k] = v
+				}
+				callerPayload["livekit_token"] = callerTok
+				s.hub.PublishToUserDevice(call.InitiatorID, call.InitiatorDeviceID, ws.Event{
+					Type: "call.answered", Payload: callerPayload,
+				})
+			}
+		}
+	}
+
 	taken := map[string]any{}
 	for k, v := range base {
 		taken[k] = v
@@ -374,14 +492,16 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 		Type: "call.taken", Payload: taken,
 	})
 
-	others := []string{}
-	for _, m := range s.memberIDs(r, call.ConversationID) {
-		if m != call.InitiatorID && m != c.UserID {
-			others = append(others, m)
+	if !isGroup {
+		others := []string{}
+		for _, m := range s.memberIDs(r, call.ConversationID) {
+			if m != call.InitiatorID && m != c.UserID {
+				others = append(others, m)
+			}
 		}
-	}
-	if len(others) > 0 {
-		s.hub.PublishToUsers(others, ws.Event{Type: "call.answered", Payload: base})
+		if len(others) > 0 {
+			s.hub.PublishToUsers(others, ws.Event{Type: "call.answered", Payload: base})
+		}
 	}
 
 	resp := map[string]any{}
@@ -392,7 +512,7 @@ func (s *Server) handleAnswerCall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, resp)
 }
 
-// handleDeclineCall rejects an incoming ring (dismiss notification).
+// handleDeclineCall rejects an invite. Group: only this user; call continues for others.
 func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	callID := r.PathValue("id")
@@ -401,7 +521,7 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 404, "not_found", "call not found")
 		return
 	}
-	if call.Status != "ringing" {
+	if call.Status != "ringing" && call.Status != "active" {
 		writeErrCode(w, 409, "invalid_state", "call is not ringing")
 		return
 	}
@@ -412,6 +532,44 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 	role := s.memberRole(r, call.ConversationID, c.UserID)
 	if role == "" || role == "pending" {
 		writeErrCode(w, 403, "forbidden", "not a conversation member")
+		return
+	}
+
+	isGroup := s.callIsGroup(r.Context(), call.ConversationID)
+	s.upsertCallParticipant(r.Context(), callID, c.UserID, "declined", "")
+
+	if isGroup {
+		// If still ringing and no invitees remain invited, cancel the call.
+		var pending int
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT COUNT(*) FROM call_participants
+			WHERE call_id=$1 AND status='invited'`, callID).Scan(&pending)
+		var joinedOthers int
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT COUNT(*) FROM call_participants
+			WHERE call_id=$1 AND status='joined' AND user_id<>$2`, callID, call.InitiatorID).Scan(&joinedOthers)
+		payload := map[string]any{
+			"id": call.ID, "call_id": call.ID, "kind": call.Kind,
+			"conversation_id": call.ConversationID, "initiator_id": call.InitiatorID,
+			"status": "declined", "reason": "declined", "by": c.UserID, "is_group": true,
+		}
+		if call.Status == "ringing" && pending == 0 && joinedOthers == 0 {
+			_, _ = s.db.Exec(r.Context(), `
+				UPDATE call_sessions SET status='declined', ended_at=now()
+				WHERE id=$1 AND status='ringing'`, callID)
+			kindLabel := "Voice"
+			if call.Kind == "video" {
+				kindLabel = "Video"
+			}
+			s.postCallSystemMessage(r, call, kindLabel+" call declined", c.UserID)
+			payload["status"] = "declined"
+			s.hub.PublishToUsers(s.memberIDs(r, call.ConversationID), ws.Event{Type: "call.ended", Payload: payload})
+		} else {
+			s.hub.PublishToUsers([]string{call.InitiatorID, c.UserID}, ws.Event{
+				Type: "call.participant_declined", Payload: payload,
+			})
+		}
+		writeJSON(w, 200, payload)
 		return
 	}
 
@@ -440,7 +598,7 @@ func (s *Server) handleDeclineCall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, payload)
 }
 
-// handleHangupCall ends an active or ringing call (call_end / leave).
+// handleHangupCall: host/DM ends whole call; group non-host leaves only.
 func (s *Server) handleHangupCall(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	callID := r.PathValue("id")
@@ -454,7 +612,6 @@ func (s *Server) handleHangupCall(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 403, "forbidden", "not a conversation member")
 		return
 	}
-	// Idempotent: media-fail hangup + UI hangup (or both peers) may race.
 	if call.Status != "ringing" && call.Status != "active" {
 		writeJSON(w, 200, map[string]any{
 			"id": call.ID, "call_id": call.ID, "status": call.Status, "already_ended": true,
@@ -462,8 +619,27 @@ func (s *Server) handleHangupCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isGroup := s.callIsGroup(r.Context(), call.ConversationID)
+	isHost := call.InitiatorID == c.UserID
+
+	// Group participant leave (non-host): call continues.
+	if isGroup && !isHost && call.Status == "active" {
+		s.upsertCallParticipant(r.Context(), callID, c.UserID, "left", "")
+		payload := map[string]any{
+			"id": call.ID, "call_id": call.ID, "kind": call.Kind,
+			"conversation_id": call.ConversationID, "initiator_id": call.InitiatorID,
+			"status": "left", "reason": "left", "by": c.UserID, "is_group": true,
+			"participant_name": s.userDisplayName(r, c.UserID),
+		}
+		s.hub.PublishToUsers(s.memberIDs(r, call.ConversationID), ws.Event{
+			Type: "call.participant_left", Payload: payload,
+		})
+		writeJSON(w, 200, payload)
+		return
+	}
+
 	reason := "ended"
-	if call.Status == "ringing" && call.InitiatorID == c.UserID {
+	if call.Status == "ringing" && isHost {
 		reason = "cancelled"
 	}
 
@@ -514,6 +690,7 @@ func (s *Server) handleHangupCall(w http.ResponseWriter, r *http.Request) {
 		"reason":          reason,
 		"by":              c.UserID,
 		"duration_sec":    durationSec,
+		"is_group":        isGroup,
 	}
 	s.hub.PublishToUsers(s.memberIDs(r, call.ConversationID), ws.Event{Type: "call.ended", Payload: payload})
 	writeJSON(w, 200, payload)

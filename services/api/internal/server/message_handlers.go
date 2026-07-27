@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -245,6 +246,7 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 		Title       string   `json:"title"`
 		MemberIDs   []string `json:"member_ids"`
 		Description string   `json:"description"`
+		AvatarURL   string   `json:"avatar_url"`
 	}
 	if err := decodeJSON(r, &req); err != nil || req.Title == "" {
 		writeErrCode(w, 400, "invalid_request", "title required")
@@ -267,10 +269,13 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	id := uuid.New()
 	publicID := "G" + id.String()[:8]
+	avatarURL := strings.TrimSpace(req.AvatarURL)
 	_, err := s.db.Exec(r.Context(), `
-		INSERT INTO conversations(id, enterprise_id, type, title, description, public_id, owner_id)
-		VALUES ($1,$2,'social_group',$3,$4,$5,$6)`, id, entArg(c.EnterpriseID), req.Title, req.Description, publicID, c.UserID)
+		INSERT INTO conversations(id, enterprise_id, type, title, description, public_id, owner_id, avatar_url)
+		VALUES ($1,$2,'social_group',$3,$4,$5,$6, COALESCE(NULLIF($7,''), ''))`,
+		id, entArg(c.EnterpriseID), req.Title, req.Description, publicID, c.UserID, avatarURL)
 	if err != nil {
+		log.Printf("create group failed: %v", err)
 		writeErrCode(w, 500, "create_failed", "create failed")
 		return
 	}
@@ -306,7 +311,7 @@ func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 	}
 	var ent, typ string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+		SELECT COALESCE(enterprise_id::text, ''), type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
 	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
@@ -382,7 +387,7 @@ func (s *Server) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request)
 
 	var ent, typ string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+		SELECT COALESCE(enterprise_id::text, ''), type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
 	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
@@ -439,7 +444,7 @@ func (s *Server) handleLeaveGroup(w http.ResponseWriter, r *http.Request) {
 
 	var ent, typ string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+		SELECT COALESCE(enterprise_id::text, ''), type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
 	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
@@ -474,6 +479,55 @@ func (s *Server) handleLeaveGroup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
+// handleDeleteGroup lets the owner permanently dissolve a social group.
+func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	c := claimsFrom(r)
+	convID := r.PathValue("id")
+
+	var typ, role string
+	var isEnterpriseDefault bool
+	err := s.db.QueryRow(r.Context(), `
+		SELECT conv.type, cm.role, COALESCE(conv.is_enterprise_default, FALSE)
+		FROM conversations conv
+		JOIN conversation_members cm ON cm.conversation_id=conv.id AND cm.user_id=$2
+		WHERE conv.id=$1
+		  AND conv.enterprise_id IS NOT DISTINCT FROM $3
+		  AND cm.role <> 'pending'`,
+		convID, c.UserID, entArg(c.EnterpriseID)).Scan(&typ, &role, &isEnterpriseDefault)
+	if err != nil || typ != "social_group" {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+	if role != "owner" {
+		writeErrCode(w, 403, "forbidden", "only the owner can delete the group")
+		return
+	}
+	if isEnterpriseDefault {
+		writeErrCode(w, 403, "forbidden", "enterprise default group cannot be deleted")
+		return
+	}
+
+	memberIDs := s.memberIDs(r, convID)
+	_, _ = s.db.Exec(r.Context(), `DELETE FROM call_sessions WHERE conversation_id=$1`, convID)
+	_, _ = s.db.Exec(r.Context(), `UPDATE webhooks SET conversation_id=NULL WHERE conversation_id=$1`, convID)
+	tag, err := s.db.Exec(r.Context(), `DELETE FROM conversations WHERE id=$1`, convID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErrCode(w, 500, "delete_failed", "delete failed")
+		return
+	}
+
+	for _, uid := range memberIDs {
+		s.hub.PublishToUsers([]string{uid}, ws.Event{Type: "group.member_removed", Payload: map[string]any{
+			"conversation_id": convID,
+			"removed_user_id": uid,
+			"removed_by":      c.UserID,
+			"deleted":         true,
+		}})
+	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.delete", "conversation", convID, "", clientIP(r), nil)
+	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
 func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
@@ -487,8 +541,11 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 		       cm.role, conv.owner_id::text
 		FROM conversations conv
 		JOIN conversation_members cm ON cm.conversation_id=conv.id AND cm.user_id=$2
-		WHERE conv.id=$1 AND conv.enterprise_id=$3 AND conv.type='social_group' AND cm.role <> 'pending'`,
-		convID, c.UserID, c.EnterpriseID).Scan(
+		WHERE conv.id=$1
+		  AND conv.enterprise_id IS NOT DISTINCT FROM $3
+		  AND conv.type='social_group'
+		  AND cm.role <> 'pending'`,
+		convID, c.UserID, entArg(c.EnterpriseID)).Scan(
 		&title, &description, &announcement, &publicID, &avatar, &muteAll, &forbidFriendAdd,
 		&isEnterpriseDefault, &role, &ownerID)
 	if err != nil {
@@ -496,28 +553,40 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mrows, _ := s.db.Query(r.Context(), `
-		SELECT u.id::text, u.username, u.display_name, u.avatar_url, cm.role, cm.mute_until
+		SELECT u.id::text, u.username, u.display_name, COALESCE(u.avatar_url,''), cm.role, cm.mute_until,
+		       u.last_active_at
 		FROM conversation_members cm JOIN users u ON u.id=cm.user_id
 		WHERE cm.conversation_id=$1 AND cm.role <> 'pending'
 		ORDER BY CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.display_name`, convID)
 	var members []map[string]any
+	var memberIDs []string
 	if mrows != nil {
 		defer mrows.Close()
 		for mrows.Next() {
 			var uid, un, dn, av, mrole string
 			var muteUntil *time.Time
-			_ = mrows.Scan(&uid, &un, &dn, &av, &mrole, &muteUntil)
+			var lastActive *time.Time
+			_ = mrows.Scan(&uid, &un, &dn, &av, &mrole, &muteUntil, &lastActive)
 			item := map[string]any{
 				"user_id": uid, "username": un, "display_name": dn, "avatar_url": av, "role": mrole,
 			}
 			if muteUntil != nil {
 				item["mute_until"] = muteUntil.UTC()
 			}
+			if lastActive != nil {
+				item["last_active_at"] = lastActive.UTC()
+			}
 			members = append(members, item)
+			memberIDs = append(memberIDs, uid)
 		}
 	}
 	if members == nil {
 		members = []map[string]any{}
+	}
+	online := s.hub.OnlineUserIDs(memberIDs)
+	for _, item := range members {
+		uid, _ := item["user_id"].(string)
+		item["online"] = online[uid]
 	}
 	writeJSON(w, 200, map[string]any{
 		"id": convID, "title": title, "description": description, "announcement": announcement,
@@ -538,7 +607,7 @@ func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	var ent, typ string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT enterprise_id::text, type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
+		SELECT COALESCE(enterprise_id::text, ''), type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
 	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
@@ -589,13 +658,13 @@ func (s *Server) handleGroupPending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var ent string
-	_ = s.db.QueryRow(r.Context(), `SELECT enterprise_id::text FROM conversations WHERE id=$1`, convID).Scan(&ent)
+	_ = s.db.QueryRow(r.Context(), `SELECT COALESCE(enterprise_id::text, '') FROM conversations WHERE id=$1`, convID).Scan(&ent)
 	if ent != c.EnterpriseID {
 		writeErrCode(w, 403, "forbidden", "forbidden")
 		return
 	}
 	rows, err := s.db.Query(r.Context(), `
-		SELECT u.id::text, u.username, u.display_name, u.avatar_url, cm.joined_at
+		SELECT u.id::text, u.username, u.display_name, COALESCE(u.avatar_url,''), cm.joined_at
 		FROM conversation_members cm JOIN users u ON u.id=cm.user_id
 		WHERE cm.conversation_id=$1 AND cm.role='pending'
 		ORDER BY cm.joined_at`, convID)
@@ -671,7 +740,8 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 	var convID, owner string
 	err := s.db.QueryRow(r.Context(), `
 		SELECT id::text, owner_id::text FROM conversations
-		WHERE public_id=$1 AND enterprise_id=$2 AND type='social_group'`, req.PublicID, c.EnterpriseID).
+		WHERE public_id=$1 AND enterprise_id IS NOT DISTINCT FROM $2 AND type='social_group'`,
+		req.PublicID, entArg(c.EnterpriseID)).
 		Scan(&convID, &owner)
 	if err != nil {
 		writeErr(w, 404, "group not found")
