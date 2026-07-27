@@ -379,6 +379,35 @@ export function useChat() {
           return { ...c, title, avatarUrl };
         })
       );
+      const addedRaw = payload?.added_member_ids;
+      const meId = meRef.current?.id;
+      if (meId && Array.isArray(addedRaw) && addedRaw.map(String).includes(meId)) {
+        void loadConversations();
+      }
+      return;
+    }
+
+    // Join request / pending resolve — fan out to manage UIs (groups overlay).
+    if (type === "group.join_request" || type === "group.pending_changed") {
+      const convId = String(payload?.conversation_id ?? "");
+      if (convId && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("qchat:group-pending", {
+            detail: {
+              conversation_id: convId,
+              user_id: String(payload?.user_id ?? ""),
+              action: String(payload?.action ?? (type === "group.join_request" ? "requested" : "")),
+            },
+          })
+        );
+      }
+      eventListenersRef.current.forEach((fn) => {
+        try {
+          fn(type, payload);
+        } catch {
+          /* ignore listener errors */
+        }
+      });
       return;
     }
 

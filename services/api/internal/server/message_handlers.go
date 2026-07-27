@@ -725,13 +725,31 @@ func (s *Server) handleApproveJoin(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 400, "group_full", fmt.Sprintf("group member limit is %d", maxSocialGroupMembers))
 		return
 	}
-	_, err = s.db.Exec(r.Context(), `
+	tag, err := s.db.Exec(r.Context(), `
 		UPDATE conversation_members SET role='member', history_visible_from=now(), joined_at=now()
 		WHERE conversation_id=$1 AND user_id=$2 AND role='pending'`, convID, req.UserID)
-	if err != nil {
+	if err != nil || tag.RowsAffected() == 0 {
 		writeErr(w, 400, "approve failed")
 		return
 	}
+	// Notify members (including the newly approved user) so clients can refresh
+	// membership / conversation lists. Approvers also get pending_changed so a
+	// second admin's open pending list shrinks without a manual reload.
+	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
+		Type: "group.updated",
+		Payload: map[string]any{
+			"conversation_id":  convID,
+			"added_member_ids": []string{req.UserID},
+		},
+	})
+	s.hub.PublishToUsers(s.adminIDs(r, convID), ws.Event{
+		Type: "group.pending_changed",
+		Payload: map[string]any{
+			"conversation_id": convID,
+			"user_id":         req.UserID,
+			"action":          "approved",
+		},
+	})
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 

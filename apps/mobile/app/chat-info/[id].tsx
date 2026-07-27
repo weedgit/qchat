@@ -85,7 +85,8 @@ function formatMuteLabel(muteUntil?: string): string {
 export default function ChatInfoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const convId = String(id);
-  const { conversations, updateConversationPrefs, loadConversations, leaveGroup } = useChat();
+  const { conversations, updateConversationPrefs, loadConversations, leaveGroup, subscribeEvents } =
+    useChat();
   const { user: me } = useAuth();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -170,6 +171,28 @@ export default function ChatInfoScreen() {
   useEffect(() => {
     loadGroup();
   }, [loadGroup]);
+
+  useEffect(() => {
+    if (!isGroup || !canManageGroup) return;
+    return subscribeEvents((type, payload) => {
+      if (type !== "group.join_request" && type !== "group.pending_changed") return;
+      const id = String(payload?.conversation_id ?? "");
+      if (id !== convId) return;
+      void loadGroup();
+    });
+  }, [isGroup, canManageGroup, convId, subscribeEvents, loadGroup]);
+
+  useEffect(() => {
+    if (!isGroup) return;
+    return subscribeEvents((type, payload) => {
+      if (type !== "group.updated") return;
+      const id = String(payload?.conversation_id ?? "");
+      if (id !== convId) return;
+      if (Array.isArray(payload?.added_member_ids)) {
+        void loadGroup();
+      }
+    });
+  }, [isGroup, convId, subscribeEvents, loadGroup]);
 
   async function toggleMute() {
     if (!conversation) return;

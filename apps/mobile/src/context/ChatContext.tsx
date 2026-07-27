@@ -435,6 +435,22 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             return { ...c, title, avatarUrl };
           })
         );
+        const addedRaw = payload?.added_member_ids;
+        const meId = meRef.current?.id;
+        if (meId && Array.isArray(addedRaw) && addedRaw.map(String).includes(meId)) {
+          void loadConversations();
+        }
+        return;
+      }
+
+      if (type === "group.join_request" || type === "group.pending_changed") {
+        eventListenersRef.current.forEach((fn) => {
+          try {
+            fn(type, payload);
+          } catch {
+            /* ignore listener errors */
+          }
+        });
         return;
       }
 
