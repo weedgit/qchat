@@ -14,6 +14,7 @@ import {
 import { Redirect, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, api, takeSessionRevokedReason } from "../src/lib/api";
+import { isValidPhone, validateLoginCredentials } from "../src/lib/credentials";
 import { getAuthDevice, useAuth } from "../src/context/AuthContext";
 import { useLocale } from "../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
@@ -77,6 +78,10 @@ export default function LoginScreen() {
     setError(null);
     setSmsHint(null);
     try {
+      if (!isValidPhone(phone)) {
+        setError("Phone must be exactly 11 digits");
+        return;
+      }
       const data = await api<any>("/v1/auth/register/otp", {
         method: "POST",
         body: JSON.stringify({
@@ -107,6 +112,16 @@ export default function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
+      const early = validateLoginCredentials({
+        phone,
+        password,
+        username,
+        requireUsername: mode === "register",
+      });
+      if (early) {
+        setError(early);
+        return;
+      }
       const device = await getAuthDevice();
       const payload: Record<string, unknown> = {
         phone,
@@ -119,7 +134,7 @@ export default function LoginScreen() {
         platform: device.platform,
       };
       if (mode === "register") {
-        payload.username = username || `user_${phone.slice(-4)}`;
+        payload.username = username.trim();
         payload.sms_challenge_id = smsChallengeId;
         payload.sms_code = smsCode;
       } else {
@@ -171,7 +186,7 @@ export default function LoginScreen() {
           <Field
             label={t("login.phone")}
             value={phone}
-            onChangeText={setPhone}
+            onChangeText={(v) => setPhone(v.replace(/\D/g, "").slice(0, 11))}
             keyboardType="phone-pad"
             placeholder="13800000002"
             styles={styles}
