@@ -55,7 +55,7 @@ Profile visibility can be set to public or friends-only.
 
 ### 2.3 Groups and Friends
 
-Friends can create a group and invite users. Users can also find a group by its group ID and request to join. A group owner or administrator must approve membership.
+Friends can create a group and invite any same-tenant users (friendship not required). Users can also find a group by its group ID and request to join. A group owner or administrator must approve membership.
 
 The group owner can appoint administrators. Administrative capabilities include:
 

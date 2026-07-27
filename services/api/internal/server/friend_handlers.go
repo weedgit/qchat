@@ -212,6 +212,29 @@ func (s *Server) friendshipBlocked(r *http.Request, a, b, ent string) bool {
 	return blocked
 }
 
+// canInviteUserToGroup allows group invites without friendship.
+// Target must exist, not be banned, match tenant scope, and not be blocked either way.
+func (s *Server) canInviteUserToGroup(r *http.Request, inviterID, targetID, enterpriseID string) bool {
+	if targetID == "" || targetID == inviterID {
+		return false
+	}
+	if s.friendshipBlocked(r, inviterID, targetID, enterpriseID) {
+		return false
+	}
+	var ok bool
+	if enterpriseID == "" {
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND banned=FALSE)`, targetID).Scan(&ok)
+	} else {
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT EXISTS(
+				SELECT 1 FROM users
+				WHERE id=$1 AND banned=FALSE AND enterprise_id IS NOT DISTINCT FROM $2
+			)`, targetID, entArg(enterpriseID)).Scan(&ok)
+	}
+	return ok
+}
+
 // ensureDMConversation returns the existing DM between the two users or creates one.
 func (s *Server) ensureDMConversation(r *http.Request, userID, peerID string, ent any) (string, error) {
 	var convID string

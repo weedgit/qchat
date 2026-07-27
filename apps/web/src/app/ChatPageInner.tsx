@@ -887,6 +887,11 @@ export default function ChatPageInner() {
   const [addMemberFriends, setAddMemberFriends] = useState<
     { user_id: string; username: string; display_name: string; avatar_url?: string }[]
   >([]);
+  const [addMemberLookup, setAddMemberLookup] = useState<
+    { user_id: string; username: string; display_name: string; avatar_url?: string }[]
+  >([]);
+  const [addMemberQuery, setAddMemberQuery] = useState("");
+  const [addMemberLookupBusy, setAddMemberLookupBusy] = useState(false);
   const [addMemberPicked, setAddMemberPicked] = useState<Set<string>>(new Set());
   const [addMembersBusy, setAddMembersBusy] = useState(false);
   const [memberMenu, setMemberMenu] = useState<{
@@ -1278,6 +1283,8 @@ export default function ChatPageInner() {
         .filter((f: { user_id: string }) => f.user_id);
       const memberIds = new Set((groupDetails?.members ?? []).map((m) => m.user_id));
       setAddMemberFriends(list.filter((f: { user_id: string }) => !memberIds.has(f.user_id)));
+      setAddMemberLookup([]);
+      setAddMemberQuery("");
       setAddMemberPicked(new Set());
       setAddMembersOpen(true);
     } catch (e: any) {
@@ -1306,6 +1313,45 @@ export default function ChatPageInner() {
       setAddMembersBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!addMembersOpen) return;
+    const q = addMemberQuery.trim();
+    if (!q) {
+      setAddMemberLookup([]);
+      setAddMemberLookupBusy(false);
+      return;
+    }
+    let cancelled = false;
+    setAddMemberLookupBusy(true);
+    const timer = window.setTimeout(() => {
+      api<any>(`/v1/users/lookup?q=${encodeURIComponent(q)}`)
+        .then((body) => {
+          if (cancelled) return;
+          const memberIds = new Set((groupDetails?.members ?? []).map((m) => m.user_id));
+          setAddMemberLookup(
+            (Array.isArray(body?.users) ? body.users : [])
+              .map((u: any) => ({
+                user_id: String(u?.id ?? ""),
+                username: String(u?.username ?? ""),
+                display_name: String(u?.display_name ?? u?.username ?? ""),
+                avatar_url: u?.avatar_url || undefined,
+              }))
+              .filter((u: { user_id: string }) => u.user_id && !memberIds.has(u.user_id))
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setAddMemberLookup([]);
+        })
+        .finally(() => {
+          if (!cancelled) setAddMemberLookupBusy(false);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [addMembersOpen, addMemberQuery, groupDetails?.members]);
 
   async function uploadGroupAvatar(file: File) {
     if (!active || !canEditGroup) return;
@@ -3502,34 +3548,65 @@ export default function ChatPageInner() {
                 {addMembersOpen && (
                   <div className="card" style={{ marginBottom: 12, padding: 10, display: "grid", gap: 8 }}>
                     <div style={{ fontWeight: 600 }}>{t("details.addFriendsToGroup")}</div>
-                    {addMemberFriends.length === 0 ? (
-                      <div className="muted">{t("details.noFriendsLeft")}</div>
-                    ) : (
-                      addMemberFriends.map((f) => {
-                        const on = addMemberPicked.has(f.user_id);
-                        return (
-                          <label key={f.user_id} className="check-row" style={{ gap: 8 }}>
-                            <input
-                              type="checkbox"
-                              checked={on}
-                              onChange={() => {
-                                setAddMemberPicked((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(f.user_id)) next.delete(f.user_id);
-                                  else next.add(f.user_id);
-                                  return next;
-                                });
-                              }}
-                            />
-                            <Avatar name={f.display_name} url={f.avatar_url} size={24} />
-                            <span>
-                              {f.display_name}{" "}
-                              <span className="muted">@{f.username}</span>
-                            </span>
-                          </label>
-                        );
-                      })
-                    )}
+                    <input
+                      type="search"
+                      placeholder={t("details.searchUsersPlaceholder")}
+                      value={addMemberQuery}
+                      onChange={(e) => setAddMemberQuery(e.target.value)}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    {(() => {
+                      const q = addMemberQuery.trim().toLocaleLowerCase();
+                      const friendRows = addMemberFriends.filter((f) => {
+                        if (!q) return true;
+                        const hay = `${f.display_name} ${f.username} ${f.user_id}`.toLocaleLowerCase();
+                        return hay.includes(q);
+                      });
+                      const friendIds = new Set(addMemberFriends.map((f) => f.user_id));
+                      const extra = addMemberLookup.filter((u) => !friendIds.has(u.user_id));
+                      const rows = [
+                        ...friendRows.map((f) => ({ ...f, isFriend: true })),
+                        ...extra.map((u) => ({ ...u, isFriend: false })),
+                      ];
+                      if (rows.length === 0 && !addMemberLookupBusy) {
+                        return <div className="muted">{t("details.noFriendsLeft")}</div>;
+                      }
+                      return (
+                        <>
+                          {rows.map((f) => {
+                            const on = addMemberPicked.has(f.user_id);
+                            return (
+                              <label key={f.user_id} className="check-row" style={{ gap: 8 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={on}
+                                  onChange={() => {
+                                    setAddMemberPicked((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(f.user_id)) next.delete(f.user_id);
+                                      else next.add(f.user_id);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                <Avatar name={f.display_name} url={f.avatar_url} size={24} />
+                                <span>
+                                  {f.display_name}{" "}
+                                  <span className="muted">
+                                    @{f.username}
+                                    {!f.isFriend ? ` · ${t("groups.notAFriend")}` : ""}
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                          {addMemberLookupBusy && (
+                            <div className="muted">{t("details.searchingUsers")}</div>
+                          )}
+                        </>
+                      );
+                    })()}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button
                         type="button"
