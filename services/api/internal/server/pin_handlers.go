@@ -135,15 +135,19 @@ func (s *Server) handlePinMessage(w http.ResponseWriter, r *http.Request) {
 
 	pins := s.listPinnedMessages(r.Context(), convID)
 	preview := pinnedPreview(typ, body)
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "message.pin", "message", msgID, "", clientIP(r), map[string]any{
+		"conversation_id":   convID,
+		"conversation_type": convType,
+	})
 	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
 		Type: "message.pinned",
 		Payload: map[string]any{
-			"conversation_id":  convID,
-			"message_id":       msgID,
-			"body":             preview,
-			"type":             typ,
-			"seq":              seq,
-			"pinned_messages":  pins,
+			"conversation_id": convID,
+			"message_id":      msgID,
+			"body":            preview,
+			"type":            typ,
+			"seq":             seq,
+			"pinned_messages": pins,
 		},
 	})
 	writeJSON(w, 200, map[string]any{
@@ -191,6 +195,10 @@ func (s *Server) handleUnpinMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pins := s.listPinnedMessages(r.Context(), convID)
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "message.unpin", "message", msgID, "", clientIP(r), map[string]any{
+		"conversation_id":   convID,
+		"conversation_type": convType,
+	})
 	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
 		Type: "message.unpinned",
 		Payload: map[string]any{
