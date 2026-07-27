@@ -64,7 +64,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		       COALESCE(conv.is_enterprise_default, FALSE)
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
-		WHERE cm.user_id=$1 AND cm.role <> 'pending'
+		WHERE cm.user_id=$1 AND (
+		  cm.role <> 'pending'
+		  OR conv.type IN ('social_group', 'group')
+		)
 		ORDER BY cm.favorite DESC, COALESCE(
 		  (SELECT m.created_at FROM messages m WHERE m.conversation_id=conv.id ORDER BY m.seq DESC LIMIT 1),
 		  conv.created_at
@@ -103,6 +106,18 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			"favorite": favorite, "muted": muted,
 			"is_enterprise_default": isEnterpriseDefault,
 		}
+		// Pending joiners must not see message previews or unread until approved.
+		if role == "pending" {
+			item["last_message"] = ""
+			item["last_message_sender"] = ""
+			item["last_message_mine"] = false
+			item["unread"] = 0
+			item["unread_count"] = 0
+			item["mention_count"] = 0
+			delete(item, "last_message_at")
+			delete(item, "pinned_message_id")
+			delete(item, "pinned_message")
+		}
 		if peerID != "" {
 			item["peer_id"] = peerID
 			peerIDs = append(peerIDs, peerID)
@@ -110,10 +125,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		if peerLastActive != nil {
 			item["peer_last_active_at"] = peerLastActive.UTC()
 		}
-		if lastAt != nil {
+		if lastAt != nil && role != "pending" {
 			item["last_message_at"] = lastAt.UTC()
 		}
-		if pinnedID != nil && *pinnedID != "" {
+		if pinnedID != nil && *pinnedID != "" && role != "pending" {
 			item["pinned_message_id"] = *pinnedID
 			item["pinned_message"] = pinnedBody
 		}
@@ -657,12 +672,6 @@ func (s *Server) handleGroupPending(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 403, "forbidden", "forbidden")
 		return
 	}
-	var ent string
-	_ = s.db.QueryRow(r.Context(), `SELECT COALESCE(enterprise_id::text, '') FROM conversations WHERE id=$1`, convID).Scan(&ent)
-	if ent != c.EnterpriseID {
-		writeErrCode(w, 403, "forbidden", "forbidden")
-		return
-	}
 	rows, err := s.db.Query(r.Context(), `
 		SELECT u.id::text, u.username, u.display_name, COALESCE(u.avatar_url,''), cm.joined_at
 		FROM conversation_members cm JOIN users u ON u.id=cm.user_id
@@ -742,29 +751,36 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "public_id required")
 		return
 	}
-	// Look up by public_id only (case-insensitive). Tenant scope is applied
-	// after the row is found so personal↔enterprise joins match canInviteUserToGroup,
-	// while still hiding other-enterprise groups behind a generic 404.
-	var convID, owner, groupEnt string
+	// Join-by-ID is intentionally global (requirements: find a group by group ID).
+	// Friendship and enterprise matching are not required; owners/admins still approve.
+	// Company default chats stay hidden. Cross-enterprise member *invites* remain
+	// tenant-scoped in canInviteUserToGroup / handleAddGroupMembers.
+	var convID, owner string
 	var isDefault bool
 	err := s.db.QueryRow(r.Context(), `
-		SELECT id::text, COALESCE(owner_id::text, ''), COALESCE(enterprise_id::text, ''),
+		SELECT id::text, COALESCE(owner_id::text, ''),
 		       COALESCE(is_enterprise_default, FALSE)
 		FROM conversations
 		WHERE LOWER(public_id)=LOWER($1) AND type='social_group'`,
 		req.PublicID).
-		Scan(&convID, &owner, &groupEnt, &isDefault)
+		Scan(&convID, &owner, &isDefault)
 	if err != nil || isDefault {
 		writeErr(w, 404, "group not found")
 		return
 	}
-	joinerEnt := strings.TrimSpace(c.EnterpriseID)
-	if groupEnt != "" && joinerEnt != "" && groupEnt != joinerEnt {
-		writeErr(w, 404, "group not found")
+	// Already an active member — do not create a duplicate pending row.
+	var existingRole string
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT role FROM conversation_members
+		WHERE conversation_id=$1 AND user_id=$2`, convID, c.UserID).Scan(&existingRole)
+	if existingRole == "owner" || existingRole == "admin" || existingRole == "member" {
+		writeJSON(w, 200, s.joinGroupResponse(r.Context(), "already_member", convID, existingRole))
 		return
 	}
-	// Pending membership stored with role=pending via temporary approach: use mute_until far past + role member not inserted
-	// For MVP: insert as pending using role 'pending'
+	if existingRole == "pending" {
+		writeJSON(w, 202, s.joinGroupResponse(r.Context(), "pending_approval", convID, "pending"))
+		return
+	}
 	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO conversation_members(conversation_id, user_id, role, history_visible_from)
 		VALUES ($1,$2,'pending', now()) ON CONFLICT DO NOTHING`, convID, c.UserID)
@@ -780,7 +796,31 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 		approvers = []string{owner}
 	}
 	s.hub.PublishToUsers(approvers, ws.Event{Type: "group.join_request", Payload: map[string]any{"conversation_id": convID, "user_id": c.UserID}})
-	writeJSON(w, 202, map[string]any{"status": "pending_approval"})
+	writeJSON(w, 202, s.joinGroupResponse(r.Context(), "pending_approval", convID, "pending"))
+}
+
+// joinGroupResponse returns join status plus group list fields so clients can
+// show the conversation under Your groups immediately (role=pending).
+func (s *Server) joinGroupResponse(ctx context.Context, status, convID, role string) map[string]any {
+	out := map[string]any{
+		"status":          status,
+		"conversation_id": convID,
+		"role":            role,
+	}
+	var title, publicID, avatar string
+	_ = s.db.QueryRow(ctx, `
+		SELECT COALESCE(title,''), COALESCE(public_id,''), COALESCE(avatar_url,'')
+		FROM conversations WHERE id=$1`, convID).Scan(&title, &publicID, &avatar)
+	if title != "" {
+		out["title"] = title
+	}
+	if publicID != "" {
+		out["public_id"] = publicID
+	}
+	if avatar != "" {
+		out["avatar_url"] = avatar
+	}
+	return out
 }
 
 func (s *Server) handleApproveJoin(w http.ResponseWriter, r *http.Request) {

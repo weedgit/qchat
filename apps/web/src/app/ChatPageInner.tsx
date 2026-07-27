@@ -21,7 +21,7 @@ import GroupCallInviteModal from "@/components/GroupCallInviteModal";
 import GroupQr from "@/components/GroupQr";
 import GroupQrScanner from "@/components/GroupQrScanner";
 import UserQr from "@/components/UserQr";
-import EmojiPicker from "@/components/EmojiPicker";
+import EmojiPicker, { type PickerMedia } from "@/components/EmojiPicker";
 import MessageBody from "@/components/MessageBody";
 import { api, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
 import { getAuthDevice } from "@/lib/device";
@@ -943,6 +943,10 @@ export default function ChatPageInner() {
     mute_all?: boolean;
     forbid_member_friend_add?: boolean;
   } | null>(null);
+  const [groupPending, setGroupPending] = useState<
+    { user_id: string; username: string; display_name: string; avatar_url?: string }[]
+  >([]);
+  const [groupPendingBusy, setGroupPendingBusy] = useState(false);
   const [inviteIdCopied, setInviteIdCopied] = useState(false);
   const [groupCallInvite, setGroupCallInvite] = useState<"voice" | "video" | "mid" | null>(null);
   const [groupCallInviteBusy, setGroupCallInviteBusy] = useState(false);
@@ -1375,6 +1379,7 @@ export default function ChatPageInner() {
       await chat.leaveGroup(active.id);
       setShowDetails(false);
       setGroupDetails(null);
+      setGroupPending([]);
     } catch (e: any) {
       logChatError(e?.message || "Could not leave group");
     }
@@ -1383,18 +1388,53 @@ export default function ChatPageInner() {
   async function reloadGroupDetails() {
     if (!active || (active.type !== "social_group" && active.type !== "group")) return;
     const g = await api<any>(`/v1/groups/${active.id}`);
+    const role = String(g?.role ?? "");
     setGroupDetails({
       members: Array.isArray(g?.members) ? g.members : [],
       public_id: g?.public_id,
       description: g?.description,
       announcement: g?.announcement,
       title: g?.title,
-      role: g?.role,
+      role,
       avatar_url: g?.avatar_url,
       mute_all: Boolean(g?.mute_all),
       forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
     });
     setGroupEditAnnounce(String(g?.announcement ?? ""));
+    if (role === "owner" || role === "admin") {
+      try {
+        const pend = await api<any>(`/v1/groups/${active.id}/pending`);
+        setGroupPending(
+          (Array.isArray(pend?.pending) ? pend.pending : []).map((p: any) => ({
+            user_id: String(p?.user_id ?? ""),
+            username: String(p?.username ?? ""),
+            display_name: String(p?.display_name ?? p?.username ?? "User"),
+            avatar_url: p?.avatar_url || undefined,
+          })).filter((p: { user_id: string }) => p.user_id)
+        );
+      } catch {
+        setGroupPending([]);
+      }
+    } else {
+      setGroupPending([]);
+    }
+  }
+
+  async function approveGroupPending(userId: string) {
+    if (!active || !userId || groupPendingBusy) return;
+    setGroupPendingBusy(true);
+    try {
+      await api(`/v1/groups/${active.id}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ user_id: userId }),
+      });
+      await reloadGroupDetails();
+      await chat.reload();
+    } catch (e: any) {
+      logChatError(e?.message || "Could not approve join request");
+    } finally {
+      setGroupPendingBusy(false);
+    }
   }
 
   async function saveGroupMeta() {
@@ -1624,7 +1664,10 @@ export default function ChatPageInner() {
         method: "POST",
         body: JSON.stringify({ public_id: parsed }),
       });
-      setMenuScanNotice(`Join request: ${res?.status ?? "submitted"}`);
+      const status = String(res?.status ?? "");
+      setMenuScanNotice(
+        status === "already_member" ? t("groups.alreadyMember") : t("groups.joinPending")
+      );
       window.setTimeout(() => {
         setMenuScanOpen(false);
         setMenuScanNotice(null);
@@ -1662,33 +1705,74 @@ export default function ChatPageInner() {
  // channel info RHS: load group members when details open.
   useEffect(() => {
     if (!showDetails || !active || (active.type !== "social_group" && active.type !== "group")) {
-      if (!groupCallInvite) setGroupDetails(null);
+      if (!groupCallInvite) {
+        setGroupDetails(null);
+        setGroupPending([]);
+      }
       return;
     }
     let cancelled = false;
     api<any>(`/v1/groups/${active.id}`)
-      .then((g) => {
+      .then(async (g) => {
         if (cancelled) return;
+        const role = String(g?.role ?? "");
         setGroupDetails({
           members: Array.isArray(g?.members) ? g.members : [],
           public_id: g?.public_id,
           description: g?.description,
           announcement: g?.announcement,
           title: g?.title,
-          role: g?.role,
+          role,
           avatar_url: g?.avatar_url,
           mute_all: Boolean(g?.mute_all),
           forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
         });
         setGroupEditAnnounce(String(g?.announcement ?? ""));
+        if (role === "owner" || role === "admin") {
+          try {
+            const pend = await api<any>(`/v1/groups/${active.id}/pending`);
+            if (cancelled) return;
+            setGroupPending(
+              (Array.isArray(pend?.pending) ? pend.pending : []).map((p: any) => ({
+                user_id: String(p?.user_id ?? ""),
+                username: String(p?.username ?? ""),
+                display_name: String(p?.display_name ?? p?.username ?? "User"),
+                avatar_url: p?.avatar_url || undefined,
+              })).filter((p: { user_id: string }) => p.user_id)
+            );
+          } catch {
+            if (!cancelled) setGroupPending([]);
+          }
+        } else {
+          setGroupPending([]);
+        }
       })
       .catch(() => {
-        if (!cancelled) setGroupDetails(null);
+        if (!cancelled) {
+          setGroupDetails(null);
+          setGroupPending([]);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [showDetails, active, groupCallInvite]);
+
+  // Refresh pending list when a join request arrives or is resolved.
+  useEffect(() => {
+    if (!showDetails || !active || (active.type !== "social_group" && active.type !== "group")) {
+      return;
+    }
+    const onPending = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ conversation_id?: string }>).detail;
+      if (detail?.conversation_id && detail.conversation_id !== active.id) return;
+      const role = groupDetails?.role || chat.myRole || "";
+      if (role !== "owner" && role !== "admin") return;
+      void reloadGroupDetails().catch(() => {});
+    };
+    window.addEventListener("qchat:group-pending", onPending);
+    return () => window.removeEventListener("qchat:group-pending", onPending);
+  }, [showDetails, active?.id, active?.type, groupDetails?.role, chat.myRole]);
 
   // Prefetch group members for call invite picker (without opening RHS).
   useEffect(() => {
@@ -1849,6 +1933,21 @@ export default function ChatPageInner() {
       const pos = Math.min(start + emoji.length, next.length);
       node.setSelectionRange(pos, pos);
     });
+  }
+
+  async function sendPickerMedia(item: PickerMedia) {
+    if (!chat.activeId) return;
+    setEmojiOpen(false);
+    const caption = item.kind === "sticker" ? "Sticker" : "GIF";
+    try {
+      await chat.sendRemoteImage(chat.activeId, item.url, caption, replyTo?.id);
+      setReplyTo(null);
+    } catch (e: any) {
+      logChatError(
+        e?.message ||
+          (item.kind === "sticker" ? t("stickers.sendFailed") : t("gifs.sendFailed"))
+      );
+    }
   }
 
   function updateJumpBottomVisibility() {
@@ -3410,6 +3509,9 @@ export default function ChatPageInner() {
                         {emojiOpen && (
                           <EmojiPicker
                             onPick={insertComposerEmoji}
+                            onPickMedia={(item) => {
+                              void sendPickerMedia(item);
+                            }}
                             onClose={() => setEmojiOpen(false)}
                           />
                         )}
@@ -3759,6 +3861,35 @@ export default function ChatPageInner() {
                 </>
               )}
               <div className="details-members">
+                {canEditGroup && (
+                  <div className="details-pending">
+                    <div className="details-members-heading">
+                      <span className="details-members-label">{t("groups.pending")}</span>
+                      <span className="details-members-count">{groupPending.length}</span>
+                    </div>
+                    {groupPending.length === 0 ? (
+                      <div className="details-pending-empty">{t("details.pendingNone")}</div>
+                    ) : (
+                      groupPending.map((p) => (
+                        <div className="members-row details-members-row details-pending-row" key={p.user_id}>
+                          <Avatar name={p.display_name} url={p.avatar_url} size={42} />
+                          <div className="members-row-main">
+                            <div className="members-row-name">{p.display_name}</div>
+                            <div className="members-row-status">@{p.username}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-ghost details-pending-approve"
+                            disabled={groupPendingBusy}
+                            onClick={() => void approveGroupPending(p.user_id)}
+                          >
+                            {t("groups.approve")}
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
                 <div className="details-members-heading">
                   <span className="details-members-label">{t("details.members")}</span>
                   <span className="details-members-count">

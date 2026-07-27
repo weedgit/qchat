@@ -204,7 +204,10 @@ export function useChat() {
   const loadConversations = useCallback(async () => {
     try {
       const body = await api<any>("/v1/conversations");
-      const list = asList(body, "conversations").map(normalizeConversation);
+      // Pending join requests belong on the Groups page, not the main chat list.
+      const list = asList(body, "conversations")
+        .map(normalizeConversation)
+        .filter((c) => (c.role || "").toLowerCase() !== "pending");
       setConversations(list);
       setPresenceByUser((prev) => {
         const next = { ...prev };
@@ -383,6 +386,9 @@ export function useChat() {
       const meId = meRef.current?.id;
       if (meId && Array.isArray(addedRaw) && addedRaw.map(String).includes(meId)) {
         void loadConversations();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("qchat:conversations-changed"));
+        }
       }
       return;
     }
@@ -1012,6 +1018,89 @@ export function useChat() {
     }
   }, []);
 
+  const sendRemoteImage = useCallback(
+    async (
+      convId: string,
+      mediaUrl: string,
+      caption: string,
+      replyToId?: string
+    ) => {
+      stopTyping(convId);
+      const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const preview = caption.trim() || "Photo";
+      const optimistic: Message = {
+        id: clientMsgId,
+        conversationId: convId,
+        senderId: meRef.current?.id ?? "me",
+        content: preview,
+        type: "image",
+        mediaUrl,
+        createdAt: new Date().toISOString(),
+        mine: true,
+        pending: true,
+        clientMsgId,
+        replyToId,
+      };
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: [...(prev[convId] ?? []), optimistic],
+      }));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === convId
+            ? {
+                ...c,
+                lastMessage: preview,
+                lastMessageAt: optimistic.createdAt,
+                lastMessageSender: meRef.current?.nickname || meRef.current?.username,
+                lastMessageMine: true,
+              }
+            : c
+        )
+      );
+      try {
+        const body = await api<any>(`/v1/conversations/${convId}/messages`, {
+          method: "POST",
+          body: JSON.stringify({
+            type: "image",
+            body: preview,
+            media_url: mediaUrl,
+            client_msg_id: clientMsgId,
+            reply_to_id: replyToId || undefined,
+          }),
+        });
+        const saved = normalizeMessage(
+          {
+            ...body,
+            media_url: body?.media_url ?? mediaUrl,
+            type: "image",
+            body: body?.body ?? preview,
+          },
+          meRef.current?.id
+        );
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.clientMsgId === clientMsgId
+              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId }
+              : m
+          ),
+        }));
+      } catch (e: any) {
+        setMessages((prev) => ({
+          ...prev,
+          [convId]: (prev[convId] ?? []).map((m) =>
+            m.clientMsgId === clientMsgId
+              ? { ...m, pending: false, failed: true, error: formatSendError(e) }
+              : m
+          ),
+        }));
+        throw e;
+      }
+    },
+    [stopTyping]
+  );
+
   const sendMediaMessage = useCallback(
     async (convId: string, file: File, replyToId?: string, caption?: string) => {
       stopTyping(convId);
@@ -1630,6 +1719,7 @@ export function useChat() {
     loadOlderMessages,
     sendMessage,
     sendMediaMessage,
+    sendRemoteImage,
     sendVoiceMessage,
     retryMessage,
     cancelUpload,

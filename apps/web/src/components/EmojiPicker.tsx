@@ -10,8 +10,18 @@ import {
   saveMoodChipOrder,
   type EmojiCategoryId,
 } from "@/lib/emojiData";
+import { searchGifs, type GifItem } from "@/lib/gifSearch";
+import { STICKER_PACKS, type StickerItem } from "@/lib/stickerData";
 import { useLocale } from "@/lib/locale";
 import type { MessageKey } from "@qchat/i18n";
+
+export type PickerMedia = {
+  url: string;
+  name: string;
+  kind: "sticker" | "gif";
+};
+
+type PickerTab = "emoji" | "stickers" | "gifs";
 
 function CatIcon({ d, size = 18 }: { d: string; size?: number }) {
   return (
@@ -109,17 +119,23 @@ const DRAG_THRESHOLD_PX = 6;
 
 export default function EmojiPicker({
   onPick,
+  onPickMedia,
   onClose,
 }: {
   onPick: (emoji: string) => void;
+  onPickMedia?: (item: PickerMedia) => void;
   onClose?: () => void;
 }) {
   const { t } = useLocale();
+  const [tab, setTab] = useState<PickerTab>("emoji");
   const [query, setQuery] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const [moodKey, setMoodKey] = useState<string | null>(null);
   const [moodOrder, setMoodOrder] = useState<string[]>(DEFAULT_MOOD_KEYS);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [gifs, setGifs] = useState<GifItem[]>([]);
+  const [gifBusy, setGifBusy] = useState(false);
+  const [gifError, setGifError] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const catsRef = useRef<HTMLDivElement>(null);
@@ -130,12 +146,32 @@ export default function EmojiPicker({
     moved: boolean;
     order: string[];
   } | null>(null);
+  const gifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setRecent(loadRecentEmojis());
     setMoodOrder(loadMoodChipOrder(DEFAULT_MOOD_KEYS));
     searchRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (tab !== "gifs") return;
+    if (gifTimerRef.current) clearTimeout(gifTimerRef.current);
+    setGifBusy(true);
+    setGifError(null);
+    gifTimerRef.current = setTimeout(() => {
+      searchGifs(query)
+        .then((list) => setGifs(list))
+        .catch((e: any) => {
+          setGifs([]);
+          setGifError(e?.message || t("gifs.sendFailed"));
+        })
+        .finally(() => setGifBusy(false));
+    }, query.trim() ? 280 : 0);
+    return () => {
+      if (gifTimerRef.current) clearTimeout(gifTimerRef.current);
+    };
+  }, [tab, query, t]);
 
   const orderedMoods = useMemo(
     () => moodOrder.map((k) => MOOD_BY_KEY[k]).filter(Boolean),
@@ -189,6 +225,14 @@ export default function EmojiPicker({
   function pick(emoji: string) {
     setRecent(pushRecentEmoji(emoji));
     onPick(emoji);
+  }
+
+  function pickSticker(sticker: StickerItem) {
+    onPickMedia?.({ url: sticker.url, name: sticker.label, kind: "sticker" });
+  }
+
+  function pickGif(gif: GifItem) {
+    onPickMedia?.({ url: gif.url, name: gif.title || "GIF", kind: "gif" });
   }
 
   function reorderByPointer(clientX: number, fromKey: string, current: string[]) {
@@ -302,7 +346,11 @@ export default function EmojiPicker({
                   setQuery(e.target.value);
                   if (e.target.value.trim()) setMoodKey(null);
                 }}
-                placeholder={t("common.search")}
+                placeholder={
+                  tab === "gifs"
+                    ? t("gifs.searchPlaceholder")
+                    : t("common.search")
+                }
                 autoComplete="off"
                 spellCheck={false}
                 onMouseDown={(e) => e.stopPropagation()}
@@ -311,109 +359,142 @@ export default function EmojiPicker({
           </div>
         </div>
 
-        <div
-          className={`emoji-picker-cats${draggingKey ? " is-dragging" : ""}`}
-          ref={catsRef}
-          role="tablist"
-          aria-label={t("emoji.categories")}
-        >
-          {orderedMoods.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              data-mood-key={item.key}
-              className={`emoji-picker-cat-btn${
-                moodKey === item.key && !showSearch ? " is-active" : ""
-              }${draggingKey === item.key ? " is-dragging" : ""}`}
-              title={t("emoji.dragHint")}
-              onPointerDown={(e) => onMoodPointerDown(e, item.key)}
-              onPointerMove={onMoodPointerMove}
-              onPointerUp={(e) => onMoodPointerUp(e, item.key)}
-              onPointerCancel={(e) => onMoodPointerUp(e, item.key)}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              <CatIcon d={item.d} />
-            </button>
-          ))}
-        </div>
+        {tab === "emoji" && (
+          <div
+            className={`emoji-picker-cats${draggingKey ? " is-dragging" : ""}`}
+            ref={catsRef}
+            role="tablist"
+            aria-label={t("emoji.categories")}
+          >
+            {orderedMoods.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                data-mood-key={item.key}
+                className={`emoji-picker-cat-btn${
+                  moodKey === item.key && !showSearch ? " is-active" : ""
+                }${draggingKey === item.key ? " is-dragging" : ""}`}
+                title={t("emoji.dragHint")}
+                onPointerDown={(e) => onMoodPointerDown(e, item.key)}
+                onPointerMove={onMoodPointerMove}
+                onPointerUp={(e) => onMoodPointerUp(e, item.key)}
+                onPointerCancel={(e) => onMoodPointerUp(e, item.key)}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                <CatIcon d={item.d} size={16} />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="emoji-picker-body" ref={bodyRef}>
-        {showSearch || showMood ? (
-          <div className="emoji-picker-section">
-            <div className="emoji-picker-section-title">
-              {showSearch ? t("emoji.searchResults") : t("chat.emoji")}
-            </div>
-            {filteredList.length === 0 ? (
-              <div className="emoji-picker-empty">{t("chat.noResults")}</div>
+        {tab === "emoji" && (
+          <>
+            {showSearch || showMood ? (
+              <div className="emoji-picker-section">
+                <div className="emoji-picker-section-title">
+                  {showSearch ? t("emoji.searchResults") : t("chat.emoji")}
+                </div>
+                {filteredList.length === 0 ? (
+                  <div className="emoji-picker-empty">{t("chat.noResults")}</div>
+                ) : (
+                  <div className="emoji-picker-grid">
+                    {filteredList.map((em) => (
+                      <button
+                        key={`f-${em}`}
+                        type="button"
+                        className="emoji-picker-cell"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          pick(em);
+                        }}
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
-              <div className="emoji-picker-grid">
-                {filteredList.map((em) => (
-                  <button
-                    key={`f-${em}`}
-                    type="button"
-                    className="emoji-picker-cell"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      pick(em);
+              <>
+                {recent.length > 0 && (
+                  <div
+                    className="emoji-picker-section"
+                    ref={(el) => {
+                      sectionRefs.current.recent = el;
                     }}
                   >
-                    {em}
-                  </button>
+                    <div className="emoji-picker-section-title">{t("emoji.recent")}</div>
+                    <div className="emoji-picker-grid">
+                      {recent.map((em) => (
+                        <button
+                          key={`r-${em}`}
+                          type="button"
+                          className="emoji-picker-cell"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            pick(em);
+                          }}
+                        >
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {EMOJI_CATEGORIES.map((cat) => (
+                  <div
+                    key={cat.id}
+                    className="emoji-picker-section"
+                    ref={(el) => {
+                      sectionRefs.current[cat.id] = el;
+                    }}
+                  >
+                    <div className="emoji-picker-section-title">
+                      {t(CATEGORY_LABEL_KEYS[cat.id as Exclude<EmojiCategoryId, "recent">])}
+                    </div>
+                    <div className="emoji-picker-grid">
+                      {cat.emojis.map((em) => (
+                        <button
+                          key={`${cat.id}-${em}`}
+                          type="button"
+                          className="emoji-picker-cell"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            pick(em);
+                          }}
+                        >
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
-              </div>
+              </>
             )}
-          </div>
-        ) : (
+          </>
+        )}
+
+        {tab === "stickers" && (
           <>
-            {recent.length > 0 && (
-              <div
-                className="emoji-picker-section"
-                ref={(el) => {
-                  sectionRefs.current.recent = el;
-                }}
-              >
-                <div className="emoji-picker-section-title">{t("emoji.recent")}</div>
-                <div className="emoji-picker-grid">
-                  {recent.map((em) => (
+            {STICKER_PACKS.map((pack) => (
+              <div className="emoji-picker-section" key={pack.id}>
+                <div className="emoji-picker-section-title">{t(pack.labelKey)}</div>
+                <div className="sticker-picker-grid">
+                  {pack.stickers.map((st) => (
                     <button
-                      key={`r-${em}`}
+                      key={st.id}
                       type="button"
-                      className="emoji-picker-cell"
+                      className="sticker-picker-cell"
+                      title={st.label}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        pick(em);
+                        pickSticker(st);
                       }}
                     >
-                      {em}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {EMOJI_CATEGORIES.map((cat) => (
-              <div
-                key={cat.id}
-                className="emoji-picker-section"
-                ref={(el) => {
-                  sectionRefs.current[cat.id] = el;
-                }}
-              >
-                <div className="emoji-picker-section-title">
-                  {t(CATEGORY_LABEL_KEYS[cat.id as Exclude<EmojiCategoryId, "recent">])}
-                </div>
-                <div className="emoji-picker-grid">
-                  {cat.emojis.map((em) => (
-                    <button
-                      key={`${cat.id}-${em}`}
-                      type="button"
-                      className="emoji-picker-cell"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        pick(em);
-                      }}
-                    >
-                      {em}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={st.url} alt={st.label} loading="lazy" />
                     </button>
                   ))}
                 </div>
@@ -421,6 +502,66 @@ export default function EmojiPicker({
             ))}
           </>
         )}
+
+        {tab === "gifs" && (
+          <div className="emoji-picker-section">
+            <div className="emoji-picker-section-title">
+              {query.trim() ? t("emoji.searchResults") : t("gifs.trending")}
+            </div>
+            {gifBusy ? (
+              <div className="emoji-picker-empty">{t("gifs.loading")}</div>
+            ) : gifError ? (
+              <div className="emoji-picker-empty">{gifError}</div>
+            ) : gifs.length === 0 ? (
+              <div className="emoji-picker-empty">{t("gifs.empty")}</div>
+            ) : (
+              <div className="gif-picker-grid">
+                {gifs.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    className="gif-picker-cell"
+                    title={g.title}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      pickGif(g);
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={g.previewUrl} alt={g.title} loading="lazy" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="emoji-picker-tabs" role="tablist" aria-label={t("chat.emoji")}>
+        {(
+          [
+            ["emoji", "emoji.tabEmoji"],
+            ["stickers", "emoji.tabStickers"],
+            ["gifs", "emoji.tabGifs"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            className={`emoji-picker-tab${tab === id ? " is-active" : ""}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setTab(id);
+              setMoodKey(null);
+              if (id !== "gifs") setQuery("");
+              bodyRef.current?.scrollTo({ top: 0 });
+            }}
+          >
+            {t(label)}
+          </button>
+        ))}
       </div>
     </div>
   );

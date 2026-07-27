@@ -135,6 +135,18 @@ export default function GroupsPage() {
   }, [load]);
 
   useEffect(() => {
+    const onChanged = () => {
+      void load().catch(() => {});
+    };
+    window.addEventListener("qchat:conversations-changed", onChanged);
+    window.addEventListener("qchat:group-pending", onChanged);
+    return () => {
+      window.removeEventListener("qchat:conversations-changed", onChanged);
+      window.removeEventListener("qchat:group-pending", onChanged);
+    };
+  }, [load]);
+
+  useEffect(() => {
     setCameraOk(isGroupQrCameraSupported());
   }, []);
 
@@ -339,9 +351,15 @@ export default function GroupsPage() {
         method: "POST",
         body: JSON.stringify({ public_id: parsed }),
       });
-      setMsg(`Join request: ${res?.status ?? "submitted"}`);
+      const status = String(res?.status ?? "submitted");
+      if (status === "already_member") {
+        setMsg(t("groups.alreadyMember"));
+      } else {
+        setMsg(t("groups.joinPending"));
+      }
       setJoinId("");
       setScanning(false);
+      await load().catch(() => {});
     } catch (err: any) {
       setMsg(err.message);
     } finally {
@@ -886,40 +904,61 @@ export default function GroupsPage() {
           <section className="menu-modal-section">
             <div className="menu-modal-section-title">{t("groups.yours")}</div>
             {groups.length === 0 && <div className="menu-modal-empty">{t("groups.empty")}</div>}
-            {groups.map((g) => (
+            {groups.map((g) => {
+              const myRole = (g.role || "member").toLowerCase();
+              const isPending = myRole === "pending";
+              const roleLabel =
+                myRole === "owner"
+                  ? t("groups.roleOwner")
+                  : myRole === "admin"
+                    ? t("groups.roleAdmin")
+                    : myRole === "pending"
+                      ? t("groups.rolePending")
+                      : t("groups.roleMember");
+              return (
               <div className="menu-modal-list-row" key={g.id}>
                 <Avatar name={g.title} url={g.avatarUrl} size={42} />
                 <div className="menu-modal-list-main">
                   <div className="menu-modal-list-title">{g.title}</div>
                   <div className="menu-modal-list-sub">
-                    {g.lastMessage || t("chat.noMessagesYet")}
+                    {isPending
+                      ? t("groups.awaitingApproval")
+                      : g.lastMessage || t("chat.noMessagesYet")}
                   </div>
                 </div>
-                <div className="menu-modal-list-actions">
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      notifyConversationsChanged({ selectId: g.id });
-                      router.push(`/?c=${encodeURIComponent(g.id)}`);
-                    }}
-                  >
-                    {t("groups.open")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openManage(g.id);
-                    }}
-                  >
-                    {t("groups.manage")}
-                  </button>
+                <div className="menu-modal-list-actions groups-list-actions">
+                  <div className={`groups-list-role members-role-pill is-${myRole}`}>
+                    {roleLabel}
+                  </div>
+                  {!isPending && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          notifyConversationsChanged({ selectId: g.id });
+                          router.push(`/?c=${encodeURIComponent(g.id)}`);
+                        }}
+                      >
+                        {t("groups.open")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openManage(g.id);
+                        }}
+                      >
+                        {t("groups.manage")}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </section>
         </>
       )}

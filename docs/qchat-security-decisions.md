@@ -30,7 +30,6 @@ Working defaults until the client signs a formal change order. Documented so eng
 ## Explicit non-goals for Messenger MVP
 
 - End-to-end encryption
-- Custom sticker packs
 - Full boards/playbooks
 - Native mobile/desktop stores
 - Group video calling / screen share
