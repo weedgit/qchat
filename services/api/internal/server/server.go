@@ -15,6 +15,7 @@ import (
 	"github.com/qchat/qchat/services/api/internal/config"
 	"github.com/qchat/qchat/services/api/internal/sms"
 	"github.com/qchat/qchat/services/api/internal/ws"
+	"github.com/redis/go-redis/v9"
 )
 
 type Server struct {
@@ -28,6 +29,7 @@ type Server struct {
 	limitAuth  *ipLimiter
 	limitWS    *ipLimiter
 	loginGuard *loginGuard
+	revokeRDB  *redis.Client
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
@@ -50,6 +52,17 @@ func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
 	s.registerWSGauge()
 	s.routes()
 	return s
+}
+
+// AttachRedis enables cross-instance WS fan-out and shared session revocation.
+func (s *Server) AttachRedis(ctx context.Context, rdb *redis.Client) {
+	if s == nil || rdb == nil {
+		return
+	}
+	s.attachRevokeRedis(rdb)
+	if s.hub != nil {
+		s.hub.AttachRedis(ctx, rdb)
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -190,7 +203,7 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, http.StatusUnauthorized, "invalid token")
 			return
 		}
-		if sessionAccessRevoked(claims.SessionID) {
+		if s.sessionAccessRevokedAny(claims.SessionID) {
 			writeErr(w, http.StatusUnauthorized, "session revoked")
 			return
 		}

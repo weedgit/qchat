@@ -11,6 +11,8 @@ import (
 
 // In-memory set of recently revoked session IDs so access JWTs stop working
 // immediately after same-type login / explicit revoke (before JWT exp).
+// When Redis is attached, markers are also written there so peer API processes
+// reject the same sessions.
 var revokedSessionIDs sync.Map // sessionID -> time.Time
 
 func markSessionsRevoked(ids []string) {
@@ -31,6 +33,22 @@ func sessionAccessRevoked(sessionID string) bool {
 	return ok
 }
 
+func (s *Server) sessionAccessRevokedAny(sessionID string) bool {
+	if sessionAccessRevoked(sessionID) {
+		return true
+	}
+	if s.sessionRevokedInRedis(sessionID) {
+		markSessionsRevoked([]string{sessionID})
+		return true
+	}
+	return false
+}
+
+func (s *Server) markSessionsRevokedAll(ids []string) {
+	markSessionsRevoked(ids)
+	s.markSessionsRevokedRedis(ids)
+}
+
 // sessionRowActive checks Postgres for an unexpired, non-revoked session.
 func (s *Server) sessionRowActive(ctx context.Context, sessionID string) bool {
 	if sessionID == "" {
@@ -44,7 +62,7 @@ func (s *Server) sessionRowActive(ctx context.Context, sessionID string) bool {
 		return false
 	}
 	if revoked || time.Now().After(expires) {
-		markSessionsRevoked([]string{sessionID})
+		s.markSessionsRevokedAll([]string{sessionID})
 		return false
 	}
 	return true
@@ -85,7 +103,7 @@ func (s *Server) kickRevokedSessions(ids []string, reason string) {
 	if len(ids) == 0 {
 		return
 	}
-	markSessionsRevoked(ids)
+	s.markSessionsRevokedAll(ids)
 	if s.hub == nil {
 		return
 	}

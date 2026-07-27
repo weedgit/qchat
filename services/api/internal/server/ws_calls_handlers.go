@@ -32,7 +32,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 401, "unauthorized")
 		return
 	}
-	if sessionAccessRevoked(claims.SessionID) || !s.sessionRowActive(r.Context(), claims.SessionID) {
+	if s.sessionAccessRevokedAny(claims.SessionID) || !s.sessionRowActive(r.Context(), claims.SessionID) {
 		writeErr(w, 401, "session revoked")
 		return
 	}
@@ -90,7 +90,7 @@ func (s *Server) readPump(c *ws.Client) {
 		uid := c.UserID
 		s.hub.Unregister(c)
 		_ = c.Conn.Close()
- // Only mark offline when the last session disconnects (status_change).
+		// Only mark offline when the last session disconnects (status_change).
 		if !s.hub.IsOnline(uid) {
 			s.publishPresence(uid, false)
 		}
