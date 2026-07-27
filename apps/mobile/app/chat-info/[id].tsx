@@ -802,7 +802,7 @@ export default function ChatInfoScreen() {
           </View>
           <TextInput
             style={styles.search}
-            placeholder="Search friends or exact username"
+            placeholder="Search friends or username"
             placeholderTextColor={colors.textMuted}
             value={friendQuery}
             onChangeText={setFriendQuery}

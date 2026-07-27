@@ -89,7 +89,6 @@ Additional rules:
 The chat screen supports text, standard emoji, voice messages, video calls, and voice calls.
 
 - Maximum text message length: 1,000 Chinese characters/characters.
-- Users cannot upload custom sticker packs; only built-in emoji are available.
 - Maximum voice-message recording length: 60 seconds.
 - A voice message can be recorded before it is sent.
 - Users can send uploaded video files.

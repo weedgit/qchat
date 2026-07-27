@@ -40,6 +40,7 @@ export type IncomingCall = {
   /** Initiator profile photo (call.ring initiator_avatar or conversation avatar). */
   initiatorAvatar?: string;
   livekitUrl?: string;
+  isGroup?: boolean;
 };
 
 export type ActiveCall = {
@@ -52,6 +53,15 @@ export type ActiveCall = {
   peerName?: string;
   /** Remote peer avatar URL (DM conversation avatar / initiator_avatar). */
   peerAvatar?: string;
+  isGroup?: boolean;
+  /** True when this user created the call (can kick). */
+  isHost?: boolean;
+};
+
+export type CallRemotePeer = {
+  identity: string;
+  name: string;
+  userId: string;
 };
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
@@ -144,6 +154,8 @@ export function useCall(opts: {
   const [remoteVideoEl, setRemoteVideoElState] = useState<HTMLVideoElement | null>(null);
   const [localVideoEl, setLocalVideoElState] = useState<HTMLVideoElement | null>(null);
   const [remoteAudioEl, setRemoteAudioElState] = useState<HTMLAudioElement | null>(null);
+  /** LiveKit remote participants for group (N:N) grid. */
+  const [remotePeers, setRemotePeers] = useState<CallRemotePeer[]>([]);
 
   const roomRef = useRef<Room | null>(null);
   const activeRef = useRef<ActiveCall | null>(null);
@@ -157,6 +169,8 @@ export function useCall(opts: {
   const remoteVideoElRef = useRef<HTMLVideoElement | null>(null);
   const localVideoElRef = useRef<HTMLVideoElement | null>(null);
   const remoteAudioElRef = useRef<HTMLAudioElement | null>(null);
+  const peerVideoElsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const peerAudioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const incomingNotifyRef = useRef<Notification | null>(null);
   const degradedSinceRef = useRef<number | null>(null);
   activeRef.current = active;
@@ -178,6 +192,13 @@ export function useCall(opts: {
     setShowCallStats(false);
     setCallStats(null);
     setScreenSharing(false);
+    setRemotePeers([]);
+    peerVideoElsRef.current.clear();
+    peerAudioElsRef.current.forEach((el) => {
+      el.pause();
+      el.srcObject = null;
+    });
+    peerAudioElsRef.current.clear();
     degradedSinceRef.current = null;
   }, []);
 
@@ -285,25 +306,89 @@ export function useCall(opts: {
 
   /** Attach via refs so TrackSubscribed never misses a late-mounted <audio>/<video>. */
   const attachTrack = useCallback(
-    (track: RemoteTrack | LocalTrackPublication["track"], participantLocal: boolean) => {
+    (
+      track: RemoteTrack | LocalTrackPublication["track"],
+      participantLocal: boolean,
+      participantIdentity?: string
+    ) => {
       if (!track) return;
       if (track.kind === Track.Kind.Video) {
-        const el = participantLocal ? localVideoElRef.current : remoteVideoElRef.current;
+        if (participantLocal) {
+          const el = localVideoElRef.current;
+          if (el) {
+            track.attach(el);
+            el.play().catch(() => {});
+          }
+          return;
+        }
+        const identity = participantIdentity || "";
+        const peerEl = identity ? peerVideoElsRef.current.get(identity) : undefined;
+        const el = peerEl || remoteVideoElRef.current;
         if (el) {
           track.attach(el);
           el.play().catch(() => {});
         }
       } else if (track.kind === Track.Kind.Audio && !participantLocal) {
-        const el = remoteAudioElRef.current;
-        if (el) {
-          track.attach(el);
-          el.muted = false;
-          el.volume = 1;
-          el.play().catch(() => {
-            /* Autoplay may block until a click — Accept/Mute usually unlocks it. */
-          });
+        const identity = participantIdentity || "default";
+        let el = peerAudioElsRef.current.get(identity);
+        if (!el) {
+          el = new Audio();
+          el.autoplay = true;
+          peerAudioElsRef.current.set(identity, el);
+        }
+        track.attach(el);
+        el.muted = false;
+        el.volume = 1;
+        el.play().catch(() => {
+          /* Autoplay may block until a click — Accept/Mute usually unlocks it. */
+        });
+        // Also bind primary remote audio element for DM / unlock UX.
+        const primary = remoteAudioElRef.current;
+        if (primary) {
+          track.attach(primary);
+          primary.muted = false;
+          primary.volume = 1;
+          primary.play().catch(() => {});
         }
       }
+    },
+    []
+  );
+
+  const syncRemotePeers = useCallback(() => {
+    const room = roomRef.current;
+    if (!room) {
+      setRemotePeers([]);
+      return;
+    }
+    const next: CallRemotePeer[] = [];
+    room.remoteParticipants.forEach((p) => {
+      const identity = String(p.identity || "");
+      const userId = identity.split(":")[0] || identity;
+      next.push({
+        identity,
+        name: String(p.name || userId || "User"),
+        userId,
+      });
+    });
+    setRemotePeers(next);
+  }, []);
+
+  /** Bind a grid tile <video> for a remote LiveKit identity. */
+  const bindPeerVideoEl = useCallback(
+    (identity: string, el: HTMLVideoElement | null) => {
+      if (!identity) return;
+      if (el) peerVideoElsRef.current.set(identity, el);
+      else peerVideoElsRef.current.delete(identity);
+      const room = roomRef.current;
+      if (!room || !el) return;
+      const p = room.remoteParticipants.get(identity);
+      p?.trackPublications.forEach((pub) => {
+        if (pub.track?.kind === Track.Kind.Video) {
+          pub.track.attach(el);
+          el.play().catch(() => {});
+        }
+      });
     },
     []
   );
@@ -314,7 +399,7 @@ export function useCall(opts: {
     if (!room) return;
     room.remoteParticipants.forEach((p) => {
       p.trackPublications.forEach((pub) => {
-        if (pub.track) attachTrack(pub.track, false);
+        if (pub.track) attachTrack(pub.track, false, p.identity);
       });
     });
   }, [attachTrack]);
@@ -381,16 +466,18 @@ export function useCall(opts: {
           setAudioPlaybackOk(playing);
           if (playing) reattachRemoteMedia();
         });
-        room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+        room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub, participant) => {
           hadRemoteRef.current = true;
-          attachTrack(track, false);
+          attachTrack(track, false, participant.identity);
           if (track.kind === Track.Kind.Audio) {
             startRemoteMicMeter(track as RemoteAudioTrack);
           }
+          syncRemotePeers();
         });
         room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
           if (track.kind === Track.Kind.Audio) stopRemoteMicMeter();
           track.detach();
+          syncRemotePeers();
         });
         room.on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
           if (pub.track) attachTrack(pub.track, true);
@@ -410,6 +497,7 @@ export function useCall(opts: {
           }
           // Peer may already be publishing — bind any existing remote tracks.
           reattachRemoteMedia();
+          syncRemotePeers();
         });
         // LiveKit auto-reconnect (default); surface UX while signal/media recovers.
         room.on(RoomEvent.Reconnecting, () => {
@@ -451,14 +539,15 @@ export function useCall(opts: {
           }
         });
         // 1:1: peer left LiveKit after having joined → end call (tab close fallback).
-        // Do not hang up on never-joined / ICE flap — that caused ~15s auto-ends when
-        // LiveKit peerConnectionTimeout (default 15s) dropped a side.
+        // Group: keep the room open until host hangs up / last leave via API.
         room.on(RoomEvent.ParticipantDisconnected, () => {
+          syncRemotePeers();
           if (intentionalDisconnectRef.current || endingRef.current) return;
           if (!hadRemoteRef.current) return;
           if (room.remoteParticipants.size > 0) return;
           const cur = activeRef.current;
           if (!cur || cur.callId !== callId) return;
+          if (cur.isGroup) return;
           endingRef.current = true;
           clearRingAlerts();
           setActive(null);
@@ -494,6 +583,7 @@ export function useCall(opts: {
               );
             }
           });
+          syncRemotePeers();
         }
         // SFU is up — leave "Setting up media…" even if mic publish is slow.
         setConnecting(false);
@@ -533,7 +623,7 @@ export function useCall(opts: {
         room.remoteParticipants.forEach((p) => {
           p.trackPublications.forEach((pub) => {
             if (pub.track) {
-              attachTrack(pub.track, false);
+              attachTrack(pub.track, false, p.identity);
               if (pub.track.kind === Track.Kind.Audio) {
                 startRemoteMicMeter(pub.track as RemoteAudioTrack);
               }
@@ -567,6 +657,7 @@ export function useCall(opts: {
       startRemoteMicMeter,
       stopMicMeter,
       stopRemoteMicMeter,
+      syncRemotePeers,
     ]
   );
 
@@ -599,6 +690,7 @@ export function useCall(opts: {
           initiatorName: String(payload?.initiator_name ?? "") || undefined,
           initiatorAvatar: fromPayload || fromConv || undefined,
           livekitUrl: String(payload?.livekit_url ?? "") || undefined,
+          isGroup: Boolean(payload?.is_group),
         };
         setIncoming(incomingCall);
  // ringForCall + DID_NOTIFY_FOR_CALL (background tab).
@@ -632,8 +724,34 @@ export function useCall(opts: {
           role: "caller",
           peerName: prev?.peerName,
           peerAvatar: prev?.peerAvatar,
+          isGroup: prev?.isGroup || Boolean(payload?.is_group),
+          isHost: prev?.isHost ?? true,
         }));
+        // Group host may already be connected from start — skip reconnect if room is up.
+        if (local.isGroup && roomRef.current) {
+          return;
+        }
         connectLiveKit(url, token, kind, callId).catch(() => {});
+        return;
+      }
+      if (type === "call.participant_kicked") {
+        const callId = String(payload?.call_id ?? payload?.id ?? "");
+        const kickedUser = String(payload?.user_id ?? "");
+        const by = String(payload?.by ?? "");
+        if (!callId) return;
+        if (meId && kickedUser === meId) {
+          endingRef.current = true;
+          clearRingAlerts();
+          setIncoming(null);
+          setActive((prev) => (prev && prev.callId === callId ? null : prev));
+          setError("You were removed from the call by the host");
+          resetMediaUi();
+          disconnectRoom().catch(() => {});
+          endingRef.current = false;
+          return;
+        }
+        // Host/others: update peer list from LiveKit events; no-op if not in call.
+        if (meId && by === meId) return;
         return;
       }
       if (type === "call.taken") {
@@ -707,13 +825,24 @@ export function useCall(opts: {
   }, [active?.callId, active?.status, connectionQuality]);
 
   const startCall = useCallback(
-    async (conversationId: string, kind: CallKind, peerName?: string, peerAvatar?: string) => {
+    async (
+      conversationId: string,
+      kind: CallKind,
+      peerName?: string,
+      peerAvatar?: string,
+      inviteeIds?: string[]
+    ) => {
       setError(null);
+      const body: Record<string, unknown> = { conversation_id: conversationId, kind };
+      if (inviteeIds && inviteeIds.length > 0) {
+        body.invitee_ids = inviteeIds;
+      }
       const res = await api<any>("/v1/calls", {
         method: "POST",
-        body: JSON.stringify({ conversation_id: conversationId, kind }),
+        body: JSON.stringify(body),
       });
       const callId = String(res?.call_id ?? res?.id ?? "");
+      const isGroup = Boolean(res?.is_group) || Boolean(inviteeIds?.length);
       setConnectedAt(null);
       setReconnecting(false);
       const avatar =
@@ -728,10 +857,20 @@ export function useCall(opts: {
         role: "caller",
         peerName: peerName?.trim() || undefined,
         peerAvatar: avatar,
+        isGroup,
+        isHost: true,
       });
+      const token = String(res?.livekit_token ?? "");
+      const url = String(res?.livekit_url ?? "");
+      if (isGroup && token && url) {
+        setActive((prev) =>
+          prev && prev.callId === callId ? { ...prev, status: "active" } : prev
+        );
+        connectLiveKit(url, token, kind, callId).catch(() => {});
+      }
       return res;
     },
-    []
+    [connectLiveKit]
   );
 
   const answerCall = useCallback(async () => {
@@ -745,6 +884,7 @@ export function useCall(opts: {
       incoming.initiatorAvatar?.trim() ||
       resolvePeerAvatarRef.current?.(convId)?.trim() ||
       undefined;
+    const isGroup = Boolean(incoming.isGroup);
     clearRingAlerts();
     const res = await api<any>(`/v1/calls/${callId}/answer`, { method: "POST" });
     const token = String(res?.livekit_token ?? "");
@@ -758,6 +898,8 @@ export function useCall(opts: {
       role: "callee",
       peerName,
       peerAvatar,
+      isGroup: isGroup || Boolean(res?.is_group),
+      isHost: false,
     });
     try {
       await connectLiveKit(url, token, kind, callId);
@@ -765,6 +907,24 @@ export function useCall(opts: {
       /* error shown on overlay; user can Hang up */
     }
   }, [incoming, connectLiveKit, clearRingAlerts]);
+
+  const inviteToCall = useCallback(async (userIds: string[]) => {
+    const cur = activeRef.current;
+    if (!cur?.isGroup || !userIds.length) return;
+    await api(`/v1/calls/${cur.callId}/invite`, {
+      method: "POST",
+      body: JSON.stringify({ invitee_ids: userIds }),
+    });
+  }, []);
+
+  const kickFromCall = useCallback(async (userId: string) => {
+    const cur = activeRef.current;
+    if (!cur?.isGroup || !cur.isHost || !userId) return;
+    await api(`/v1/calls/${cur.callId}/kick`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    });
+  }, []);
 
   const declineCall = useCallback(async () => {
     if (!incoming) return;
@@ -870,13 +1030,17 @@ export function useCall(opts: {
     cameraOff,
     screenSharing,
     audioPlaybackOk,
+    remotePeers,
     setRemoteVideoEl,
     setLocalVideoEl,
     setRemoteAudioEl,
+    bindPeerVideoEl,
     startCall,
     answerCall,
     declineCall,
     hangup,
+    inviteToCall,
+    kickFromCall,
     toggleMic,
     toggleCamera,
     toggleScreenShare,

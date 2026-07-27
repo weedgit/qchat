@@ -75,8 +75,14 @@ func (s *Server) handleUserLookup(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 400, "invalid_request", "q required")
 		return
 	}
-	// Exact match on username, phone, or user id.
-	// Enterprise members stay tenant-scoped; personal accounts may find anyone by exact id.
+	// Case-insensitive prefix/contains on username + display_name; exact id;
+	// phone via digit-normalized exact or prefix (≥3 digits).
+	// Enterprise callers see same-tenant users and personal accounts (null enterprise).
+	// Personal callers may match anyone (friendship/invite already span that boundary).
+	like := "%" + escapeLike(q) + "%"
+	prefix := escapeLike(q) + "%"
+	phoneQ, phoneOK := phoneLookupQuery(q)
+	phonePrefix := phoneQ + "%"
 	var rows pgx.Rows
 	var err error
 	if c.EnterpriseID == "" {
@@ -84,16 +90,45 @@ func (s *Server) handleUserLookup(w http.ResponseWriter, r *http.Request) {
 			SELECT id::text, username, display_name, avatar_url, friend_privacy
 			FROM users
 			WHERE banned=FALSE
-			  AND (username = $1 OR phone = $1 OR id::text = $1)
-			LIMIT 5`, q)
+			  AND (
+			    id::text = $1
+			    OR username ILIKE $2 ESCAPE '\'
+			    OR username ILIKE $3 ESCAPE '\'
+			    OR display_name ILIKE $3 ESCAPE '\'
+			    OR ($4 AND phone = $5)
+			    OR ($4 AND length($5) >= 3 AND phone LIKE $6)
+			  )
+			ORDER BY
+			  CASE WHEN $4 AND phone = $5 THEN 0
+			       WHEN lower(username) = lower($1) THEN 1
+			       WHEN username ILIKE $2 ESCAPE '\' THEN 2
+			       ELSE 3 END,
+			  username
+			LIMIT 20`, q, prefix, like, phoneOK, phoneQ, phonePrefix)
 	} else {
 		rows, err = s.db.Query(r.Context(), `
 			SELECT id::text, username, display_name, avatar_url, friend_privacy
 			FROM users
-			WHERE enterprise_id IS NOT DISTINCT FROM $1
-			  AND banned=FALSE
-			  AND (username = $2 OR phone = $2 OR id::text = $2)
-			LIMIT 5`, entArg(c.EnterpriseID), q)
+			WHERE banned=FALSE
+			  AND (
+			    enterprise_id IS NOT DISTINCT FROM $1
+			    OR enterprise_id IS NULL
+			  )
+			  AND (
+			    id::text = $2
+			    OR username ILIKE $3 ESCAPE '\'
+			    OR username ILIKE $4 ESCAPE '\'
+			    OR display_name ILIKE $4 ESCAPE '\'
+			    OR ($5 AND phone = $6)
+			    OR ($5 AND length($6) >= 3 AND phone LIKE $7)
+			  )
+			ORDER BY
+			  CASE WHEN $5 AND phone = $6 THEN 0
+			       WHEN lower(username) = lower($2) THEN 1
+			       WHEN username ILIKE $3 ESCAPE '\' THEN 2
+			       ELSE 3 END,
+			  username
+			LIMIT 20`, entArg(c.EnterpriseID), q, prefix, like, phoneOK, phoneQ, phonePrefix)
 	}
 	if err != nil {
 		writeErrCode(w, 500, "query_failed", "query failed")
@@ -116,6 +151,27 @@ func (s *Server) handleUserLookup(w http.ResponseWriter, r *http.Request) {
 		users = []map[string]any{}
 	}
 	writeJSON(w, 200, map[string]any{"users": users})
+}
+
+// phoneLookupQuery returns digit-only phone text when q is a phone-shaped query
+// (digits with optional spaces/dashes/parentheses only).
+func phoneLookupQuery(q string) (digits string, ok bool) {
+	var b strings.Builder
+	for _, r := range q {
+		switch {
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ' || r == '-' || r == '(' || r == ')':
+			// ignore common phone separators
+		default:
+			return "", false
+		}
+	}
+	digits = b.String()
+	if digits == "" {
+		return "", false
+	}
+	return digits, true
 }
 
 // handleGetUser returns another user's profile (user profile / popover).
@@ -213,7 +269,9 @@ func (s *Server) friendshipBlocked(r *http.Request, a, b, ent string) bool {
 }
 
 // canInviteUserToGroup allows group invites without friendship.
-// Target must exist, not be banned, match tenant scope, and not be blocked either way.
+// Target must exist, not be banned, not be blocked either way, and be in scope:
+// same enterprise, or a personal account (null enterprise) when the inviter is
+// enterprise-scoped (personal↔enterprise friendships already exist in product).
 func (s *Server) canInviteUserToGroup(r *http.Request, inviterID, targetID, enterpriseID string) bool {
 	if targetID == "" || targetID == inviterID {
 		return false
@@ -229,7 +287,11 @@ func (s *Server) canInviteUserToGroup(r *http.Request, inviterID, targetID, ente
 		_ = s.db.QueryRow(r.Context(), `
 			SELECT EXISTS(
 				SELECT 1 FROM users
-				WHERE id=$1 AND banned=FALSE AND enterprise_id IS NOT DISTINCT FROM $2
+				WHERE id=$1 AND banned=FALSE
+				  AND (
+				    enterprise_id IS NOT DISTINCT FROM $2
+				    OR enterprise_id IS NULL
+				  )
 			)`, targetID, entArg(enterpriseID)).Scan(&ok)
 	}
 	return ok

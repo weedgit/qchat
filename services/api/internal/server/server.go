@@ -106,6 +106,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/me/notify_props", s.auth(s.handleNotifyPrefs))
 	s.mux.HandleFunc("PUT /v1/me/notify_props", s.auth(s.handleNotifyPrefs))
 	s.mux.HandleFunc("GET /v1/usernames/available", s.auth(s.handleUsernameAvailable))
+	s.mux.HandleFunc("GET /v1/display-names/available", s.auth(s.handleDisplayNameAvailable))
 	s.mux.HandleFunc("POST /v1/me/phone/request", s.auth(s.handlePhoneChangeRequest))
 	s.mux.HandleFunc("POST /v1/me/phone/confirm", s.auth(s.handlePhoneChangeConfirm))
 	s.mux.HandleFunc("POST /v1/enterprises/join", s.auth(s.handleJoinEnterprise))
@@ -138,6 +139,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/groups/{id}/members", s.auth(s.handleAddGroupMembers))
 	s.mux.HandleFunc("DELETE /v1/groups/{id}/members/{userId}", s.auth(s.handleRemoveGroupMember))
 	s.mux.HandleFunc("POST /v1/groups/{id}/leave", s.auth(s.handleLeaveGroup))
+	s.mux.HandleFunc("DELETE /v1/groups/{id}", s.auth(s.handleDeleteGroup))
 	s.mux.HandleFunc("POST /v1/groups/{id}/mute", s.auth(s.handleMuteMember))
 	s.mux.HandleFunc("POST /v1/groups/{id}/admins", s.auth(s.handleAppointAdmin))
 	s.mux.HandleFunc("GET /v1/conversations/{id}/messages", s.auth(s.handleListMessages))
@@ -183,11 +185,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v1/admin/security/ip-allowlist/{id}", s.auth(s.handleAdminIPAllowlistDelete))
 	s.mux.HandleFunc("GET /v1/admin/security/login-alerts", s.auth(s.handleAdminLoginAlerts))
 
-	// Calls (LiveKit 1:1) + push stubs
+	// Calls (LiveKit 1:1 + group) + push stubs
 	s.mux.HandleFunc("POST /v1/calls", s.auth(s.handleStartCall))
 	s.mux.HandleFunc("POST /v1/calls/{id}/answer", s.auth(s.handleAnswerCall))
 	s.mux.HandleFunc("POST /v1/calls/{id}/decline", s.auth(s.handleDeclineCall))
 	s.mux.HandleFunc("POST /v1/calls/{id}/hangup", s.auth(s.handleHangupCall))
+	s.mux.HandleFunc("POST /v1/calls/{id}/invite", s.auth(s.handleInviteToCall))
+	s.mux.HandleFunc("POST /v1/calls/{id}/kick", s.auth(s.handleKickFromCall))
 	s.mux.HandleFunc("POST /v1/push/register", s.auth(s.handlePushRegister))
 	s.mux.HandleFunc("POST /v1/push/unregister", s.auth(s.handlePushUnregister))
 	s.mux.HandleFunc("GET /v1/push/devices", s.auth(s.handlePushDevices))

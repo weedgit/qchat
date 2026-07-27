@@ -2,18 +2,18 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { encodeGroupJoinPayload } from "@/lib/groupQr";
+import { encodeUserPayload } from "@/lib/userQr";
 
 type Props = {
-  publicId: string;
+  username: string;
   size?: number;
   className?: string;
 };
 
-/** Renders a QR for group join (client-side; join still uses POST /v1/groups/join). */
-export default function GroupQr({ publicId, size = 160, className }: Props) {
+/** Renders a QR for a user profile (`qchat://user/{username}`). */
+export default function UserQr({ username, size = 160, className }: Props) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
-  const payload = encodeGroupJoinPayload(publicId);
+  const payload = encodeUserPayload(username);
 
   useEffect(() => {
     if (!payload) {
@@ -37,13 +37,13 @@ export default function GroupQr({ publicId, size = 160, className }: Props) {
     };
   }, [payload, size]);
 
-  if (!publicId || !dataUrl) return null;
+  if (!username || !dataUrl) return null;
 
   return (
     <div className={className} style={{ textAlign: "center" }}>
       <img
         src={dataUrl}
-        alt={`QR code to join group ${publicId}`}
+        alt={`QR code for @${username}`}
         width={size}
         height={size}
         style={{ borderRadius: 8, background: "#fff" }}

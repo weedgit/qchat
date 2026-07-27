@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import MenuModal from "@/components/MenuModal";
@@ -25,6 +25,7 @@ export default function FriendsPage() {
   const [results, setResults] = useState<LookupUser[]>([]);
   const [addMsg, setAddMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [searchBusy, setSearchBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -40,20 +41,37 @@ export default function FriendsPage() {
     load();
   }, [load]);
 
-  async function search(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setAddMsg(null);
-    try {
-      const body = await api<any>(`/v1/users/lookup?q=${encodeURIComponent(query.trim())}`);
-      setResults(asList(body, "users"));
-      if (asList(body, "users").length === 0) setAddMsg(t("chat.noResults"));
-    } catch (err: any) {
-      setAddMsg(err.message);
-    } finally {
-      setBusy(false);
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setResults([]);
+      setSearchBusy(false);
+      return;
     }
-  }
+    let cancelled = false;
+    setSearchBusy(true);
+    const timer = window.setTimeout(() => {
+      api<any>(`/v1/users/lookup?q=${encodeURIComponent(q)}`)
+        .then((body) => {
+          if (cancelled) return;
+          const users = asList(body, "users") as LookupUser[];
+          setResults(users);
+          setAddMsg(users.length === 0 ? t("chat.noResults") : null);
+        })
+        .catch((err: any) => {
+          if (cancelled) return;
+          setResults([]);
+          setAddMsg(err?.message || t("chat.noResults"));
+        })
+        .finally(() => {
+          if (!cancelled) setSearchBusy(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query, t]);
 
   async function requestUser(u: LookupUser) {
     setBusy(true);
@@ -131,25 +149,32 @@ export default function FriendsPage() {
   const blocked = friends.filter((f) => f.status === "blocked");
 
   return (
-    <MenuModal title={t("menu.contacts")} ariaLabel={t("menu.contacts")}>
+    <MenuModal
+      title={t("menu.contacts")}
+      ariaLabel={t("menu.contacts")}
+      overlayClassName="contacts-modal"
+    >
       {loadError && <div className="menu-modal-error">{loadError}</div>}
       {addMsg && <div className="menu-modal-hint">{addMsg}</div>}
 
       <section className="menu-modal-section">
         <div className="menu-modal-section-title">{t("contacts.add")}</div>
-        <form className="menu-modal-panel" onSubmit={search}>
-          <div className="menu-modal-search-row">
-            <input
-              placeholder={t("contacts.searchPlaceholder")}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              required
-            />
-            <button className="btn-ghost" disabled={busy}>
-              {t("contacts.search")}
-            </button>
-          </div>
-        </form>
+        <div className="menu-modal-panel">
+          <input
+            type="search"
+            placeholder={t("contacts.searchPlaceholder")}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setAddMsg(null);
+            }}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {searchBusy ? (
+            <div className="menu-modal-empty">{t("details.searchingUsers")}</div>
+          ) : null}
+        </div>
         {results.map((u) => (
           <div className="menu-modal-list-row" key={u.id}>
             <Avatar name={u.display_name} url={u.avatar_url} size={42} />

@@ -7,7 +7,7 @@ import MenuModal from "@/components/MenuModal";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/MeContext";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import { displayNameError } from "@/lib/credentials";
+import { displayNameError, isValidDisplayName, isValidUsername } from "@/lib/credentials";
 import { AVATAR_ACCEPT, AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
 import { useLocale } from "@/lib/locale";
 
@@ -65,7 +65,6 @@ const ROW_ICONS = {
     "M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
   username:
     "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M16 8v5a3 3 0 0 0 6 0v-1 M15 12a3 3 0 1 0-6 0 3 3 0 0 0 6 0z",
-  id: "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z M7 9h4 M7 13h6 M15 9h2 M15 13h2",
   changePhone:
     "M15.05 5A5 5 0 0 1 19 8.95 M15.05 1A9 9 0 0 1 23 8.94 M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
 } as const;
@@ -91,10 +90,12 @@ export default function ProfilePage() {
   const [me, setMe] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [copiedField, setCopiedField] = useState<"phone" | "username" | "id" | null>(
-    null
-  );
+  const [copiedField, setCopiedField] = useState<"phone" | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const initialDisplayNameRef = useRef("");
+  const initialUsernameRef = useRef("");
+  const [displayNameTaken, setDisplayNameTaken] = useState(false);
+  const [usernameTaken, setUsernameTaken] = useState(false);
   const [newPhone, setNewPhone] = useState("");
   const [phoneCode, setPhoneCode] = useState("");
   const [challengeId, setChallengeId] = useState("");
@@ -150,6 +151,10 @@ export default function ProfilePage() {
         profile_visibility: String(u?.profile_visibility ?? "friends"),
         friend_privacy: String(u?.friend_privacy ?? "approval"),
       });
+      initialDisplayNameRef.current = String(u?.display_name ?? u?.username ?? "").trim();
+      initialUsernameRef.current = String(u?.username ?? "").trim();
+      setDisplayNameTaken(false);
+      setUsernameTaken(false);
     } catch (e: any) {
       setError(e.message);
     }
@@ -160,6 +165,64 @@ export default function ProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
+  useEffect(() => {
+    if (!me) return;
+    const name = me.display_name.trim();
+    if (
+      !name ||
+      !isValidDisplayName(name) ||
+      name.toLocaleLowerCase() === initialDisplayNameRef.current.toLocaleLowerCase()
+    ) {
+      setDisplayNameTaken(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api<{ available?: boolean }>(
+        `/v1/display-names/available?display_name=${encodeURIComponent(name)}`
+      )
+        .then((res) => {
+          if (!cancelled) setDisplayNameTaken(res?.available === false);
+        })
+        .catch(() => {
+          if (!cancelled) setDisplayNameTaken(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [me?.display_name]);
+
+  useEffect(() => {
+    if (!me) return;
+    const username = me.username.trim();
+    if (
+      !username ||
+      !isValidUsername(username) ||
+      username.toLocaleLowerCase() === initialUsernameRef.current.toLocaleLowerCase()
+    ) {
+      setUsernameTaken(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api<{ available?: boolean }>(
+        `/v1/usernames/available?username=${encodeURIComponent(username)}`
+      )
+        .then((res) => {
+          if (!cancelled) setUsernameTaken(res?.available === false);
+        })
+        .catch(() => {
+          if (!cancelled) setUsernameTaken(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [me?.username]);
+
   async function onSave(e: FormEvent) {
     e.preventDefault();
     if (!me) return;
@@ -168,12 +231,26 @@ export default function ProfilePage() {
       setError(dnErr);
       return;
     }
+    if (displayNameTaken) {
+      setError(t("me.displayNameTaken"));
+      return;
+    }
+    const username = me.username.trim();
+    if (!isValidUsername(username)) {
+      setError(t("me.usernameInvalid"));
+      return;
+    }
+    if (usernameTaken) {
+      setError(t("me.usernameTaken"));
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       await api("/v1/me", {
         method: "PATCH",
         body: JSON.stringify({
+          username,
           display_name: me.display_name.trim(),
           real_name: me.real_name,
           age: me.age,
@@ -187,7 +264,7 @@ export default function ProfilePage() {
       patchMe({
         avatarUrl: me.avatar_url || undefined,
         nickname: me.display_name,
-        username: me.username,
+        username,
         phone: me.phone,
       });
       void refreshMe();
@@ -198,7 +275,7 @@ export default function ProfilePage() {
     }
   }
 
-  function copyField(field: "phone" | "username" | "id", value: string) {
+  function copyField(field: "phone", value: string) {
     const text = value.trim();
     if (!text) return;
     void copyTextToClipboard(text).then((ok) => {
@@ -212,11 +289,12 @@ export default function ProfilePage() {
     <MenuModal
       title={t("me.editProfile")}
       ariaLabel={t("nav.profile")}
+      overlayClassName="edit-profile-modal"
       action={
         <button
           type="button"
           className="menu-modal-action"
-          disabled={saving || !me}
+          disabled={saving || !me || displayNameTaken || usernameTaken}
           onClick={() => {
             const form = document.getElementById(
               "profile-edit-form"
@@ -260,10 +338,6 @@ export default function ProfilePage() {
             if (file) uploadAvatar(file);
           }}
         />
-        <div className="menu-modal-hero-name">
-          {me?.display_name ?? t("common.loading")}
-        </div>
-        {me?.username ? <div className="menu-modal-hero-sub">@{me.username}</div> : null}
       </div>
 
       {me && (
@@ -279,47 +353,11 @@ export default function ProfilePage() {
               <RowIcon d={ROW_ICONS.phone} />
               <span className="menu-modal-row-main">
                 <span className="menu-modal-value">{me.phone || "—"}</span>
-                <span className="menu-modal-label">
-                  {copiedField === "phone" ? t("me.idCopied") : t("me.phone")}
-                </span>
+                {copiedField === "phone" ? (
+                  <span className="menu-modal-label">{t("me.idCopied")}</span>
+                ) : null}
               </span>
               <CopyHintIcon copied={copiedField === "phone"} />
-            </button>
-            <button
-              type="button"
-              className="menu-modal-row menu-modal-row-lead"
-              title={t("me.copyUsername")}
-              disabled={!me.username}
-              onClick={() => copyField("username", me.username)}
-            >
-              <RowIcon d={ROW_ICONS.username} />
-              <span className="menu-modal-row-main">
-                <span className="menu-modal-value">
-                  {me.username ? `@${me.username}` : "—"}
-                </span>
-                <span className="menu-modal-label">
-                  {copiedField === "username" ? t("me.idCopied") : t("me.username")}
-                </span>
-              </span>
-              <CopyHintIcon copied={copiedField === "username"} />
-            </button>
-            <button
-              type="button"
-              className="menu-modal-row menu-modal-row-lead"
-              title={t("me.copyId")}
-              disabled={!me.id}
-              onClick={() => copyField("id", me.id)}
-            >
-              <span className="menu-modal-row-main">
-                <span className="menu-modal-value menu-modal-id">
-                  <span className="menu-modal-id-label">ID</span>
-                  <span className="menu-modal-id-num">{me.id}</span>
-                </span>
-                {copiedField === "id" && (
-                  <span className="menu-modal-label">{t("me.idCopied")}</span>
-                )}
-              </span>
-              <CopyHintIcon copied={copiedField === "id"} />
             </button>
           </section>
 
@@ -335,7 +373,28 @@ export default function ProfilePage() {
                 <input
                   value={me.display_name}
                   onChange={(e) => setMe({ ...me, display_name: e.target.value })}
+                  aria-invalid={displayNameTaken}
                 />
+                {displayNameTaken ? (
+                  <span className="menu-modal-field-error">{t("me.displayNameTaken")}</span>
+                ) : null}
+              </div>
+            </label>
+            <label className="menu-modal-field menu-modal-field-lead">
+              <RowIcon d={ROW_ICONS.username} />
+              <div className="menu-modal-field-body">
+                <span>{t("me.username")}</span>
+                <input
+                  value={me.username}
+                  onChange={(e) => setMe({ ...me, username: e.target.value })}
+                  autoComplete="username"
+                  spellCheck={false}
+                  maxLength={32}
+                  aria-invalid={usernameTaken}
+                />
+                {usernameTaken ? (
+                  <span className="menu-modal-field-error">{t("me.usernameTaken")}</span>
+                ) : null}
               </div>
             </label>
             <label className="menu-modal-field menu-modal-field-lead">
