@@ -3474,3 +3474,28 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
+
+.group-qr-scanner {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--bg-elevated, var(--bg-panel));
+  border: 1px solid var(--border);
+}
+.group-qr-scanner-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.group-qr-scanner-video {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #000;
+}

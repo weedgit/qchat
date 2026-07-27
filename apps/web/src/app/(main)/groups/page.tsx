@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import GroupQr from "@/components/GroupQr";
+import GroupQrScanner, { isGroupQrCameraSupported } from "@/components/GroupQrScanner";
 import MenuModal from "@/components/MenuModal";
 import { api, asList } from "@/lib/api";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
@@ -42,6 +43,8 @@ export default function GroupsPage() {
   const [publicId, setPublicId] = useState("");
   const [muteAll, setMuteAll] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [cameraOk, setCameraOk] = useState(false);
 
   const load = useCallback(async () => {
     const [convBody, friendBody] = await Promise.all([
@@ -64,6 +67,10 @@ export default function GroupsPage() {
     load().catch((e) => setMsg(e.message));
   }, [load]);
 
+  useEffect(() => {
+    setCameraOk(isGroupQrCameraSupported());
+  }, []);
+
   async function createGroup(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -85,27 +92,32 @@ export default function GroupsPage() {
     }
   }
 
-  async function joinGroup(e: FormEvent) {
-    e.preventDefault();
+  async function requestJoin(publicIdRaw: string) {
+    const parsed = parseGroupJoinPayload(publicIdRaw) ?? publicIdRaw.trim();
+    if (!parsed) {
+      setMsg(t("groups.invalidJoin"));
+      return;
+    }
     setBusy(true);
     setMsg(null);
     try {
-      const parsed = parseGroupJoinPayload(joinId) ?? joinId.trim();
-      if (!parsed) {
-        setMsg(t("groups.invalidJoin"));
-        return;
-      }
       const res = await api<any>("/v1/groups/join", {
         method: "POST",
         body: JSON.stringify({ public_id: parsed }),
       });
       setMsg(`Join request: ${res?.status ?? "submitted"}`);
       setJoinId("");
+      setScanning(false);
     } catch (err: any) {
       setMsg(err.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function joinGroup(e: FormEvent) {
+    e.preventDefault();
+    await requestJoin(joinId);
   }
 
   async function openManage(id: string) {
@@ -203,14 +215,38 @@ export default function GroupsPage() {
             placeholder={t("groups.joinPlaceholder")}
             value={joinId}
             onChange={(e) => setJoinId(e.target.value)}
-            required
+            required={!scanning}
           />
           <div className="muted" style={{ fontSize: 12 }}>
             {t("groups.joinHint")}
           </div>
-          <button className="btn" disabled={busy}>
-            {t("groups.joinButton")}
-          </button>
+          <div className="menu-modal-search-row" style={{ marginTop: 8 }}>
+            <button className="btn" disabled={busy} type="submit">
+              {t("groups.joinButton")}
+            </button>
+            {cameraOk && !scanning && (
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={busy}
+                onClick={() => {
+                  setMsg(null);
+                  setScanning(true);
+                }}
+              >
+                {t("groups.scanButton")}
+              </button>
+            )}
+          </div>
+          {scanning && (
+            <GroupQrScanner
+              onClose={() => setScanning(false)}
+              onDetected={(publicIdScanned) => {
+                setJoinId(publicIdScanned);
+                void requestJoin(publicIdScanned);
+              }}
+            />
+          )}
         </div>
       </form>
 
