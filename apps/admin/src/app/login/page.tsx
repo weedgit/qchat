@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, api, setToken } from "@/lib/api";
+import { validateLoginCredentials } from "@/lib/credentials";
 
 interface CaptchaState {
   id: string;
@@ -45,6 +46,11 @@ export default function AdminLoginPage() {
     setBusy(true);
     setError(null);
     try {
+      const early = validateLoginCredentials({ phone, password });
+      if (early) {
+        setError(early);
+        return;
+      }
       const payload: Record<string, unknown> = {
         phone,
         password,
@@ -97,7 +103,13 @@ export default function AdminLoginPage() {
 
         <div className="field">
           <label>Phone</label>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} required />
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
+            inputMode="numeric"
+            autoComplete="tel"
+            required
+          />
         </div>
         <div className="field">
           <label>Password</label>
