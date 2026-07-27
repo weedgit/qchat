@@ -228,6 +228,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid json")
 		return
 	}
+	ip := clientIP(r)
+	if s.rateLimitEnabled() && s.loginGuard.locked(req.Phone, ip) {
+		w.Header().Set("Retry-After", "900")
+		writeErrCode(w, 429, "login_locked", "too many failed login attempts; try again later")
+		return
+	}
 	if !s.consumeCaptcha(r, req.CaptchaID, req.Captcha) {
 		writeErr(w, 400, "invalid captcha")
 		return
@@ -242,6 +248,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		WHERE u.phone=$1`, req.Phone).
 		Scan(&uid, &entNull, &hash, &role, &banned, &mfaSecret, &mfaActive)
 	if err != nil || !auth.CheckPassword(hash, req.Password) {
+		if s.rateLimitEnabled() {
+			s.loginGuard.fail(req.Phone, ip)
+		}
 		writeErr(w, 401, "invalid credentials")
 		return
 	}
@@ -261,7 +270,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	dtype := normalizeDevice(req.DeviceType)
 	deviceID := ensureDeviceID(req.DeviceID)
-	ip := clientIP(r)
+	s.loginGuard.clear(req.Phone, ip)
 	s.recordAdminLoginAlerts(r.Context(), uid, entID, role, ip, deviceID, dtype, req.Platform)
 	// One session per surface: web, desktop, phone (new login replaces same type).
 	s.revokeSameTypeSessions(r, uid, dtype)

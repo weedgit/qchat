@@ -18,16 +18,30 @@ import (
 )
 
 type Server struct {
-	cfg      config.Config
-	db       *pgxpool.Pool
-	hub      *ws.Hub
-	sms      sms.Sender
-	mux      *http.ServeMux
-	upgrader websocket.Upgrader
+	cfg        config.Config
+	db         *pgxpool.Pool
+	hub        *ws.Hub
+	sms        sms.Sender
+	mux        *http.ServeMux
+	upgrader   websocket.Upgrader
+	limitAPI   *ipLimiter
+	limitAuth  *ipLimiter
+	limitWS    *ipLimiter
+	loginGuard *loginGuard
 }
 
 func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
-	s := &Server{cfg: cfg, db: db, hub: hub, sms: sms.New(cfg.SMSProvider), mux: http.NewServeMux()}
+	s := &Server{
+		cfg:        cfg,
+		db:         db,
+		hub:        hub,
+		sms:        sms.New(cfg.SMSProvider),
+		mux:        http.NewServeMux(),
+		limitAPI:   newIPLimiter(apiRatePerSec, apiBurst),
+		limitAuth:  newIPLimiter(authRatePerSec, authBurst),
+		limitWS:    newIPLimiter(wsRatePerSec, wsBurst),
+		loginGuard: newLoginGuard(),
+	}
 	s.upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return wsOriginAllowed(s.cfg.CORSOrigin, r.Header.Get("Origin"))
@@ -39,7 +53,7 @@ func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.withCORS(s.withMetrics(s.mux))
+	return s.withCORS(s.withMetrics(s.withRateLimit(s.mux)))
 }
 
 func (s *Server) routes() {
