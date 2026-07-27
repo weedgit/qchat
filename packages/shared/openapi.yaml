@@ -111,12 +111,17 @@ paths:
   /v1/auth/register:
     post:
       summary: Register
+      description: |
+        Creates an account. Optional `invite_code` joins the matching enterprise
+        and default company chat in the same request.
       responses:
         "201":
           description: Tokens
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TokenPair" }
+        "400":
+          description: Invalid invite or validation error
   /v1/auth/login:
     post:
       summary: Login
