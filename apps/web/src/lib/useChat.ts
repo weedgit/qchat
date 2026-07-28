@@ -695,7 +695,12 @@ export function useChat() {
       return;
     }
 
-    if (type === "friend.request" || type === "friend.updated" || type === "friend.accepted") {
+    if (
+      type === "friend.request" ||
+      type === "friend.updated" ||
+      type === "friend.accepted" ||
+      type === "friend.blocked"
+    ) {
       if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("qchat:friend-request", {
@@ -703,6 +708,7 @@ export function useChat() {
               from: String(payload?.from ?? ""),
               status: String(payload?.status ?? ""),
               id: String(payload?.id ?? ""),
+              peer_id: String(payload?.peer_id ?? "") || undefined,
               conversation_id: String(payload?.conversation_id ?? "") || undefined,
             },
           })
@@ -711,6 +717,28 @@ export function useChat() {
       // Accepted requests create a DM — refresh conversation list.
       if (String(payload?.status ?? "") === "accepted" || type === "friend.accepted") {
         void loadConversations();
+      }
+      if (type === "friend.blocked" || String(payload?.status ?? "") === "blocked") {
+        const peerId = String(payload?.peer_id ?? payload?.from ?? "");
+        if (peerId) {
+          setConversations((prev) => {
+            const next = prev.filter(
+              (c) => c.type !== "dm" || (c.peerId !== peerId && c.friendshipId !== peerId)
+            );
+            const removed = prev.filter((c) => !next.some((n) => n.id === c.id));
+            if (removed.length) {
+              setActiveId((cur) => (removed.some((c) => c.id === cur) ? null : cur));
+              setMessages((msgs) => {
+                const copy = { ...msgs };
+                for (const c of removed) delete copy[c.id];
+                return copy;
+              });
+            }
+            return next;
+          });
+        } else {
+          void loadConversations();
+        }
       }
       eventListenersRef.current.forEach((fn) => {
         try {
@@ -1845,7 +1873,33 @@ export function useChat() {
 
   const blockUser = useCallback(async (friendshipOrPeerId: string) => {
     await api(`/v1/friends/${friendshipOrPeerId}/block`, { method: "POST" });
-  }, []);
+    // Drop local DM rows immediately; WS friend.blocked keeps the peer in sync.
+    setConversations((prev) => {
+      const next = prev.filter(
+        (c) =>
+          c.type !== "dm" ||
+          (c.friendshipId !== friendshipOrPeerId && c.peerId !== friendshipOrPeerId)
+      );
+      const removed = prev.filter((c) => !next.some((n) => n.id === c.id));
+      if (removed.length) {
+        setActiveId((cur) => (removed.some((c) => c.id === cur) ? null : cur));
+        setMessages((msgs) => {
+          const copy = { ...msgs };
+          for (const c of removed) delete copy[c.id];
+          return copy;
+        });
+      }
+      return next;
+    });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("qchat:friend-request", {
+          detail: { status: "blocked", peer_id: friendshipOrPeerId },
+        })
+      );
+    }
+    await loadConversations();
+  }, [loadConversations]);
 
   const subscribeEvents = useCallback((handler: (type: string, payload: any) => void) => {
     eventListenersRef.current.add(handler);

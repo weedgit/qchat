@@ -432,7 +432,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if (type === "friend.request") {
+      if (type === "friend.request" || type === "friend.blocked") {
         eventListenersRef.current.forEach((fn) => {
           try {
             fn(type, payload);
@@ -441,6 +441,28 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           }
         });
         void loadFriends();
+        if (type === "friend.blocked") {
+          const peerId = String(payload?.peer_id ?? payload?.from ?? "");
+          if (peerId) {
+            setConversations((prev) => {
+              const next = prev.filter(
+                (c) => c.type !== "dm" || (c.peerId !== peerId && c.friendshipId !== peerId)
+              );
+              const removed = prev.filter((c) => !next.some((n) => n.id === c.id));
+              if (removed.length) {
+                setActiveId((cur) => (removed.some((c) => c.id === cur) ? null : cur));
+                setMessages((msgs) => {
+                  const copy = { ...msgs };
+                  for (const c of removed) delete copy[c.id];
+                  return copy;
+                });
+              }
+              return next;
+            });
+          } else {
+            void loadConversations();
+          }
+        }
         return;
       }
 
@@ -1565,8 +1587,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const blockUser = useCallback(async (friendshipOrPeerId: string) => {
     await api(`/v1/friends/${friendshipOrPeerId}/block`, { method: "POST" });
+    setConversations((prev) => {
+      const next = prev.filter(
+        (c) =>
+          c.type !== "dm" ||
+          (c.friendshipId !== friendshipOrPeerId && c.peerId !== friendshipOrPeerId)
+      );
+      const removed = prev.filter((c) => !next.some((n) => n.id === c.id));
+      if (removed.length) {
+        setActiveId((cur) => (removed.some((c) => c.id === cur) ? null : cur));
+        setMessages((msgs) => {
+          const copy = { ...msgs };
+          for (const c of removed) delete copy[c.id];
+          return copy;
+        });
+      }
+      return next;
+    });
     await loadFriends();
-  }, [loadFriends]);
+    await loadConversations();
+  }, [loadFriends, loadConversations]);
 
   const unblockUser = useCallback(async (friendshipOrPeerId: string) => {
     await api(`/v1/friends/${friendshipOrPeerId}/unblock`, { method: "POST" });

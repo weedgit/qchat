@@ -585,9 +585,9 @@ func (s *Server) handleFriendReject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleFriendBlock(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
-	id := r.PathValue("id")
+	id := strings.TrimSpace(r.PathValue("id"))
 	ent := entArg(c.EnterpriseID)
-	// id may be friendship_id or user_id
+	// id may be friendship_id or peer user_id.
 	var peerID string
 	err := s.db.QueryRow(r.Context(), `
 		SELECT CASE WHEN requester_id=$2 THEN addressee_id ELSE requester_id END::text
@@ -600,33 +600,50 @@ func (s *Server) handleFriendBlock(w http.ResponseWriter, r *http.Request) {
 			_ = s.db.QueryRow(r.Context(), `
 				SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND banned=FALSE)`, peerID).Scan(&exists)
 		} else {
+			// Match friend/lookup scope: same company or personal accounts.
 			_ = s.db.QueryRow(r.Context(), `
-				SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enterprise_id IS NOT DISTINCT FROM $2)`,
-				peerID, ent).Scan(&exists)
+				SELECT EXISTS(
+					SELECT 1 FROM users
+					WHERE id=$1 AND banned=FALSE
+					  AND (
+					    enterprise_id IS NOT DISTINCT FROM $2::uuid
+					    OR enterprise_id IS NULL
+					  )
+				)`, peerID, c.EnterpriseID).Scan(&exists)
 		}
 		if !exists {
 			writeErrCode(w, 404, "not_found", "not found")
 			return
 		}
-		fid := uuid.New()
-		_, err = s.db.Exec(r.Context(), `
-			INSERT INTO friendships(id, enterprise_id, requester_id, addressee_id, status)
-			VALUES ($1,$2,$3,$4,'blocked')
-			ON CONFLICT (requester_id, addressee_id) DO UPDATE SET status='blocked'`,
-			fid, ent, c.UserID, peerID)
-		if err != nil {
-			// try reverse direction update
-			_, _ = s.db.Exec(r.Context(), `
-				UPDATE friendships SET status='blocked', requester_id=$1, addressee_id=$2
-				WHERE ((requester_id=$1 AND addressee_id=$2) OR (requester_id=$2 AND addressee_id=$1))`,
-				c.UserID, peerID)
+		// Prefer updating any existing row either direction, then insert.
+		tag, updErr := s.db.Exec(r.Context(), `
+			UPDATE friendships SET status='blocked', requester_id=$1, addressee_id=$2
+			WHERE ((requester_id=$1 AND addressee_id=$2) OR (requester_id=$2 AND addressee_id=$1))`,
+			c.UserID, peerID)
+		if updErr != nil || tag.RowsAffected() == 0 {
+			fid := uuid.New()
+			_, err = s.db.Exec(r.Context(), `
+				INSERT INTO friendships(id, enterprise_id, requester_id, addressee_id, status)
+				VALUES ($1,$2,$3,$4,'blocked')
+				ON CONFLICT (requester_id, addressee_id) DO UPDATE SET status='blocked'`,
+				fid, ent, c.UserID, peerID)
+			if err != nil {
+				writeErrCode(w, 400, "block_failed", "block failed")
+				return
+			}
 		}
-		writeJSON(w, 200, map[string]any{"ok": true, "status": "blocked"})
-		return
+	} else {
+		_, _ = s.db.Exec(r.Context(), `
+			UPDATE friendships SET status='blocked', requester_id=$2, addressee_id=$3
+			WHERE id=$1`, id, c.UserID, peerID)
 	}
-	_, _ = s.db.Exec(r.Context(), `
-		UPDATE friendships SET status='blocked', requester_id=$2, addressee_id=$3
-		WHERE id=$1`, id, c.UserID, peerID)
+	// Both sides drop the DM from their sidebar / stop messaging.
+	s.hub.PublishToUsers([]string{c.UserID, peerID}, ws.Event{
+		Type: "friend.blocked",
+		Payload: map[string]any{
+			"from": c.UserID, "peer_id": peerID, "status": "blocked",
+		},
+	})
 	writeJSON(w, 200, map[string]any{"ok": true, "status": "blocked"})
 }
 
