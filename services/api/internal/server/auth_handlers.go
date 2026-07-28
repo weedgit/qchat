@@ -102,14 +102,14 @@ func (s *Server) handleRegisterOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body := sms.FormatPhoneCode(code)
-	if err := s.sms.Send(r.Context(), req.Phone, body); err != nil {
+	if err := s.sms.SendOTP(r.Context(), req.Phone, code); err != nil {
 		log.Printf("register otp: sms delivery failed via %q: %v", s.cfg.SMSProvider, err)
 		_, _ = s.db.Exec(r.Context(), `DELETE FROM register_otp_challenges WHERE id=$1`, id)
 		writeErr(w, 502, "sms delivery failed")
 		return
 	}
 	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,$3)`,
-		req.Phone, body, s.cfg.SMSProvider)
+		req.Phone, body, smsOutboxProvider(s.cfg.SMSProvider, req.Phone))
 	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600}
 	if s.cfg.Env != "production" {
 		resp["dev_code"] = code
@@ -844,14 +844,14 @@ func (s *Server) handlePhoneChangeRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 	body := sms.FormatPhoneCode(code)
-	if err := s.sms.Send(r.Context(), req.NewPhone, body); err != nil {
+	if err := s.sms.SendOTP(r.Context(), req.NewPhone, code); err != nil {
 		log.Printf("phone change: sms delivery failed via %q: %v", s.cfg.SMSProvider, err)
 		_, _ = s.db.Exec(r.Context(), `DELETE FROM phone_change_challenges WHERE id=$1`, id)
 		writeErrCode(w, 502, "sms_failed", "could not deliver verification code")
 		return
 	}
 	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,$3)`,
-		req.NewPhone, body, s.cfg.SMSProvider)
+		req.NewPhone, body, smsOutboxProvider(s.cfg.SMSProvider, req.NewPhone))
 	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600}
 	if s.cfg.Env != "production" {
 		resp["dev_code"] = code
@@ -900,4 +900,12 @@ func (s *Server) handlePhoneChangeConfirm(w http.ResponseWriter, r *http.Request
 	_, _ = s.db.Exec(r.Context(), `UPDATE phone_change_challenges SET used=TRUE WHERE id=$1`, req.ChallengeID)
 	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.phone_change", "user", c.UserID, "", clientIP(r), map[string]any{"new_phone": newPhone})
 	writeJSON(w, 200, map[string]any{"ok": true, "phone": newPhone})
+}
+
+// smsOutboxProvider records which gateway handled the number (router → router:aliyun|twilio).
+func smsOutboxProvider(configured, phone string) string {
+	if strings.EqualFold(strings.TrimSpace(configured), "router") {
+		return "router:" + sms.RouteLabel(phone)
+	}
+	return configured
 }

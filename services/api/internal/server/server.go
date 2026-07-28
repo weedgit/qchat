@@ -46,7 +46,7 @@ func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
 		cfg:        cfg,
 		db:         db,
 		hub:        hub,
-		sms:        sms.New(cfg.SMSProvider),
+		sms:        sms.NewFromConfig(cfg),
 		blobs:      blobs,
 		mux:        http.NewServeMux(),
 		limitAPI:   newIPLimiter(apiRatePerSec, apiBurst),

@@ -48,9 +48,22 @@ type Config struct {
 	APNsBundleID       string
 	APNsKeyPath        string
 	APNsProduction     string
-	// SMSProvider selects the verification-code gateway. "dev" only logs codes
-	// locally and is refused in production.
+	// SMSProvider selects the verification-code gateway:
+	//   dev     — log only (refused in production)
+	//   twilio  — Twilio REST (intl / default)
+	//   aliyun  — Aliyun Dysmsapi template (CN)
+	//   router  — CN mobiles → Aliyun, everything else → Twilio
 	SMSProvider string
+	// Twilio (used when SMSProvider is twilio or router).
+	TwilioAccountSID string
+	TwilioAuthToken  string
+	TwilioFrom       string
+	// Aliyun Dysmsapi (used when SMSProvider is aliyun or router).
+	AliyunAccessKeyID     string
+	AliyunAccessKeySecret string
+	AliyunSignName        string
+	AliyunTemplateCode    string
+	AliyunRegionID        string
 	// GiphyAPIKey powers composer GIF search via GET /v1/gifs. Empty disables
 	// the feature with a clear API error (Tenor third-party API is shut down).
 	GiphyAPIKey string
@@ -87,6 +100,14 @@ func Load() Config {
 		APNsKeyPath:            strings.TrimSpace(getenv("QCHAT_APNS_KEY_PATH", "")),
 		APNsProduction:         getenv("QCHAT_APNS_PRODUCTION", "1"),
 		SMSProvider:            strings.ToLower(getenv("QCHAT_SMS_PROVIDER", "dev")),
+		TwilioAccountSID:       strings.TrimSpace(getenv("QCHAT_SMS_TWILIO_ACCOUNT_SID", "")),
+		TwilioAuthToken:        strings.TrimSpace(getenv("QCHAT_SMS_TWILIO_AUTH_TOKEN", "")),
+		TwilioFrom:             strings.TrimSpace(getenv("QCHAT_SMS_TWILIO_FROM", "")),
+		AliyunAccessKeyID:      strings.TrimSpace(getenv("QCHAT_SMS_ALIYUN_ACCESS_KEY_ID", "")),
+		AliyunAccessKeySecret:  strings.TrimSpace(getenv("QCHAT_SMS_ALIYUN_ACCESS_KEY_SECRET", "")),
+		AliyunSignName:         strings.TrimSpace(getenv("QCHAT_SMS_ALIYUN_SIGN_NAME", "")),
+		AliyunTemplateCode:     strings.TrimSpace(getenv("QCHAT_SMS_ALIYUN_TEMPLATE_CODE", "")),
+		AliyunRegionID:         strings.TrimSpace(getenv("QCHAT_SMS_ALIYUN_REGION_ID", "cn-hangzhou")),
 		GiphyAPIKey:            strings.TrimSpace(getenv("QCHAT_GIPHY_API_KEY", "")),
 	}
 }
@@ -102,6 +123,25 @@ func (c Config) ValidateSecrets() error {
 	if c.SMSProvider == "" || c.SMSProvider == "dev" {
 		return fmt.Errorf("QCHAT_SMS_PROVIDER must name a real gateway in production; %q only logs codes locally", c.SMSProvider)
 	}
+	switch c.SMSProvider {
+	case "twilio":
+		if err := c.requireTwilioSMS(); err != nil {
+			return err
+		}
+	case "aliyun":
+		if err := c.requireAliyunSMS(); err != nil {
+			return err
+		}
+	case "router":
+		if err := c.requireAliyunSMS(); err != nil {
+			return fmt.Errorf("SMS router aliyun leg: %w", err)
+		}
+		if err := c.requireTwilioSMS(); err != nil {
+			return fmt.Errorf("SMS router twilio leg: %w", err)
+		}
+	default:
+		return fmt.Errorf("QCHAT_SMS_PROVIDER %q is unknown; use twilio, aliyun, or router", c.SMSProvider)
+	}
 	if c.LiveKitAPIKey == "" || c.LiveKitAPIKey == DefaultLiveKitAPIKey {
 		return fmt.Errorf("LIVEKIT_API_KEY must not use the default %q in production; set a unique key in deploy/qchat-api.env", DefaultLiveKitAPIKey)
 	}
@@ -110,6 +150,20 @@ func (c Config) ValidateSecrets() error {
 	}
 	if strings.TrimSpace(c.LiveKitURL) == "" {
 		return fmt.Errorf("LIVEKIT_URL is required in production (run deploy/render-media-config.sh)")
+	}
+	return nil
+}
+
+func (c Config) requireTwilioSMS() error {
+	if c.TwilioAccountSID == "" || c.TwilioAuthToken == "" || c.TwilioFrom == "" {
+		return fmt.Errorf("Twilio SMS requires QCHAT_SMS_TWILIO_ACCOUNT_SID, QCHAT_SMS_TWILIO_AUTH_TOKEN, and QCHAT_SMS_TWILIO_FROM")
+	}
+	return nil
+}
+
+func (c Config) requireAliyunSMS() error {
+	if c.AliyunAccessKeyID == "" || c.AliyunAccessKeySecret == "" || c.AliyunSignName == "" || c.AliyunTemplateCode == "" {
+		return fmt.Errorf("Aliyun SMS requires QCHAT_SMS_ALIYUN_ACCESS_KEY_ID, QCHAT_SMS_ALIYUN_ACCESS_KEY_SECRET, QCHAT_SMS_ALIYUN_SIGN_NAME, and QCHAT_SMS_ALIYUN_TEMPLATE_CODE")
 	}
 	return nil
 }
