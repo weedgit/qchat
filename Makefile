@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down media api web admin admin-dev desktop mobile test test-api test-e2e migrate seed generate check-openapi redeploy
+.PHONY: infra-up infra-down media api web admin admin-dev desktop mobile mobile-typecheck mobile-check-release test test-api test-e2e migrate seed generate check-openapi redeploy
 
 infra-up:
 	./deploy/render-media-config.sh
@@ -29,6 +29,12 @@ desktop:
 
 mobile:
 	cd apps/mobile && npx expo start
+
+mobile-typecheck:
+	cd apps/mobile && npm run typecheck
+
+mobile-check-release:
+	cd apps/mobile && npm run check:release
 
 migrate:
 	cd services/api && go run ./cmd/api -migrate-only
