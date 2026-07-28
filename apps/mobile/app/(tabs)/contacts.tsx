@@ -55,7 +55,7 @@ export default function ContactsScreen() {
 
   useEffect(() => {
     return subscribeEvents((type) => {
-      if (type === "friend.request" || type === "friend.updated" || type === "friend.accepted") {
+      if (type === "friend.request" || type === "friend.updated" || type === "friend.accepted" || type === "friend.blocked") {
         void loadFriends().catch(() => {});
       }
     });
