@@ -276,6 +276,23 @@ export function ChatComposer({
     queueMediaDraft(a.uri, "image", name, a.mimeType || "image/jpeg");
   }
 
+  async function takePhoto() {
+    if (disabled) return;
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Permission needed", "Allow camera access to take photos.");
+      return;
+    }
+    const res = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images"],
+      quality: 0.85,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    const name = a.fileName || `camera.${(a.uri.split(".").pop() || "jpg").split("?")[0]}`;
+    queueMediaDraft(a.uri, "image", name, a.mimeType || "image/jpeg");
+  }
+
   async function pickFile() {
     if (disabled) return;
     const res = await DocumentPicker.getDocumentAsync({
@@ -298,18 +315,20 @@ export function ChatComposer({
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ["Cancel", "Photo", "File"],
+          options: ["Cancel", "Camera", "Photo library", "File"],
           cancelButtonIndex: 0,
         },
         (i) => {
-          if (i === 1) pickPhoto().catch(() => {});
-          if (i === 2) pickFile().catch(() => {});
+          if (i === 1) takePhoto().catch(() => {});
+          if (i === 2) pickPhoto().catch(() => {});
+          if (i === 3) pickFile().catch(() => {});
         }
       );
       return;
     }
     Alert.alert("Attach", undefined, [
-      { text: "Photo", onPress: () => pickPhoto().catch(() => {}) },
+      { text: "Camera", onPress: () => takePhoto().catch(() => {}) },
+      { text: "Photo library", onPress: () => pickPhoto().catch(() => {}) },
       { text: "File", onPress: () => pickFile().catch(() => {}) },
       { text: "Cancel", style: "cancel" },
     ]);

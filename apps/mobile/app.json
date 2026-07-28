@@ -60,7 +60,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Qchat to send photos from your library."
+          "photosPermission": "Allow Qchat to send photos from your library.",
+          "cameraPermission": "Allow Qchat to take photos for chat."
         }
       ],
       [

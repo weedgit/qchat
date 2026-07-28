@@ -590,13 +590,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const id = String(payload?.id ?? "");
         const convId = String(payload?.conversation_id ?? "");
         const body = String(payload?.body ?? "");
+        const editedAt = String(payload?.edited_at ?? new Date().toISOString());
         if (!id || !convId) return;
         const list = messagesRef.current[convId] ?? [];
         const wasLast = list.length > 0 && list[list.length - 1]?.id === id;
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
-            m.id === id ? { ...m, content: body } : m
+            m.id === id ? { ...m, content: body, editedAt } : m
           ),
         }));
         if (wasLast) {

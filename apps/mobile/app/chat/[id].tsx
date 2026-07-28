@@ -37,6 +37,7 @@ import { api, asList, mediaAuthURL } from "../../src/lib/api";
 import type { CallKind } from "../../src/lib/useCall";
 import { getDraft, saveDraft } from "../../src/lib/drafts";
 import { isVideoAttachmentHint } from "../../src/lib/mediaLimits";
+import { maybeAnimateStickerUrl } from "../../src/lib/stickerData";
 import { Conversation, Message, Reaction, conversationDisplayName, formatLastSeen } from "../../src/lib/types";
 import {
   nextPinnedFromScroll,
@@ -190,6 +191,7 @@ function MediaBody({
     item.type === "image" && item.mediaUrl
       ? mediaAuthURL(item.mediaUrl) || item.mediaUrl
       : undefined;
+  const displayImageUri = imageUri ? maybeAnimateStickerUrl(imageUri) : undefined;
   const voiceUri =
     item.type === "voice" && item.mediaUrl
       ? mediaAuthURL(item.mediaUrl) || item.mediaUrl
@@ -217,16 +219,16 @@ function MediaBody({
     }
   }
 
-  if (imageUri) {
+  if (displayImageUri) {
     return (
       <View style={styles.videoCol}>
         <Pressable
           onPress={(e) => {
             e?.stopPropagation?.();
-            onOpenImage?.(imageUri);
+            onOpenImage?.(displayImageUri);
           }}
         >
-          <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="cover" />
+          <Image source={{ uri: displayImageUri }} style={styles.imagePreview} resizeMode="cover" />
         </Pressable>
         {detail ? (
           <MessageBody
@@ -491,6 +493,11 @@ const ChatMessageRow = memo(function ChatMessageRow({
               size={11}
               color={mine ? "rgba(255,255,255,0.9)" : colors.accent}
             />
+          ) : null}
+          {item.editedAt && !item.recalled ? (
+            <Text style={[styles.metaTime, mine ? styles.metaTimeMine : styles.metaTimePeer]}>
+              edited
+            </Text>
           ) : null}
           {time ? (
             <Text style={[styles.metaTime, mine ? styles.metaTimeMine : styles.metaTimePeer]}>
