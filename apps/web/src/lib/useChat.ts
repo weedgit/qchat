@@ -694,6 +694,34 @@ export function useChat() {
       );
       return;
     }
+
+    if (type === "friend.request" || type === "friend.updated" || type === "friend.accepted") {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("qchat:friend-request", {
+            detail: {
+              from: String(payload?.from ?? ""),
+              status: String(payload?.status ?? ""),
+              id: String(payload?.id ?? ""),
+              conversation_id: String(payload?.conversation_id ?? "") || undefined,
+            },
+          })
+        );
+      }
+      // Accepted requests create a DM — refresh conversation list.
+      if (String(payload?.status ?? "") === "accepted" || type === "friend.accepted") {
+        void loadConversations();
+      }
+      eventListenersRef.current.forEach((fn) => {
+        try {
+          fn(type, payload);
+        } catch {
+          /* ignore listener errors */
+        }
+      });
+      return;
+    }
+
     if (!type.includes("message")) return;
 
     const msg = normalizeMessage(payload, meRef.current?.id);
