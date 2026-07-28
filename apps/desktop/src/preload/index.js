@@ -22,6 +22,10 @@ const IPC = Object.freeze({
   GET_WINDOW_FOCUSED: "qchat:get-window-focused",
   WINDOW_FOCUS_CHANGED: "qchat:window-focus-changed",
   WRITE_CLIPBOARD_TEXT: "qchat:write-clipboard-text",
+  OPEN_CALL_WINDOW: "qchat:open-call-window",
+  FOCUS_CALL_WINDOW: "qchat:focus-call-window",
+  CLOSE_CALL_WINDOW: "qchat:close-call-window",
+  FOCUS_MAIN_WINDOW: "qchat:focus-main-window",
 });
 
 function argumentValue(name) {
@@ -97,4 +101,9 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
   /** Native clipboard write — Clipboard API is often denied in the shell. */
   writeClipboardText: (text) =>
     ipcRenderer.invoke(IPC.WRITE_CLIPBOARD_TEXT, text),
+  /** CALL-03 — Telegram-style dedicated video chat window. */
+  openCallWindow: (path) => ipcRenderer.invoke(IPC.OPEN_CALL_WINDOW, { path }),
+  focusCallWindow: () => ipcRenderer.invoke(IPC.FOCUS_CALL_WINDOW),
+  closeCallWindow: () => ipcRenderer.invoke(IPC.CLOSE_CALL_WINDOW),
+  focusMainWindow: () => ipcRenderer.invoke(IPC.FOCUS_MAIN_WINDOW),
 });

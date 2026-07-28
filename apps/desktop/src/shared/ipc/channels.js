@@ -20,6 +20,10 @@ const IPC = {
   WINDOW_FOCUS_CHANGED: "qchat:window-focus-changed",
   /** Plain-text clipboard write (menu ID copy, message copy, etc.). */
   WRITE_CLIPBOARD_TEXT: "qchat:write-clipboard-text",
+  OPEN_CALL_WINDOW: "qchat:open-call-window",
+  FOCUS_CALL_WINDOW: "qchat:focus-call-window",
+  CLOSE_CALL_WINDOW: "qchat:close-call-window",
+  FOCUS_MAIN_WINDOW: "qchat:focus-main-window",
 };
 
 module.exports = { IPC };
