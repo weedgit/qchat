@@ -1,8 +1,10 @@
 /* Qchat PWA + Web Push service worker — keep one root-scoped worker. */
-const CACHE_NAME = "qchat-shell-v1";
+const CACHE_NAME = "qchat-shell-v2";
+const OFFLINE_URL = "/offline.html";
 const APP_SHELL = [
   "/",
   "/login",
+  "/offline.html",
   "/manifest.webmanifest",
   "/favicon.png",
   "/icons/icon-192.png",
@@ -29,6 +31,12 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event?.data?.type === "qchat-skip-waiting") {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -44,18 +52,21 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
+          // Only cache successful same-origin HTML navigations carefully —
+          // avoid trapping users on a stale app shell after deploys.
           return response;
         })
-        .catch(async () => (await caches.match(request)) || (await caches.match("/")))
+        .catch(async () => {
+          const offline = await caches.match(OFFLINE_URL);
+          if (offline) return offline;
+          return (await caches.match("/")) || Response.error();
+        })
     );
     return;
   }
 
   if (
+    url.pathname === OFFLINE_URL ||
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
     url.pathname === "/favicon.png" ||
@@ -86,8 +97,6 @@ self.addEventListener("push", (event) => {
   }
   event.waitUntil(
     (async () => {
-      // If a visible Qchat tab is open, skip OS notify — WS overlay / in-tab Notification handles it.
- // Still wake when all windows are hidden/closed (Calls background notify).
       try {
         const list = await clients.matchAll({ type: "window", includeUncontrolled: true });
         const visible = list.some((c) => c.visibilityState === "visible");
