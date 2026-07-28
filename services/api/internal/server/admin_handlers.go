@@ -198,17 +198,18 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
-	where := "enterprise_id=$1"
+	where := "u.enterprise_id=$1"
 	args := []any{c.EnterpriseID}
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		args = append(args, "%"+escapeLike(q)+"%")
 		where += fmt.Sprintf(
-			` AND (phone ILIKE $%[1]d ESCAPE '\' OR username ILIKE $%[1]d ESCAPE '\' OR display_name ILIKE $%[1]d ESCAPE '\')`,
+			` AND (u.phone ILIKE $%[1]d ESCAPE '\' OR u.username ILIKE $%[1]d ESCAPE '\' OR u.display_name ILIKE $%[1]d ESCAPE '\')`,
 			len(args))
 	}
 
 	var total int
-	if err := s.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM users WHERE `+where, args...).Scan(&total); err != nil {
+	if err := s.db.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM users u WHERE `+where, args...).Scan(&total); err != nil {
 		writeErr(w, 500, "query failed")
 		return
 	}
@@ -216,8 +217,13 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	limit, offset := adminListRange(r)
 	args = append(args, limit, offset)
 	rows, err := s.db.Query(r.Context(), fmt.Sprintf(`
-		SELECT id::text, phone, username, display_name, role, banned, register_ip, register_region, created_at
-		FROM users WHERE %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
+		SELECT u.id::text, u.phone, u.username, u.display_name, u.role, u.banned,
+		       u.register_ip, u.register_region, u.created_at,
+		       COALESCE(u.enterprise_id::text,''), COALESCE(e.name,'')
+		FROM users u
+		LEFT JOIN enterprises e ON e.id = u.enterprise_id
+		WHERE %s
+		ORDER BY u.created_at DESC LIMIT $%d OFFSET $%d`,
 		where, len(args)-1, len(args)), args...)
 	if err != nil {
 		writeErr(w, 500, "query failed")
@@ -226,14 +232,21 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var id, phone, un, dn, role, rip, rreg string
+		var id, phone, un, dn, role, rip, rreg, eid, ename string
 		var banned bool
 		var created any
-		_ = rows.Scan(&id, &phone, &un, &dn, &role, &banned, &rip, &rreg, &created)
-		out = append(out, map[string]any{
+		_ = rows.Scan(&id, &phone, &un, &dn, &role, &banned, &rip, &rreg, &created, &eid, &ename)
+		row := map[string]any{
 			"id": id, "phone": phone, "username": un, "display_name": dn, "role": role,
 			"banned": banned, "register_ip": rip, "register_region": rreg, "created_at": created,
-		})
+		}
+		if eid != "" {
+			row["enterprise_id"] = eid
+		}
+		if ename != "" {
+			row["enterprise_name"] = ename
+		}
+		out = append(out, row)
 	}
 	if out == nil {
 		out = []map[string]any{}
@@ -555,25 +568,33 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := adminListRange(r)
 
+	// Membership-scoped inspect (not message.enterprise_id): after personal↔enterprise
+	// group joins, senders stamp their own tenant on rows — filtering by message
+	// enterprise_id drops cross-tenant history the user actually saw.
+	memberConvSQL := `m.conversation_id IN (
+		SELECT conversation_id FROM conversation_members WHERE user_id=$1
+	)`
 	var total int
 	var rows pgx.Rows
 	if scope == "sent" {
-		countQ := `SELECT COUNT(*) FROM messages WHERE enterprise_id=$1 AND sender_id=$2`
-		countArgs := []any{entID, userID}
+		countQ := `SELECT COUNT(*) FROM messages m WHERE m.sender_id=$1 AND ` + memberConvSQL
+		countArgs := []any{userID}
 		listQ := `
 			SELECT m.id::text, m.conversation_id::text, m.sender_id::text,
 			       COALESCE(u.username,''), COALESCE(u.display_name,''),
 			       COALESCE(c.title,''), COALESCE(c.type,''),
-			       m.body, m.type, m.recalled, m.created_at
+			       COALESCE(c.enterprise_id::text,''), COALESCE(e.name,''),
+			       m.body, m.type, COALESCE(m.media_url,''), m.recalled, m.created_at
 			FROM messages m
 			JOIN users u ON u.id = m.sender_id
 			JOIN conversations c ON c.id = m.conversation_id
-			WHERE m.enterprise_id=$1 AND m.sender_id=$2`
-		listArgs := []any{entID, userID}
+			LEFT JOIN enterprises e ON e.id = c.enterprise_id
+			WHERE m.sender_id=$1 AND ` + memberConvSQL
+		listArgs := []any{userID}
 		if convFilter != nil {
-			countQ += ` AND conversation_id=$3`
+			countQ += ` AND m.conversation_id=$2`
 			countArgs = append(countArgs, *convFilter)
-			listQ += ` AND m.conversation_id=$3`
+			listQ += ` AND m.conversation_id=$2`
 			listArgs = append(listArgs, *convFilter)
 		}
 		if err := s.db.QueryRow(r.Context(), countQ, countArgs...).Scan(&total); err != nil {
@@ -584,30 +605,24 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 		listQ += fmt.Sprintf(` ORDER BY m.created_at DESC LIMIT $%d OFFSET $%d`, len(listArgs)-1, len(listArgs))
 		rows, err = s.db.Query(r.Context(), listQ, listArgs...)
 	} else {
-		countQ := `
-			SELECT COUNT(*) FROM messages m
-			WHERE m.enterprise_id=$1
-			  AND m.conversation_id IN (
-			      SELECT conversation_id FROM conversation_members WHERE user_id=$2
-			  )`
-		countArgs := []any{entID, userID}
+		countQ := `SELECT COUNT(*) FROM messages m WHERE ` + memberConvSQL
+		countArgs := []any{userID}
 		listQ := `
 			SELECT m.id::text, m.conversation_id::text, m.sender_id::text,
 			       COALESCE(u.username,''), COALESCE(u.display_name,''),
 			       COALESCE(c.title,''), COALESCE(c.type,''),
-			       m.body, m.type, m.recalled, m.created_at
+			       COALESCE(c.enterprise_id::text,''), COALESCE(e.name,''),
+			       m.body, m.type, COALESCE(m.media_url,''), m.recalled, m.created_at
 			FROM messages m
 			JOIN users u ON u.id = m.sender_id
 			JOIN conversations c ON c.id = m.conversation_id
-			WHERE m.enterprise_id=$1
-			  AND m.conversation_id IN (
-			      SELECT conversation_id FROM conversation_members WHERE user_id=$2
-			  )`
-		listArgs := []any{entID, userID}
+			LEFT JOIN enterprises e ON e.id = c.enterprise_id
+			WHERE ` + memberConvSQL
+		listArgs := []any{userID}
 		if convFilter != nil {
-			countQ += ` AND m.conversation_id=$3`
+			countQ += ` AND m.conversation_id=$2`
 			countArgs = append(countArgs, *convFilter)
-			listQ += ` AND m.conversation_id=$3`
+			listQ += ` AND m.conversation_id=$2`
 			listArgs = append(listArgs, *convFilter)
 		}
 		if err := s.db.QueryRow(r.Context(), countQ, countArgs...).Scan(&total); err != nil {
@@ -625,18 +640,28 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var id, cid, sid, sun, sdn, title, ctype, body, typ string
+		var id, cid, sid, sun, sdn, title, ctype, cent, ename, body, typ, media string
 		var recalled bool
 		var created any
-		if rows.Scan(&id, &cid, &sid, &sun, &sdn, &title, &ctype, &body, &typ, &recalled, &created) != nil {
+		if rows.Scan(&id, &cid, &sid, &sun, &sdn, &title, &ctype, &cent, &ename, &body, &typ, &media, &recalled, &created) != nil {
 			continue
 		}
-		out = append(out, map[string]any{
+		row := map[string]any{
 			"id": id, "conversation_id": cid, "sender_id": sid,
 			"sender_username": sun, "sender_display_name": sdn,
 			"conversation_title": title, "conversation_type": ctype,
 			"body": body, "type": typ, "recalled": recalled, "created_at": created,
-		})
+		}
+		if media != "" {
+			row["media_url"] = media
+		}
+		if cent != "" {
+			row["conversation_enterprise_id"] = cent
+		}
+		if ename != "" {
+			row["enterprise_name"] = ename
+		}
+		out = append(out, row)
 	}
 	if out == nil {
 		out = []map[string]any{}

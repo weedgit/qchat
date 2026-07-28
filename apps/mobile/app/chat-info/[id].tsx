@@ -49,6 +49,7 @@ type PendingUser = {
   username: string;
   displayName: string;
   avatarUrl?: string;
+  enterpriseName?: string;
 };
 
 type GroupDetails = {
@@ -170,6 +171,7 @@ export default function ChatInfoScreen() {
               username: String(p?.username ?? ""),
               displayName: String(p?.display_name ?? p?.nickname ?? p?.username ?? "User"),
               avatarUrl: p?.avatar_url || undefined,
+              enterpriseName: String(p?.enterprise_name ?? "").trim() || undefined,
             })).filter((p: PendingUser) => p.userId)
           );
         } catch {
@@ -893,6 +895,7 @@ export default function ChatInfoScreen() {
                             </Text>
                             <Text style={styles.memberMeta}>
                               @{p.username || "user"}
+                              {p.enterpriseName ? ` · ${p.enterpriseName}` : ""}
                             </Text>
                           </View>
                           <Pressable

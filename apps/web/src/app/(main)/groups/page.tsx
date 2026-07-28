@@ -25,6 +25,7 @@ interface PendingUser {
   username: string;
   display_name: string;
   avatar_url?: string;
+  enterprise_name?: string;
 }
 
 interface GroupMember {
@@ -1254,7 +1255,10 @@ export default function GroupsPage() {
                 <Avatar name={p.display_name} url={p.avatar_url} size={36} />
                 <div className="menu-modal-list-main">
                   <div className="menu-modal-list-title">{p.display_name}</div>
-                  <div className="menu-modal-list-sub">@{p.username}</div>
+                  <div className="menu-modal-list-sub">
+                    @{p.username}
+                    {p.enterprise_name ? ` · ${p.enterprise_name}` : ""}
+                  </div>
                 </div>
                 <div className="menu-modal-list-actions">
                   <button className="btn-ghost" onClick={() => approve(p.user_id)}>
