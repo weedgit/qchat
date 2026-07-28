@@ -11,10 +11,12 @@ interface InspectedMessage {
   conversationId: string;
   conversationTitle: string;
   conversationType: string;
+  enterpriseName: string;
   senderId: string;
   senderLabel: string;
   content: string;
   type: string;
+  mediaUrl: string;
   recalled: boolean;
   createdAt: string;
 }
@@ -28,13 +30,50 @@ function normalize(raw: any): InspectedMessage {
     conversationId: String(raw?.conversation_id ?? ""),
     conversationTitle: String(raw?.conversation_title ?? "") || "—",
     conversationType: String(raw?.conversation_type ?? ""),
+    enterpriseName: String(raw?.enterprise_name ?? "").trim(),
     senderId,
     senderLabel: display || (username ? `@${username}` : senderId) || "—",
     content: String(raw?.content ?? raw?.text ?? raw?.body ?? ""),
     type: String(raw?.type ?? "text"),
+    mediaUrl: String(raw?.media_url ?? raw?.mediaUrl ?? "").trim(),
     recalled: Boolean(raw?.recalled),
     createdAt: String(raw?.created_at ?? raw?.createdAt ?? raw?.timestamp ?? ""),
   };
+}
+
+function MediaCell({ m }: { m: InspectedMessage }) {
+  if (m.recalled && !m.content && !m.mediaUrl) {
+    return <span className="muted">(recalled)</span>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 360 }}>
+      {m.content ? (
+        <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+      ) : null}
+      {m.mediaUrl ? (
+        <div>
+          {m.type === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={m.mediaUrl}
+              alt={m.content || "image"}
+              style={{
+                maxWidth: 220,
+                maxHeight: 160,
+                borderRadius: 8,
+                objectFit: "contain",
+                background: "#0f172a",
+              }}
+            />
+          ) : null}
+          <a href={m.mediaUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: "break-all" }}>
+            {m.mediaUrl}
+          </a>
+        </div>
+      ) : null}
+      {!m.content && !m.mediaUrl ? <span className="muted">—</span> : null}
+    </div>
+  );
 }
 
 export default function MessageInspectPage() {
@@ -101,7 +140,8 @@ export default function MessageInspectPage() {
     <AdminShell>
       <h1>Message inspect</h1>
       <div className="page-sub">
-        View the complete chat history for a user within an enterprise (compliance).
+        View membership-scoped chat history for a user in your enterprise (compliance).
+        Includes messages from shared groups even when senders belong to another tenant.
       </div>
 
       <div className="notice">
@@ -153,6 +193,7 @@ export default function MessageInspectPage() {
                 <tr>
                   <th>Time</th>
                   <th>Conversation</th>
+                  <th>Company</th>
                   <th>Sender</th>
                   <th>Type</th>
                   <th>Content</th>
@@ -161,7 +202,7 @@ export default function MessageInspectPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="muted">No messages returned.</td>
+                    <td colSpan={6} className="muted">No messages returned.</td>
                   </tr>
                 )}
                 {rows.map((m) => (
@@ -173,6 +214,7 @@ export default function MessageInspectPage() {
                         {m.conversationType || "—"} · {m.conversationId || "—"}
                       </div>
                     </td>
+                    <td className="muted">{m.enterpriseName || "—"}</td>
                     <td>
                       <div>{m.senderLabel}</div>
                       <div className="muted" style={{ fontSize: 12, wordBreak: "break-all" }}>
@@ -183,12 +225,8 @@ export default function MessageInspectPage() {
                       {m.type}
                       {m.recalled ? " · recalled" : ""}
                     </td>
-                    <td style={{ whiteSpace: "pre-wrap" }}>
-                      {m.recalled && !m.content ? (
-                        <span className="muted">(recalled)</span>
-                      ) : (
-                        m.content
-                      )}
+                    <td>
+                      <MediaCell m={m} />
                     </td>
                   </tr>
                 ))}

@@ -686,8 +686,11 @@ func (s *Server) handleGroupPending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := s.db.Query(r.Context(), `
-		SELECT u.id::text, u.username, u.display_name, COALESCE(u.avatar_url,''), cm.joined_at
-		FROM conversation_members cm JOIN users u ON u.id=cm.user_id
+		SELECT u.id::text, u.username, u.display_name, COALESCE(u.avatar_url,''),
+		       COALESCE(u.enterprise_id::text,''), COALESCE(e.name,''), cm.joined_at
+		FROM conversation_members cm
+		JOIN users u ON u.id=cm.user_id
+		LEFT JOIN enterprises e ON e.id = u.enterprise_id
 		WHERE cm.conversation_id=$1 AND cm.role='pending'
 		ORDER BY cm.joined_at`, convID)
 	if err != nil {
@@ -697,12 +700,19 @@ func (s *Server) handleGroupPending(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	var pending []map[string]any
 	for rows.Next() {
-		var uid, un, dn, av string
+		var uid, un, dn, av, eid, ename string
 		var joined time.Time
-		_ = rows.Scan(&uid, &un, &dn, &av, &joined)
-		pending = append(pending, map[string]any{
+		_ = rows.Scan(&uid, &un, &dn, &av, &eid, &ename, &joined)
+		row := map[string]any{
 			"user_id": uid, "username": un, "display_name": dn, "avatar_url": av, "requested_at": joined.UTC(),
-		})
+		}
+		if eid != "" {
+			row["enterprise_id"] = eid
+		}
+		if ename != "" {
+			row["enterprise_name"] = ename
+		}
+		pending = append(pending, row)
 	}
 	if pending == nil {
 		pending = []map[string]any{}
@@ -820,10 +830,13 @@ func (s *Server) joinGroupResponse(ctx context.Context, status, convID, role str
 		"conversation_id": convID,
 		"role":            role,
 	}
-	var title, publicID, avatar string
+	var title, publicID, avatar, enterpriseName string
 	_ = s.db.QueryRow(ctx, `
-		SELECT COALESCE(title,''), COALESCE(public_id,''), COALESCE(avatar_url,'')
-		FROM conversations WHERE id=$1`, convID).Scan(&title, &publicID, &avatar)
+		SELECT COALESCE(c.title,''), COALESCE(c.public_id,''), COALESCE(c.avatar_url,''),
+		       COALESCE(e.name,'')
+		FROM conversations c
+		LEFT JOIN enterprises e ON e.id = c.enterprise_id
+		WHERE c.id=$1`, convID).Scan(&title, &publicID, &avatar, &enterpriseName)
 	if title != "" {
 		out["title"] = title
 	}
@@ -832,6 +845,9 @@ func (s *Server) joinGroupResponse(ctx context.Context, status, convID, role str
 	}
 	if avatar != "" {
 		out["avatar_url"] = avatar
+	}
+	if enterpriseName != "" {
+		out["enterprise_name"] = enterpriseName
 	}
 	return out
 }
