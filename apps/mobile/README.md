@@ -122,6 +122,14 @@ Login/register send `device_type: "phone"` (browser uses `web`, Electron uses `d
 - **通讯录** — friends / requests / open DM
 - **我的** — profile + logout
 
-## Next (same branch)
+## Release / EAS
 
-Media upload, FCM push register + server sender, LiveKit 1:1 calls.
+Store and internal APK builds use EAS profiles. See **[docs/mobile-release.md](../../docs/mobile-release.md)** for profile matrix, credentials (never commit secrets), CI, and `npm run check:release`.
+
+```bash
+cd apps/mobile
+npm run check:release
+npm run eas:build:preview   # requires eas-cli login + project
+```
+
+Remote push (FCM/APNs) remains deferred via `src/lib/notifyPort.ts`.
