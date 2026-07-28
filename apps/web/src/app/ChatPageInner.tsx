@@ -830,9 +830,9 @@ function Bubble({
                         <span
                           key={u.id}
                           className="chip-avatar-badge"
-                          style={{ left: `${Math.max(0, i) * 10}px`, zIndex: 4 - i }}
+                          style={{ left: `${Math.max(0, i) * 7}px`, zIndex: 4 - i }}
                         >
-                          <Avatar name={u.name} url={u.avatarUrl} size={16} />
+                          <Avatar name={u.name} url={u.avatarUrl} size={12} />
                         </span>
                       ))}
                     </span>
