@@ -151,26 +151,32 @@ export default function MessageInspectPage() {
       </div>
 
       <div className="card" style={{ maxWidth: 720 }}>
-        <form onSubmit={inspect} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="field">
-            <label>User ID</label>
+        <form onSubmit={inspect} className="form-rows" style={{ maxWidth: "100%" }}>
+          <div className="form-row">
+            <label htmlFor="msg-inspect-user">User ID</label>
             <input
+              id="msg-inspect-user"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
               placeholder="e.g. 8f2c9a…"
               required
             />
           </div>
-          <div className="field">
-            <label>Scope</label>
-            <select value={scope} onChange={(e) => setScope(e.target.value as "all" | "sent")}>
+          <div className="form-row">
+            <label htmlFor="msg-inspect-scope">Scope</label>
+            <select
+              id="msg-inspect-scope"
+              value={scope}
+              onChange={(e) => setScope(e.target.value as "all" | "sent")}
+            >
               <option value="all">All messages in their conversations</option>
               <option value="sent">Only messages they sent</option>
             </select>
           </div>
-          <div className="field">
-            <label>Reason (required, recorded in audit log)</label>
+          <div className="form-row" style={{ alignItems: "start" }}>
+            <label htmlFor="msg-inspect-reason">Reason</label>
             <textarea
+              id="msg-inspect-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="e.g. Compliance ticket #1234 — reported harassment"
@@ -178,10 +184,18 @@ export default function MessageInspectPage() {
               required
             />
           </div>
-          {error && <div className="error-text">{error}</div>}
-          <button className="btn" disabled={busy} style={{ alignSelf: "flex-start" }}>
-            {busy ? "Inspecting…" : "Inspect messages"}
-          </button>
+          {error && (
+            <div className="form-row">
+              <span />
+              <div className="error-text">{error}</div>
+            </div>
+          )}
+          <div className="form-row">
+            <span />
+            <button className="btn" disabled={busy} style={{ alignSelf: "flex-start" }}>
+              {busy ? "Inspecting…" : "Inspect messages"}
+            </button>
+          </div>
         </form>
       </div>
 

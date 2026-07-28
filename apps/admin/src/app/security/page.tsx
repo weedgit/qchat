@@ -414,27 +414,37 @@ export default function SecurityPage() {
         </p>
 
         {canWriteSecurity ? (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-            <input
-              value={cidrInput}
-              onChange={(e) => setCidrInput(e.target.value)}
-              placeholder="10.0.0.0/8 or 203.0.113.10"
-              style={{ flex: "1 1 180px" }}
-            />
-            <input
-              value={labelInput}
-              onChange={(e) => setLabelInput(e.target.value)}
-              placeholder="Label (optional)"
-              style={{ flex: "1 1 120px" }}
-            />
-            <button
-              className="btn"
-              type="button"
-              disabled={busy || !cidrInput.trim()}
-              onClick={addCIDR}
-            >
-              Add
-            </button>
+          <div className="form-rows" style={{ maxWidth: "100%", marginBottom: 12 }}>
+            <div className="form-row">
+              <label htmlFor="sec-cidr">CIDR / IP</label>
+              <input
+                id="sec-cidr"
+                value={cidrInput}
+                onChange={(e) => setCidrInput(e.target.value)}
+                placeholder="10.0.0.0/8 or 203.0.113.10"
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="sec-label">Label</label>
+              <input
+                id="sec-label"
+                value={labelInput}
+                onChange={(e) => setLabelInput(e.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="form-row">
+              <span />
+              <button
+                className="btn"
+                type="button"
+                disabled={busy || !cidrInput.trim()}
+                onClick={addCIDR}
+                style={{ justifySelf: "start" }}
+              >
+                Add
+              </button>
+            </div>
           </div>
         ) : (
           <p className="muted">IP allowlist is read-only for your role.</p>

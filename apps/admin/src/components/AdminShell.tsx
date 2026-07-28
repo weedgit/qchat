@@ -24,6 +24,7 @@ export default function AdminShell({
   const pathname = usePathname();
   const router = useRouter();
   const [role, setRole] = useState<string>("");
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!getToken()) {
@@ -39,6 +40,7 @@ export default function AdminShell({
           return;
         }
         setRole(r);
+        setReady(true);
       })
       .catch(() => {
         clearToken();
@@ -46,34 +48,55 @@ export default function AdminShell({
       });
   }, [router]);
 
+  const navItems = ready ? NAV.filter((item) => can(role, item.cap)) : NAV;
+
   return (
     <div className="admin-shell">
-      <aside className="admin-sidebar">
+      <aside className="admin-sidebar" aria-label="Admin navigation">
         <div className="admin-brand">
           <span className="logo">Q</span>
-          Qchat Admin
+          <span className="admin-brand-text">Qchat Admin</span>
         </div>
-        {role
-          ? NAV.filter((item) => can(role, item.cap)).map((item) => (
+        <div className="admin-nav-label">Menu</div>
+        <nav className="admin-nav">
+          {navItems.map((item) => {
+            const active =
+              item.href === "/"
+                ? pathname === "/" || pathname === ""
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`admin-nav-item ${pathname === item.href ? "active" : ""}`}
+                className={`admin-nav-item ${active ? "active" : ""} ${
+                  ready ? "" : "is-loading"
+                }`}
+                aria-current={active ? "page" : undefined}
               >
-                {item.label}
+                <span className="admin-nav-item-label">{item.label}</span>
               </Link>
-            ))
-          : null}
+            );
+          })}
+        </nav>
         <div className="spacer" />
-        {role ? <div className="admin-nav-item muted" style={{ cursor: "default" }}>{role}</div> : null}
+        {role ? (
+          <div className="admin-nav-item muted admin-role" style={{ cursor: "default" }}>
+            <span className="admin-nav-item-label">{role}</span>
+          </div>
+        ) : (
+          <div className="admin-nav-item muted" style={{ cursor: "default" }}>
+            <span className="admin-nav-item-label">Loading…</span>
+          </div>
+        )}
         <button
+          type="button"
           className="admin-nav-item"
           onClick={() => {
             clearToken();
             router.replace("/login");
           }}
         >
-          Log out
+          <span className="admin-nav-item-label">Log out</span>
         </button>
       </aside>
       <main className="admin-main">{children}</main>
