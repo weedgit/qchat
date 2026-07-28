@@ -91,6 +91,10 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &mentionUnread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt, &pinnedID, &pinnedBody, &isEnterpriseDefault, &enterpriseName); err != nil {
 			continue
 		}
+		// Hide DMs with a blocked peer from both sides.
+		if typ == "dm" && peerID != "" && s.friendshipBlocked(r, c.UserID, peerID, c.EnterpriseID) {
+			continue
+		}
 		if title == "" && typ == "dm" && peerName != "" {
 			title = peerName
 		}
@@ -1369,13 +1373,25 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	var role string
 	var muteUntil *time.Time
 	var muteAll bool
+	var convType string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT cm.role, cm.mute_until, conv.mute_all
+		SELECT cm.role, cm.mute_until, conv.mute_all, conv.type
 		FROM conversation_members cm JOIN conversations conv ON conv.id=cm.conversation_id
-		WHERE cm.conversation_id=$1 AND cm.user_id=$2`, convID, c.UserID).Scan(&role, &muteUntil, &muteAll)
+		WHERE cm.conversation_id=$1 AND cm.user_id=$2`, convID, c.UserID).Scan(&role, &muteUntil, &muteAll, &convType)
 	if err != nil || role == "pending" {
 		writeErr(w, 403, "not a member")
 		return
+	}
+	if convType == "dm" {
+		var peerID string
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT user_id::text FROM conversation_members
+			WHERE conversation_id=$1 AND user_id<>$2
+			LIMIT 1`, convID, c.UserID).Scan(&peerID)
+		if peerID != "" && s.friendshipBlocked(r, c.UserID, peerID, c.EnterpriseID) {
+			writeErrCode(w, 403, "blocked", "cannot message this user")
+			return
+		}
 	}
 	if muteAll && role != "owner" && role != "admin" {
 		writeErr(w, 403, "group muted")
@@ -1610,10 +1626,21 @@ func (s *Server) handleForward(w http.ResponseWriter, r *http.Request) {
 		if role == "" || role == "pending" {
 			continue
 		}
-		var destEnt string
-		_ = s.db.QueryRow(r.Context(), `SELECT enterprise_id::text FROM conversations WHERE id=$1`, cid).Scan(&destEnt)
+		var destEnt, destType string
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT COALESCE(enterprise_id::text, ''), type FROM conversations WHERE id=$1`, cid).
+			Scan(&destEnt, &destType)
 		if destEnt != c.EnterpriseID {
 			continue
+		}
+		if destType == "dm" {
+			var peerID string
+			_ = s.db.QueryRow(r.Context(), `
+				SELECT user_id::text FROM conversation_members
+				WHERE conversation_id=$1 AND user_id<>$2 LIMIT 1`, cid, c.UserID).Scan(&peerID)
+			if peerID != "" && s.friendshipBlocked(r, c.UserID, peerID, c.EnterpriseID) {
+				continue
+			}
 		}
 		id := uuid.New()
 		_, err := s.db.Exec(r.Context(), `
