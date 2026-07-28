@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AdminShell from "@/components/AdminShell";
+import { PasswordInput } from "@/components/PasswordInput";
 import { api, asList } from "@/lib/api";
 import { displayNameError } from "@/lib/credentials";
 import { can } from "@/lib/rbac";
@@ -317,8 +318,7 @@ export default function UsersPage() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
             />
-            <input
-              type="password"
+            <PasswordInput
               placeholder="Temp password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -383,8 +383,7 @@ export default function UsersPage() {
             ) : null}
             {canReset ? (
               <>
-                <input
-                  type="password"
+                <PasswordInput
                   placeholder="New temporary password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}

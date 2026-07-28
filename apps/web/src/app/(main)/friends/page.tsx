@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import MenuModal from "@/components/MenuModal";
-import { api, asList } from "@/lib/api";
+import { api, asList, ApiError } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 import { Friend, normalizeFriend } from "@/lib/types";
 
@@ -99,7 +99,21 @@ export default function FriendsPage() {
         setAddMsg(t("contacts.requestSent"));
       }
     } catch (e: any) {
-      setAddMsg(e.message);
+      if (
+        e instanceof ApiError &&
+        e.code === "group_forbid_friend" &&
+        e.fields?.group &&
+        e.fields?.owner
+      ) {
+        setAddMsg(
+          t("contacts.groupForbidFriend", {
+            group: e.fields.group,
+            owner: e.fields.owner,
+          })
+        );
+      } else {
+        setAddMsg(e.message);
+      }
     } finally {
       setBusy(false);
     }

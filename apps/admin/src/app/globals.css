@@ -168,6 +168,35 @@ select:focus {
   color: var(--text-dim);
   margin-bottom: 5px;
 }
+.password-input {
+  position: relative;
+  width: 100%;
+}
+.password-input input {
+  padding-right: 42px;
+}
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  transition: color 0.15s, background 0.15s;
+}
+.password-toggle:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+.password-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .captcha-row {
   display: flex;
   gap: 10px;

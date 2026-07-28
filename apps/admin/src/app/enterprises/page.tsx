@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/AdminShell";
+import { PasswordInput } from "@/components/PasswordInput";
 import { api, asList } from "@/lib/api";
 import { can } from "@/lib/rbac";
 
@@ -254,9 +255,8 @@ export default function EnterprisesPage() {
               value={adminUsername}
               onChange={(e) => setAdminUsername(e.target.value)}
             />
-            <input
+            <PasswordInput
               required
-              type="password"
               placeholder="Admin password"
               value={adminPassword}
               onChange={(e) => setAdminPassword(e.target.value)}
@@ -286,9 +286,8 @@ export default function EnterprisesPage() {
               value={issueUsername}
               onChange={(e) => setIssueUsername(e.target.value)}
             />
-            <input
+            <PasswordInput
               required
-              type="password"
               placeholder="Password"
               value={issuePassword}
               onChange={(e) => setIssuePassword(e.target.value)}

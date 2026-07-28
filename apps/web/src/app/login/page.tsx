@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import LoadingSplash from "@/components/LoadingSplash";
+import { PasswordInput } from "@/components/PasswordInput";
 import { ApiError, api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
 import { isValidPhone, validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
@@ -300,11 +301,11 @@ export default function LoginPage() {
         )}
         <div className="field">
           <label>Password</label>
-          <input
-            type="password"
+          <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="at least 8 letters/digits"
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
             required
           />
         </div>

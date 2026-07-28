@@ -472,6 +472,36 @@ select:focus {
   margin-bottom: 5px;
 }
 
+.password-input {
+  position: relative;
+  width: 100%;
+}
+.password-input input {
+  padding-right: 42px;
+}
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-dim);
+  transition: color 0.15s, background 0.15s;
+}
+.password-toggle:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+.password-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .captcha-row {
   display: flex;
   gap: 10px;
@@ -2633,7 +2663,9 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   flex: none;
   display: flex;
   gap: 0;
-  border-top: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
+  margin: -8px -10px 0;
+  padding: 0 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 8%, transparent);
   background: var(--bg-panel);
 }
 .emoji-picker-tab {
@@ -2643,7 +2675,7 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   color: var(--text-dim);
   font-size: 12px;
   font-weight: 600;
-  padding: 10px 6px;
+  padding: 10px 6px 8px;
   cursor: pointer;
 }
 .emoji-picker-tab:hover {

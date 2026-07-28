@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -413,18 +414,36 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// JD: group setting forbid_member_friend_add blocks peer adds when both share such a group.
-	var forbid bool
-	_ = s.db.QueryRow(r.Context(), `
-		SELECT EXISTS(
-			SELECT 1 FROM conversation_members a
-			JOIN conversation_members b ON b.conversation_id=a.conversation_id
-			JOIN conversations conv ON conv.id=a.conversation_id
-			WHERE a.user_id=$1 AND b.user_id=$2
-			  AND a.role <> 'pending' AND b.role <> 'pending'
-			  AND conv.type='social_group' AND conv.forbid_member_friend_add=TRUE
-		)`, c.UserID, targetID).Scan(&forbid)
-	if forbid {
-		writeErrCode(w, 403, "group_forbid_friend", "group policy forbids adding members as friends")
+	var groupTitle, ownerName string
+	err = s.db.QueryRow(r.Context(), `
+		SELECT COALESCE(NULLIF(conv.title, ''), 'Group'),
+		       COALESCE(
+		         NULLIF((SELECT COALESCE(NULLIF(ou.display_name, ''), ou.username)
+		                 FROM users ou WHERE ou.id = conv.owner_id), ''),
+		         NULLIF((SELECT COALESCE(NULLIF(ou.display_name, ''), ou.username)
+		                 FROM conversation_members om
+		                 JOIN users ou ON ou.id = om.user_id
+		                 WHERE om.conversation_id = conv.id AND om.role = 'owner'
+		                 LIMIT 1), ''),
+		         'owner'
+		       )
+		FROM conversation_members a
+		JOIN conversation_members b ON b.conversation_id = a.conversation_id
+		JOIN conversations conv ON conv.id = a.conversation_id
+		WHERE a.user_id = $1 AND b.user_id = $2
+		  AND a.role <> 'pending' AND b.role <> 'pending'
+		  AND conv.type = 'social_group' AND conv.forbid_member_friend_add = TRUE
+		ORDER BY conv.created_at
+		LIMIT 1`, c.UserID, targetID).Scan(&groupTitle, &ownerName)
+	if err == nil && groupTitle != "" {
+		msg := fmt.Sprintf(
+			`Group "%s" (owner: %s) forbids members adding each other as friends`,
+			groupTitle, ownerName,
+		)
+		writeErrFields(w, 403, "group_forbid_friend", msg, map[string]string{
+			"group": groupTitle,
+			"owner": ownerName,
+		})
 		return
 	}
 	// Existing accepted friendship? Reuse the DM without another greeting.

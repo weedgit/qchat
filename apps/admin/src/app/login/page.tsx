@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PasswordInput } from "@/components/PasswordInput";
 import { ApiError, api, setToken } from "@/lib/api";
 import { validateLoginCredentials } from "@/lib/credentials";
 
@@ -113,7 +114,12 @@ export default function AdminLoginPage() {
         </div>
         <div className="field">
           <label>Password</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <PasswordInput
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+          />
         </div>
         {mfaRequired ? (
           <div className="field">

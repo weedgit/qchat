@@ -10,6 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
@@ -622,6 +623,7 @@ function Bubble({
       className={`msg-row ${msg.mine ? "mine" : ""} ${selectMode ? "select-mode" : ""} ${selected ? "selected" : ""
         }`}
       onClick={selectMode && selectable ? onToggleSelect : undefined}
+      onContextMenu={onContextMenu}
     >
       {selectable && selectMode && (
         <button
@@ -642,7 +644,7 @@ function Bubble({
           <Avatar name={avatarName} url={avatarUrl} size={34} />
         </div>
       )}
-      <div className="bubble-wrap" onContextMenu={onContextMenu}>
+      <div className="bubble-wrap">
         {canReact && (
           <div className="emoji-bar">
             <button
@@ -989,6 +991,19 @@ export default function ChatPageInner() {
   const [showInChatSearch, setShowInChatSearch] = useState(false);
   const [draft, setDraft] = useState("");
   const [emojiOpen, setEmojiOpen] = useState(false);
+  // Close picker when clicking the chat (or anywhere outside the panel / emoji button).
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (!el) return;
+      if (el.closest(".emoji-picker")) return;
+      if (el.closest(".attach-btn.active")) return;
+      setEmojiOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [emojiOpen]);
   /** Pending media from paste / attach / drop before send. */
   const [mediaDraft, setMediaDraft] = useState<{
     items: { file: File; url: string }[];
@@ -1652,7 +1667,12 @@ export default function ChatPageInner() {
 
   useEffect(() => {
     if (!ctxMenu) return;
+    let alive = true;
     const close = (e?: Event) => {
+      if (!alive) return;
+      // Opening right-click already called preventDefault; ignore that gesture
+      // if it somehow still reaches these deferred listeners.
+      if (e?.defaultPrevented) return;
       if (e) {
         const t = e.target;
         if (
@@ -1668,14 +1688,19 @@ export default function ChatPageInner() {
       if (e.key === "Escape") setCtxMenu(null);
     };
     const onScrollOrResize = () => setCtxMenu(null);
-    // Ignore presses inside the menu so Clear selection / react still run.
-    window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onScrollOrResize, true);
-    window.addEventListener("resize", onScrollOrResize);
+    // Defer so the opening contextmenu / pointerup cannot dismiss immediately.
+    const timer = window.setTimeout(() => {
+      if (!alive) return;
+      window.addEventListener("pointerdown", close);
+      window.addEventListener("contextmenu", close);
+      window.addEventListener("keydown", onKey);
+      window.addEventListener("scroll", onScrollOrResize, true);
+      window.addEventListener("resize", onScrollOrResize);
+    }, 0);
     return () => {
-      window.removeEventListener("click", close);
+      alive = false;
+      window.clearTimeout(timer);
+      window.removeEventListener("pointerdown", close);
       window.removeEventListener("contextmenu", close);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("scroll", onScrollOrResize, true);
@@ -4306,7 +4331,11 @@ export default function ChatPageInner() {
         </aside>
       )}
 
-      {ctxMenu && ctxMsg && selectMode && selectedIds.has(ctxMsg.id) && (
+      {ctxMenu &&
+        ctxMsg &&
+        selectMode &&
+        selectedIds.has(ctxMsg.id) &&
+        createPortal(
         <div
           className="ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
@@ -4361,10 +4390,15 @@ export default function ChatPageInner() {
               </button>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
 
-      {ctxMenu && ctxMsg && selectMode && !selectedIds.has(ctxMsg.id) && (
+      {ctxMenu &&
+        ctxMsg &&
+        selectMode &&
+        !selectedIds.has(ctxMsg.id) &&
+        createPortal(
         <div
           className="ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
@@ -4382,10 +4416,14 @@ export default function ChatPageInner() {
             <MenuIcon d={ICONS.select} />
             {t("chat.select")}
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {ctxMenu && ctxMsg && !selectMode && (
+      {ctxMenu &&
+        ctxMsg &&
+        !selectMode &&
+        createPortal(
         <div
           className="ctx-wrap"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
@@ -4530,7 +4568,8 @@ export default function ChatPageInner() {
               </button>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {memberMenu && (

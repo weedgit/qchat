@@ -353,6 +353,33 @@ export default function EmojiPicker({
   return (
     <div className="emoji-picker" role="dialog" aria-label={t("chat.emoji")}>
       <div className="emoji-picker-header">
+        <div className="emoji-picker-tabs" role="tablist" aria-label={t("chat.emoji")}>
+          {(
+            [
+              ["emoji", "emoji.tabEmoji"],
+              ["stickers", "emoji.tabStickers"],
+              ["gifs", "emoji.tabGifs"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              className={`emoji-picker-tab${tab === id ? " is-active" : ""}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setTab(id);
+                // Keep mood across tabs; drop free-text search when leaving GIFs.
+                if (id !== "gifs") setQuery("");
+                bodyRef.current?.scrollTo({ top: 0 });
+              }}
+            >
+              {t(label)}
+            </button>
+          ))}
+        </div>
+
         <div className="emoji-picker-toolbar">
           <button
             type="button"
@@ -572,33 +599,6 @@ export default function EmojiPicker({
             )}
           </div>
         )}
-      </div>
-
-      <div className="emoji-picker-tabs" role="tablist" aria-label={t("chat.emoji")}>
-        {(
-          [
-            ["emoji", "emoji.tabEmoji"],
-            ["stickers", "emoji.tabStickers"],
-            ["gifs", "emoji.tabGifs"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            className={`emoji-picker-tab${tab === id ? " is-active" : ""}`}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setTab(id);
-              // Keep mood across tabs; drop free-text search when leaving GIFs.
-              if (id !== "gifs") setQuery("");
-              bodyRef.current?.scrollTo({ top: 0 });
-            }}
-          >
-            {t(label)}
-          </button>
-        ))}
       </div>
     </div>
   );
