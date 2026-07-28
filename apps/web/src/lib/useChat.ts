@@ -43,6 +43,7 @@ export function useChat() {
   const [connected, setConnected] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string>("member");
+  const [activeGroupMuteAll, setActiveGroupMuteAll] = useState(false);
   const [typingByConv, setTypingByConv] = useState<Record<string, TypingUser[]>>({});
  /** presence keyed by user id. */
   const [presenceByUser, setPresenceByUser] = useState<
@@ -390,6 +391,29 @@ export function useChat() {
           window.dispatchEvent(new CustomEvent("qchat:conversations-changed"));
         }
       }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("qchat:group-updated", {
+            detail: {
+              conversation_id: convId,
+              forbid_member_friend_add:
+                payload?.forbid_member_friend_add != null
+                  ? Boolean(payload.forbid_member_friend_add)
+                  : undefined,
+              announcement:
+                payload?.announcement != null ? String(payload.announcement) : undefined,
+              title: payload?.title != null ? String(payload.title) : undefined,
+            },
+          })
+        );
+      }
+      eventListenersRef.current.forEach((fn) => {
+        try {
+          fn(type, payload);
+        } catch {
+          /* ignore listener errors */
+        }
+      });
       return;
     }
 
@@ -873,11 +897,14 @@ export function useChat() {
         try {
           const g = await api<any>(`/v1/groups/${id}`);
           setMyRole(String(g?.role ?? "member"));
+          setActiveGroupMuteAll(Boolean(g?.mute_all));
         } catch {
           setMyRole("member");
+          setActiveGroupMuteAll(false);
         }
       } else {
         setMyRole("member");
+        setActiveGroupMuteAll(false);
       }
       loadMessages(id);
     },
@@ -990,7 +1017,11 @@ export function useChat() {
             : m
         ),
       }));
-      throw e;
+      if (/group muted/i.test(message)) {
+        setActiveGroupMuteAll(true);
+      }
+      // Do not rethrow — callers show failure on the bubble; rethrow caused
+      // unhandled Next.js overlays when send() was invoked without await.
     }
   }, [stopTyping]);
 
@@ -1710,6 +1741,8 @@ export function useChat() {
     connected,
     loadError,
     myRole,
+    activeGroupMuteAll,
+    setActiveGroupMuteAll,
     typingByConv,
     presenceByUser,
     notifyTyping,

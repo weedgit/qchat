@@ -9,6 +9,10 @@ export interface CurrentUser {
   username: string;
   nickname: string;
   avatarUrl?: string;
+  /** Non-empty when the user belongs to an enterprise. */
+  enterpriseId?: string;
+  /** Enterprise display name when enterpriseId is set. */
+  enterpriseName?: string;
 }
 
 export interface Conversation {
@@ -33,6 +37,8 @@ export interface Conversation {
   pinnedMessage?: string;
   /** Company-wide default internal chat. */
   isEnterpriseDefault?: boolean;
+  /** Owning enterprise display name when this conversation belongs to a company. */
+  enterpriseName?: string;
   /** All pins for this conversation, ordered by seq ascending (top→bottom). */
   pinnedMessages?: { id: string; body: string; type?: string; seq?: number }[];
   /** Viewer-only friend alias (note). */
@@ -140,6 +146,7 @@ export function normalizeConversation(raw: any): Conversation {
     favorite: Boolean(raw?.favorite),
     muted: Boolean(raw?.muted),
     isEnterpriseDefault: Boolean(raw?.is_enterprise_default),
+    enterpriseName: str(raw?.enterprise_name).trim() || undefined,
     pinnedMessageId: str(raw?.pinned_message_id) || undefined,
     pinnedMessage: str(raw?.pinned_message) || undefined,
     pinnedMessages: (() => {

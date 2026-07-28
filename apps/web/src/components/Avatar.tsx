@@ -19,12 +19,14 @@ export default function Avatar({
   size = 48,
   online,
   showStatus = false,
+  className,
 }: {
   name: string;
   url?: string;
   size?: number;
   online?: boolean;
   showStatus?: boolean;
+  className?: string;
 }) {
   const initial = (name || "?").trim().charAt(0).toUpperCase() || "?";
   let hash = 0;
@@ -41,7 +43,7 @@ export default function Avatar({
 
   return (
     <div
-      className="avatar"
+      className={["avatar", className].filter(Boolean).join(" ")}
       style={{ width: size, height: size, fontSize: size * 0.42, background: showImg ? "transparent" : bg }}
     >
       {showImg ? (

@@ -61,9 +61,11 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		         END,
 		         ''
 		       ),
-		       COALESCE(conv.is_enterprise_default, FALSE)
+		       COALESCE(conv.is_enterprise_default, FALSE),
+		       COALESCE(e.name, '')
 		FROM conversation_members cm
 		JOIN conversations conv ON conv.id=cm.conversation_id
+		LEFT JOIN enterprises e ON e.id = conv.enterprise_id
 		WHERE cm.user_id=$1 AND (
 		  cm.role <> 'pending'
 		  OR conv.type IN ('social_group', 'group')
@@ -80,13 +82,13 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	var out []map[string]any
 	var peerIDs []string
 	for rows.Next() {
-		var id, typ, title, avatar, publicID, role, lastBody, lastSenderID, lastSenderName, peerID, peerName, peerAvatar string
+		var id, typ, title, avatar, publicID, role, lastBody, lastSenderID, lastSenderName, peerID, peerName, peerAvatar, enterpriseName string
 		var lastRead, unread, mentionUnread int64
 		var favorite, muted, isEnterpriseDefault bool
 		var lastAt, peerLastActive *time.Time
 		var pinnedID *string
 		var pinnedBody string
-		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &mentionUnread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt, &pinnedID, &pinnedBody, &isEnterpriseDefault); err != nil {
+		if err := rows.Scan(&id, &typ, &title, &avatar, &publicID, &role, &lastRead, &favorite, &muted, &lastBody, &lastSenderID, &lastSenderName, &unread, &mentionUnread, &peerID, &peerName, &peerAvatar, &peerLastActive, &lastAt, &pinnedID, &pinnedBody, &isEnterpriseDefault, &enterpriseName); err != nil {
 			continue
 		}
 		if title == "" && typ == "dm" && peerName != "" {
@@ -105,6 +107,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 			"last_message_sender": lastSenderName, "last_message_mine": lastSenderID == c.UserID,
 			"favorite": favorite, "muted": muted,
 			"is_enterprise_default": isEnterpriseDefault,
+			"enterprise_name":      enterpriseName,
 		}
 		// Pending joiners must not see message previews or unread until approved.
 		if role == "pending" {
@@ -546,23 +549,23 @@ func (s *Server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	convID := r.PathValue("id")
-	var title, description, announcement, publicID, avatar, role, ownerID string
+	var title, description, announcement, publicID, avatar, role, ownerID, enterpriseName string
 	var muteAll, forbidFriendAdd, isEnterpriseDefault bool
 	err := s.db.QueryRow(r.Context(), `
 		SELECT conv.title, COALESCE(conv.description,''), COALESCE(conv.announcement,''),
 		       COALESCE(conv.public_id,''), COALESCE(conv.avatar_url,''),
 		       conv.mute_all, COALESCE(conv.forbid_member_friend_add, FALSE),
 		       COALESCE(conv.is_enterprise_default, FALSE),
-		       cm.role, conv.owner_id::text
+		       cm.role, conv.owner_id::text, COALESCE(e.name, '')
 		FROM conversations conv
 		JOIN conversation_members cm ON cm.conversation_id=conv.id AND cm.user_id=$2
+		LEFT JOIN enterprises e ON e.id = conv.enterprise_id
 		WHERE conv.id=$1
-		  AND conv.enterprise_id IS NOT DISTINCT FROM $3
 		  AND conv.type='social_group'
 		  AND cm.role <> 'pending'`,
-		convID, c.UserID, entArg(c.EnterpriseID)).Scan(
+		convID, c.UserID).Scan(
 		&title, &description, &announcement, &publicID, &avatar, &muteAll, &forbidFriendAdd,
-		&isEnterpriseDefault, &role, &ownerID)
+		&isEnterpriseDefault, &role, &ownerID, &enterpriseName)
 	if err != nil {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
@@ -608,6 +611,7 @@ func (s *Server) handleGroupDetails(w http.ResponseWriter, r *http.Request) {
 		"public_id": publicID, "avatar_url": avatar, "mute_all": muteAll,
 		"forbid_member_friend_add": forbidFriendAdd,
 		"is_enterprise_default":    isEnterpriseDefault,
+		"enterprise_name":          enterpriseName,
 		"role":                     role, "owner_id": ownerID, "members": members,
 	})
 }
@@ -620,10 +624,13 @@ func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 403, "forbidden", "only owners and admins can edit group")
 		return
 	}
-	var ent, typ string
+	// Membership (isGroupAdmin) is the authz gate. Do not require JWT enterprise_id to
+	// equal conversations.enterprise_id — personal groups use NULL and would 404 after
+	// the owner joins a company, so forbid_member_friend_add could not be toggled.
+	var typ string
 	err := s.db.QueryRow(r.Context(), `
-		SELECT COALESCE(enterprise_id::text, ''), type FROM conversations WHERE id=$1`, convID).Scan(&ent, &typ)
-	if err != nil || ent != c.EnterpriseID || typ != "social_group" {
+		SELECT type FROM conversations WHERE id=$1`, convID).Scan(&typ)
+	if err != nil || typ != "social_group" {
 		writeErrCode(w, 404, "not_found", "group not found")
 		return
 	}
@@ -651,6 +658,12 @@ func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 400, "update_failed", "update failed")
 		return
 	}
+	// Re-read so the WS payload reflects the persisted boolean (not a possibly
+	// omitted JSON field), so other members clear "members cannot…" when off.
+	var forbidFriendAdd bool
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT COALESCE(forbid_member_friend_add, FALSE) FROM conversations WHERE id=$1`,
+		convID).Scan(&forbidFriendAdd)
 	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
 		Type: "group.updated",
 		Payload: map[string]any{
@@ -659,7 +672,7 @@ func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
 			"description":              req["description"],
 			"avatar_url":               req["avatar_url"],
 			"announcement":             req["announcement"],
-			"forbid_member_friend_add": req["forbid_member_friend_add"],
+			"forbid_member_friend_add": forbidFriendAdd,
 		},
 	})
 	s.handleGroupDetails(w, r)
@@ -1222,6 +1235,7 @@ func (s *Server) attachReactions(r *http.Request, msgs []map[string]any, userID 
 
 var allowedReactions = map[string]bool{
 	"\u2764\ufe0f": true, // ❤️
+	"\u2764":       true, // ❤ (no VS16)
 	"\U0001F44D":   true, // 👍
 	"\U0001F44E":   true, // 👎
 	"\U0001F525":   true, // 🔥
@@ -1245,18 +1259,20 @@ func (s *Server) handleReact(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 400, "invalid_emoji", "unsupported emoji")
 		return
 	}
-	var convID, enterpriseID string
+	var convID string
 	var recalled bool
 	err := s.db.QueryRow(r.Context(), `
-		SELECT m.conversation_id::text, conv.enterprise_id::text, m.recalled
+		SELECT m.conversation_id::text, m.recalled
 		FROM messages m JOIN conversations conv ON conv.id=m.conversation_id
-		WHERE m.id=$1`, msgID).Scan(&convID, &enterpriseID, &recalled)
+		WHERE m.id=$1`, msgID).Scan(&convID, &recalled)
 	if err != nil {
 		writeErrCode(w, 404, "not_found", "not found")
 		return
 	}
 	role := s.memberRole(r, convID, c.UserID)
-	if enterpriseID != c.EnterpriseID || role == "" || role == "pending" {
+	// Membership is enough — personal groups have NULL enterprise_id and must
+	// still accept reactions from members (including enterprise accounts).
+	if role == "" || role == "pending" {
 		writeErrCode(w, 403, "forbidden", "forbidden")
 		return
 	}

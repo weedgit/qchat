@@ -1,4 +1,4 @@
-/** Built-in sticker packs (Twemoji PNGs). No user-uploaded custom packs. */
+/** Built-in sticker packs. Prefer Google Noto Animated Emoji (WebP); Twemoji PNG fallback. */
 
 export type StickerItem = {
   id: string;
@@ -13,14 +13,58 @@ export type StickerPack = {
   stickers: StickerItem[];
 };
 
-/** Map an emoji to a Twemoji 72×72 PNG on jsDelivr. */
-export function emojiToTwemojiUrl(emoji: string): string {
-  const hex = [...emoji]
+/** Hex codepoints for an emoji, skipping VS-16 (U+FE0F). */
+export function emojiCodepointsHex(emoji: string, sep: "-" | "_" = "-"): string {
+  return Array.from(emoji)
     .map((ch) => ch.codePointAt(0))
     .filter((cp): cp is number => typeof cp === "number" && cp !== 0xfe0f)
     .map((cp) => cp.toString(16))
-    .join("-");
+    .join(sep);
+}
+
+/** Map an emoji to a Twemoji 72×72 PNG on jsDelivr (static). */
+export function emojiToTwemojiUrl(emoji: string): string {
+  const hex = emojiCodepointsHex(emoji, "-");
   return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${hex}.png`;
+}
+
+/** Map an emoji to Google Noto Animated Emoji WebP (loops like a GIF). */
+export function emojiToAnimatedUrl(emoji: string): string {
+  const hex = emojiCodepointsHex(emoji, "_");
+  return `https://fonts.gstatic.com/s/e/notoemoji/latest/${hex}/512.webp`;
+}
+
+/**
+ * Animals / glyphs known missing from Noto animated set — keep Twemoji PNG.
+ * Verified against fonts.gstatic.com notoemoji latest (2026-07).
+ */
+const STATIC_ONLY_HEX = new Set([
+  "1f436", // 🐶
+  "1f42d", // 🐭
+  "1f439", // 🐹
+  "1f430", // 🐰
+  "1f428", // 🐨
+  "1f42f", // 🐯
+  "1f435", // 🐵
+]);
+
+/** Prefer animated WebP for stickers / large emoji; static PNG when unavailable. */
+export function emojiToStickerUrl(emoji: string): string {
+  const hex = emojiCodepointsHex(emoji, "_");
+  if (STATIC_ONLY_HEX.has(hex)) return emojiToTwemojiUrl(emoji);
+  return emojiToAnimatedUrl(emoji);
+}
+
+/**
+ * Upgrade a stored Twemoji sticker URL to animated Noto WebP when available.
+ * Leaves GIF / other media URLs unchanged.
+ */
+export function maybeAnimateStickerUrl(url: string): string {
+  const m = url.match(/\/twemoji@[^/]+\/assets\/\d+x\d+\/([0-9a-f-]+)\.png(?:\?|$)/i);
+  if (!m) return url;
+  const hex = m[1].replace(/-/g, "_");
+  if (STATIC_ONLY_HEX.has(hex)) return url;
+  return `https://fonts.gstatic.com/s/e/notoemoji/latest/${hex}/512.webp`;
 }
 
 function pack(
@@ -35,7 +79,7 @@ function pack(
       id: `${id}-${i}`,
       emoji: it.emoji,
       label: it.label,
-      url: emojiToTwemojiUrl(it.emoji),
+      url: emojiToStickerUrl(it.emoji),
     })),
   };
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
+import { parseUserPayload } from "@/lib/userQr";
 import { useLocale } from "@/lib/locale";
 
 type BarcodeDetectorLike = {
@@ -15,11 +16,12 @@ function getBarcodeDetector(): (new (opts?: { formats: string[] }) => BarcodeDet
 }
 
 type Props = {
-  onDetected: (publicId: string) => void;
+  /** Raw QR payload (group invite or user profile). */
+  onDetected: (raw: string) => void;
   onClose: () => void;
 };
 
-/** Live camera QR scan for group invites (Chromium BarcodeDetector; paste fallback elsewhere). */
+/** Live camera QR scan (Chromium BarcodeDetector; paste fallback elsewhere). */
 export default function GroupQrScanner({ onDetected, onClose }: Props) {
   const { t } = useLocale();
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -88,11 +90,12 @@ export default function GroupQrScanner({ onDetected, onClose }: Props) {
               try {
                 const codes = await detector.detect(canvas);
                 for (const code of codes) {
-                  const publicId = parseGroupJoinPayload(String(code.rawValue ?? ""));
-                  if (publicId) {
+                  const raw = String(code.rawValue ?? "").trim();
+                  if (!raw) continue;
+                  if (parseGroupJoinPayload(raw) || parseUserPayload(raw)) {
                     handledRef.current = true;
                     stop();
-                    onDetectedRef.current(publicId);
+                    onDetectedRef.current(raw);
                     return;
                   }
                 }

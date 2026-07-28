@@ -713,7 +713,7 @@ export default function GroupsPage() {
               disabled={busy || avatarBusy}
               onClick={() => avatarInputRef.current?.click()}
             >
-              <Avatar name={title || "?"} url={avatarUrl} size={96} />
+              <Avatar name={title || "?"} url={avatarUrl} size={96} className="is-group" />
               <span className="avatar-edit-overlay" aria-hidden>
                 {"\u{1F4F7}"}
               </span>
@@ -917,8 +917,31 @@ export default function GroupsPage() {
                       : t("groups.roleMember");
               return (
               <div className="menu-modal-list-row" key={g.id}>
-                <Avatar name={g.title} url={g.avatarUrl} size={42} />
+                <Avatar name={g.title} url={g.avatarUrl} size={42} className="is-group" />
                 <div className="menu-modal-list-main">
+                  <div
+                    className={`groups-list-company${g.enterpriseName ? " is-enterprise" : ""}`}
+                    title={g.enterpriseName || t("chat.personalSocial")}
+                  >
+                    <svg
+                      className="groups-list-company-icon"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden
+                    >
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                      <circle cx="9" cy="7" r="4" />
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                    <span>{g.enterpriseName || t("chat.personalSocial")}</span>
+                  </div>
                   <div className="menu-modal-list-title">{g.title}</div>
                   <div className="menu-modal-list-sub">
                     {isPending
@@ -1041,7 +1064,7 @@ export default function GroupsPage() {
                   onClick={() => manageAvatarInputRef.current?.click()}
                 >
                   {manageAvatarUrl ? (
-                    <Avatar name={manageTitle || "?"} url={manageAvatarUrl} size={64} />
+                    <Avatar name={manageTitle || "?"} url={manageAvatarUrl} size={64} className="is-group" />
                   ) : (
                     <span className="edit-group-photo-icon" aria-hidden>
                       {"\u{1F4F7}"}
@@ -1050,7 +1073,7 @@ export default function GroupsPage() {
                 </button>
               ) : (
                 <div className={`edit-group-photo has-image${manageAvatarUrl ? "" : " is-empty"}`}>
-                  <Avatar name={manageTitle || "?"} url={manageAvatarUrl} size={64} />
+                  <Avatar name={manageTitle || "?"} url={manageAvatarUrl} size={64} className="is-group" />
                 </div>
               )}
               <input

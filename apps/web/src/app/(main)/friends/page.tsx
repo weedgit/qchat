@@ -79,7 +79,11 @@ export default function FriendsPage() {
     try {
       const res = await api<any>("/v1/friends/request", {
         method: "POST",
-        body: JSON.stringify({ user_id: u.id, greeting: t("chat.greetingHi") }),
+        body: JSON.stringify({
+          user_id: u.id,
+          username: u.username,
+          greeting: t("chat.greetingHi"),
+        }),
       });
       const status = String(res?.status ?? "");
       setResults([]);

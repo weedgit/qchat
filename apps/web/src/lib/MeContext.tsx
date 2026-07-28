@@ -22,12 +22,16 @@ type MeContextValue = {
 const MeContext = createContext<MeContextValue | null>(null);
 
 function userFromApi(u: any): CurrentUser {
+  const enterpriseId = String(u?.enterprise_id ?? "").trim();
+  const enterpriseName = String(u?.enterprise_name ?? "").trim();
   return {
     id: String(u?.id ?? ""),
     phone: String(u?.phone ?? ""),
     username: String(u?.username ?? ""),
     nickname: String(u?.display_name ?? u?.username ?? "Me"),
     avatarUrl: u?.avatar_url || undefined,
+    enterpriseId: enterpriseId || undefined,
+    enterpriseName: enterpriseName || undefined,
   };
 }
 
