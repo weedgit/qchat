@@ -233,3 +233,28 @@ LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… TURN_PASS=… ./deploy/render-media-c
 ```
 
 The API also refuses default LiveKit keys at startup when `QCHAT_ENV=production`.
+
+## Desktop update feed
+
+nginx serves electron-builder generic artifacts at `/desktop-updates/`
+(`deploy/nginx-qchat.conf` → alias `/var/www/qchat-desktop-updates/`).
+
+```bash
+sudo mkdir -p /var/www/qchat-desktop-updates
+# After npm run dist:linux / dist:win[:docker], copy latest*.yml + installers:
+#   sudo rsync -a apps/desktop/dist/latest*.yml \
+#     apps/desktop/dist/qchat-desktop*.{AppImage,deb,exe} \
+#     /var/www/qchat-desktop-updates/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Point packaged clients at the feed (leave `production.json` `updateUrl` empty
+until this is ready):
+
+```bash
+# example — set in userData/config.json or rebuild with production.json:
+# "updateUrl": "https://YOUR_HOST/desktop-updates"
+```
+
+Local desktop scaffold checks: `make desktop-check`. Wine Windows build on Linux:
+`make desktop-dist-win-docker` (requires Docker).

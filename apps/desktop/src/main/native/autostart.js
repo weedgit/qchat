@@ -84,11 +84,17 @@ function setAutostartEnabled(enabled) {
   }
 
   try {
-    app.setLoginItemSettings({
+    const hide = next && isHideOnStartEnabled();
+    const loginSettings = {
       openAtLogin: next,
       // SHELL-27: honor hide-on-start when registering the login item.
-      openAsHidden: next && isHideOnStartEnabled(),
-    });
+      openAsHidden: hide,
+    };
+    // Windows / macOS login items need explicit args; openAsHidden alone is unreliable.
+    if (hide && (process.platform === "darwin" || process.platform === "win32")) {
+      loginSettings.args = ["--hidden"];
+    }
+    app.setLoginItemSettings(loginSettings);
   } catch (err) {
     console.warn("[qchat-desktop] setLoginItemSettings failed:", err?.message || err);
   }

@@ -10,7 +10,7 @@ desktop clients only need the **web URL**.
 | Reverse proxy | **nginx** on 80/443 (recommended) | Optional; bare ports also work |
 | Web URL | `https://SERVER_IP/` | `http://LAN_IP:3000` or `https://LAN_IP/` |
 | API | Same origin via nginx, or `:8080` | `:8080` (Next on `:3000` → API auto `:8080`) |
-| Desktop script | `npm run start:vps` / `start:server` | `npm run start:lan-host` / `start:ubuntu` |
+| Desktop script | `npm run start:server` | `npm run start:lan` / `start:ubuntu` |
 | TLS / mic-camera | HTTPS (self-signed OK) | Prefer HTTPS+nginx; plain HTTP works for chat (UUID polyfill) |
 
 Both modes use the same codebase. Infra (Postgres, Redis, MinIO, NATS, LiveKit)
@@ -44,8 +44,7 @@ Desktop (Windows / any client):
 
 ```powershell
 cd apps/desktop
-npm run start:vps
-# same as: npm run start:server
+npm run start:server
 # → https://135.181.224.36
 ```
 
@@ -90,10 +89,10 @@ Desktop client on another PC:
 
 ```powershell
 cd apps/desktop
-# Edit package.json start:lan-host / start:ubuntu URL to your LAN IP, or:
+# Edit package.json start:lan / start:ubuntu URL to your LAN IP, or:
 npm start -- --url=http://192.168.1.124:3000
 # or:
-npm run start:lan-host
+npm run start:lan
 ```
 
 Captcha / token refresh in Electron resolve API as `http://LAN_IP:8080` when
@@ -114,8 +113,8 @@ If you want one URL without `:3000`:
 | Goal | Command |
 |---|---|
 | This machine’s Next.js | `npm run start:local` → `http://localhost:3000` |
-| LAN host (Ubuntu VM) | `npm run start:lan-host` / `start:ubuntu` → `http://192.168.1.124:3000` |
-| Public VPS | `npm run start:vps` / `start:server` → `https://135.181.224.36` |
+| LAN host (Ubuntu VM) | `npm run start:lan` / `start:ubuntu` → `http://192.168.1.124:3000` |
+| Public VPS | `npm run start:server` → `https://135.181.224.36` |
 | Custom | `npm start -- --url=https://YOUR_HOST` or `QCHAT_WEB_URL=...` |
 
 Optional override for main-process API fetches:
