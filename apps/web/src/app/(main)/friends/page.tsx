@@ -41,6 +41,15 @@ export default function FriendsPage() {
     load();
   }, [load]);
 
+  // Live pending/accepted updates from WS (hub publishes friend.request).
+  useEffect(() => {
+    const onFriend = () => {
+      void load();
+    };
+    window.addEventListener("qchat:friend-request", onFriend);
+    return () => window.removeEventListener("qchat:friend-request", onFriend);
+  }, [load]);
+
   useEffect(() => {
     const q = query.trim();
     if (!q) {
