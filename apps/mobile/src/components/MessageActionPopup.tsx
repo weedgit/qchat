@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "./Avatar";
@@ -12,6 +13,21 @@ export const QUICK_EMOJIS = [
   "\u{1F970}", // 🥰
   "\u{1F44F}", // 👏
   "\u{1F603}", // 😃
+] as const;
+
+const MORE_EMOJIS = [
+  "\u{1F602}", // 😂
+  "\u{1F62E}", // 😮
+  "\u{1F622}", // 😢
+  "\u{1F621}", // 😡
+  "\u{1F64F}", // 🙏
+  "\u{1F389}", // 🎉
+  "\u{1F4AF}", // 💯
+  "\u2B50", // ⭐
+  "\u{1F44C}", // 👌
+  "\u{1F91D}", // 🤝
+  "\u{1F480}", // 💀
+  "\u{1F923}", // 🤣
 ] as const;
 
 type ActionKey = "reply" | "copy" | "forward" | "pin" | "unpin" | "edit" | "delete" | "select";
@@ -49,6 +65,7 @@ export function MessageActionPopup({
   onReact,
   onAction,
 }: MessageActionPopupProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
   const title = msg.mine
     ? statusLabel(msg)
     : msg.senderName || "User";
@@ -80,23 +97,36 @@ export function MessageActionPopup({
   if (canDelete) rows.push({ key: "delete", label: "Delete", icon: "trash-outline", danger: true });
   rows.push({ key: "select", label: "Select", icon: "checkbox-outline" });
 
+  const reactList = moreOpen ? [...QUICK_EMOJIS, ...MORE_EMOJIS] : [...QUICK_EMOJIS];
+
   return (
     <Pressable style={styles.backdrop} onPress={onClose}>
       <Pressable style={styles.sheet} onPress={() => {}}>
         {canReact ? (
-          <View style={styles.reactBar}>
-            {QUICK_EMOJIS.map((emoji) => (
+          <View style={styles.reactWrap}>
+            <View style={[styles.reactBar, moreOpen && styles.reactBarExpanded]}>
+              {reactList.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  style={styles.reactBtn}
+                  onPress={() => onReact(emoji)}
+                  hitSlop={4}
+                >
+                  <Text style={styles.reactEmoji}>{emoji}</Text>
+                </Pressable>
+              ))}
               <Pressable
-                key={emoji}
-                style={styles.reactBtn}
-                onPress={() => onReact(emoji)}
+                style={styles.reactMore}
+                onPress={() => setMoreOpen((v) => !v)}
+                accessibilityLabel={moreOpen ? "Fewer reactions" : "More reactions"}
                 hitSlop={4}
               >
-                <Text style={styles.reactEmoji}>{emoji}</Text>
+                <Ionicons
+                  name={moreOpen ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color="rgba(255,255,255,0.7)"
+                />
               </Pressable>
-            ))}
-            <View style={styles.reactMore}>
-              <Ionicons name="chevron-down" size={16} color="rgba(255,255,255,0.7)" />
             </View>
           </View>
         ) : null}
@@ -157,15 +187,25 @@ const styles = StyleSheet.create({
     maxWidth: 320,
     gap: 10,
   },
+  reactWrap: {
+    alignItems: "center",
+  },
   reactBar: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "center",
+    flexWrap: "nowrap",
     backgroundColor: "#2c2c2e",
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 6,
     gap: 2,
+  },
+  reactBarExpanded: {
+    flexWrap: "wrap",
+    maxWidth: 320,
+    justifyContent: "center",
+    borderRadius: 18,
   },
   reactBtn: {
     width: 36,
@@ -173,19 +213,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  reactEmoji: { fontSize: 22 },
+  reactEmoji: {
+    fontSize: 22,
+  },
   reactMore: {
     width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 2,
   },
   menu: {
     backgroundColor: "#2c2c2e",
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: "hidden",
   },
   menuHeader: {
@@ -195,7 +234,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.12)",
+    borderBottomColor: "#3a3a3c",
   },
   menuHeaderLeft: {
     flexDirection: "row",
@@ -207,7 +246,7 @@ const styles = StyleSheet.create({
   },
   menuTitle: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
     flexShrink: 1,
   },
@@ -218,9 +257,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.08)",
+    borderBottomColor: "#3a3a3c",
   },
-  menuRowLast: { borderBottomWidth: 0 },
-  menuLabel: { color: "#fff", fontSize: 16, fontWeight: "500" },
-  menuLabelDanger: { color: "#ff6b6b" },
+  menuRowLast: {
+    borderBottomWidth: 0,
+  },
+  menuLabel: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "500",
+  },
+  menuLabelDanger: {
+    color: "#ff6b6b",
+  },
 });
