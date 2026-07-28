@@ -18,6 +18,7 @@ import {
   type GroupCallInviteMember,
 } from "./GroupCallInviteSheet";
 import { useAuth } from "../context/AuthContext";
+import { qualityLabel } from "../lib/callQuality";
 import type { useCall } from "../lib/useCall";
 import { useThemedStyles } from "../context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../theme";
@@ -128,6 +129,10 @@ export function CallOverlay({ call }: { call: CallApi }) {
     connectedAt,
     micMuted,
     cameraOff,
+    speakerOn,
+    reconnecting,
+    connectionQuality,
+    qualityDegraded,
     remoteVideoRef,
     localVideoRef,
     localAudioTrack,
@@ -140,6 +145,7 @@ export function CallOverlay({ call }: { call: CallApi }) {
     kickFromCall,
     toggleMic,
     toggleCamera,
+    toggleSpeaker,
   } = call;
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -182,9 +188,12 @@ export function CallOverlay({ call }: { call: CallApi }) {
       ? `Calling… (${active.kind}${active.isGroup ? " · group" : ""})`
       : connecting
         ? "Connecting…"
-        : `${active?.kind === "video" ? "Video" : "Voice"} call${
-            active?.isGroup ? " · Group" : ""
-          }`;
+        : reconnecting
+          ? "Reconnecting…"
+          : `${active?.kind === "video" ? "Video" : "Voice"} call${
+              active?.isGroup ? " · Group" : ""
+            }`;
+  const qualityText = qualityLabel(connectionQuality);
 
   const showVideo = active?.status === "active" && active.kind === "video" && !connecting;
   const showMeters =
@@ -249,7 +258,19 @@ export function CallOverlay({ call }: { call: CallApi }) {
               {active?.status === "active" && connectedAt != null && !connecting ? (
                 <CallDuration connectedAt={connectedAt} />
               ) : null}
-              {connecting ? <ActivityIndicator color="#fff" style={{ marginTop: 8 }} /> : null}
+              {connecting || reconnecting ? (
+                <ActivityIndicator color="#fff" style={{ marginTop: 8 }} />
+              ) : null}
+              {qualityText && active?.status === "active" && !connecting ? (
+                <Text
+                  style={[
+                    styles.qualityHint,
+                    qualityDegraded && styles.qualityDegraded,
+                  ]}
+                >
+                  {qualityDegraded ? `⚠ ${qualityText}` : qualityText}
+                </Text>
+              ) : null}
             </>
           )}
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -324,6 +345,16 @@ export function CallOverlay({ call }: { call: CallApi }) {
                 onPress={() => toggleMic().catch(() => {})}
               >
                 <Ionicons name={micMuted ? "mic-off" : "mic"} size={26} color="#fff" />
+              </ControlBtn>
+              <ControlBtn
+                label={speakerOn ? "Speaker on" : "Earpiece"}
+                onPress={() => toggleSpeaker().catch(() => {})}
+              >
+                <Ionicons
+                  name={speakerOn ? "volume-high" : "ear-outline"}
+                  size={26}
+                  color="#fff"
+                />
               </ControlBtn>
               {active?.kind === "video" ? (
                 <ControlBtn
@@ -452,6 +483,16 @@ function makeStyles(c: ColorTokens) {
     color: "#fecaca",
     marginTop: 12,
     textAlign: "center" as const,
+  },
+  qualityHint: {
+    marginTop: 8,
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 13,
+    fontWeight: "600" as const,
+    textAlign: "center" as const,
+  },
+  qualityDegraded: {
+    color: "#fbbf24",
   },
   peersScroll: {
     maxHeight: 140,

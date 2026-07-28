@@ -5,6 +5,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -34,6 +35,7 @@ import { useChat } from "../../src/context/ChatContext";
 import { useCallApi } from "../../src/context/CallContext";
 import { api, asList, mediaAuthURL } from "../../src/lib/api";
 import type { CallKind } from "../../src/lib/useCall";
+import { getDraft, saveDraft } from "../../src/lib/drafts";
 import { isVideoAttachmentHint } from "../../src/lib/mediaLimits";
 import { Conversation, Message, Reaction, conversationDisplayName, formatLastSeen } from "../../src/lib/types";
 import {
@@ -142,7 +144,15 @@ const receiptCountStyle = {
   color: "rgba(255,255,255,0.88)",
 };
 
-function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
+function MediaBody({
+  item,
+  mine,
+  onOpenImage,
+}: {
+  item: Message;
+  mine: boolean;
+  onOpenImage?: (uri: string) => void;
+}) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const isVideo =
@@ -184,17 +194,47 @@ function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
     item.type === "voice" && item.mediaUrl
       ? mediaAuthURL(item.mediaUrl) || item.mediaUrl
       : undefined;
+  const fileUri =
+    item.type === "file" && !isVideo && item.mediaUrl
+      ? mediaAuthURL(item.mediaUrl) || item.mediaUrl
+      : undefined;
+
+  async function openFile() {
+    if (!fileUri) return;
+    try {
+      const can = await Linking.canOpenURL(fileUri);
+      if (can) {
+        await Linking.openURL(fileUri);
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+    try {
+      await Share.share({ url: fileUri, message: detail || label });
+    } catch {
+      Alert.alert("Could not open file", "Copy the link from another device if this persists.");
+    }
+  }
 
   if (imageUri) {
     return (
       <View style={styles.videoCol}>
-        <Pressable onPress={(e) => e?.stopPropagation?.()}>
+        <Pressable
+          onPress={(e) => {
+            e?.stopPropagation?.();
+            onOpenImage?.(imageUri);
+          }}
+        >
           <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="cover" />
         </Pressable>
         {detail ? (
-          <Text style={[styles.mediaDetail, { color: subTint }]} numberOfLines={2}>
-            {detail}
-          </Text>
+          <MessageBody
+            text={detail}
+            style={[styles.mediaDetail, { color: subTint }]}
+            mentionStyle={mine ? styles.mentionMine : styles.mentionPeer}
+            linkStyle={mine ? styles.linkMine : styles.linkPeer}
+          />
         ) : null}
       </View>
     );
@@ -225,9 +265,12 @@ function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
           />
         </Pressable>
         {detail ? (
-          <Text style={[styles.mediaDetail, { color: subTint }]} numberOfLines={2}>
-            {detail}
-          </Text>
+          <MessageBody
+            text={detail}
+            style={[styles.mediaDetail, { color: subTint }]}
+            mentionStyle={mine ? styles.mentionMine : styles.mentionPeer}
+            linkStyle={mine ? styles.linkMine : styles.linkPeer}
+          />
         ) : (
           <Text style={[styles.mediaTitle, { color: tint }]} numberOfLines={1}>
             {label}
@@ -238,7 +281,13 @@ function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
   }
 
   return (
-    <View style={styles.mediaRow}>
+    <Pressable
+      style={styles.mediaRow}
+      onPress={(e) => {
+        e?.stopPropagation?.();
+        void openFile();
+      }}
+    >
       <View style={[styles.mediaIconWrap, mine ? styles.mediaIconMine : styles.mediaIconPeer]}>
         <Ionicons name={icon} size={20} color={tint} />
       </View>
@@ -250,9 +299,13 @@ function MediaBody({ item, mine }: { item: Message; mine: boolean }) {
           <Text style={[styles.mediaDetail, { color: subTint }]} numberOfLines={2}>
             {detail}
           </Text>
+        ) : fileUri ? (
+          <Text style={[styles.mediaDetail, { color: subTint }]} numberOfLines={1}>
+            Tap to open
+          </Text>
         ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -269,6 +322,10 @@ type ChatMessageRowProps = {
   onPress: (item: Message) => void;
   onLongPress: (item: Message) => void;
   onPressReply?: (replyToId: string) => void;
+  onRetry?: (item: Message) => void;
+  onCancelUpload?: (item: Message) => void;
+  onReactChip?: (item: Message, emoji: string) => void;
+  onOpenImage?: (uri: string) => void;
 };
 
 /** Memoized row — keeps FlatList from re-rendering every bubble on parent updates. */
@@ -282,6 +339,10 @@ const ChatMessageRow = memo(function ChatMessageRow({
   onPress,
   onLongPress,
   onPressReply,
+  onRetry,
+  onCancelUpload,
+  onReactChip,
+  onOpenImage,
 }: ChatMessageRowProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -359,28 +420,67 @@ const ChatMessageRow = memo(function ChatMessageRow({
           </Pressable>
         ) : null}
         {isMedia ? (
-          <MediaBody item={item} mine={mine} />
+          <MediaBody item={item} mine={mine} onOpenImage={onOpenImage} />
         ) : (
           <MessageBody
             text={messageBody(item)}
             style={[styles.body, mine ? styles.mineText : styles.peerText]}
             mentionStyle={mine ? styles.mentionMine : styles.mentionPeer}
+            linkStyle={mine ? styles.linkMine : styles.linkPeer}
+            codeStyle={mine ? styles.codeMine : styles.codePeer}
           />
         )}
+        {item.pending && typeof item.uploadProgress === "number" ? (
+          <View style={styles.uploadRow}>
+            <View style={styles.uploadTrack}>
+              <View
+                style={[
+                  styles.uploadFill,
+                  { width: `${Math.round(item.uploadProgress * 100)}%` },
+                ]}
+              />
+            </View>
+            {onCancelUpload ? (
+              <Pressable
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  onCancelUpload(item);
+                }}
+                hitSlop={8}
+                accessibilityLabel="Cancel upload"
+              >
+                <Ionicons name="close-circle" size={18} color={mine ? "#fecaca" : colors.danger} />
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
         {item.failed ? (
-          <Text style={mine ? styles.fail : styles.failPeer}>Failed to send</Text>
+          <Pressable
+            onPress={(e) => {
+              e?.stopPropagation?.();
+              onRetry?.(item);
+            }}
+          >
+            <Text style={mine ? styles.fail : styles.failPeer}>
+              {item.error ? `${item.error} · Tap to retry` : "Failed to send · Tap to retry"}
+            </Text>
+          </Pressable>
         ) : null}
         {(item.reactions?.length ?? 0) > 0 ? (
           <View style={styles.reactionRow}>
             {item.reactions!.map((r: Reaction) => (
-              <View
+              <Pressable
                 key={r.emoji}
                 style={[styles.reactionChip, r.mine && styles.reactionChipMine]}
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  onReactChip?.(item, r.emoji);
+                }}
               >
                 <Text style={styles.reactionChipText}>
                   {r.emoji} {r.count > 1 ? r.count : ""}
                 </Text>
-              </View>
+              </Pressable>
             ))}
           </View>
         ) : null}
@@ -443,6 +543,10 @@ type ChatMessageListProps = {
   onPressMessage: (item: Message) => void;
   onLongPressMessage: (item: Message) => void;
   onPressReply?: (replyToId: string) => void;
+  onRetry?: (item: Message) => void;
+  onCancelUpload?: (item: Message) => void;
+  onReactChip?: (item: Message, emoji: string) => void;
+  onOpenImage?: (uri: string) => void;
 };
 
 const ChatMessageList = memo(function ChatMessageList({
@@ -460,6 +564,10 @@ const ChatMessageList = memo(function ChatMessageList({
   onPressMessage,
   onLongPressMessage,
   onPressReply,
+  onRetry,
+  onCancelUpload,
+  onReactChip,
+  onOpenImage,
 }: ChatMessageListProps) {
   const styles = useThemedStyles(makeStyles);
   const keyExtractor = useCallback((m: Message) => m.id, []);
@@ -484,6 +592,10 @@ const ChatMessageList = memo(function ChatMessageList({
         onPress={onPressMessage}
         onLongPress={onLongPressMessage}
         onPressReply={onPressReply}
+        onRetry={onRetry}
+        onCancelUpload={onCancelUpload}
+        onReactChip={onReactChip}
+        onOpenImage={onOpenImage}
       />
     ),
     [
@@ -495,6 +607,10 @@ const ChatMessageList = memo(function ChatMessageList({
       onPressMessage,
       onLongPressMessage,
       onPressReply,
+      onRetry,
+      onCancelUpload,
+      onReactChip,
+      onOpenImage,
     ]
   );
 
@@ -680,9 +796,12 @@ export default function ChatScreen() {
     sendMediaMessage,
     sendRemoteImage,
     sendVoiceMessage,
+    retryMessage,
+    cancelUpload,
     typingByConv,
     presenceByUser,
     notifyTyping,
+    subscribeEvents,
   } = useChat();
   const { user } = useAuth();
   const call = useCallApi();
@@ -698,6 +817,9 @@ export default function ChatScreen() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [mentionMembers, setMentionMembers] = useState<MentionMember[]>([]);
+  const [myMuteUntil, setMyMuteUntil] = useState<string | undefined>(undefined);
+  const [groupMuteAll, setGroupMuteAll] = useState(false);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
   const [groupCallInvite, setGroupCallInvite] = useState<CallKind | null>(null);
   const [groupCallInviteBusy, setGroupCallInviteBusy] = useState(false);
   const [groupCallInviteLoading, setGroupCallInviteLoading] = useState(false);
@@ -731,6 +853,8 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!isGroup || !convId) {
       setMentionMembers([]);
+      setMyMuteUntil(undefined);
+      setGroupMuteAll(false);
       return;
     }
     let cancelled = false;
@@ -749,14 +873,69 @@ export default function ChatScreen() {
             }))
             .filter((m: MentionMember) => Boolean(m.username))
         );
+        const self = raw.find((m: any) => String(m?.user_id ?? "") === meId);
+        setMyMuteUntil(self?.mute_until ? String(self.mute_until) : undefined);
+        setGroupMuteAll(Boolean(g?.mute_all));
       })
       .catch(() => {
-        if (!cancelled) setMentionMembers([]);
+        if (!cancelled) {
+          setMentionMembers([]);
+          setMyMuteUntil(undefined);
+          setGroupMuteAll(false);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [isGroup, convId]);
+
+  useEffect(() => {
+    if (!isGroup || !convId) return;
+    return subscribeEvents((type, payload) => {
+      if (type !== "group.updated") return;
+      if (String(payload?.conversation_id ?? "") !== convId) return;
+      if (payload?.mute_all != null) setGroupMuteAll(Boolean(payload.mute_all));
+      const meId = user?.id;
+      const members = Array.isArray(payload?.members) ? payload.members : null;
+      if (meId && members) {
+        const self = members.find((m: any) => String(m?.user_id ?? "") === meId);
+        if (self) setMyMuteUntil(self?.mute_until ? String(self.mute_until) : undefined);
+      }
+    });
+  }, [isGroup, convId, subscribeEvents, user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setText("");
+    void getDraft(convId).then((draft) => {
+      if (!cancelled && draft) setText(draft);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [convId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void saveDraft(convId, editing ? "" : text);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [convId, text, editing]);
+
+  const isAdmin =
+    isGroup && (conversation?.role === "owner" || conversation?.role === "admin");
+  const speakMuted =
+    Boolean(myMuteUntil) &&
+    (myMuteUntil!.startsWith("9999") ||
+      (!Number.isNaN(new Date(myMuteUntil!).getTime()) &&
+        new Date(myMuteUntil!).getTime() > Date.now()));
+  const muteAllActive = Boolean(conversation?.muteAll) || groupMuteAll;
+  const composerBlockedByMute = isGroup && !isAdmin && (muteAllActive || speakMuted);
+  const composerBlockedReason = composerBlockedByMute
+    ? muteAllActive
+      ? "The whole group is muted"
+      : "You are muted in this group"
+    : undefined;
 
   const selectedMsgs = useMemo(
     () => list.filter((m) => selectedIds.includes(m.id)),
@@ -1243,7 +1422,12 @@ export default function ChatScreen() {
   async function onSend() {
     const body = text.trim();
     if (!body) return;
+    if (composerBlockedByMute && !editing) {
+      Alert.alert("Muted", composerBlockedReason || "You cannot send messages right now.");
+      return;
+    }
     setText("");
+    void saveDraft(convId, "");
     if (editing) {
       const target = editing;
       setEditing(null);
@@ -1371,6 +1555,14 @@ export default function ChatScreen() {
           onPressMessage={onPressMessage}
           onLongPressMessage={onLongPressMessage}
           onPressReply={onPressReply}
+          onRetry={(m) => {
+            void retryMessage(convId, m);
+          }}
+          onCancelUpload={(m) => cancelUpload(convId, m)}
+          onReactChip={(m, emoji) => {
+            void reactMessage(m.id, convId, emoji).catch(() => {});
+          }}
+          onOpenImage={setViewerUri}
         />
         <Modal
           visible={Boolean(ctxMsg)}
@@ -1497,6 +1689,14 @@ export default function ChatScreen() {
           onPressMessage={onPressMessage}
           onLongPressMessage={onLongPressMessage}
           onPressReply={onPressReply}
+          onRetry={(m) => {
+            void retryMessage(convId, m);
+          }}
+          onCancelUpload={(m) => cancelUpload(convId, m)}
+          onReactChip={(m, emoji) => {
+            void reactMessage(m.id, convId, emoji).catch(() => {});
+          }}
+          onOpenImage={setViewerUri}
         />
         {showJumpBottom ? (
           <Pressable
@@ -1521,28 +1721,54 @@ export default function ChatScreen() {
             setText("");
           }}
           onCancelReply={() => setReplyTo(null)}
-          onPickMedia={(uri, kind, name, mimeType) => {
+          onPickMedia={(uri, kind, name, mimeType, caption) => {
+            if (composerBlockedByMute) return;
             sendMediaMessage(convId, uri, {
               kind,
               name,
               mimeType,
               replyToId: replyTo?.id,
+              caption,
             }).catch(() => {});
             setReplyTo(null);
           }}
           onSendVoice={(uri, durationSec) => {
+            if (composerBlockedByMute) return;
             sendVoiceMessage(convId, uri, durationSec, replyTo?.id).catch(() => {});
             setReplyTo(null);
           }}
           onSendRemoteImage={(url, caption) => {
+            if (composerBlockedByMute) return;
             sendRemoteImage(convId, url, caption, replyTo?.id).catch(() => {});
             setReplyTo(null);
           }}
           onTyping={() => notifyTyping(convId)}
           mentionEnabled={isGroup}
           mentionMembers={mentionMembers}
+          disabled={composerBlockedByMute}
+          disabledReason={composerBlockedReason}
         />
       ) : null}
+
+      <Modal
+        visible={Boolean(viewerUri)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewerUri(null)}
+      >
+        <Pressable style={styles.imageViewerBg} onPress={() => setViewerUri(null)}>
+          {viewerUri ? (
+            <Image source={{ uri: viewerUri }} style={styles.imageViewer} resizeMode="contain" />
+          ) : null}
+          <Pressable
+            style={styles.imageViewerClose}
+            onPress={() => setViewerUri(null)}
+            accessibilityLabel="Close image"
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={Boolean(ctxMsg)}
@@ -1863,9 +2089,46 @@ function makeStyles(c: ColorTokens) {
   mineText: { color: "#fff" },
   peerText: { color: c.text },
   mentionMine: { fontWeight: "700" as const, textDecorationLine: "underline" as const },
-  mentionPeer: {
-    color: c.accent,
-    fontWeight: "700" as const,
+  mentionPeer: { fontWeight: "700" as const, color: c.accent },
+  linkMine: { color: "#dbeafe", textDecorationLine: "underline" as const },
+  linkPeer: { color: c.accent, textDecorationLine: "underline" as const },
+  codeMine: {
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    backgroundColor: "rgba(0,0,0,0.2)",
+  },
+  codePeer: {
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  uploadRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    marginTop: 6,
+  },
+  uploadTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    overflow: "hidden" as const,
+  },
+  uploadFill: {
+    height: 4,
+    backgroundColor: "#fff",
+  },
+  imageViewerBg: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
+  },
+  imageViewer: { width: "100%" as const, height: "80%" as const },
+  imageViewerClose: {
+    position: "absolute" as const,
+    top: 48,
+    right: 20,
+    padding: 8,
   },
   mediaRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, minWidth: 140 },
   videoCol: { gap: 6, minWidth: 200, maxWidth: 260 },
