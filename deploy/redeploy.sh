@@ -2,10 +2,12 @@
 # Pull latest changes, then rebuild and restart Qchat.
 #
 # Usage:
-#   ./deploy/redeploy.sh           # pull + rebuild API, web, and admin
-#   ./deploy/redeploy.sh --api     # pull + API only
-#   ./deploy/redeploy.sh --web     # pull + web only
-#   ./deploy/redeploy.sh --admin   # pull + admin only
+#   ./deploy/redeploy.sh                # pull + rebuild API, web, and admin
+#   ./deploy/redeploy.sh --api          # pull + API only
+#   ./deploy/redeploy.sh --web          # pull + web only
+#   ./deploy/redeploy.sh --admin        # pull + admin only
+#   ./deploy/redeploy.sh --require-media  # fail if LiveKit/coturn do not come up
+#   ./deploy/redeploy.sh --skip-env-check # skip deploy/check-env.sh
 #
 set -euo pipefail
 
@@ -14,16 +16,20 @@ DO_API=0
 DO_WEB=0
 DO_ADMIN=0
 ANY_TARGET=0
+REQUIRE_MEDIA=0
+SKIP_ENV_CHECK=0
 
 usage() {
   cat <<'EOF'
 Pull latest changes, then rebuild and restart Qchat.
 
 Usage:
-  ./deploy/redeploy.sh           # pull + rebuild API, web, and admin
-  ./deploy/redeploy.sh --api     # pull + API only
-  ./deploy/redeploy.sh --web     # pull + web only
-  ./deploy/redeploy.sh --admin   # pull + admin only
+  ./deploy/redeploy.sh
+  ./deploy/redeploy.sh --api
+  ./deploy/redeploy.sh --web
+  ./deploy/redeploy.sh --admin
+  ./deploy/redeploy.sh --require-media
+  ./deploy/redeploy.sh --skip-env-check
 EOF
   exit "${1:-0}"
 }
@@ -33,6 +39,8 @@ for arg in "$@"; do
     --api) DO_API=1; ANY_TARGET=1 ;;
     --web) DO_WEB=1; ANY_TARGET=1 ;;
     --admin) DO_ADMIN=1; ANY_TARGET=1 ;;
+    --require-media) REQUIRE_MEDIA=1 ;;
+    --skip-env-check) SKIP_ENV_CHECK=1 ;;
     -h|--help) usage 0 ;;
     *) echo "Unknown option: $arg" >&2; usage 1 ;;
   esac
@@ -74,6 +82,27 @@ if [[ ! -f "$ENV_FILE" ]]; then
   fi
 fi
 
+chmod +x "$ROOT/deploy/check-env.sh" "$ROOT/deploy/smoke-livekit.sh" "$ROOT/deploy/render-media-config.sh" 2>/dev/null || true
+
+# Load API env so render-media-config inherits LIVEKIT_* / TURN_* (avoids
+# overwriting rotated production keys with documented defaults).
+# shellcheck disable=SC1090
+set -a
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+set +a
+
+if [[ "$SKIP_ENV_CHECK" -eq 0 ]]; then
+  log "check env"
+  # Fail hard when QCHAT_ENV=production (warnings only in development).
+  "$ROOT/deploy/check-env.sh" || {
+    echo "error: env check failed; fix deploy/qchat-api.env or pass --skip-env-check" >&2
+    exit 1
+  }
+else
+  echo "warning: skipped env check (--skip-env-check)" >&2
+fi
+
 log "ensure TLS certs (HTTPS for mic/camera)"
 chmod +x "$ROOT/deploy/generate-tls.sh"
 "$ROOT/deploy/generate-tls.sh"
@@ -85,10 +114,30 @@ set -a
 # shellcheck source=/dev/null
 source "$ROOT/deploy/generated/media.env"
 set +a
+
+MEDIA_OK=0
 if (cd "$ROOT" && docker compose up -d livekit coturn); then
   echo "LiveKit: ${LIVEKIT_URL}"
+  if "$ROOT/deploy/smoke-livekit.sh"; then
+    MEDIA_OK=1
+  else
+    echo "warning: LiveKit smoke failed after compose up" >&2
+  fi
 else
   echo "warning: could not start livekit/coturn (is Docker running?)" >&2
+fi
+
+if [[ "$REQUIRE_MEDIA" -eq 1 && "$MEDIA_OK" -ne 1 ]]; then
+  echo "error: --require-media set but LiveKit is not healthy" >&2
+  exit 1
+fi
+
+# Re-check after media.env merge into qchat-api.env (render updates keys).
+if [[ "$SKIP_ENV_CHECK" -eq 0 ]]; then
+  "$ROOT/deploy/check-env.sh" || {
+    echo "error: env check failed after media render (keys may still be defaults in production)" >&2
+    exit 1
+  }
 fi
 
 if [[ "$DO_API" -eq 1 ]]; then
@@ -178,6 +227,12 @@ if command -v nginx >/dev/null 2>&1; then
   echo "Admin :443/admin/ OK"
   curl -kfsS --retry 3 --retry-delay 1 https://127.0.0.1/healthz >/dev/null
   echo "Nginx /healthz OK"
+fi
+
+if [[ "$MEDIA_OK" -eq 1 ]]; then
+  echo "LiveKit smoke OK"
+elif [[ "$REQUIRE_MEDIA" -eq 0 ]]; then
+  echo "LiveKit smoke skipped/failed (pass --require-media to fail the deploy)"
 fi
 
 log "redeploy complete"

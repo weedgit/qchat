@@ -10,6 +10,8 @@
 - [x] Electron contextIsolation + sandbox
 - [ ] TLS termination (nginx/caddy) in production
 - [x] Rotate `QCHAT_JWT_SECRET` — `deploy/rotate-jwt-secret.sh` + `qchat-api.env.example`; production refuses weak default (`QCHAT_ENV=production`)
+- [x] Production refuses default LiveKit API key/secret — `ValidateSecrets` + `deploy/check-env.sh` + `render-media-config.sh --strict`
+- [x] `deploy/check-env.sh` + LiveKit smoke (`deploy/smoke-livekit.sh`) wired into `redeploy.sh` (`--require-media`)
 - [x] Penetration test checklist — `docs/SECURITY_REVIEW.md` (+ MIME allowlist + admin reason length fixes)
 - [x] Rate limits at reverse proxy — `deploy/nginx-qchat.conf` (`limit_req` on auth / API / WS)
 

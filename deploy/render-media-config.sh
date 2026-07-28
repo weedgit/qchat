@@ -17,6 +17,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/deploy/generated"
 HOST_OVERRIDE=""
+STRICT=0
 
 usage() {
   cat <<'EOF'
@@ -25,11 +26,13 @@ Render LiveKit + coturn configs for the current machine.
 Usage:
   ./deploy/render-media-config.sh
   ./deploy/render-media-config.sh --host <ip-or-dns>
+  ./deploy/render-media-config.sh --strict
 
 Environment (optional):
   LIVEKIT_NODE_IP / QCHAT_PUBLIC_HOST   browser-reachable host
   LIVEKIT_API_KEY / LIVEKIT_API_SECRET  must match the API process
   TURN_USER / TURN_PASS                 coturn credentials
+  QCHAT_ENV=production                  same as --strict (refuse default secrets)
 EOF
   exit "${1:-0}"
 }
@@ -41,10 +44,22 @@ while [[ $# -gt 0 ]]; do
       [[ -n "$HOST_OVERRIDE" ]] || usage 1
       shift 2
       ;;
+    --strict) STRICT=1; shift ;;
     -h|--help) usage 0 ;;
     *) echo "Unknown option: $1" >&2; usage 1 ;;
   esac
 done
+
+QCHAT_ENV_VAL="$(echo "${QCHAT_ENV:-development}" | tr '[:upper:]' '[:lower:]')"
+if [[ "$QCHAT_ENV_VAL" == "production" ]]; then
+  STRICT=1
+fi
+if [[ "$STRICT" -eq 0 && -f "$ROOT/deploy/qchat-api.env" ]]; then
+  env_line="$(grep -E '^QCHAT_ENV=' "$ROOT/deploy/qchat-api.env" | tail -n1 || true)"
+  case "$env_line" in
+    QCHAT_ENV=production|QCHAT_ENV=PRODUCTION) STRICT=1 ;;
+  esac
+fi
 
 is_private_or_loopback() {
   case "$1" in
@@ -97,6 +112,25 @@ API_KEY="${LIVEKIT_API_KEY:-devkey}"
 API_SECRET="${LIVEKIT_API_SECRET:-secret-that-is-at-least-32-characters-long}"
 TURN_USER="${TURN_USER:-qchat}"
 TURN_PASS="${TURN_PASS:-qchatturnsecret}"
+
+DEFAULT_LK_KEY="devkey"
+DEFAULT_LK_SECRET="secret-that-is-at-least-32-characters-long"
+DEFAULT_TURN_PASS="qchatturnsecret"
+
+if [[ "$STRICT" -eq 1 ]]; then
+  if [[ "$API_KEY" == "$DEFAULT_LK_KEY" ]]; then
+    echo "error: production/strict refuse default LIVEKIT_API_KEY=$DEFAULT_LK_KEY; export a unique LIVEKIT_API_KEY" >&2
+    exit 1
+  fi
+  if [[ "$API_SECRET" == "$DEFAULT_LK_SECRET" ]]; then
+    echo "error: production/strict refuse default LIVEKIT_API_SECRET; export a unique ≥32-char LIVEKIT_API_SECRET" >&2
+    exit 1
+  fi
+  if [[ "$TURN_PASS" == "$DEFAULT_TURN_PASS" ]]; then
+    echo "error: production/strict refuse default TURN_PASS; export a unique TURN_PASS" >&2
+    exit 1
+  fi
+fi
 
 if [[ "${#API_SECRET}" -lt 32 ]]; then
   echo "error: LIVEKIT_API_SECRET must be at least 32 characters" >&2
