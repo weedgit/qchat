@@ -1770,10 +1770,16 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   color: rgba(255, 255, 255, 0.7);
   font-weight: 600;
 }
+.receipt-tick.delivered {
+  color: rgba(255, 255, 255, 0.7);
+}
 .receipt-tick.read {
   color: var(--accent);
 }
 [data-theme="light"] .receipt-tick {
+  color: rgba(26, 35, 50, 0.7);
+}
+[data-theme="light"] .receipt-tick.delivered {
   color: rgba(26, 35, 50, 0.7);
 }
 [data-theme="light"] .receipt-tick.read {

@@ -347,7 +347,7 @@ function ConversationRow({
 }
 
 function receiptMark(msg: Message): ReactNode {
-  // JD / WeChat-style: ⏳ sending → ✓ sent/delivered → ✓✓ read
+  // JD / WeChat-style: ⏳ sending → ✓ sent → ✓✓ delivered → blue ✓✓ read
   if (msg.pending) return " \u23F3";
   if (msg.failed) return " !";
   if (!msg.mine || msg.recalled) return "";
@@ -356,6 +356,7 @@ function receiptMark(msg: Message): ReactNode {
     return ` ${n}/${msg.memberCount}`;
   }
   if (msg.read) return <span className="receipt-tick read">{" \u2713\u2713"}</span>;
+  if (msg.delivered) return <span className="receipt-tick delivered">{" \u2713\u2713"}</span>;
   return <span className="receipt-tick">{" \u2713"}</span>;
 }
 

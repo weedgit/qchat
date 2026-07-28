@@ -1065,7 +1065,7 @@ func (s *Server) attachReceipts(r *http.Request, msgs []map[string]any, viewerID
 		Seq    int64
 	}
 
-	if convType == "social_group" {
+	if convType == "social_group" || convType == "group" {
 		rows, err := s.db.Query(r.Context(), `
 			SELECT u.id::text, COALESCE(NULLIF(u.display_name,''), u.username), COALESCE(u.avatar_url,''), cm.last_read_seq
 			FROM conversation_members cm

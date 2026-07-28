@@ -56,6 +56,10 @@ export function useChat() {
   const conversationsRef = useRef<Conversation[]>([]);
   /** Mattermost-style: OS window focus from desktop main process (not document.hasFocus). */
   const windowFocusedRef = useRef(true);
+  /** Other-member count for the active group (excludes self); seeds live receipt UI. */
+  const activeGroupMemberCountRef = useRef(0);
+  /** Stable latest markConversationRead for focus/visibility handlers. */
+  const markConversationReadRef = useRef<(convId: string) => Promise<void>>(async () => {});
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
@@ -86,11 +90,43 @@ export function useChat() {
     });
     if (desk.onWindowFocusChanged) {
       detach = desk.onWindowFocusChanged((payload) => {
-        windowFocusedRef.current = Boolean(payload?.focused);
+        const focused = Boolean(payload?.focused);
+        windowFocusedRef.current = focused;
+        if (focused && activeIdRef.current) {
+          void markConversationReadRef.current?.(activeIdRef.current);
+        }
       });
     }
     return () => {
       detach?.();
+    };
+  }, []);
+
+  // Browser: catch up reads when the tab becomes visible again.
+  useEffect(() => {
+    if (isQchatDesktop()) return;
+    const onVisibility = () => {
+      windowFocusedRef.current = !document.hidden;
+      if (!document.hidden && activeIdRef.current) {
+        void markConversationReadRef.current?.(activeIdRef.current);
+      }
+    };
+    const onFocus = () => {
+      windowFocusedRef.current = true;
+      if (activeIdRef.current) {
+        void markConversationReadRef.current?.(activeIdRef.current);
+      }
+    };
+    const onBlur = () => {
+      windowFocusedRef.current = false;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
     };
   }, []);
 
@@ -237,19 +273,37 @@ export function useChat() {
         .map((m: any) => normalizeMessage(m, meRef.current?.id))
         .sort((a: Message, b: Message) => a.createdAt.localeCompare(b.createdAt));
       setMessages((prev) => ({ ...prev, [convId]: list }));
+      // Keep messagesListRef in sync for immediate mark-read (ref usually updates next render).
+      messagesListRef.current = { ...messagesListRef.current, [convId]: list };
       const more = Boolean(body?.has_more);
       hasMoreRef.current = { ...hasMoreRef.current, [convId]: more };
       setHasMoreByConv((prev) => ({ ...prev, [convId]: more }));
 
-      const last = list[list.length - 1];
-      if (last && !last.mine) {
-        api(`/v1/messages/${last.id}/read`, { method: "POST" }).catch(() => {});
+      const shellFocused = isQchatDesktop()
+        ? windowFocusedRef.current
+        : !document.hidden;
+      if (shellFocused && activeIdRef.current === convId) {
+        await markConversationReadRef.current(convId);
       }
     } catch (e: any) {
       console.error("[qchat] load messages failed:", e?.message || e);
       setLoadError(e.message);
     }
   }, []);
+
+  /** Mark last peer message read (mobile markConversationRead). Clears local unread. */
+  const markConversationRead = useCallback(async (convId: string) => {
+    if (!convId) return;
+    setConversations((prev) =>
+      prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0, mentionCount: 0 } : c))
+    );
+    const list = messagesListRef.current[convId] ?? [];
+    const lastPeer = [...list].reverse().find((m) => !m.mine && !m.recalled && !m.pending);
+    if (lastPeer?.id) {
+      await api(`/v1/messages/${lastPeer.id}/read`, { method: "POST" }).catch(() => {});
+    }
+  }, []);
+  markConversationReadRef.current = markConversationRead;
 
   const loadingOlderRef = useRef<Record<string, boolean>>({});
   const loadOlderMessages = useCallback(async (convId: string): Promise<number> => {
@@ -447,6 +501,8 @@ export function useChat() {
       const by = String(payload?.by ?? "");
       const seq = Number(payload?.seq);
       if (!id || !convId) return;
+      const conv = conversationsRef.current.find((c) => c.id === convId);
+      const isGroup = conv?.type === "social_group" || conv?.type === "group";
       setMessages((prev) => ({
         ...prev,
         [convId]: (prev[convId] ?? []).map((m) => {
@@ -469,17 +525,33 @@ export function useChat() {
               }
             }
           }
-          const memberCount = m.memberCount ?? readBy.length + unreadBy.length;
+          const treatAsGroup =
+            isGroup ||
+            Array.isArray(m.readBy) ||
+            Array.isArray(m.unreadBy) ||
+            (m.memberCount != null && m.memberCount > 0);
+          const memberCount =
+            m.memberCount ??
+            (treatAsGroup
+              ? Math.max(readBy.length + unreadBy.length, activeGroupMemberCountRef.current, 0)
+              : 0);
           const readCount = readBy.length;
           const allRead = memberCount > 0 && readCount >= memberCount;
-          const hasLists = Boolean(m.readBy || m.unreadBy);
+          if (treatAsGroup) {
+            return {
+              ...m,
+              delivered: true,
+              read: allRead,
+              readBy,
+              unreadBy,
+              readCount,
+              memberCount: memberCount > 0 ? memberCount : m.memberCount,
+            };
+          }
           return {
             ...m,
             delivered: true,
-            read: hasLists ? allRead : true,
-            readBy: hasLists ? readBy : m.readBy,
-            unreadBy: hasLists ? unreadBy : m.unreadBy,
-            readCount: hasLists ? readCount : m.readCount,
+            read: true,
           };
         }),
       }));
@@ -898,13 +970,22 @@ export function useChat() {
           const g = await api<any>(`/v1/groups/${id}`);
           setMyRole(String(g?.role ?? "member"));
           setActiveGroupMuteAll(Boolean(g?.mute_all));
+          const meId = meRef.current?.id;
+          const members = Array.isArray(g?.members) ? g.members : [];
+          activeGroupMemberCountRef.current = members.filter(
+            (m: any) =>
+              String(m?.user_id ?? "") !== meId &&
+              String(m?.role ?? "") !== "pending"
+          ).length;
         } catch {
           setMyRole("member");
           setActiveGroupMuteAll(false);
+          activeGroupMemberCountRef.current = 0;
         }
       } else {
         setMyRole("member");
         setActiveGroupMuteAll(false);
+        activeGroupMemberCountRef.current = 0;
       }
       loadMessages(id);
     },
@@ -950,6 +1031,21 @@ export function useChat() {
     [loadConversations, openConversation]
   );
 
+  function groupReceiptSeed(convId: string): Partial<Message> {
+    const conv = conversationsRef.current.find((c) => c.id === convId);
+    const isGroup = conv?.type === "social_group" || conv?.type === "group";
+    if (!isGroup) return {};
+    const memberCount = activeGroupMemberCountRef.current;
+    return {
+      memberCount: memberCount > 0 ? memberCount : undefined,
+      readCount: 0,
+      readBy: [],
+      unreadBy: [],
+      delivered: false,
+      read: false,
+    };
+  }
+
   const sendMessage = useCallback(async (convId: string, content: string, replyToId?: string) => {
     stopTyping(convId);
     const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -965,6 +1061,7 @@ export function useChat() {
       pending: true,
       clientMsgId,
       replyToId,
+      ...groupReceiptSeed(convId),
     };
     setMessages((prev) => ({
       ...prev,
@@ -1002,7 +1099,19 @@ export function useChat() {
         ...prev,
         [convId]: (prev[convId] ?? []).map((m) =>
           m.id === tempId || m.clientMsgId === clientMsgId
-            ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+            ? {
+                ...saved,
+                mine: true,
+                pending: false,
+                failed: false,
+                clientMsgId,
+                replyToId,
+                // Keep group receipt seeds until history reload / live updates.
+                memberCount: m.memberCount ?? saved.memberCount,
+                readCount: m.readCount ?? saved.readCount ?? 0,
+                readBy: m.readBy ?? saved.readBy,
+                unreadBy: m.unreadBy ?? saved.unreadBy,
+              }
             : m
         ),
       }));
@@ -1071,6 +1180,7 @@ export function useChat() {
         pending: true,
         clientMsgId,
         replyToId,
+        ...groupReceiptSeed(convId),
       };
       setMessages((prev) => ({
         ...prev,
@@ -1169,6 +1279,7 @@ export function useChat() {
         clientMsgId,
         replyToId,
         localFile: file,
+        ...groupReceiptSeed(convId),
       };
       setMessages((prev) => ({
         ...prev,
@@ -1333,6 +1444,7 @@ export function useChat() {
         uploadProgress: 0,
         clientMsgId,
         replyToId,
+        ...groupReceiptSeed(convId),
       };
       setMessages((prev) => ({
         ...prev,
@@ -1767,6 +1879,7 @@ export function useChat() {
     deleteConversation,
     leaveGroup,
     blockUser,
+    markConversationRead,
     reload: loadConversations,
     refreshMe,
     subscribeEvents,
