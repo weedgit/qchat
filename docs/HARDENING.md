@@ -23,13 +23,22 @@
 - [x] API retention loop + `POST /v1/admin/retention/run` + `PATCH /v1/admin/enterprises/{id}` (`retention_days`)
 - [x] `deploy/smoke_test.sh` for auth/messaging path
 - [x] Load / reconnect soak: `go run ./cmd/ws_soak -n 1000` (from `services/api`)
+  - Working SLO (see `docs/qchat-security-decisions.md`): **p95 first delivery ≤ 1s**, full fan-out p95 ≤ 2s, ≥1k concurrent WS
+  - Hot-path hardening: async Redis WS publish, batched push prefs, skip push when WS-online, bounded push/presence workers, larger send buffers, `qchat_ws_send_drops_total` + `qchat_message_publish_duration_seconds`
+  - Multi-API-node fan-out still needs Redis (`QCHAT_REDIS_URL`); single-node works in-process without it
 - [x] Restore drill (RPO ≤ 24h, RTO ≤ 4h) — `deploy/restore_drill.sh`, `deploy/cron-backup.example`, `docs/RESTORE_DRILL.md`
 
 ## Observability
 
 - Health: `GET /healthz`
 - Audit table: `audit_logs`
-- Metrics: `GET /metrics` (Prometheus; WS gauge + HTTP latency/errors). Do not expose publicly — nginx returns 404 for `/metrics`.
+- Metrics: `GET /metrics` (Prometheus; WS gauge, WS send drops, message publish latency, HTTP latency/errors). Do not expose publicly — nginx returns 404 for `/metrics`.
+
+```bash
+# From services/api with API + seed running:
+go run ./cmd/ws_soak -n 1000 -latency-rounds 20 -latency-max 1s -fanout-max 2s
+curl -s localhost:8080/metrics | grep -E 'qchat_ws_|qchat_message_publish'
+```
 
 ## Acceptance smoke
 
