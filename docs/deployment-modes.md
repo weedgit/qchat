@@ -32,6 +32,12 @@ docker compose up -d
 
 # API via systemd + web static build + nginx (see full doc)
 ./deploy/redeploy.sh
+
+# Optional: fail the deploy if LiveKit/coturn are unhealthy
+./deploy/redeploy.sh --require-media
+
+# Preflight only (production fails on weak JWT / SMS / LiveKit defaults)
+./deploy/check-env.sh
 ```
 
 Desktop (Windows / any client):

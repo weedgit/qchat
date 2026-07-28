@@ -10,6 +10,8 @@ import (
 )
 
 const DefaultJWTSecret = "dev-qchat-secret-change-me"
+const DefaultLiveKitAPIKey = "devkey"
+const DefaultLiveKitAPISecret = "secret-that-is-at-least-32-characters-long"
 
 type Config struct {
 	HTTPAddr         string
@@ -70,8 +72,8 @@ func Load() Config {
 		DataDir:                resolveDataDir(),
 		Env:                    strings.ToLower(getenv("QCHAT_ENV", "development")),
 		LiveKitURL:             getenv("LIVEKIT_URL", "ws://localhost:7880"),
-		LiveKitAPIKey:          getenv("LIVEKIT_API_KEY", "devkey"),
-		LiveKitAPISecret:       getenv("LIVEKIT_API_SECRET", "secret-that-is-at-least-32-characters-long"),
+		LiveKitAPIKey:          getenv("LIVEKIT_API_KEY", DefaultLiveKitAPIKey),
+		LiveKitAPISecret:       getenv("LIVEKIT_API_SECRET", DefaultLiveKitAPISecret),
 		VAPIDPublic:            getenv("QCHAT_VAPID_PUBLIC", "BFdXB2ANYUTz51uvhyiHY690_q7gwTQugmCht6XglXgTLyoubrPvnpQVk4Jac5cP_zVayT88l0gTgnCt1gK5cfA"),
 		VAPIDPrivate:           getenv("QCHAT_VAPID_PRIVATE", "bUnBIxgamtcANH9nAryWvxT0v8s4iosetHMSeOmcB7g"),
 		VAPIDSubject:           getenv("QCHAT_VAPID_SUBJECT", "mailto:admin@qchat.local"),
@@ -89,8 +91,7 @@ func Load() Config {
 	}
 }
 
-// ValidateSecrets refuses weak JWT defaults when QCHAT_ENV=production
-// (ServiceSettings.EnableDeveloper / production checks).
+// ValidateSecrets refuses weak JWT / SMS / LiveKit defaults when QCHAT_ENV=production.
 func (c Config) ValidateSecrets() error {
 	if c.Env != "production" {
 		return nil
@@ -100,6 +101,15 @@ func (c Config) ValidateSecrets() error {
 	}
 	if c.SMSProvider == "" || c.SMSProvider == "dev" {
 		return fmt.Errorf("QCHAT_SMS_PROVIDER must name a real gateway in production; %q only logs codes locally", c.SMSProvider)
+	}
+	if c.LiveKitAPIKey == "" || c.LiveKitAPIKey == DefaultLiveKitAPIKey {
+		return fmt.Errorf("LIVEKIT_API_KEY must not use the default %q in production; set a unique key in deploy/qchat-api.env", DefaultLiveKitAPIKey)
+	}
+	if c.LiveKitAPISecret == "" || c.LiveKitAPISecret == DefaultLiveKitAPISecret || len(c.LiveKitAPISecret) < 32 {
+		return fmt.Errorf("LIVEKIT_API_SECRET must be a unique secret (≥32 chars) in production; re-run deploy/render-media-config.sh with LIVEKIT_API_SECRET set")
+	}
+	if strings.TrimSpace(c.LiveKitURL) == "" {
+		return fmt.Errorf("LIVEKIT_URL is required in production (run deploy/render-media-config.sh)")
 	}
 	return nil
 }

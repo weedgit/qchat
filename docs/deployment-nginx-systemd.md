@@ -203,12 +203,33 @@ systemctl status nginx
 nginx -t
 journalctl -u nginx -n 100 --no-pager
 
-# Listening ports
-ss -ltnp | grep -E ':80|:8080'
+# Listening ports (API, web, LiveKit signal, LiveKit WSS via nginx, TURN)
+ss -ltnp | grep -E ':80|:443|:8080|:7880|:7443|:3478'
 ```
 
 - `502 Bad Gateway`: confirm `qchat-api` is running on port 8080.
 - `403 Forbidden`: confirm the nginx worker can read and traverse the static
   build path.
 - WebSocket disconnects: confirm `/v1/ws` retains the nginx upgrade headers.
+- Calls fail / no media: confirm LiveKit (`:7880`) and WSS proxy (`:7443`), then:
+  `./deploy/check-env.sh` and `./deploy/smoke-livekit.sh`.
 - Port already in use: stop any manually started `go run ./cmd/api` process.
+
+## Env / media guards
+
+Before shipping production:
+
+```bash
+# Refuses weak JWT / SMS / LiveKit defaults when QCHAT_ENV=production
+./deploy/check-env.sh
+# or always fail on weak secrets:
+./deploy/check-env.sh --strict
+
+# Render refuses default LiveKit/TURN secrets when QCHAT_ENV=production
+LIVEKIT_API_KEY=… LIVEKIT_API_SECRET=… TURN_PASS=… ./deploy/render-media-config.sh
+
+# Redeploy with LiveKit health required
+./deploy/redeploy.sh --require-media
+```
+
+The API also refuses default LiveKit keys at startup when `QCHAT_ENV=production`.
