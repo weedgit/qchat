@@ -51,11 +51,14 @@ func (h *Hub) broadcast(env clusterEnvelope) {
 	if err != nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := rdb.Publish(ctx, redisWSChannel, b).Err(); err != nil {
-		log.Printf("redis ws publish: %v", err)
-	}
+	// Publish off the request path so Redis jitter does not block local WS delivery.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := rdb.Publish(ctx, redisWSChannel, b).Err(); err != nil {
+			log.Printf("redis ws publish: %v", err)
+		}
+	}()
 }
 
 func (h *Hub) subscribeRedis(ctx context.Context) {

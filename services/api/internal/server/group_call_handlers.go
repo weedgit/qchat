@@ -92,14 +92,16 @@ func (s *Server) handleInviteToCall(w http.ResponseWriter, r *http.Request) {
 		"is_group":         true,
 	}
 	s.hub.PublishToUsers(invited, ws.Event{Type: "call.ring", Payload: ringPayload})
-	go s.notifyCallRingPush(
-		context.Background(),
-		invited,
-		call.Kind,
-		s.userDisplayName(r, c.UserID),
-		callID,
-		call.ConversationID,
-	)
+	s.goPushJob(func() {
+		s.notifyCallRingPush(
+			context.Background(),
+			invited,
+			call.Kind,
+			s.userDisplayName(r, c.UserID),
+			callID,
+			call.ConversationID,
+		)
+	})
 
 	writeJSON(w, 200, map[string]any{
 		"id": callID, "call_id": callID, "invitee_ids": invited, "status": call.Status,

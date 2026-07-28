@@ -69,6 +69,7 @@ func (h *Hub) publishLocked(targets []*Client, b []byte) {
 		select {
 		case c.Send <- b:
 		default:
+			incSendDrops(1)
 		}
 	}
 }
@@ -224,6 +225,7 @@ func (h *Hub) kickSessionsLocal(sessionIDs []string, ev Event) {
 		select {
 		case c.Send <- b:
 		default:
+			incSendDrops(1)
 		}
 		go func(cl *Client) {
 			time.Sleep(80 * time.Millisecond)

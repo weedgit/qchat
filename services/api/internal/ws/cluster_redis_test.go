@@ -32,8 +32,8 @@ func TestRedisFanoutDeliversToPeerHub(t *testing.T) {
 	hubA.AttachRedis(ctx, rdbA)
 	hubB.AttachRedis(ctx, rdbB)
 
-	// Give subscribers a moment to subscribe.
-	time.Sleep(50 * time.Millisecond)
+	// Give subscribers a moment to subscribe; Redis publish is async off the request path.
+	time.Sleep(80 * time.Millisecond)
 
 	recv := make(chan []byte, 1)
 	client := &ws.Client{

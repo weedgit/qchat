@@ -212,14 +212,16 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.PublishToUsers(invitees, ws.Event{Type: "call.ring", Payload: ringPayload})
 
-	go s.notifyCallRingPush(
-		context.Background(),
-		invitees,
-		req.Kind,
-		s.userDisplayName(r, c.UserID),
-		callID,
-		req.ConversationID,
-	)
+	s.goPushJob(func() {
+		s.notifyCallRingPush(
+			context.Background(),
+			invitees,
+			req.Kind,
+			s.userDisplayName(r, c.UserID),
+			callID,
+			req.ConversationID,
+		)
+	})
 
 	s.scheduleRingTimeout(callID)
 

@@ -1438,12 +1438,16 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if req.ReplyToID != "" {
 		payload["reply_to_id"] = req.ReplyToID
 	}
+	pubStart := time.Now()
 	s.hub.PublishToUsers(memberIDs, ws.Event{Type: "message.new", Payload: payload})
+	messagePublishDuration.Observe(time.Since(pubStart).Seconds())
 	preview := req.Body
 	if len([]rune(preview)) > 80 {
 		preview = string([]rune(preview)[:80]) + "…"
 	}
-	go s.notifyMessagePush(context.Background(), convID, c.UserID, senderName, senderAvatar, preview, memberIDs, req.Mentions, req.MentionAll)
+	s.goPushJob(func() {
+		s.notifyMessagePush(context.Background(), convID, c.UserID, senderName, senderAvatar, preview, memberIDs, req.Mentions, req.MentionAll)
+	})
 	writeJSON(w, 201, payload)
 }
 
