@@ -2,7 +2,7 @@
  * profile hub (mirror web apps/web/src/app/profile/page.tsx).
  * Notifications / sessions / sign-out live on the Settings tab.
  */
-import { useCallback, useEffect, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,11 +16,14 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../src/components/Avatar";
+import { UserQr } from "../../src/components/UserQr";
 import { useAuth } from "../../src/context/AuthContext";
+import { useChat } from "../../src/context/ChatContext";
 import { useLocale } from "../../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { api, uploadMedia } from "../../src/lib/api";
-import { displayNameError } from "../../src/lib/credentials";
+import { displayNameError, isValidUsername } from "../../src/lib/credentials";
+import type { PresenceStatus } from "../../src/lib/types";
 import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 type Profile = {
@@ -35,7 +38,16 @@ type Profile = {
   avatar_url: string;
   profile_visibility: string;
   friend_privacy: string;
+  enterprise_id: string;
+  enterprise_name: string;
 };
+
+const STATUS_OPTIONS: { value: PresenceStatus; label: string }[] = [
+  { value: "online", label: "Online" },
+  { value: "away", label: "Away" },
+  { value: "dnd", label: "Do not disturb" },
+  { value: "offline", label: "Appear offline" },
+];
 
 function mapProfile(u: any): Profile {
   return {
@@ -50,11 +62,14 @@ function mapProfile(u: any): Profile {
     avatar_url: String(u?.avatar_url ?? ""),
     profile_visibility: String(u?.profile_visibility ?? "friends"),
     friend_privacy: String(u?.friend_privacy ?? "approval"),
+    enterprise_id: String(u?.enterprise_id ?? "").trim(),
+    enterprise_name: String(u?.enterprise_name ?? "").trim(),
   };
 }
 
 export default function MeScreen() {
-  const { refreshMe } = useAuth();
+  const { user, refreshMe, setMyStatus } = useAuth();
+  const { joinCompany } = useChat();
   const { colors } = useTheme();
   const { t } = useLocale();
   const styles = useThemedStyles(makeStyles);
@@ -63,12 +78,20 @@ export default function MeScreen() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [usernameTaken, setUsernameTaken] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinHint, setJoinHint] = useState<string | null>(null);
+  const initialUsernameRef = useRef("");
 
   const load = useCallback(async () => {
     setError(null);
     try {
       const u = await api<any>("/v1/me");
-      setMe(mapProfile(u));
+      const mapped = mapProfile(u);
+      setMe(mapped);
+      initialUsernameRef.current = mapped.username.trim();
+      setUsernameTaken(false);
       await refreshMe().catch(() => {});
     } catch (e: any) {
       setError(e?.message || "Could not load profile");
@@ -78,6 +101,35 @@ export default function MeScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!me) return;
+    const username = me.username.trim();
+    if (
+      !username ||
+      !isValidUsername(username) ||
+      username.toLocaleLowerCase() === initialUsernameRef.current.toLocaleLowerCase()
+    ) {
+      setUsernameTaken(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api<{ available?: boolean }>(
+        `/v1/usernames/available?username=${encodeURIComponent(username)}`
+      )
+        .then((res) => {
+          if (!cancelled) setUsernameTaken(res?.available === false);
+        })
+        .catch(() => {
+          if (!cancelled) setUsernameTaken(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [me?.username]);
 
   async function onRefresh() {
     setRefreshing(true);
@@ -127,6 +179,15 @@ export default function MeScreen() {
       setError(dnErr);
       return;
     }
+    const username = me.username.trim();
+    if (!isValidUsername(username)) {
+      setError("Username must be 2–32 letters, digits, or underscores");
+      return;
+    }
+    if (usernameTaken) {
+      setError("That username is already taken");
+      return;
+    }
     setSaving(true);
     setSaved(false);
     setError(null);
@@ -134,6 +195,7 @@ export default function MeScreen() {
       await api("/v1/me", {
         method: "PATCH",
         body: JSON.stringify({
+          username,
           display_name: me.display_name.trim(),
           real_name: me.real_name,
           age: me.age,
@@ -187,6 +249,48 @@ export default function MeScreen() {
     ]);
   }
 
+  function pickStatus() {
+    Alert.alert(
+      "Status",
+      undefined,
+      [
+        ...STATUS_OPTIONS.map((opt) => ({
+          text: opt.label,
+          onPress: () => {
+            setMyStatus(opt.value).catch((e: any) =>
+              Alert.alert("Error", e?.message || "Could not update status")
+            );
+          },
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ]
+    );
+  }
+
+  async function onJoinCompany() {
+    const code = inviteCode.trim();
+    if (!code) {
+      setJoinHint("Enter an invite code");
+      return;
+    }
+    setJoinBusy(true);
+    setJoinHint(null);
+    try {
+      const res = await joinCompany(code);
+      setInviteCode("");
+      if (res.alreadyMember) {
+        setJoinHint(res.name ? `Already in ${res.name}` : "Already a member");
+      } else {
+        setJoinHint(res.name ? `Joined ${res.name}` : "Joined company");
+      }
+      await load();
+    } catch (e: any) {
+      setJoinHint(e?.message || "Could not join company");
+    } finally {
+      setJoinBusy(false);
+    }
+  }
+
   const visibilityLabel =
     me?.profile_visibility === "public" ? "Public" : "Friends only";
   const friendLabel =
@@ -195,6 +299,13 @@ export default function MeScreen() {
       : me?.friend_privacy === "closed"
         ? "Nobody can add me"
         : "Need my approval";
+  const statusLabel =
+    STATUS_OPTIONS.find((o) => o.value === (user?.status || "online"))?.label || "Online";
+  const enterpriseLabel = me?.enterprise_id
+    ? me.enterprise_name
+      ? `Enterprise · ${me.enterprise_name}`
+      : "Enterprise"
+    : null;
 
   return (
     <ScrollView
@@ -217,14 +328,37 @@ export default function MeScreen() {
           <Text style={styles.sub}>
             @{me?.username || "—"} · {me?.phone || "—"}
           </Text>
+          {enterpriseLabel ? (
+            <Text style={styles.enterprise}>{enterpriseLabel}</Text>
+          ) : (
+            <Text style={styles.idLine}>Personal account</Text>
+          )}
           <Text style={styles.idLine}>ID: {me?.id || "—"}</Text>
         </View>
+      </View>
+
+      <View style={styles.card}>
+        <SelectRow
+          label="Status"
+          value={statusLabel}
+          onPress={pickStatus}
+          styles={styles}
+          colors={colors}
+        />
       </View>
 
       {me ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{t("me.editProfile")}</Text>
-          <Field label="Username" value={me.username} editable={false} hint="Set at registration" styles={styles} colors={colors} />
+          <Field
+            label="Username"
+            value={me.username}
+            onChangeText={(text) => setMe({ ...me, username: text })}
+            hint={usernameTaken ? "Username is taken" : undefined}
+            styles={styles}
+            colors={colors}
+          />
+          {usernameTaken ? <Text style={styles.fieldError}>Username is taken</Text> : null}
           <Field
             label="Phone (login ID)"
             value={me.phone}
@@ -236,14 +370,14 @@ export default function MeScreen() {
           <Field
             label="Display name"
             value={me.display_name}
-            onChangeText={(t) => setMe({ ...me, display_name: t })}
+            onChangeText={(text) => setMe({ ...me, display_name: text })}
             styles={styles}
             colors={colors}
           />
           <Field
             label="Real name"
             value={me.real_name}
-            onChangeText={(t) => setMe({ ...me, real_name: t })}
+            onChangeText={(text) => setMe({ ...me, real_name: text })}
             styles={styles}
             colors={colors}
           />
@@ -251,8 +385,8 @@ export default function MeScreen() {
             label="Age"
             value={me.age == null ? "" : String(me.age)}
             keyboardType="number-pad"
-            onChangeText={(t) =>
-              setMe({ ...me, age: t.trim() === "" ? null : Number(t) || null })
+            onChangeText={(text) =>
+              setMe({ ...me, age: text.trim() === "" ? null : Number(text) || null })
             }
             styles={styles}
             colors={colors}
@@ -260,20 +394,24 @@ export default function MeScreen() {
           <Field
             label="Region"
             value={me.region}
-            onChangeText={(t) => setMe({ ...me, region: t })}
+            onChangeText={(text) => setMe({ ...me, region: text })}
             styles={styles}
             colors={colors}
           />
           <Field
             label="Signature"
             value={me.signature}
-            onChangeText={(t) => setMe({ ...me, signature: t })}
+            onChangeText={(text) => setMe({ ...me, signature: text })}
             styles={styles}
             colors={colors}
           />
           <SelectRow label="Profile visibility" value={visibilityLabel} onPress={pickVisibility} styles={styles} colors={colors} />
           <SelectRow label="Friend requests" value={friendLabel} onPress={pickFriendPrivacy} styles={styles} colors={colors} />
-          <Pressable style={styles.primaryBtn} onPress={onSaveProfile} disabled={saving}>
+          <Pressable
+            style={[styles.primaryBtn, usernameTaken && styles.btnDisabled]}
+            onPress={onSaveProfile}
+            disabled={saving || usernameTaken}
+          >
             {saving ? (
               <ActivityIndicator color="#fff" />
             ) : (
@@ -287,6 +425,39 @@ export default function MeScreen() {
           <ActivityIndicator color={colors.accent} />
         </View>
       )}
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Join company</Text>
+        <Text style={styles.cardHint}>Enter an invite code from your organization.</Text>
+        <Field
+          label="Invite code"
+          value={inviteCode}
+          onChangeText={setInviteCode}
+          autoCapitalize="characters"
+          styles={styles}
+          colors={colors}
+        />
+        <Pressable
+          style={[styles.primaryBtn, (!inviteCode.trim() || joinBusy) && styles.btnDisabled]}
+          onPress={onJoinCompany}
+          disabled={joinBusy || !inviteCode.trim()}
+        >
+          {joinBusy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryBtnText}>Join</Text>
+          )}
+        </Pressable>
+        {joinHint ? <Text style={styles.hint}>{joinHint}</Text> : null}
+      </View>
+
+      {me?.username ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>My QR code</Text>
+          <Text style={styles.cardHint}>Others can scan this to find your profile.</Text>
+          <UserQr username={me.username} size={180} />
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -381,6 +552,7 @@ function makeStyles(c: ColorTokens) {
     },
     name: { color: "#fff", fontSize: 20, fontWeight: "700" as const },
     sub: { color: "rgba(255,255,255,0.85)", marginTop: 2, fontSize: 13 },
+    enterprise: { color: "rgba(255,255,255,0.95)", marginTop: 4, fontSize: 12, fontWeight: "600" as const },
     idLine: { color: "rgba(255,255,255,0.7)", marginTop: 4, fontSize: 11 },
     card: {
       backgroundColor: c.surface,
@@ -389,6 +561,7 @@ function makeStyles(c: ColorTokens) {
       gap: 10,
     },
     cardTitle: { fontSize: 16, fontWeight: "700" as const, color: c.text },
+    cardHint: { fontSize: 12, color: c.textMuted, marginTop: -4 },
     field: { gap: 4 },
     label: { color: c.textSecondary, fontSize: 13, fontWeight: "500" as const },
     input: {
@@ -401,6 +574,7 @@ function makeStyles(c: ColorTokens) {
     },
     inputDisabled: { color: c.textMuted },
     fieldHint: { fontSize: 11, color: c.textMuted },
+    fieldError: { fontSize: 12, color: c.danger, marginTop: -6 },
     selectRow: {
       flexDirection: "row" as const,
       alignItems: "center" as const,
@@ -415,6 +589,7 @@ function makeStyles(c: ColorTokens) {
       alignItems: "center" as const,
       marginTop: 4,
     },
+    btnDisabled: { opacity: 0.45 },
     primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 15 },
     hint: { color: c.textSecondary, fontSize: 13 },
   };

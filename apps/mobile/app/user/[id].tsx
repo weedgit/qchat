@@ -53,7 +53,7 @@ function formatLastSeen(iso?: string): string {
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const userId = String(id);
-  const { openDM } = useChat();
+  const { openDM, blockUser, unblockUser } = useChat();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -129,11 +129,51 @@ export default function UserProfileScreen() {
     }
   }
 
+  function onBlock() {
+    if (!profile?.friendship_id) {
+      Alert.alert("Unavailable", "Become friends first, then you can block.");
+      return;
+    }
+    Alert.alert("Block user", `Block ${displayName}? They won’t be able to message you.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Block",
+        style: "destructive",
+        onPress: async () => {
+          setBusy(true);
+          try {
+            await blockUser(profile.friendship_id!);
+            await load();
+          } catch (e: any) {
+            Alert.alert("Error", e?.message || "Could not block");
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  }
+
+  async function onUnblock() {
+    if (!profile?.friendship_id) return;
+    setBusy(true);
+    try {
+      await unblockUser(profile.friendship_id);
+      await load();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not unblock");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const canAddFriend =
     profile &&
     !profile.is_friend &&
     profile.friendship_status !== "pending" &&
     profile.friendship_status !== "blocked";
+  const isBlocked = profile?.friendship_status === "blocked";
+  const canBlock = Boolean(profile?.friendship_id) && !isBlocked;
 
   return (
     <>
@@ -167,18 +207,33 @@ export default function UserProfileScreen() {
             </View>
 
             <View style={styles.actions}>
-              <Pressable style={styles.primaryBtn} onPress={onMessage} disabled={busy}>
-                <Text style={styles.primaryBtnText}>Message</Text>
-              </Pressable>
+              {!isBlocked ? (
+                <Pressable style={styles.primaryBtn} onPress={onMessage} disabled={busy}>
+                  <Text style={styles.primaryBtnText}>Message</Text>
+                </Pressable>
+              ) : null}
               {canAddFriend ? (
                 <Pressable style={styles.secondaryBtn} onPress={onAddFriend} disabled={busy}>
                   <Text style={styles.secondaryBtnText}>Add friend</Text>
                 </Pressable>
               ) : null}
+              {canBlock ? (
+                <Pressable style={styles.dangerBtn} onPress={onBlock} disabled={busy}>
+                  <Text style={styles.dangerBtnText}>Block</Text>
+                </Pressable>
+              ) : null}
+              {isBlocked ? (
+                <Pressable style={styles.secondaryBtn} onPress={onUnblock} disabled={busy}>
+                  <Text style={styles.secondaryBtnText}>Unblock</Text>
+                </Pressable>
+              ) : null}
               {profile.friendship_status === "pending" ? (
                 <Text style={styles.hint}>Friend request pending</Text>
               ) : null}
-              {profile.is_friend ? <Text style={styles.hint}>Friends</Text> : null}
+              {profile.is_friend && !isBlocked ? (
+                <Text style={styles.hint}>Friends</Text>
+              ) : null}
+              {isBlocked ? <Text style={styles.hint}>Blocked</Text> : null}
             </View>
 
             <View style={styles.card}>
@@ -272,6 +327,15 @@ function makeStyles(c: ColorTokens) {
     borderColor: c.border,
   },
   secondaryBtnText: { color: c.accent, fontWeight: "700" as const, fontSize: 16 },
+  dangerBtn: {
+    backgroundColor: c.surface,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    alignItems: "center" as const,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: c.danger,
+  },
+  dangerBtnText: { color: c.danger, fontWeight: "700" as const, fontSize: 16 },
   hint: { textAlign: "center" as const, color: c.textSecondary, fontSize: 13 },
   card: {
     backgroundColor: c.surface,

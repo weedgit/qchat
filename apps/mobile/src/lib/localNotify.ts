@@ -1,6 +1,7 @@
 /**
  * Local OS notifications while the app process is alive (WS-driven).
- * Full killed-app delivery still needs FCM / Expo Push + server sender.
+ * Prefer importing via `notifyPort` from messaging code.
+ * Remote push (FCM / APNs / Expo) is deferred — see notifyPort.registerRemote.
  */
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";

@@ -60,6 +60,7 @@ export type IncomingCall = {
   initiatorId: string;
   initiatorName?: string;
   livekitUrl?: string;
+  isGroup?: boolean;
 };
 
 export type ActiveCall = {
@@ -69,6 +70,22 @@ export type ActiveCall = {
   status: "ringing" | "active";
   role: "caller" | "callee";
   peerName?: string;
+  isGroup?: boolean;
+  /** True when this user created the call (can kick). */
+  isHost?: boolean;
+};
+
+export type CallRemotePeer = {
+  identity: string;
+  name: string;
+  userId: string;
+  micMuted: boolean;
+  cameraOff: boolean;
+};
+
+export type StartCallOpts = {
+  peerName?: string;
+  inviteeIds?: string[];
 };
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
@@ -104,6 +121,8 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
   const [localVideoRef, setLocalVideoRef] = useState<TrackReference | null>(null);
   const [localAudioTrack, setLocalAudioTrack] = useState<LocalAudioTrack | null>(null);
   const [remoteAudioTrack, setRemoteAudioTrack] = useState<RemoteAudioTrack | null>(null);
+  /** LiveKit remote participants for group (N:N) kick / invite UX. */
+  const [remotePeers, setRemotePeers] = useState<CallRemotePeer[]>([]);
 
   const roomRef = useRef<Room | null>(null);
   const activeRef = useRef<ActiveCall | null>(null);
@@ -123,6 +142,32 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     setLocalVideoRef(null);
     setLocalAudioTrack(null);
     setRemoteAudioTrack(null);
+    setRemotePeers([]);
+  }, []);
+
+  const syncRemotePeers = useCallback(() => {
+    const room = roomRef.current;
+    if (!room) {
+      setRemotePeers([]);
+      return;
+    }
+    const next: CallRemotePeer[] = [];
+    room.remoteParticipants.forEach((p) => {
+      const identity = String(p.identity || "");
+      const userId = identity.split(":")[0] || identity;
+      const micPub = p.getTrackPublication(Track.Source.Microphone);
+      const camPub = p.getTrackPublication(Track.Source.Camera);
+      const hasMic = Boolean(micPub?.track);
+      const hasCam = Boolean(camPub?.track);
+      next.push({
+        identity,
+        name: String(p.name || userId || "User"),
+        userId,
+        micMuted: !hasMic || Boolean(micPub?.isMuted),
+        cameraOff: !hasCam || Boolean(camPub?.isMuted),
+      });
+    });
+    setRemotePeers(next);
   }, []);
 
   const disconnectRoom = useCallback(async () => {
@@ -133,6 +178,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     setLocalVideoRef(null);
     setLocalAudioTrack(null);
     setRemoteAudioTrack(null);
+    setRemotePeers([]);
     if (room) {
       intentionalDisconnectRef.current = true;
       try {
@@ -210,6 +256,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
             } else if (track.kind === Track.Kind.Audio) {
               setRemoteAudioTrack(track as RemoteAudioTrack);
             }
+            syncRemotePeers();
           }
         );
         room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
@@ -219,6 +266,15 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
           } else if (track.kind === Track.Kind.Audio) {
             setRemoteAudioTrack((prev) => (prev === track ? null : prev));
           }
+          syncRemotePeers();
+        });
+        room.on(RoomEvent.TrackMuted, () => {
+          if (gen !== connectGenRef.current) return;
+          syncRemotePeers();
+        });
+        room.on(RoomEvent.TrackUnmuted, () => {
+          if (gen !== connectGenRef.current) return;
+          syncRemotePeers();
         });
         room.on(
           RoomEvent.LocalTrackPublished,
@@ -252,6 +308,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
                 : prev
             );
           }
+          syncRemotePeers();
         });
         room.on(RoomEvent.Disconnected, () => {
           if (intentionalDisconnectRef.current || endingRef.current) return;
@@ -265,21 +322,24 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
             endingRef.current = false;
           }
         });
+        // 1:1: peer left after joining → end call. Group: keep room until API hangup.
         room.on(RoomEvent.ParticipantDisconnected, () => {
+          syncRemotePeers();
           if (intentionalDisconnectRef.current || endingRef.current) return;
           if (gen !== connectGenRef.current) return;
           if (!hadRemoteRef.current) return;
-          // Avoid tearing down while still publishing/negotiating.
-          if (roomRef.current?.state !== ConnectionState.Connected) return;
+          const roomNow = roomRef.current;
+          if (roomNow?.state !== ConnectionState.Connected) return;
+          if (roomNow.remoteParticipants.size > 0) return;
           const cur = activeRef.current;
-          if (cur?.callId === callId && cur.status === "active") {
-            endingRef.current = true;
-            setActive(null);
-            resetMediaUi();
-            disconnectRoom().catch(() => {});
-            hangupServer(callId).catch(() => {});
-            endingRef.current = false;
-          }
+          if (!cur || cur.callId !== callId || cur.status !== "active") return;
+          if (cur.isGroup) return;
+          endingRef.current = true;
+          setActive(null);
+          resetMediaUi();
+          disconnectRoom().catch(() => {});
+          hangupServer(callId).catch(() => {});
+          endingRef.current = false;
         });
 
         await room.connect(lkUrl, token, {
@@ -332,6 +392,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
               }
             });
           });
+          syncRemotePeers();
           const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
           if (camPub) {
             const ref = asVideoTrackRef(room.localParticipant, camPub);
@@ -364,7 +425,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
         await disconnectRoom();
       }
     },
-    [disconnectRoom, hangupServer, resetMediaUi]
+    [disconnectRoom, hangupServer, resetMediaUi, syncRemotePeers]
   );
 
   useEffect(() => {
@@ -381,6 +442,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
           initiatorId,
           initiatorName: String(payload?.initiator_name ?? "") || undefined,
           livekitUrl: String(payload?.livekit_url ?? "") || undefined,
+          isGroup: Boolean(payload?.is_group),
         });
         return;
       }
@@ -401,8 +463,32 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
           status: "active",
           role: "caller",
           peerName: prev?.peerName,
+          isGroup: prev?.isGroup || Boolean(payload?.is_group),
+          isHost: prev?.isHost ?? true,
         }));
+        // Group host may already be connected from start — skip reconnect if room is up.
+        if (local.isGroup && roomRef.current) {
+          return;
+        }
         connectLiveKit(url, token, kind, callId).catch(() => {});
+        return;
+      }
+      if (type === "call.participant_kicked") {
+        const callId = String(payload?.call_id ?? payload?.id ?? "");
+        const kickedUser = String(payload?.user_id ?? "");
+        const by = String(payload?.by ?? "");
+        if (!callId) return;
+        if (meId && kickedUser === meId) {
+          endingRef.current = true;
+          setIncoming(null);
+          setActive((prev) => (prev && prev.callId === callId ? null : prev));
+          setError("You were removed from the call by the host");
+          resetMediaUi();
+          disconnectRoom().catch(() => {});
+          endingRef.current = false;
+          return;
+        }
+        if (meId && by === meId) return;
         return;
       }
       if (type === "call.taken") {
@@ -441,14 +527,20 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
   }, [subscribe, meId, connectLiveKit, disconnectRoom, resetMediaUi]);
 
   const startCall = useCallback(
-    async (conversationId: string, kind: CallKind, peerName?: string) => {
+    async (conversationId: string, kind: CallKind, opts?: StartCallOpts) => {
       setError(null);
       endingRef.current = false;
+      const inviteeIds = opts?.inviteeIds;
+      const body: Record<string, unknown> = { conversation_id: conversationId, kind };
+      if (inviteeIds && inviteeIds.length > 0) {
+        body.invitee_ids = inviteeIds;
+      }
       const res = await api<any>("/v1/calls", {
         method: "POST",
-        body: JSON.stringify({ conversation_id: conversationId, kind }),
+        body: JSON.stringify(body),
       });
       const callId = String(res?.call_id ?? res?.id ?? "");
+      const isGroup = Boolean(res?.is_group) || Boolean(inviteeIds?.length);
       setConnectedAt(null);
       setActive({
         callId,
@@ -456,11 +548,22 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
         kind,
         status: "ringing",
         role: "caller",
-        peerName: peerName?.trim() || undefined,
+        peerName: opts?.peerName?.trim() || undefined,
+        isGroup,
+        isHost: true,
       });
+      const token = String(res?.livekit_token ?? "");
+      const url = String(res?.livekit_url ?? "");
+      // Group / multi-invite: connect LiveKit immediately (caller does not wait for answer).
+      if (isGroup && token && url) {
+        setActive((prev) =>
+          prev && prev.callId === callId ? { ...prev, status: "active" } : prev
+        );
+        connectLiveKit(url, token, kind, callId).catch(() => {});
+      }
       return res;
     },
-    []
+    [connectLiveKit]
   );
 
   const answerCall = useCallback(async () => {
@@ -471,6 +574,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     const callId = incoming.callId;
     const convId = incoming.conversationId;
     const peerName = incoming.initiatorName?.trim() || undefined;
+    const isGroup = Boolean(incoming.isGroup);
     const res = await api<any>(`/v1/calls/${callId}/answer`, { method: "POST" });
     const token = String(res?.livekit_token ?? "");
     const url = String(res?.livekit_url ?? incoming.livekitUrl ?? "");
@@ -482,9 +586,29 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
       status: "active",
       role: "callee",
       peerName,
+      isGroup: isGroup || Boolean(res?.is_group),
+      isHost: false,
     });
     await connectLiveKit(url, token, kind, callId);
   }, [incoming, connectLiveKit]);
+
+  const inviteToCall = useCallback(async (userIds: string[]) => {
+    const cur = activeRef.current;
+    if (!cur?.isGroup || !userIds.length) return;
+    await api(`/v1/calls/${cur.callId}/invite`, {
+      method: "POST",
+      body: JSON.stringify({ invitee_ids: userIds }),
+    });
+  }, []);
+
+  const kickFromCall = useCallback(async (userId: string) => {
+    const cur = activeRef.current;
+    if (!cur?.isGroup || !cur.isHost || !userId) return;
+    await api(`/v1/calls/${cur.callId}/kick`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    });
+  }, []);
 
   const declineCall = useCallback(async () => {
     if (!incoming) return;
@@ -547,10 +671,13 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     localVideoRef,
     localAudioTrack,
     remoteAudioTrack,
+    remotePeers,
     startCall,
     answerCall,
     declineCall,
     hangup,
+    inviteToCall,
+    kickFromCall,
     toggleMic,
     toggleCamera,
   };
