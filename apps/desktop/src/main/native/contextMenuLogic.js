@@ -3,6 +3,20 @@
  */
 
 /**
+ * CSS selector for in-page Telegram-style context menus.
+ * Native Electron menu must not open over these targets.
+ */
+const CUSTOM_CTX_SELECTOR = [
+  ".msg-row",
+  ".conv-item",
+  ".ctx-menu",
+  ".ctx-wrap",
+  ".ctx-emoji-row",
+  ".members-row",
+  ".details-member-block",
+].join(", ");
+
+/**
  * @param {object} params
  * @returns {boolean}
  */
@@ -80,6 +94,7 @@ function cleanTemplate(template) {
 }
 
 module.exports = {
+  CUSTOM_CTX_SELECTOR,
   shouldShowMenu,
   emailFromMailto,
   isHttpUrl,

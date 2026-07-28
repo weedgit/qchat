@@ -4,6 +4,7 @@
 const {
   shouldShowMenu,
   emailFromMailto,
+  CUSTOM_CTX_SELECTOR,
 } = require("../src/main/native/contextMenuLogic");
 
 function assert(cond, msg) {
@@ -97,5 +98,12 @@ assert(
   "mailto with query"
 );
 assert(emailFromMailto("https://example.com") === null, "non-mailto");
+
+assert(
+  CUSTOM_CTX_SELECTOR.includes(".msg-row") &&
+    CUSTOM_CTX_SELECTOR.includes(".conv-item") &&
+    CUSTOM_CTX_SELECTOR.includes(".ctx-menu"),
+  "custom chat UI selector must cover message / conversation menus"
+);
 
 console.log("context-menu helpers: ok");

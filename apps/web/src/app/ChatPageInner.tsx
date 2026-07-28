@@ -1668,11 +1668,15 @@ export default function ChatPageInner() {
   useEffect(() => {
     if (!ctxMenu) return;
     let alive = true;
+    const isDesktop = Boolean(window.qchatDesktop?.isDesktop);
     const close = (e?: Event) => {
       if (!alive) return;
       // Opening right-click already called preventDefault; ignore that gesture
       // if it somehow still reaches these deferred listeners.
       if (e?.defaultPrevented) return;
+      // Electron may synthesize a trailing right-button pointer event after
+      // contextmenu — do not dismiss the Telegram menu for that.
+      if (e instanceof PointerEvent && e.button === 2) return;
       if (e) {
         const t = e.target;
         if (
@@ -1689,6 +1693,7 @@ export default function ChatPageInner() {
     };
     const onScrollOrResize = () => setCtxMenu(null);
     // Defer so the opening contextmenu / pointerup cannot dismiss immediately.
+    // Desktop needs a slightly longer deferral (native context-menu race).
     const timer = window.setTimeout(() => {
       if (!alive) return;
       window.addEventListener("pointerdown", close);
@@ -1696,7 +1701,7 @@ export default function ChatPageInner() {
       window.addEventListener("keydown", onKey);
       window.addEventListener("scroll", onScrollOrResize, true);
       window.addEventListener("resize", onScrollOrResize);
-    }, 0);
+    }, isDesktop ? 120 : 0);
     return () => {
       alive = false;
       window.clearTimeout(timer);

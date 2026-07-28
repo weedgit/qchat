@@ -230,7 +230,7 @@ the previous defaults.
 - Remember me: tokens via Electron `safeStorage` (`userData/secure/`); app opens `/` when a session exists; logout clears the vault
 - Origin-scoped permissions and external navigation checks
 - Certificate errors: trust / deny dialog (persisted); configured web host stays auto-trusted
-- Right-click: cut/copy/paste, links, images, spellcheck (gated so web chat menus still work)
+- Right-click: cut/copy/paste, links, images, spellcheck outside chat rows; message/conversation menus stay in the web UI (Telegram-style)
 - Theme: shell chrome follows Display → Theme (system / light / dark) via `nativeTheme`
 - Offline / reconnect banner in the desktop shell (OS offline + WS reconnect)
 - Native notifications that focus the target conversation
