@@ -2,6 +2,9 @@
  * Trust the Qchat nginx self-signed cert (deploy/certs/qchat.crt) in Android
  * network security config so HTTPS fetch works outside Expo Go.
  *
+ * Dev / preview only. Production profiles must omit this plugin
+ * (see app.config.js + QCHAT_TRUST_CERT=0).
+ *
  * Mirror: Android network_security_config custom trust-anchors.
  */
 const {
@@ -40,6 +43,13 @@ function networkSecurityXml(host) {
 }
 
 function withTrustedQchatCert(config) {
+  if (process.env.QCHAT_TRUST_CERT === "0") {
+    console.warn(
+      "[withTrustedQchatCert] skipped (QCHAT_TRUST_CERT=0) — production/system CA mode"
+    );
+    return config;
+  }
+
   config = withDangerousMod(config, [
     "android",
     async (cfg) => {
