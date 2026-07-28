@@ -189,6 +189,7 @@ func (s *Server) pushToUser(ctx context.Context, cfg push.Config, userID string,
 // notifyMessagePush fans out Telegram-style "Sender → Recipient" message pushes
 // (getPushNotificationMessage puts the sender in the notification title).
 // Respects conversation mute and user notify_props (desktop=mention / mentions_only).
+// Recipients with an active WebSocket are skipped (in-app delivery already happened).
 func (s *Server) notifyMessagePush(
 	ctx context.Context,
 	convID, senderID, senderName, senderAvatar, preview string,
@@ -215,23 +216,47 @@ func (s *Server) notifyMessagePush(
 	for _, id := range mentionIDs {
 		mentioned[id] = struct{}{}
 	}
+
+	candidates := make([]string, 0, len(memberIDs))
 	for _, uid := range memberIDs {
 		if uid == senderID {
 			continue
 		}
-		var muted bool
-		_ = s.db.QueryRow(ctx, `
-			SELECT muted FROM conversation_members
-			WHERE conversation_id=$1 AND user_id=$2`, convID, uid).Scan(&muted)
-		if muted {
+		// Online sockets already got message.new; skip vendor push under load.
+		if s.hub.IsOnline(uid) {
 			continue
 		}
-		_, isMention := mentioned[uid]
-		if mentionAll {
-			isMention = true
-		}
+		candidates = append(candidates, uid)
+	}
+	if len(candidates) == 0 {
+		return
+	}
+
+	rows, err := s.db.Query(ctx, `
+		SELECT cm.user_id::text, cm.muted,
+		       COALESCE(u.notify_props, '{}'::jsonb),
+		       COALESCE(u.display_name, '')
+		FROM conversation_members cm
+		JOIN users u ON u.id = cm.user_id
+		WHERE cm.conversation_id = $1
+		  AND cm.user_id::text = ANY($2::text[])`, convID, candidates)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	type memberPref struct {
+		uid, displayName, desktop string
+		muted, mentionsOnly       bool
+	}
+	prefs := make([]memberPref, 0, len(candidates))
+	for rows.Next() {
+		var uid, displayName string
+		var muted bool
 		var raw []byte
-		_ = s.db.QueryRow(ctx, `SELECT notify_props FROM users WHERE id=$1`, uid).Scan(&raw)
+		if rows.Scan(&uid, &muted, &raw, &displayName) != nil {
+			continue
+		}
 		desktop := "all"
 		mentionsOnly := false
 		if len(raw) > 0 {
@@ -245,20 +270,32 @@ func (s *Server) notifyMessagePush(
 				}
 			}
 		}
-		if desktop == "none" {
+		prefs = append(prefs, memberPref{
+			uid: uid, displayName: displayName, desktop: desktop,
+			muted: muted, mentionsOnly: mentionsOnly,
+		})
+	}
+
+	for _, p := range prefs {
+		if p.muted {
 			continue
 		}
-		if desktop == "mention" || mentionsOnly {
+		_, isMention := mentioned[p.uid]
+		if mentionAll {
+			isMention = true
+		}
+		if p.desktop == "none" {
+			continue
+		}
+		if p.desktop == "mention" || p.mentionsOnly {
 			if !isMention {
 				continue
 			}
 		}
 		title := senderName
 		if convType == "dm" {
-			var recipient string
-			_ = s.db.QueryRow(ctx, `SELECT display_name FROM users WHERE id=$1`, uid).Scan(&recipient)
-			if recipient != "" {
-				title = senderName + " → " + recipient
+			if p.displayName != "" {
+				title = senderName + " → " + p.displayName
 			}
 		} else if convTitle != "" {
 			title = senderName + " → " + convTitle
@@ -270,9 +307,8 @@ func (s *Server) notifyMessagePush(
 			} else {
 				title = "Mentioned you · " + title
 			}
-			body = preview
 		}
-		s.pushToUser(ctx, cfg, uid, push.WebPayload{
+		s.pushToUser(ctx, cfg, p.uid, push.WebPayload{
 			Title:          title,
 			Body:           body,
 			Tag:            "qchat-" + convID,
@@ -285,6 +321,7 @@ func (s *Server) notifyMessagePush(
 }
 
 // notifyCallRingPush wakes callees via Web Push (Calls background notify).
+// Skips users that already have a live WebSocket (they get call.ring over WS).
 func (s *Server) notifyCallRingPush(ctx context.Context, userIDs []string, kind, initiatorName, callID, conversationID string) {
 	cfg := s.pushCfg()
 	if !cfg.Enabled() {
@@ -310,6 +347,9 @@ func (s *Server) notifyCallRingPush(ctx context.Context, userIDs []string, kind,
 		ConversationID: conversationID,
 	}
 	for _, uid := range userIDs {
+		if s.hub.IsOnline(uid) {
+			continue
+		}
 		s.pushToUser(ctx, cfg, uid, p)
 	}
 }

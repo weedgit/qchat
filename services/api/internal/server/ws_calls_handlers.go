@@ -46,14 +46,15 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		SessionID:    claims.SessionID,
 		DeviceID:     claims.DeviceID,
 		Conn:         conn,
-		Send:         make(chan []byte, 64),
+		Send:         make(chan []byte, ws.ClientSendBuffer),
 	}
 	s.hub.Register(client)
 	s.touchSession(claims.SessionID)
 	go s.writePump(client)
 	// presence: publish status_change when the first session connects.
 	if s.hub.ConnectionCount(claims.UserID) == 1 {
-		s.publishPresence(claims.UserID, true)
+		uid := claims.UserID
+		s.goPresenceJob(func() { s.publishPresence(uid, true) })
 	}
 	s.readPump(client)
 }
@@ -92,7 +93,7 @@ func (s *Server) readPump(c *ws.Client) {
 		_ = c.Conn.Close()
 		// Only mark offline when the last session disconnects (status_change).
 		if !s.hub.IsOnline(uid) {
-			s.publishPresence(uid, false)
+			s.goPresenceJob(func() { s.publishPresence(uid, false) })
 		}
 	}()
 	c.Conn.SetReadLimit(1 << 20)
