@@ -15,6 +15,17 @@ import {
 } from "livekit-client";
 import { api } from "@/lib/api";
 import {
+  clearCallHandoff,
+  focusCallPopoutWindow,
+  focusMainChatWindow,
+  openCallChannel,
+  openCallPopoutWindow,
+  postCallChannel,
+  takeCallHandoff,
+  writeCallHandoff,
+  type CallHandoffPayload,
+} from "@/lib/callHandoff";
+import {
   clearIncomingCallAlerts,
   notifyIncomingCall,
   ringForIncomingCall,
@@ -62,6 +73,8 @@ export type CallRemotePeer = {
   identity: string;
   name: string;
   userId: string;
+  micMuted: boolean;
+  cameraOff: boolean;
 };
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
@@ -124,8 +137,10 @@ export function useCall(opts: {
   subscribe: SubscribeFn;
   /** Fallback avatar for an incoming/outgoing call conversation (e.g. DM list). */
   resolvePeerAvatar?: (conversationId: string) => string | undefined;
+  /** Pop-out /call window: resume media from handoff instead of placing calls. */
+  isPopoutWindow?: boolean;
 }) {
-  const { meId, subscribe, resolvePeerAvatar } = opts;
+  const { meId, subscribe, resolvePeerAvatar, isPopoutWindow = false } = opts;
   const resolvePeerAvatarRef = useRef(resolvePeerAvatar);
   resolvePeerAvatarRef.current = resolvePeerAvatar;
   const [incoming, setIncoming] = useState<IncomingCall | null>(null);
@@ -156,6 +171,8 @@ export function useCall(opts: {
   const [remoteAudioEl, setRemoteAudioElState] = useState<HTMLAudioElement | null>(null);
   /** LiveKit remote participants for group (N:N) grid. */
   const [remotePeers, setRemotePeers] = useState<CallRemotePeer[]>([]);
+  /** True while media runs in a separate /call window (main chat stays usable). */
+  const [poppedOut, setPoppedOut] = useState(false);
 
   const roomRef = useRef<Room | null>(null);
   const activeRef = useRef<ActiveCall | null>(null);
@@ -173,8 +190,11 @@ export function useCall(opts: {
   const peerAudioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const incomingNotifyRef = useRef<Notification | null>(null);
   const degradedSinceRef = useRef<number | null>(null);
+  const mediaCredsRef = useRef<{ url: string; token: string } | null>(null);
+  const poppedOutRef = useRef(false);
   activeRef.current = active;
   micMutedRef.current = micMuted;
+  poppedOutRef.current = poppedOut;
 
   const clearRingAlerts = useCallback(() => {
     clearIncomingCallAlerts(incomingNotifyRef.current);
@@ -193,6 +213,8 @@ export function useCall(opts: {
     setCallStats(null);
     setScreenSharing(false);
     setRemotePeers([]);
+    setPoppedOut(false);
+    mediaCredsRef.current = null;
     peerVideoElsRef.current.clear();
     peerAudioElsRef.current.forEach((el) => {
       el.pause();
@@ -209,6 +231,14 @@ export function useCall(opts: {
   const setLocalVideoEl = useCallback((el: HTMLVideoElement | null) => {
     localVideoElRef.current = el;
     setLocalVideoElState(el);
+    const room = roomRef.current;
+    if (!room || !el) return;
+    room.localParticipant.trackPublications.forEach((pub) => {
+      if (pub.track?.kind === Track.Kind.Video) {
+        pub.track.attach(el);
+        el.play().catch(() => {});
+      }
+    });
   }, []);
   const setRemoteAudioEl = useCallback((el: HTMLAudioElement | null) => {
     remoteAudioElRef.current = el;
@@ -365,10 +395,16 @@ export function useCall(opts: {
     room.remoteParticipants.forEach((p) => {
       const identity = String(p.identity || "");
       const userId = identity.split(":")[0] || identity;
+      const micPub = p.getTrackPublication(Track.Source.Microphone);
+      const camPub = p.getTrackPublication(Track.Source.Camera);
+      const hasMic = Boolean(micPub?.track);
+      const hasCam = Boolean(camPub?.track);
       next.push({
         identity,
         name: String(p.name || userId || "User"),
         userId,
+        micMuted: !hasMic || Boolean(micPub?.isMuted),
+        cameraOff: !hasCam || Boolean(camPub?.isMuted),
       });
     });
     setRemotePeers(next);
@@ -417,6 +453,7 @@ export function useCall(opts: {
       setMicLevel(0);
       setRemoteMicLevel(0);
       const lkUrl = resolveLiveKitUrl(url);
+      mediaCredsRef.current = { url: lkUrl, token };
       try {
         if (!lkUrl || !token) {
           throw new Error("Missing LiveKit URL or token");
@@ -437,11 +474,11 @@ export function useCall(opts: {
           );
         }
         try {
+          // Probe mic only. Opening camera here then stopping it often causes
+          // Chrome/Electron "Could not start video source" when LiveKit opens
+          // the camera again immediately (device still releasing).
           const stream = await withTimeout(
-            media.getUserMedia({
-              audio: true,
-              video: kind === "video",
-            }),
+            media.getUserMedia({ audio: true, video: false }),
             20_000,
             "Microphone permission"
           );
@@ -452,8 +489,8 @@ export function useCall(opts: {
           }
           throw new Error(
             permErr?.name === "NotAllowedError"
-              ? "Microphone/camera permission denied — allow access and try again"
-              : permErr?.message || "Could not access microphone/camera"
+              ? "Microphone permission denied — allow access and try again"
+              : permErr?.message || "Could not access microphone"
           );
         }
 
@@ -466,6 +503,8 @@ export function useCall(opts: {
           setAudioPlaybackOk(playing);
           if (playing) reattachRemoteMedia();
         });
+        room.on(RoomEvent.TrackMuted, () => syncRemotePeers());
+        room.on(RoomEvent.TrackUnmuted, () => syncRemotePeers());
         room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub, participant) => {
           hadRemoteRef.current = true;
           attachTrack(track, false, participant.identity);
@@ -611,9 +650,16 @@ export function useCall(opts: {
           try {
             await room.localParticipant.setCameraEnabled(true);
             setCameraOff(false);
-          } catch {
-            setCameraOff(true);
-            setError((prev) => prev || "Camera failed — voice may still work");
+          } catch (camErr: any) {
+            // Brief retry — device can still be releasing after the mic probe.
+            await new Promise((r) => setTimeout(r, 400));
+            try {
+              await room.localParticipant.setCameraEnabled(true);
+              setCameraOff(false);
+            } catch {
+              setCameraOff(true);
+              setError((prev) => prev || friendlyCallError(camErr) || "Camera failed — voice may still work");
+            }
           }
         } else {
           await room.localParticipant.setCameraEnabled(false).catch(() => {});
@@ -778,6 +824,14 @@ export function useCall(opts: {
           if (convId && prev.conversationId === convId) return null;
           return prev;
         });
+        const endedActive = activeRef.current;
+        const matchesActive =
+          endedActive &&
+          ((!callId || endedActive.callId === callId) ||
+            (convId && endedActive.conversationId === convId));
+        if (matchesActive && endedActive) {
+          postCallChannel({ type: "call-ended", callId: endedActive.callId });
+        }
         setActive((prev) => {
           if (!prev) return null;
           if (!callId || prev.callId === callId) return null;
@@ -788,9 +842,12 @@ export function useCall(opts: {
         setError(null);
         disconnectRoom().catch(() => {});
         endingRef.current = false;
+        if (isPopoutWindow) {
+          window.setTimeout(() => window.close(), 250);
+        }
       }
     });
-  }, [subscribe, meId, connectLiveKit, disconnectRoom, clearRingAlerts, resetMediaUi]);
+  }, [subscribe, meId, connectLiveKit, disconnectRoom, clearRingAlerts, resetMediaUi, isPopoutWindow]);
 
   // Optional RTC stats while the stats panel is open.
   useEffect(() => {
@@ -940,6 +997,9 @@ export function useCall(opts: {
     const id = cur.callId;
     endingRef.current = true;
     clearRingAlerts();
+    postCallChannel({ type: "force-hangup", callId: id });
+    postCallChannel({ type: "call-ended", callId: id });
+    clearCallHandoff();
     setActive(null);
     setIncoming(null);
     setError(null);
@@ -947,7 +1007,152 @@ export function useCall(opts: {
     await disconnectRoom();
     await hangupServer(id);
     endingRef.current = false;
-  }, [disconnectRoom, hangupServer, clearRingAlerts, resetMediaUi]);
+    if (isPopoutWindow) {
+      window.setTimeout(() => window.close(), 150);
+    }
+  }, [disconnectRoom, hangupServer, clearRingAlerts, resetMediaUi, isPopoutWindow]);
+
+  /** Move group/video media into a Telegram-style /call popup; chat stays in main window. */
+  const popOutCall = useCallback(async () => {
+    if (isPopoutWindow) return false;
+    const cur = activeRef.current;
+    const creds = mediaCredsRef.current;
+    if (!cur || cur.status !== "active" || !creds?.url || !creds?.token) return false;
+    if (poppedOutRef.current) {
+      focusCallPopoutWindow();
+      return true;
+    }
+    const payload: CallHandoffPayload = {
+      v: 1,
+      callId: cur.callId,
+      conversationId: cur.conversationId,
+      kind: cur.kind,
+      role: cur.role,
+      isGroup: cur.isGroup,
+      isHost: cur.isHost,
+      peerName: cur.peerName,
+      peerAvatar: cur.peerAvatar,
+      livekitUrl: creds.url,
+      livekitToken: creds.token,
+      createdAt: Date.now(),
+    };
+    writeCallHandoff(payload);
+    intentionalDisconnectRef.current = true;
+    await disconnectRoom();
+    intentionalDisconnectRef.current = false;
+    const opened = openCallPopoutWindow();
+    if (!opened) {
+      // Popup blocked — reclaim media in this window.
+      try {
+        await connectLiveKit(creds.url, creds.token, cur.kind, cur.callId);
+      } catch {
+        /* keep active; UI can retry */
+      }
+      setPoppedOut(false);
+      return false;
+    }
+    setPoppedOut(true);
+    setConnecting(false);
+    setReconnecting(false);
+    setRemotePeers([]);
+    return true;
+  }, [disconnectRoom, connectLiveKit, isPopoutWindow]);
+
+  const focusPopout = useCallback(() => {
+    focusCallPopoutWindow();
+  }, []);
+
+  /** Pop-out window: take handoff and reconnect LiveKit in this window only. */
+  const resumeFromHandoff = useCallback(async () => {
+    const handoff = takeCallHandoff();
+    if (!handoff) return false;
+    setPoppedOut(false);
+    setError(null);
+    setActive({
+      callId: handoff.callId,
+      conversationId: handoff.conversationId,
+      kind: handoff.kind,
+      status: "active",
+      role: handoff.role,
+      peerName: handoff.peerName,
+      peerAvatar: handoff.peerAvatar,
+      isGroup: handoff.isGroup,
+      isHost: handoff.isHost,
+    });
+    postCallChannel({ type: "popout-ready", callId: handoff.callId });
+    try {
+      await connectLiveKit(handoff.livekitUrl, handoff.livekitToken, handoff.kind, handoff.callId);
+      clearCallHandoff();
+      return true;
+    } catch (e) {
+      // Keep handoff so Strict Mode remount / retry can reuse it.
+      throw e;
+    }
+  }, [connectLiveKit]);
+
+  /** Main window: reclaim media if pop-out closed without hanging up. */
+  const reclaimCall = useCallback(async () => {
+    if (isPopoutWindow) return false;
+    const cur = activeRef.current;
+    const creds = mediaCredsRef.current;
+    if (!cur || cur.status !== "active" || !creds?.url || !creds?.token) {
+      setPoppedOut(false);
+      return false;
+    }
+    setPoppedOut(false);
+    try {
+      await connectLiveKit(creds.url, creds.token, cur.kind, cur.callId);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [connectLiveKit, isPopoutWindow]);
+
+  // Cross-window coordination (Telegram-style call window ↔ chat).
+  useEffect(() => {
+    return openCallChannel((msg) => {
+      const cur = activeRef.current;
+      if (!cur) return;
+      if (msg.callId && msg.callId !== cur.callId) return;
+      if (msg.type === "force-hangup" || msg.type === "call-ended") {
+        if (endingRef.current) return;
+        endingRef.current = true;
+        clearCallHandoff();
+        setActive(null);
+        setIncoming(null);
+        setError(null);
+        resetMediaUi();
+        disconnectRoom().catch(() => {});
+        endingRef.current = false;
+        if (isPopoutWindow) {
+          window.setTimeout(() => window.close(), 150);
+        }
+        return;
+      }
+      if (msg.type === "popout-closed" && !isPopoutWindow && poppedOutRef.current) {
+        reclaimCall().catch(() => {});
+        return;
+      }
+      if (msg.type === "popout-ready" && !isPopoutWindow) {
+        setPoppedOut(true);
+        return;
+      }
+      if (msg.type === "focus-main" && !isPopoutWindow) {
+        focusMainChatWindow();
+      }
+    });
+  }, [disconnectRoom, resetMediaUi, reclaimCall, isPopoutWindow]);
+
+  useEffect(() => {
+    if (!isPopoutWindow) return;
+    const onUnload = () => {
+      const cur = activeRef.current;
+      if (!cur || endingRef.current) return;
+      postCallChannel({ type: "popout-closed", callId: cur.callId });
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [isPopoutWindow]);
 
   const toggleCallStats = useCallback(() => {
     setShowCallStats((v) => !v);
@@ -988,8 +1193,14 @@ export function useCall(opts: {
     const room = roomRef.current;
     if (!room || active?.kind !== "video") return;
     const next = !cameraOff;
-    await room.localParticipant.setCameraEnabled(!next);
-    setCameraOff(next);
+    try {
+      await room.localParticipant.setCameraEnabled(!next);
+      setCameraOff(next);
+      if (!next) setError(null);
+    } catch (err) {
+      setCameraOff(true);
+      setError(friendlyCallError(err) || "Camera failed — try again or check another app is not using it");
+    }
   }, [cameraOff, active?.kind]);
 
   /** LiveKit screen share — uses getDisplayMedia (Electron: desktopCapturer handler). */
@@ -1031,6 +1242,7 @@ export function useCall(opts: {
     screenSharing,
     audioPlaybackOk,
     remotePeers,
+    poppedOut,
     setRemoteVideoEl,
     setLocalVideoEl,
     setRemoteAudioEl,
@@ -1046,5 +1258,9 @@ export function useCall(opts: {
     toggleScreenShare,
     enableSound,
     toggleCallStats,
+    popOutCall,
+    focusPopout,
+    resumeFromHandoff,
+    reclaimCall,
   };
 }

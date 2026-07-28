@@ -52,14 +52,27 @@ export function friendlyCallError(err: unknown): string {
   const raw = err && typeof err === "object" && "message" in err
     ? String((err as { message?: string }).message || "")
     : String(err || "");
-  if (!raw) return "Failed to connect media";
+  const name =
+    err && typeof err === "object" && "name" in err
+      ? String((err as { name?: string }).name || "")
+      : "";
+  if (!raw && !name) return "Failed to connect media";
   if (raw.startsWith("MIC_INSECURE_ORIGIN:")) return raw;
-  const lower = raw.toLowerCase();
+  const lower = `${name} ${raw}`.toLowerCase();
   if (lower.includes("timed out") || lower.includes("timeout")) {
     return "Couldn’t connect media in time — check LiveKit (port 7880), UDP/firewall, or try a stronger network.";
   }
   if (lower.includes("notallowed") || lower.includes("permission denied")) {
     return "Microphone/camera permission denied — allow access in the browser and try again.";
+  }
+  if (
+    lower.includes("could not start video source") ||
+    lower.includes("notreadable") ||
+    lower.includes("trackstarterror") ||
+    lower.includes("device in use") ||
+    lower.includes("aborterror")
+  ) {
+    return "Camera is busy or unavailable — close other apps using it, then turn the camera back on.";
   }
   if (lower.includes("notfound") || lower.includes("requested device not found")) {
     return "No microphone or camera found — plug in a device and try again.";
@@ -73,7 +86,7 @@ export function friendlyCallError(err: unknown): string {
   if (lower.includes("missing livekit")) {
     return "Call media isn’t configured — set LIVEKIT_URL on the API and NEXT_PUBLIC_LIVEKIT_URL in the web app.";
   }
-  return raw;
+  return raw || "Failed to connect media";
 }
 
 /** Best-effort RTC stats from the local mic sender (optional stats). */

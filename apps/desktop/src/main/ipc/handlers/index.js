@@ -12,6 +12,11 @@ const {
 const { createGetNetworkOnlineHandler } = require("./networkStatus");
 const { createGetWindowFocusedHandler } = require("./windowFocus");
 const { createWriteClipboardTextHandler } = require("./clipboard");
+const {
+  openCallWindow,
+  focusCallWindow,
+  closeCallWindow,
+} = require("../../windows/callWindow");
 
 /**
  * @param {object} deps
@@ -63,6 +68,19 @@ function registerIpcHandlers(deps) {
     createGetWindowFocusedHandler({ getMainWindow: deps.getMainWindow })
   );
   ipcMain.handle(IPC.WRITE_CLIPBOARD_TEXT, createWriteClipboardTextHandler());
+
+  ipcMain.handle(IPC.OPEN_CALL_WINDOW, (_event, payload) =>
+    openCallWindow({
+      webUrl: deps.webUrl,
+      path: payload?.path || "/call",
+    })
+  );
+  ipcMain.handle(IPC.FOCUS_CALL_WINDOW, () => ({ ok: focusCallWindow() }));
+  ipcMain.handle(IPC.CLOSE_CALL_WINDOW, () => ({ ok: closeCallWindow() }));
+  ipcMain.handle(IPC.FOCUS_MAIN_WINDOW, () => {
+    deps.focusMainWindow();
+    return { ok: true };
+  });
 
   ipcMain.on(IPC.RENDERER_READY, () => {
     deps.flushPendingConversation();

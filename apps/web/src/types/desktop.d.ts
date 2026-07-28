@@ -72,6 +72,11 @@ declare global {
     ) => () => void;
     /** Native clipboard write (menu ID copy, etc.). */
     writeClipboardText?: (text: string) => Promise<{ ok: boolean }>;
+    /** CALL-03 — Telegram-style video chat window. */
+    openCallWindow?: (path?: string) => Promise<{ ok: boolean }>;
+    focusCallWindow?: () => Promise<{ ok: boolean }>;
+    closeCallWindow?: () => Promise<{ ok: boolean }>;
+    focusMainWindow?: () => Promise<{ ok: boolean }>;
   }
 
   interface Window {
