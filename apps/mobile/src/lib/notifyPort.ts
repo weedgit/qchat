@@ -1,11 +1,9 @@
 /**
  * Notification port for mobile messaging.
  *
- * Current backend: local OS banners while the app process is alive (WS-driven).
- * Remote push (FCM / APNs / Expo Push) is intentionally deferred — registerRemote /
- * unregisterRemote are no-ops so messaging features do not depend on push adapters.
- *
- * Do not expose unsupported remote-push toggles as functional in the UI.
+ * - Foreground / in-process banners: local OS notifications (WS-driven).
+ * - Remote push: Expo Push tokens registered with the API (FCM/APNs via Expo).
+ *   OEM vendor SDKs (Huawei/Xiaomi/OPPO/vivo) remain deferred on the server.
  */
 
 import {
@@ -14,6 +12,7 @@ import {
   presentMessageNotification,
   type LocalMessageNotify,
 } from "./localNotify";
+import { registerExpoRemotePush, unregisterExpoRemotePush } from "./remotePush";
 
 export type MessageNotifyPayload = LocalMessageNotify;
 
@@ -24,12 +23,9 @@ export type NotificationPort = {
   ensureLocalPermission: () => Promise<boolean>;
   /** Navigate when the user taps a local notification. */
   attachTapListener: () => () => void;
-  /**
-   * Register for remote push. Deferred — always resolves without contacting the server.
-   * Future FCM/APNs/Expo backends can implement this without changing chat call sites.
-   */
+  /** Register Expo push token with the API. */
   registerRemote: () => Promise<{ enabled: boolean; reason: string }>;
-  /** Unregister remote push. Deferred no-op. */
+  /** Unregister the last Expo push token from the API. */
   unregisterRemote: () => Promise<void>;
 };
 
@@ -37,13 +33,9 @@ const localBackend: NotificationPort = {
   presentForegroundMessage: presentMessageNotification,
   ensureLocalPermission: ensureNotificationPermissions,
   attachTapListener: attachNotificationResponseListener,
-  async registerRemote() {
-    return { enabled: false, reason: "remote_push_deferred" };
-  },
-  async unregisterRemote() {
-    /* remote push not enabled */
-  },
+  registerRemote: registerExpoRemotePush,
+  unregisterRemote: unregisterExpoRemotePush,
 };
 
-/** Active notification implementation (swap later for FCM/Expo without touching ChatContext). */
+/** Active notification implementation. */
 export const notificationPort: NotificationPort = localBackend;

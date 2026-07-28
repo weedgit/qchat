@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, clearToken, getToken, initTokens, setOnUnauthorized, setSessionRevokedReason, setTokens } from "../lib/api";
 import { getAuthDevice } from "../lib/device";
+import { notificationPort } from "../lib/notifyPort";
 import type { CurrentUser, PresenceStatus } from "../lib/types";
 
 type AuthContextValue = {
@@ -66,15 +67,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (access: string, refresh: string) => {
     await setTokens(access, refresh);
     await refreshMe();
+    void notificationPort.registerRemote().catch(() => {});
   }, [refreshMe]);
 
   const signOut = useCallback(async () => {
+    await notificationPort.unregisterRemote().catch(() => {});
     await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     await clearToken();
     setUser(null);
   }, []);
 
   const forceLocalSignOut = useCallback(async (reason?: string) => {
+    await notificationPort.unregisterRemote().catch(() => {});
     if (reason) {
       await setSessionRevokedReason(reason).catch(() => {});
     }

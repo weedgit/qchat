@@ -12,6 +12,21 @@ type Config struct {
 	VAPIDPublic  string
 	VAPIDPrivate string
 	Subject      string // mailto: or https:
+
+	// Expo Push (recommended path for Expo/React Native apps — FCM/APNs under the hood).
+	ExpoPushEnabled string
+	ExpoAccessToken string
+
+	// Native FCM HTTP v1 (non-Expo Android tokens).
+	FCMProjectID       string
+	FCMCredentialsJSON string // path to service-account JSON, or raw JSON
+
+	// Native APNs HTTP/2 (.p8 key).
+	APNsKeyID      string
+	APNsTeamID     string
+	APNsBundleID   string
+	APNsKeyPath    string
+	APNsProduction string // "1"/"true" = production; otherwise sandbox
 }
 
 type Subscription struct {
@@ -34,14 +49,19 @@ type WebPayload struct {
 	ConversationID string `json:"conversation_id,omitempty"`
 }
 
-func (c Config) Enabled() bool {
+func (c Config) WebEnabled() bool {
 	return c.VAPIDPublic != "" && c.VAPIDPrivate != ""
+}
+
+// Enabled is true when any push backend can deliver (web, Expo, FCM, or APNs).
+func (c Config) Enabled() bool {
+	return c.AnyEnabled()
 }
 
 // SendWeb pushes a notification and returns the HTTP status from the push service.
 // Callers use 404/410 to remove expired browser subscriptions.
 func SendWeb(ctx context.Context, cfg Config, subscriptionJSON string, p WebPayload) (int, error) {
-	if !cfg.Enabled() {
+	if !cfg.WebEnabled() {
 		return 0, nil
 	}
 	var sub webpush.Subscription
