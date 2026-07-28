@@ -33,12 +33,18 @@ var (
 
 	wsConnections = promauto.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "qchat_ws_connections",
- Help: "Current WebSocket connections (websocket metrics)",
+		Help: "Current WebSocket connections (websocket metrics)",
 	}, func() float64 {
 		if wsGaugeFn == nil {
 			return 0
 		}
 		return wsGaugeFn()
+	})
+
+	messagePublishDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "qchat_message_publish_duration_seconds",
+		Help:    "Time to fan out message.new on the local WS hub (before HTTP response)",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2},
 	})
 )
 
