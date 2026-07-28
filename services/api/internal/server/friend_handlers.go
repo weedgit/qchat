@@ -375,14 +375,23 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 			writeErrCode(w, 400, "invalid_request", "username or user_id required")
 			return
 		}
-	} else if req.UserID != "" {
-		err = s.db.QueryRow(r.Context(), `
-			SELECT id::text, friend_privacy FROM users
-			WHERE enterprise_id IS NOT DISTINCT FROM $1 AND id=$2`, ent, req.UserID).Scan(&targetID, &privacy)
-	} else if req.Username != "" {
-		err = s.db.QueryRow(r.Context(), `
-			SELECT id::text, friend_privacy FROM users
-			WHERE enterprise_id IS NOT DISTINCT FROM $1 AND username=$2`, ent, req.Username).Scan(&targetID, &privacy)
+	} else if req.UserID != "" || req.Username != "" {
+		// Match /v1/users/lookup: same-tenant users and personal accounts (NULL enterprise).
+		// Use id::text / explicit uuid cast so Add cannot 404 after a successful lookup.
+		if req.UserID != "" {
+			err = s.db.QueryRow(r.Context(), `
+				SELECT id::text, friend_privacy FROM users
+				WHERE banned=FALSE AND id::text = $2
+				  AND (enterprise_id IS NOT DISTINCT FROM $1::uuid OR enterprise_id IS NULL)`,
+				c.EnterpriseID, strings.TrimSpace(req.UserID)).Scan(&targetID, &privacy)
+		}
+		if (err != nil || targetID == "") && req.Username != "" {
+			err = s.db.QueryRow(r.Context(), `
+				SELECT id::text, friend_privacy FROM users
+				WHERE banned=FALSE AND lower(username) = lower($2)
+				  AND (enterprise_id IS NOT DISTINCT FROM $1::uuid OR enterprise_id IS NULL)`,
+				c.EnterpriseID, strings.TrimSpace(req.Username)).Scan(&targetID, &privacy)
+		}
 	} else {
 		writeErrCode(w, 400, "invalid_request", "username or user_id required")
 		return

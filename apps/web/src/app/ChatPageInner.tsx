@@ -22,17 +22,25 @@ import GroupQr from "@/components/GroupQr";
 import GroupQrScanner from "@/components/GroupQrScanner";
 import UserQr from "@/components/UserQr";
 import EmojiPicker, { type PickerMedia } from "@/components/EmojiPicker";
-import MessageBody from "@/components/MessageBody";
-import { api, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
+import { AnimatedEmojiOnlyBody } from "@/components/AnimatedEmoji";
+import MessageBody, { formatComposerMentions } from "@/components/MessageBody";
+import { api, asList, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
 import { getAuthDevice } from "@/lib/device";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
+import { parseUserPayload } from "@/lib/userQr";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { useCall } from "@/lib/useCall";
 import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
 import { useTheme } from "@/lib/theme";
 import { useLocale } from "@/lib/locale";
-import { localizeChatLabel, isDefaultPhotoLabel } from "@/lib/localizeChatLabel";
+import {
+  localizeChatLabel,
+  isDefaultImageCaption,
+  isEmojiOnlyText,
+  isStickerOrGifCaption,
+} from "@/lib/localizeChatLabel";
+import { maybeAnimateStickerUrl } from "@/lib/stickerData";
 import { useDesktopIdleStatus } from "@/lib/useDesktopIdleStatus";
 import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
@@ -171,10 +179,55 @@ function ConversationRow({
         size={50}
         showStatus={isDM}
         online={online}
+        className={isGroup ? "is-group" : undefined}
       />
       <div className="conv-body">
+        {isGroup ? (
+          <div
+            className={`conv-company${conv.enterpriseName ? " is-enterprise" : ""}`}
+            title={conv.enterpriseName || t("chat.personalSocial")}
+          >
+            <svg
+              className="conv-company-icon"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>{conv.enterpriseName || t("chat.personalSocial")}</span>
+          </div>
+        ) : null}
         <div className="conv-top">
           <span className="conv-title">
+            {isGroup ? (
+              <svg
+                className="conv-group-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            ) : null}
             {conv.favorite ? <span className="fav-mark" title={t("chat.favorite")}>★ </span> : null}
             {conversationDisplayName(conv)}
             {conv.muted ? <span className="mute-mark" title={t("chat.muted")}> · {t("chat.muted")}</span> : null}
@@ -386,6 +439,8 @@ const ICONS = {
     "M3 21h18 M5 21V7l7-4 7 4v14 M9 21v-6h6v6 M9 10h.01 M15 10h.01 M9 14h.01 M15 14h.01",
   scanQr:
     "M3 7V5a2 2 0 0 1 2-2h2 M17 3h2a2 2 0 0 1 2 2v2 M21 17v2a2 2 0 0 1-2 2h-2 M7 21H5a2 2 0 0 1-2-2v-2 M7 7h4v4H7z M13 7h4v2h-2v2h-2z M7 13h2v2H7z M11 11h2v2h-2z M13 13h4v4h-4z",
+  showQr:
+    "M3 3h8v8H3z M5 5h4v4H5z M13 3h8v8h-8z M15 5h4v4h-4z M3 13h8v8H3z M5 15h4v4H5z M13 13h3v3h-3z M18 13h3v3h-3z M13 18h3v3h-3z M18 18h3v3h-3z",
 } as const;
 
 const QUICK_EMOJIS = [
@@ -538,6 +593,29 @@ function Bubble({
     ? myAvatar || msg.senderAvatar
     : msg.senderAvatar || peerAvatar;
 
+  const bareStickerOrGif =
+    msg.type === "image" &&
+    !!msg.mediaUrl &&
+    !msg.recalled &&
+    isStickerOrGifCaption(msg.content);
+  const bareEmojiOnly =
+    !msg.recalled &&
+    !msg.mediaUrl &&
+    (msg.type === "text" || !msg.type) &&
+    isEmojiOnlyText(msg.content);
+  const bareBubble = bareStickerOrGif || bareEmojiOnly;
+  const bubbleClass = [
+    "bubble",
+    bareBubble ? "bare" : "",
+    bareEmojiOnly ? "bare-emoji" : "",
+    bareStickerOrGif ? "bare-media" : "",
+    msg.pending ? "pending" : "",
+    msg.failed ? "failed" : "",
+    msg.recalled ? "muted" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div
       className={`msg-row ${msg.mine ? "mine" : ""} ${selectMode ? "select-mode" : ""} ${selected ? "selected" : ""
@@ -569,16 +647,22 @@ function Bubble({
             <button
               type="button"
               className="emoji-btn"
-              onClick={(e) => {
+              onPointerDown={(e) => {
+                // Fire on pointerdown so the click is not lost if hover ends
+                // while the cursor is still over the overhanging button.
+                e.preventDefault();
                 e.stopPropagation();
                 onReact?.(recommendedEmoji);
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
               }}
             >
               {recommendedEmoji}
             </button>
           </div>
         )}
-        <div className={`bubble ${msg.pending ? "pending" : ""} ${msg.failed ? "failed" : ""} ${msg.recalled ? "muted" : ""}`}>
+        <div className={bubbleClass}>
           {!msg.mine && isGroup && msg.senderName && (
             <div className="sender">{msg.senderName}</div>
           )}
@@ -614,13 +698,17 @@ function Bubble({
               </div>
             </div>
           ) : msg.type === "image" && msg.mediaUrl && !msg.recalled ? (
-            <div className="media-image">
+            <div className={`media-image${bareStickerOrGif ? " bare-media-image" : ""}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={mediaAuthURL(msg.mediaUrl)}
+                src={mediaAuthURL(
+                  bareStickerOrGif
+                    ? maybeAnimateStickerUrl(msg.mediaUrl)
+                    : msg.mediaUrl
+                )}
                 alt={localizeChatLabel(msg.content, t, { type: "image" })}
               />
-              {msg.content && !isDefaultPhotoLabel(msg.content) && (
+              {msg.content && !isDefaultImageCaption(msg.content) && (
                 <div className="media-caption">
                   <MessageBody text={msg.content} />
                 </div>
@@ -708,6 +796,8 @@ function Bubble({
               )}
             </div>
             )
+          ) : bareEmojiOnly ? (
+            <AnimatedEmojiOnlyBody text={msg.content} />
           ) : (
             <MessageBody text={msg.content} />
           )}
@@ -873,6 +963,7 @@ export default function ChatPageInner() {
   const [menuScanBusy, setMenuScanBusy] = useState(false);
   const [menuScanError, setMenuScanError] = useState<string | null>(null);
   const [menuScanNotice, setMenuScanNotice] = useState<string | null>(null);
+  const [menuShowQrOpen, setMenuShowQrOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [joinCompanyOpen, setJoinCompanyOpen] = useState(false);
   const [joinInvite, setJoinInvite] = useState("");
@@ -942,6 +1033,7 @@ export default function ChatPageInner() {
     avatar_url?: string;
     mute_all?: boolean;
     forbid_member_friend_add?: boolean;
+    enterprise_name?: string;
   } | null>(null);
   const [groupPending, setGroupPending] = useState<
     { user_id: string; username: string; display_name: string; avatar_url?: string }[]
@@ -1009,6 +1101,7 @@ export default function ChatPageInner() {
   const [barPin, setBarPin] = useState<PinnedMessage | null>(null);
   const [pinsListOpen, setPinsListOpen] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement>(null);
+  const draftHighlightRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openedFromQuery = useRef<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1214,6 +1307,10 @@ export default function ChatPageInner() {
   const isGroupOwner = myGroupRole === "owner";
   /** Group owner/admin may recall any message (API + permission matrix). */
   const canAdminRecall = isGroup && (myGroupRole === "owner" || myGroupRole === "admin");
+  const groupMuteAll = Boolean(groupDetails?.mute_all ?? chat.activeGroupMuteAll);
+  /** Members cannot send while whole-group mute is on (owners/admins still can). */
+  const composerBlockedByMute =
+    Boolean(isGroup) && groupMuteAll && myGroupRole !== "owner" && myGroupRole !== "admin";
   /** Groups reserve the pinned message for owner/admin; either side of a DM may pin. */
   const canPin = !isGroup || canAdminRecall;
   const canRecallMsg = (m: Message) =>
@@ -1399,7 +1496,9 @@ export default function ChatPageInner() {
       avatar_url: g?.avatar_url,
       mute_all: Boolean(g?.mute_all),
       forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
+      enterprise_name: String(g?.enterprise_name ?? "").trim() || undefined,
     });
+    chat.setActiveGroupMuteAll(Boolean(g?.mute_all));
     setGroupEditAnnounce(String(g?.announcement ?? ""));
     if (role === "owner" || role === "admin") {
       try {
@@ -1457,17 +1556,24 @@ export default function ChatPageInner() {
   }
 
   async function toggleForbidFriendAdd() {
-    if (!active || !canEditGroup || !groupDetails) return;
+    if (!active || !canEditGroup || !groupDetails || groupMetaBusy) return;
+    const next = !groupDetails.forbid_member_friend_add;
     setGroupMetaBusy(true);
+    setGroupDetails((prev) =>
+      prev ? { ...prev, forbid_member_friend_add: next } : prev
+    );
     try {
       await api(`/v1/groups/${active.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          forbid_member_friend_add: !groupDetails.forbid_member_friend_add,
+          forbid_member_friend_add: next,
         }),
       });
       await reloadGroupDetails();
     } catch (err: any) {
+      setGroupDetails((prev) =>
+        prev ? { ...prev, forbid_member_friend_add: !next } : prev
+      );
       logChatError(err.message);
     } finally {
       setGroupMetaBusy(false);
@@ -1481,6 +1587,8 @@ export default function ChatPageInner() {
       method: "POST",
       body: JSON.stringify({ user_id: userId, duration }),
     });
+    if (duration === "all") chat.setActiveGroupMuteAll(true);
+    if (duration === "all_off") chat.setActiveGroupMuteAll(false);
     await reloadGroupDetails();
   }
 
@@ -1543,21 +1651,34 @@ export default function ChatPageInner() {
 
   useEffect(() => {
     if (!ctxMenu) return;
-    const close = () => setCtxMenu(null);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+    const close = (e?: Event) => {
+      if (e) {
+        const t = e.target;
+        if (
+          t instanceof Element &&
+          t.closest(".ctx-menu, .ctx-wrap, .ctx-emoji-row")
+        ) {
+          return;
+        }
+      }
+      setCtxMenu(null);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCtxMenu(null);
+    };
+    const onScrollOrResize = () => setCtxMenu(null);
+    // Ignore presses inside the menu so Clear selection / react still run.
     window.addEventListener("click", close);
     window.addEventListener("contextmenu", close);
     window.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
     return () => {
       window.removeEventListener("click", close);
       window.removeEventListener("contextmenu", close);
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
     };
   }, [ctxMenu]);
 
@@ -1653,9 +1774,34 @@ export default function ChatPageInner() {
     });
   }
 
-  async function joinFromMenuScan(publicIdRaw: string) {
-    const parsed = parseGroupJoinPayload(publicIdRaw) ?? publicIdRaw.trim();
-    if (!parsed || menuScanBusy) return;
+  async function handleMenuScan(raw: string) {
+    if (menuScanBusy) return;
+    const userName = parseUserPayload(raw);
+    if (userName) {
+      setMenuScanBusy(true);
+      setMenuScanError(null);
+      setMenuScanNotice(null);
+      try {
+        const body = await api<any>(`/v1/users/lookup?q=${encodeURIComponent(userName)}`);
+        const users = asList(body, "users") as Array<{ id?: string; username?: string }>;
+        const hit =
+          users.find((u) => String(u?.username ?? "").toLowerCase() === userName.toLowerCase()) ??
+          users[0];
+        const id = String(hit?.id ?? "").trim();
+        if (!id) throw new Error(t("chat.noResults"));
+        setMenuScanOpen(false);
+        await chat.openDM(id);
+        setMobileChatOpen(true);
+      } catch (err: any) {
+        setMenuScanError(err?.message || t("chat.noResults"));
+      } finally {
+        setMenuScanBusy(false);
+      }
+      return;
+    }
+
+    const parsed = parseGroupJoinPayload(raw) ?? raw.trim();
+    if (!parsed) return;
     setMenuScanBusy(true);
     setMenuScanError(null);
     setMenuScanNotice(null);
@@ -1678,6 +1824,10 @@ export default function ChatPageInner() {
     } finally {
       setMenuScanBusy(false);
     }
+  }
+
+  async function joinFromMenuScan(publicIdRaw: string) {
+    await handleMenuScan(publicIdRaw);
   }
 
   async function logout() {
@@ -1726,7 +1876,9 @@ export default function ChatPageInner() {
           avatar_url: g?.avatar_url,
           mute_all: Boolean(g?.mute_all),
           forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
+          enterprise_name: String(g?.enterprise_name ?? "").trim() || undefined,
         });
+        chat.setActiveGroupMuteAll(Boolean(g?.mute_all));
         setGroupEditAnnounce(String(g?.announcement ?? ""));
         if (role === "owner" || role === "admin") {
           try {
@@ -1774,6 +1926,42 @@ export default function ChatPageInner() {
     return () => window.removeEventListener("qchat:group-pending", onPending);
   }, [showDetails, active?.id, active?.type, groupDetails?.role, chat.myRole]);
 
+  // Keep RHS group policy in sync when another admin toggles forbid-friend-add.
+  useEffect(() => {
+    if (!showDetails || !active || (active.type !== "social_group" && active.type !== "group")) {
+      return;
+    }
+    const onUpdated = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          conversation_id?: string;
+          forbid_member_friend_add?: boolean;
+          announcement?: string;
+          title?: string;
+        }>
+      ).detail;
+      if (!detail?.conversation_id || detail.conversation_id !== active.id) return;
+      if (detail.forbid_member_friend_add != null) {
+        setGroupDetails((prev) =>
+          prev
+            ? { ...prev, forbid_member_friend_add: Boolean(detail.forbid_member_friend_add) }
+            : prev
+        );
+      }
+      if (detail.announcement != null) {
+        setGroupEditAnnounce(detail.announcement);
+        setGroupDetails((prev) =>
+          prev ? { ...prev, announcement: detail.announcement } : prev
+        );
+      }
+      if (detail.title != null) {
+        setGroupDetails((prev) => (prev ? { ...prev, title: detail.title } : prev));
+      }
+    };
+    window.addEventListener("qchat:group-updated", onUpdated);
+    return () => window.removeEventListener("qchat:group-updated", onUpdated);
+  }, [showDetails, active?.id, active?.type]);
+
   // Prefetch group members for call invite picker (without opening RHS).
   useEffect(() => {
     if (!groupCallInvite || !active || (active.type !== "social_group" && active.type !== "group")) {
@@ -1794,6 +1982,7 @@ export default function ChatPageInner() {
           avatar_url: g?.avatar_url,
           mute_all: Boolean(g?.mute_all),
           forbid_member_friend_add: Boolean(g?.forbid_member_friend_add),
+          enterprise_name: String(g?.enterprise_name ?? "").trim() || undefined,
         });
       })
       .catch(() => {});
@@ -2097,6 +2286,10 @@ export default function ChatPageInner() {
   async function send() {
     const text = draft.trim();
     if (!text || !chat.activeId) return;
+    if (composerBlockedByMute) {
+      logChatError(t("details.groupMutedAll"));
+      return;
+    }
     if (messageCharCount(text) > MESSAGE_MAX_CHARS) {
       logChatError(t("chat.messageTooLong"));
       return;
@@ -2543,9 +2736,6 @@ export default function ChatPageInner() {
                         <span className="main-menu-id-value">
                           {chat.me?.username ? `@${chat.me.username}` : "—"}
                         </span>
-                        {menuCopiedField === "username" ? (
-                          <span className="main-menu-id-copied">{t("me.idCopied")}</span>
-                        ) : null}
                       </span>
                       <MenuIcon
                         d={menuCopiedField === "username" ? ICONS.select : ICONS.copy}
@@ -2563,9 +2753,6 @@ export default function ChatPageInner() {
                     >
                       <span className="main-menu-id-text">
                         <span className="main-menu-id-value">{chat.me?.phone || "—"}</span>
-                        {menuCopiedField === "phone" ? (
-                          <span className="main-menu-id-copied">{t("me.idCopied")}</span>
-                        ) : null}
                       </span>
                       <MenuIcon
                         d={menuCopiedField === "phone" ? ICONS.select : ICONS.copy}
@@ -2575,19 +2762,22 @@ export default function ChatPageInner() {
                       />
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    className="main-menu-scan-btn"
-                    onClick={() => {
-                      setMainMenuOpen(false);
-                      setMenuScanError(null);
-                      setMenuScanNotice(null);
-                      setMenuScanOpen(true);
-                    }}
+                  <div
+                    className={`main-menu-profile-meta${chat.me?.enterpriseId ? " is-enterprise" : ""}`}
                   >
-                    <MenuIcon d={ICONS.scanQr} />
-                    {t("menu.scanQR")}
-                  </button>
+                    {chat.me?.enterpriseId ? (
+                      <>
+                        <MenuIcon d={ICONS.users} className="main-menu-profile-meta-icon" />
+                        <span>
+                          {chat.me.enterpriseName
+                            ? `${t("account.enterprise")} · ${chat.me.enterpriseName}`
+                            : t("account.enterprise")}
+                        </span>
+                      </>
+                    ) : (
+                      t("account.personal")
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="ctx-sep" />
@@ -2603,6 +2793,19 @@ export default function ChatPageInner() {
                 <MenuIcon d={ICONS.users} />
                 {t("menu.groups")}
               </Link>
+              <button
+                type="button"
+                className="ctx-item"
+                onClick={() => {
+                  setMainMenuOpen(false);
+                  setJoinError(null);
+                  setJoinNotice(null);
+                  setJoinCompanyOpen(true);
+                }}
+              >
+                <MenuIcon d={ICONS.building} />
+                {t("menu.joinCompany")}
+              </button>
               <Link className="ctx-item" href="/settings" onClick={() => setMainMenuOpen(false)}>
                 <MenuIcon d={ICONS.settings} />
                 {t("menu.settings")}
@@ -2848,6 +3051,31 @@ export default function ChatPageInner() {
               <MenuIcon d={ICONS.user} />
               {t("menu.newPrivateChat")}
             </Link>
+            <button
+              type="button"
+              className="ctx-item"
+              onClick={() => {
+                setComposeOpen(false);
+                setMenuScanError(null);
+                setMenuScanNotice(null);
+                setMenuScanOpen(true);
+              }}
+            >
+              <MenuIcon d={ICONS.scanQr} />
+              {t("menu.scanQR")}
+            </button>
+            <button
+              type="button"
+              className="ctx-item"
+              disabled={!chat.me?.username}
+              onClick={() => {
+                setComposeOpen(false);
+                setMenuShowQrOpen(true);
+              }}
+            >
+              <MenuIcon d={ICONS.showQr} />
+              {t("menu.showQR")}
+            </button>
           </div>
         )}
       </aside>
@@ -2993,7 +3221,7 @@ export default function ChatPageInner() {
                   className="chat-header clickable"
                   style={{ flex: 1, border: "none", padding: 0, minWidth: 0 }}
                   title={t("chat.viewDetails")}
-                  onClick={() => setShowDetails(true)}
+                  onClick={() => setShowDetails((v) => !v)}
                 >
                   <Avatar
                     name={conversationDisplayName(active)}
@@ -3005,6 +3233,7 @@ export default function ChatPageInner() {
                         ? chat.presenceByUser[active.peerId]?.online ?? active.peerOnline
                         : undefined
                     }
+                    className={isGroup ? "is-group" : undefined}
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="title">{conversationDisplayName(active)}</div>
@@ -3252,7 +3481,7 @@ export default function ChatPageInner() {
                             pinned={pinnedIdSet.has(m.id)}
                             onToggleSelect={() => toggleSelect(m.id)}
                             onContextMenu={(e) => openCtxMenu(e, m)}
-                            ctxOpen={!!ctxMenu}
+                            ctxOpen={!!ctxMenu && ctxMenu.msgId === m.id}
                             onReplyPreviewClick={(replyToId) => jumpToPinnedId(replyToId)}
                             onReact={
                               chat.activeId
@@ -3261,7 +3490,9 @@ export default function ChatPageInner() {
                             }
                             onRetry={
                               m.failed && chat.activeId
-                                ? () => chat.retryMessage(chat.activeId!, m)
+                                ? () => {
+                                    void chat.retryMessage(chat.activeId!, m).catch(() => {});
+                                  }
                                 : undefined
                             }
                             onCancelUpload={
@@ -3292,6 +3523,11 @@ export default function ChatPageInner() {
               {!pinsListOpen && (
               <div className="composer">
                 <div className="composer-box">
+                  {composerBlockedByMute ? (
+                    <div className="composer-mute-banner" role="status">
+                      {t("details.groupMutedAll")}
+                    </div>
+                  ) : null}
                   {editingMessage ? (
                     <div className="reply-banner edit-banner">
                       <MenuIcon d={ICONS.edit} style={{ width: 22, height: 22 }} />
@@ -3398,41 +3634,56 @@ export default function ChatPageInner() {
                           type="button"
                           className="attach-btn"
                           title={t("chat.attachFile")}
-                          disabled={voiceBusy || !chat.activeId}
+                          disabled={voiceBusy || !chat.activeId || composerBlockedByMute}
                           onClick={() => fileInputRef.current?.click()}
                         >
                           <MenuIcon d={ICONS.paperclip} style={{ width: 20, height: 20 }} />
                         </button>
-                        <textarea
-                          ref={draftRef}
-                          rows={1}
-                          placeholder={
-                            isGroup
-                              ? t("chat.messagePlaceholderGroup")
-                              : t("chat.messagePlaceholder")
-                          }
-                          value={draft}
-                          disabled={voiceBusy}
-                          onChange={(e) => {
-                            const value = clipMessageText(e.target.value);
-                            const cursor = Math.min(
-                              e.target.selectionStart ?? value.length,
-                              value.length
-                            );
-                            setDraft(value);
-                            setEmojiOpen(false);
-                            updateMentionMenu(value, cursor);
-                            if (!chat.activeId) return;
-                            if (value.trim()) chat.notifyTyping(chat.activeId);
-                            else chat.stopTyping(chat.activeId);
-                          }}
-                          onClick={(e) => {
-                            const t = e.currentTarget;
-                            setEmojiOpen(false);
-                            updateMentionMenu(t.value, t.selectionStart ?? t.value.length);
-                          }}
-                          onPaste={onComposerPaste}
-                          onKeyDown={(e) => {
+                        <div className="composer-input-wrap">
+                          <div
+                            ref={draftHighlightRef}
+                            className="composer-highlight"
+                            aria-hidden
+                          >
+                            {draft ? formatComposerMentions(draft) : null}
+                          </div>
+                          <textarea
+                            ref={draftRef}
+                            rows={1}
+                            placeholder={
+                              composerBlockedByMute
+                                ? t("details.groupMutedAll")
+                                : isGroup
+                                ? t("chat.messagePlaceholderGroup")
+                                : t("chat.messagePlaceholder")
+                            }
+                            value={draft}
+                            disabled={voiceBusy || composerBlockedByMute}
+                            onChange={(e) => {
+                              const value = clipMessageText(e.target.value);
+                              const cursor = Math.min(
+                                e.target.selectionStart ?? value.length,
+                                value.length
+                              );
+                              setDraft(value);
+                              setEmojiOpen(false);
+                              updateMentionMenu(value, cursor);
+                              if (!chat.activeId) return;
+                              if (value.trim()) chat.notifyTyping(chat.activeId);
+                              else chat.stopTyping(chat.activeId);
+                            }}
+                            onClick={(e) => {
+                              const t = e.currentTarget;
+                              setEmojiOpen(false);
+                              updateMentionMenu(t.value, t.selectionStart ?? t.value.length);
+                            }}
+                            onScroll={(e) => {
+                              if (draftHighlightRef.current) {
+                                draftHighlightRef.current.scrollTop = e.currentTarget.scrollTop;
+                              }
+                            }}
+                            onPaste={onComposerPaste}
+                            onKeyDown={(e) => {
                             if (e.key === "Escape" && emojiOpen) {
                               e.preventDefault();
                               setEmojiOpen(false);
@@ -3482,7 +3733,8 @@ export default function ChatPageInner() {
                               send();
                             }
                           }}
-                        />
+                          />
+                        </div>
                         {draftChars > 0 && (
                           <span
                             className={`composer-char-count${
@@ -3500,13 +3752,13 @@ export default function ChatPageInner() {
                           type="button"
                           className={`attach-btn${emojiOpen ? " active" : ""}`}
                           title={t("chat.emoji")}
-                          disabled={voiceBusy || !chat.activeId}
+                          disabled={voiceBusy || !chat.activeId || composerBlockedByMute}
                           aria-expanded={emojiOpen}
                           onClick={() => setEmojiOpen((v) => !v)}
                         >
                           <MenuIcon d={ICONS.smile} style={{ width: 20, height: 20 }} />
                         </button>
-                        {emojiOpen && (
+                        {emojiOpen && !composerBlockedByMute && (
                           <EmojiPicker
                             onPick={insertComposerEmoji}
                             onPickMedia={(item) => {
@@ -3520,7 +3772,7 @@ export default function ChatPageInner() {
                             className="send-btn"
                             onClick={send}
                             title={editingMessage ? "Save edit" : "Send"}
-                            disabled={voiceBusy}
+                            disabled={voiceBusy || composerBlockedByMute}
                           >
                             {"\u27A4"}
                           </button>
@@ -3532,7 +3784,7 @@ export default function ChatPageInner() {
                           <button
                             className="send-btn"
                             title={t("chat.recordVoiceMessage")}
-                            disabled={voiceBusy || !chat.activeId}
+                            disabled={voiceBusy || !chat.activeId || composerBlockedByMute}
                             onClick={startRecording}
                           >
                             <MenuIcon d={ICONS.mic} style={{ width: 20, height: 20 }} />
@@ -3654,6 +3906,7 @@ export default function ChatPageInner() {
                 : groupDetails?.avatar_url || active.avatarUrl
             }
             size={96}
+            className={isGroup ? "is-group" : undefined}
           />
           <div style={{ fontSize: 17, fontWeight: 700 }}>
             {active.type === "dm"
@@ -3666,6 +3919,12 @@ export default function ChatPageInner() {
               title={t("details.description")}
             >
               {groupDetails.description}
+            </div>
+          ) : null}
+          {isGroup && groupDetails?.enterprise_name ? (
+            <div className="kv kv-inline">
+              <div className="k">{t("details.company")}</div>
+              <div className="kv-value is-enterprise">{groupDetails.enterprise_name}</div>
             </div>
           ) : null}
           {active.type === "dm" && (
@@ -3998,37 +4257,17 @@ export default function ChatPageInner() {
                 })}
               </div>
               {canEditGroup && (
-                <div className="mute-group-actions">
-                  {groupDetails.mute_all ? (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => muteMember("", "all_off").catch(() => { })}
-                    >
-                      {t("details.unmuteGroup")}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => muteMember("", "all").catch(() => { })}
-                    >
-                      {t("details.muteGroup")}
-                    </button>
-                  )}
-                </div>
-              )}
-              <Link className="btn-ghost" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
-                {t("details.moreGroupSettings")}
-              </Link>
-              {!isGroupOwner && (
                 <button
                   type="button"
                   className="btn-ghost"
-                  style={{ marginTop: 8, color: "var(--danger, #dc2626)" }}
-                  onClick={() => leaveGroup()}
+                  style={{ marginTop: 12, width: "100%", textAlign: "center" }}
+                  onClick={() =>
+                    muteMember("", groupDetails.mute_all ? "all_off" : "all").catch(() => {})
+                  }
                 >
-                  {t("details.leaveGroup")}
+                  {groupDetails.mute_all
+                    ? t("details.unmuteGroup")
+                    : t("details.muteGroup")}
                 </button>
               )}
             </>
@@ -4046,6 +4285,21 @@ export default function ChatPageInner() {
                 : t("details.muteConversation")}
             </button>
           )}
+          {isGroup && (
+            <Link className="btn-ghost" href="/groups" style={{ marginTop: 12, textAlign: "center" }}>
+              {t("details.moreGroupSettings")}
+            </Link>
+          )}
+          {isGroup && !isGroupOwner && (
+            <button
+              type="button"
+              className="btn-ghost"
+              style={{ marginTop: 8, color: "var(--danger, #dc2626)" }}
+              onClick={() => leaveGroup()}
+            >
+              {t("details.leaveGroup")}
+            </button>
+          )}
             </>
           )}
         </aside>
@@ -4056,11 +4310,13 @@ export default function ChatPageInner() {
           className="ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onContextMenu={(e) => e.preventDefault()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           <button
             className="ctx-item"
             onClick={() => {
-              copySelected();
+              void copySelected();
               setCtxMenu(null);
             }}
           >
@@ -4095,7 +4351,7 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item danger"
                 onClick={() => {
-                  recallSelected();
+                  void recallSelected();
                   setCtxMenu(null);
                 }}
               >
@@ -4112,6 +4368,8 @@ export default function ChatPageInner() {
           className="ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onContextMenu={(e) => e.preventDefault()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           <button
             className="ctx-item"
@@ -4131,6 +4389,8 @@ export default function ChatPageInner() {
           className="ctx-wrap"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onContextMenu={(e) => e.preventDefault()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           {!ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
             <div className="ctx-emoji-row">
@@ -4139,8 +4399,12 @@ export default function ChatPageInner() {
                   key={em}
                   type="button"
                   className="emoji-btn"
-                  onClick={() => {
-                    chat.reactMessage(ctxMsg.id, chat.activeId!, em).catch(() => { });
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const msgId = ctxMsg.id;
+                    const convId = chat.activeId!;
+                    void chat.reactMessage(msgId, convId, em).catch(() => {});
                     setCtxMenu(null);
                   }}
                 >
@@ -4201,7 +4465,7 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item"
                 onClick={() => {
-                  chat.retryMessage(chat.activeId!, ctxMsg);
+                  void chat.retryMessage(chat.activeId!, ctxMsg).catch(() => {});
                   setCtxMenu(null);
                 }}
               >
@@ -4356,11 +4620,43 @@ export default function ChatPageInner() {
                     setMenuScanError(null);
                   }
                 }}
-                onDetected={(publicId) => {
-                  void joinFromMenuScan(publicId);
+                onDetected={(raw) => {
+                  void handleMenuScan(raw);
                 }}
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {menuShowQrOpen && chat.me?.username && (
+        <div
+          className="forward-modal is-centered"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("menu.showQR")}
+          onClick={() => setMenuShowQrOpen(false)}
+        >
+          <div
+            className="forward-modal-card"
+            style={{ maxWidth: 320, width: "min(320px, 92vw)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>{t("menu.showQR")}</h3>
+            <p className="muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
+              @{chat.me.username}
+            </p>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <UserQr username={chat.me.username} size={200} />
+            </div>
+            <button
+              type="button"
+              className="btn"
+              style={{ width: "100%", marginTop: 14 }}
+              onClick={() => setMenuShowQrOpen(false)}
+            >
+              {t("chat.close")}
+            </button>
           </div>
         </div>
       )}
@@ -4692,7 +4988,12 @@ function ForwardPicker({
                 checked={selected.has(c.id)}
                 onChange={() => toggle(c.id)}
               />
-              <Avatar name={conversationDisplayName(c)} url={c.avatarUrl} size={32} />
+              <Avatar
+                name={conversationDisplayName(c)}
+                url={c.avatarUrl}
+                size={32}
+                className={c.type === "social_group" || c.type === "group" ? "is-group" : undefined}
+              />
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontWeight: 600 }}>{conversationDisplayName(c)}</span>
                 <span className="muted" style={{ display: "block", fontSize: 12 }}>

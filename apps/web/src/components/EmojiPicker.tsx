@@ -41,7 +41,7 @@ function CatIcon({ d, size = 18 }: { d: string; size?: number }) {
   );
 }
 
-type MoodChip = { key: string; d: string; emojis: string[] };
+type MoodChip = { key: string; d: string; emojis: string[]; gifQuery: string };
 
 /** Telegram-style mood / reaction filter chips in the search toolbar. */
 const MOOD_CHIPS: MoodChip[] = [
@@ -49,56 +49,67 @@ const MOOD_CHIPS: MoodChip[] = [
     key: "heart",
     d: "M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z",
     emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "❣️", "💔", "😍", "🥰", "😘", "😻"],
+    gifQuery: "love",
   },
   {
     key: "up",
     d: "M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3",
     emojis: ["👍", "👌", "✌️", "🤞", "🤟", "🤘", "🤙", "👏", "🙌", "💪", "🫡", "🤝", "✅", "🔥", "⭐", "🌟"],
+    gifQuery: "thumbs up",
   },
   {
     key: "down",
     d: "M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17",
     emojis: ["👎", "🖕", "😒", "🙄", "😑", "😐", "😶", "🤦", "🤷", "💔", "🚫", "❌"],
+    gifQuery: "thumbs down",
   },
   {
     key: "party",
     d: "M4 10l2-2 6 3 7-8 1 1-8 7 3 6-2 2-4-5-5-4z M14 4l1.5-2.5 M18 7l2.5-1 M16 2l.5 2",
     emojis: ["🎉", "🎊", "🥳", "🎈", "🎁", "🍾", "🥂", "🎂", "🧁", "✨", "🎆", "🎇", "🪩"],
+    gifQuery: "party",
   },
   {
     key: "grin",
     d: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M8 14s1.5 2 4 2 4-2 4-2 M9 9h.01 M15 9h.01",
     emojis: ["😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋", "😎", "🤩", "🙂", "🤗", "🤭"],
+    gifQuery: "happy",
   },
   {
     key: "worried",
     d: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 16h.01 M8.5 9.5c.5-.8 1.4-1.2 2.3-.8 M15.5 9.5c-.5-.8-1.4-1.2-2.3-.8 M9 14s.8 1.2 3 1.2 3-1.2 3-1.2",
     emojis: ["😨", "😰", "😱", "😳", "😧", "😦", "😮", "😯", "😲", "🥺", "😟"],
+    gifQuery: "shocked",
   },
   {
     key: "sad",
     d: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M16 16s-1.5-2-4-2-4 2-4 2 M9 9h.01 M15 9h.01",
     emojis: ["😢", "😭", "😞", "😔", "☹️", "🙁", "😟", "🥺", "😿", "😥", "😓", "😩", "😫"],
+    gifQuery: "sad",
   },
   {
     key: "angry",
     d: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M16 16s-1.5-3-4-3-4 3-4 3 M9 9h.01 M15 9h.01 M8.5 8.5l2 1 M15.5 8.5l-2 1",
     emojis: ["😡", "😠", "🤬", "😤", "👿", "💢", "🗯️", "😈", "💀", "☠️"],
+    gifQuery: "angry",
   },
   {
     key: "neutral",
     d: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M8 15h8 M9 9h.01 M15 9h.01",
     emojis: ["😐", "😑", "😶", "🫤", "🤔", "🤨", "😏", "😒", "😬", "😯", "😮", "😲"],
+    gifQuery: "meh",
   },
   {
     key: "think",
     d: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M9 9h.01 M15 9h.01 M8 15h5 M17 18c1.2 0 2-.8 2-2s-1-2.5-2-3",
     emojis: ["🤔", "🧐", "🤨", "🤓", "💭", "💡", "🧠"],
+    gifQuery: "thinking",
   },
   {
     key: "tongue",
     d: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M9 9h.01 M15 9h.01 M8 13h8 M12 13v4a1.5 1.5 0 0 0 3 0",
     emojis: ["😛", "😜", "😝", "🤪", "😋", "😏", "🙃"],
+    gifQuery: "silly",
   },
 ];
 
@@ -159,19 +170,21 @@ export default function EmojiPicker({
     if (gifTimerRef.current) clearTimeout(gifTimerRef.current);
     setGifBusy(true);
     setGifError(null);
+    const moodQuery = moodKey && !query.trim() ? MOOD_BY_KEY[moodKey]?.gifQuery ?? "" : "";
+    const searchQuery = query.trim() || moodQuery;
     gifTimerRef.current = setTimeout(() => {
-      searchGifs(query)
+      searchGifs(searchQuery)
         .then((list) => setGifs(list))
         .catch((e: any) => {
           setGifs([]);
           setGifError(e?.message || t("gifs.sendFailed"));
         })
         .finally(() => setGifBusy(false));
-    }, query.trim() ? 280 : 0);
+    }, searchQuery ? 280 : 0);
     return () => {
       if (gifTimerRef.current) clearTimeout(gifTimerRef.current);
     };
-  }, [tab, query, t]);
+  }, [tab, query, moodKey, t]);
 
   const orderedMoods = useMemo(
     () => moodOrder.map((k) => MOOD_BY_KEY[k]).filter(Boolean),
@@ -221,6 +234,26 @@ export default function EmojiPicker({
     if (!moodKey) return null;
     return MOOD_BY_KEY[moodKey]?.emojis ?? null;
   }, [moodKey]);
+
+  const moodEmojiSet = useMemo(() => {
+    if (!moodEmojis) return null;
+    return new Set(moodEmojis);
+  }, [moodEmojis]);
+
+  const filteredStickerPacks = useMemo(() => {
+    return STICKER_PACKS.map((pack) => {
+      const stickers = pack.stickers.filter((st) => {
+        if (moodEmojiSet && !q) return moodEmojiSet.has(st.emoji);
+        if (q) {
+          const labelHit = st.label.toLocaleLowerCase().includes(q);
+          const emojiHit = st.emoji.includes(q);
+          if (!labelHit && !emojiHit) return false;
+        }
+        return true;
+      });
+      return { ...pack, stickers };
+    }).filter((pack) => pack.stickers.length > 0);
+  }, [moodEmojiSet, q]);
 
   function pick(emoji: string) {
     setRecent(pushRecentEmoji(emoji));
@@ -312,6 +345,10 @@ export default function EmojiPicker({
   const showSearch = Boolean(q);
   const showMood = Boolean(moodEmojis) && !showSearch;
   const filteredList = showSearch ? searchHits ?? [] : moodEmojis ?? [];
+  const gifSectionTitle =
+    query.trim() || (moodKey && MOOD_BY_KEY[moodKey]?.gifQuery)
+      ? t("emoji.searchResults")
+      : t("gifs.trending");
 
   return (
     <div className="emoji-picker" role="dialog" aria-label={t("chat.emoji")}>
@@ -359,33 +396,31 @@ export default function EmojiPicker({
           </div>
         </div>
 
-        {tab === "emoji" && (
-          <div
-            className={`emoji-picker-cats${draggingKey ? " is-dragging" : ""}`}
-            ref={catsRef}
-            role="tablist"
-            aria-label={t("emoji.categories")}
-          >
-            {orderedMoods.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                data-mood-key={item.key}
-                className={`emoji-picker-cat-btn${
-                  moodKey === item.key && !showSearch ? " is-active" : ""
-                }${draggingKey === item.key ? " is-dragging" : ""}`}
-                title={t("emoji.dragHint")}
-                onPointerDown={(e) => onMoodPointerDown(e, item.key)}
-                onPointerMove={onMoodPointerMove}
-                onPointerUp={(e) => onMoodPointerUp(e, item.key)}
-                onPointerCancel={(e) => onMoodPointerUp(e, item.key)}
-                onContextMenu={(e) => e.preventDefault()}
-              >
-                <CatIcon d={item.d} size={16} />
-              </button>
-            ))}
-          </div>
-        )}
+        <div
+          className={`emoji-picker-cats${draggingKey ? " is-dragging" : ""}`}
+          ref={catsRef}
+          role="tablist"
+          aria-label={t("emoji.categories")}
+        >
+          {orderedMoods.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              data-mood-key={item.key}
+              className={`emoji-picker-cat-btn${
+                moodKey === item.key && !showSearch ? " is-active" : ""
+              }${draggingKey === item.key ? " is-dragging" : ""}`}
+              title={t("emoji.dragHint")}
+              onPointerDown={(e) => onMoodPointerDown(e, item.key)}
+              onPointerMove={onMoodPointerMove}
+              onPointerUp={(e) => onMoodPointerUp(e, item.key)}
+              onPointerCancel={(e) => onMoodPointerUp(e, item.key)}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <CatIcon d={item.d} size={16} />
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="emoji-picker-body" ref={bodyRef}>
@@ -478,36 +513,38 @@ export default function EmojiPicker({
 
         {tab === "stickers" && (
           <>
-            {STICKER_PACKS.map((pack) => (
-              <div className="emoji-picker-section" key={pack.id}>
-                <div className="emoji-picker-section-title">{t(pack.labelKey)}</div>
-                <div className="sticker-picker-grid">
-                  {pack.stickers.map((st) => (
-                    <button
-                      key={st.id}
-                      type="button"
-                      className="sticker-picker-cell"
-                      title={st.label}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        pickSticker(st);
-                      }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={st.url} alt={st.label} loading="lazy" />
-                    </button>
-                  ))}
+            {filteredStickerPacks.length === 0 ? (
+              <div className="emoji-picker-empty">{t("chat.noResults")}</div>
+            ) : (
+              filteredStickerPacks.map((pack) => (
+                <div className="emoji-picker-section" key={pack.id}>
+                  <div className="emoji-picker-section-title">{t(pack.labelKey)}</div>
+                  <div className="sticker-picker-grid">
+                    {pack.stickers.map((st) => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        className="sticker-picker-cell"
+                        title={st.label}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          pickSticker(st);
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={st.url} alt={st.label} loading="lazy" />
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </>
         )}
 
         {tab === "gifs" && (
           <div className="emoji-picker-section">
-            <div className="emoji-picker-section-title">
-              {query.trim() ? t("emoji.searchResults") : t("gifs.trending")}
-            </div>
+            <div className="emoji-picker-section-title">{gifSectionTitle}</div>
             {gifBusy ? (
               <div className="emoji-picker-empty">{t("gifs.loading")}</div>
             ) : gifError ? (
@@ -554,7 +591,7 @@ export default function EmojiPicker({
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               setTab(id);
-              setMoodKey(null);
+              // Keep mood across tabs; drop free-text search when leaving GIFs.
               if (id !== "gifs") setQuery("");
               bodyRef.current?.scrollTo({ top: 0 });
             }}

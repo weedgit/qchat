@@ -72,3 +72,36 @@ export function localizeChatLabel(
 export function isDefaultPhotoLabel(text: string | undefined | null): boolean {
   return !text || /^Photo$/i.test(text.trim());
 }
+
+/** Built-in sticker/GIF captions from the composer picker (not user-written). */
+export function isStickerOrGifCaption(text: string | undefined | null): boolean {
+  return /^(Sticker|GIF)$/i.test((text ?? "").trim());
+}
+
+/** Hide default machine captions for photo / sticker / GIF image messages. */
+export function isDefaultImageCaption(text: string | undefined | null): boolean {
+  return isDefaultPhotoLabel(text) || isStickerOrGifCaption(text);
+}
+
+/**
+ * True when the message body is only emoji (no letters/digits/punctuation).
+ * Caps at a few tokens so short reactions get large bare styling.
+ */
+export function isEmojiOnlyText(text: string | undefined | null, max = 3): boolean {
+  const raw = (text ?? "").trim();
+  if (!raw) return false;
+
+  // BMP symbols + astral emoji (surrogate pairs), optional ZWJ sequences / skin tones.
+  // Avoid Unicode property escapes / `u` flag — web tsconfig defaults below ES6.
+  const emojiToken =
+    /(?:\u00a9|\u00ae|[\u203c\u2049\u2122\u2139\u2194-\u2199\u21a9\u21aa\u231a\u231b\u2328\u23cf\u23e9-\u23f3\u23f8-\u23fa\u24c2\u25aa\u25ab\u25b6\u25c0\u25fb-\u25fe\u2600-\u27bf\u2934\u2935\u2b05-\u2b07\u2b1b\u2b1c\u2b50\u2b55\u3030\u303d\u3297\u3299]|\ud83c[\udc00-\udfff]|\ud83d[\udc00-\udfff]|\ud83e[\udc00-\udfff])(?:\ufe0f)?(?:\u200d(?:\u00a9|\u00ae|[\u203c\u2049\u2122\u2139\u2194-\u2199\u21a9\u21aa\u231a\u231b\u2328\u23cf\u23e9-\u23f3\u23f8-\u23fa\u24c2\u25aa\u25ab\u25b6\u25c0\u25fb-\u25fe\u2600-\u27bf\u2934\u2935\u2b05-\u2b07\u2b1b\u2b1c\u2b50\u2b55\u3030\u303d\u3297\u3299]|\ud83c[\udc00-\udfff]|\ud83d[\udc00-\udfff]|\ud83e[\udc00-\udfff])(?:\ufe0f)?)*(?:\ud83c[\udffb-\udfff])?/g;
+
+  const matches = raw.match(emojiToken);
+  if (!matches || matches.length === 0 || matches.length > max) return false;
+
+  const rest = raw
+    .replace(emojiToken, "")
+    .replace(/[\ufe0f\u200d\u20e3]/g, "")
+    .replace(/\s+/g, "");
+  return rest.length === 0;
+}

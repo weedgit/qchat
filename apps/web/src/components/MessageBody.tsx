@@ -63,3 +63,27 @@ export function formatMessageText(text: string): ReactNode[] {
 export default function MessageBody({ text }: { text: string }) {
   return <>{formatMessageText(text)}</>;
 }
+
+/** Composer mirror: only color @mentions; keep the rest plain for caret sync. */
+export function formatComposerMentions(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /@[a-zA-Z0-9_]+/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > last) {
+      nodes.push(<span key={key++}>{text.slice(last, match.index)}</span>);
+    }
+    nodes.push(
+      <span key={key++} className="mention">
+        {match[0]}
+      </span>
+    );
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) nodes.push(<span key={key++}>{text.slice(last)}</span>);
+  // Preserve trailing newline height so the mirror matches the textarea.
+  if (text.endsWith("\n")) nodes.push(<br key={key++} />);
+  return nodes;
+}

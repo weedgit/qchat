@@ -1,15 +1,17 @@
 :root,
 [data-theme="dark"] {
+  /* Telegram Desktop night palette */
   --bg: #0e1621;
+  --bg-chat: #0e1621;
   --bg-panel: #17212b;
-  --bg-panel-2: #242f3d;
+  --bg-panel-2: #232e3c;
   --bg-hover: #202b36;
   --bg-active: #2b5278;
   --accent: #2aabee;
   --accent-hover: #229ed9;
-  /* Filled primary buttons use Telegram’s classic blue (deeper than link accent). */
-  --btn: #3390ec;
-  --btn-hover: #2a7fd4;
+  /* Filled controls / outgoing bubbles — Telegram slate blue from design swatch. */
+  --btn: #2b5278;
+  --btn-hover: #25486b;
   --text: #f5f5f5;
   --text-dim: #708499;
   --text-faint: #6a7989;
@@ -26,6 +28,7 @@
 /* Light theme tokens. */
 [data-theme="light"] {
   --bg: #e8eef3;
+  --bg-chat: #e8eef3;
   --bg-panel: #ffffff;
   --bg-panel-2: #f4f7fa;
   --bg-hover: #eef3f8;
@@ -199,6 +202,11 @@ select:focus {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* Groups: rounded square (personal stays circular). */
+.avatar.is-group,
+.avatar.is-group img {
+  border-radius: 28%;
 }
 .status-dot {
   position: absolute;
@@ -898,12 +906,26 @@ select:focus {
   background: rgba(0, 0, 0, 0.06);
 }
 .main-menu-profile-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   font-size: 12px;
   font-weight: 450;
   color: var(--text-dim);
   line-height: 1.35;
   overflow-wrap: anywhere;
   white-space: normal;
+  margin-top: 8px;
+  text-align: center;
+}
+.main-menu-profile-meta.is-enterprise {
+  color: var(--accent);
+}
+.main-menu-profile-meta-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
 }
 .compose-menu {
   bottom: 76px;
@@ -921,14 +943,15 @@ select:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent);
+  background: var(--btn);
   color: #fff;
   font-size: 18px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-  transition: transform 0.12s ease, filter 0.12s ease;
+  transition: transform 0.12s ease, background 0.12s ease, filter 0.12s ease;
 }
 .fab:hover {
-  filter: brightness(1.1);
+  background: var(--btn-hover);
+  filter: none;
 }
 .fab.open {
   transform: rotate(90deg);
@@ -978,6 +1001,32 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   flex: 1;
   min-width: 0;
 }
+.conv-company {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 1px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  line-height: 1.2;
+}
+.conv-company.is-enterprise {
+  color: var(--accent);
+}
+.conv-company-icon {
+  flex: none;
+  opacity: 0.85;
+}
+.conv-company.is-enterprise .conv-company-icon {
+  opacity: 1;
+}
+.conv-company span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .conv-top {
   display: flex;
   justify-content: space-between;
@@ -988,6 +1037,14 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.conv-group-icon {
+  flex: none;
+  color: var(--text);
 }
 .conv-time {
   flex: none;
@@ -1041,9 +1098,8 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background:
-    radial-gradient(ellipse at top, rgba(42, 171, 238, 0.05), transparent 60%),
-    var(--bg);
+  /* Solid Telegram night chat background — no brightening blue wash. */
+  background: var(--bg-chat);
 }
 
 .chat-header {
@@ -1227,6 +1283,11 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   }
   .msg-row.mine .bubble-wrap {
     align-items: flex-start;
+    /* Heart hangs on the right in wide layout — keep it in the hover box. */
+    padding-left: 0;
+    margin-left: 0;
+    padding-right: 28px;
+    margin-right: -28px;
   }
   .msg-row.mine .receipt-detail-toggle {
     text-align: left;
@@ -1291,6 +1352,8 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 }
 .msg-row.mine .bubble-wrap {
   align-items: flex-end;
+  padding-left: 28px;
+  margin-left: -28px;
 }
 .emoji-bar {
   position: absolute;
@@ -1310,7 +1373,16 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 .msg-row.mine .emoji-bar {
   right: calc(100% - 14px);
 }
-.bubble-wrap:hover .emoji-bar {
+/*
+ * Keep the overhanging heart inside the hover hit-box so moving onto the
+ * button does not drop :hover (which would disable pointer-events).
+ */
+.msg-row:not(.mine) .bubble-wrap {
+  padding-right: 28px;
+  margin-right: -28px;
+}
+.bubble-wrap:hover .emoji-bar,
+.emoji-bar:focus-within {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(-50%) scale(1);
@@ -1322,6 +1394,7 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
 }
 [data-theme="light"] .emoji-bar .emoji-btn {
   box-shadow: 0 4px 12px rgba(15, 30, 50, 0.12);
@@ -1566,6 +1639,120 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 .msg-row:not(.mine) .bubble {
   border-bottom-left-radius: 4px;
 }
+/* Telegram-style bare stickers / GIFs / emoji-only: no bubble chrome. */
+.bubble.bare {
+  position: relative;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  white-space: normal;
+}
+.msg-row.mine .bubble.bare,
+.msg-row:not(.mine) .bubble.bare {
+  background: transparent;
+  border-radius: 0;
+}
+.bubble.bare .sender {
+  margin: 0 0 4px 2px;
+}
+.bubble.bare .reply-preview {
+  margin: 0 0 6px;
+  max-width: min(220px, 55vw);
+}
+.bubble.bare .meta {
+  float: none;
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 2;
+  margin: 0;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.4;
+}
+.bubble.bare .bubble-footer {
+  margin-top: 6px;
+  padding: 0 2px;
+}
+.bubble.bare .bubble-footer .meta {
+  position: static;
+  background: rgba(0, 0, 0, 0.35);
+}
+.bubble.bare-media .media-image.bare-media-image {
+  margin-bottom: 0;
+  border-radius: 0;
+  overflow: visible;
+  max-width: min(220px, 55vw);
+  background: transparent;
+}
+.bubble.bare-media .media-image.bare-media-image img {
+  width: auto;
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  background: transparent;
+  animation: sticker-pop 0.35s ease-out;
+}
+.bubble.bare-emoji {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0 2px;
+}
+.bubble.bare-emoji .emoji-only-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px;
+  line-height: 1;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  /* Keep emoji clear of the time row below. */
+  margin-bottom: 6px;
+}
+.bubble.bare-emoji .emoji-only-img {
+  object-fit: contain;
+  display: block;
+  animation: sticker-pop 0.35s ease-out;
+}
+/* Match sticker size in chat (bare-media max ~220px). */
+.bubble.bare-emoji .emoji-count-1 .emoji-only-img {
+  width: min(220px, 55vw);
+  height: min(220px, 55vw);
+}
+.bubble.bare-emoji .emoji-count-2 .emoji-only-img {
+  width: min(160px, 40vw);
+  height: min(160px, 40vw);
+}
+.bubble.bare-emoji .emoji-count-3 .emoji-only-img {
+  width: min(120px, 30vw);
+  height: min(120px, 30vw);
+}
+/* Time sits under emoji, not on top of it. */
+.bubble.bare-emoji > .meta {
+  position: static;
+  display: inline-flex;
+  align-self: flex-end;
+  float: none;
+  margin: 0;
+}
+@keyframes sticker-pop {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.55;
+  }
+  70% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
 .bubble .sender {
   font-size: 12.5px;
   font-weight: 600;
@@ -1808,6 +1995,13 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   box-sizing: border-box;
 }
+.composer-mute-banner {
+  padding: 8px 10px 10px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--danger, #e05252);
+  text-align: center;
+}
 .composer-row {
   display: flex;
   gap: 8px;
@@ -1851,9 +2045,47 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 .mention-option-text .muted {
   font-size: 12px;
 }
+.composer-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+}
+.composer-highlight {
+  position: absolute;
+  inset: 0;
+  padding: 8px 6px;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 0;
+}
+.composer-highlight .mention {
+  color: var(--accent);
+  font-weight: 600;
+  background: rgba(42, 171, 238, 0.15);
+  border-radius: 4px;
+  padding: 0 2px;
+}
+[data-theme="light"] .composer-highlight .mention {
+  background: rgba(30, 136, 229, 0.12);
+}
 .composer textarea,
 .composer textarea:focus {
+  position: relative;
+  z-index: 1;
   flex: 1;
+  width: 100%;
   resize: none;
   max-height: 500px;
   overflow-y: auto;
@@ -1861,8 +2093,18 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   border: none;
   border-radius: 0;
   padding: 8px 6px;
+  color: transparent;
+  caret-color: var(--text);
   /* scroll works, but the scrollbar itself is hidden */
   scrollbar-width: none;
+}
+.composer textarea::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
+}
+.composer textarea::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: transparent;
 }
 .composer textarea::-webkit-scrollbar {
   display: none;
@@ -1890,7 +2132,7 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--btn);
   color: #fff;
   font-size: 16px;
   display: flex;
@@ -1899,7 +2141,7 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   transition: background 0.12s ease, transform 0.12s ease;
 }
 .send-btn:hover {
-  background: var(--accent-hover);
+  background: var(--btn-hover);
 }
 .send-btn:disabled {
   opacity: 0.5;
@@ -2508,6 +2750,9 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   font-size: 13px;
   color: var(--text);
 }
+.details-panel .kv-value.is-enterprise {
+  color: var(--accent);
+}
 /* RHS behavior: preserve the center channel when space is tight (not single-pane). */
 @media (max-width: 1100px) and (min-width: 769px) {
   .details-panel {
@@ -2652,6 +2897,9 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 [data-theme="light"] .bubble .meta {
   color: rgba(26, 35, 50, 0.45);
 }
+[data-theme="light"] .bubble.bare .meta {
+  color: rgba(255, 255, 255, 0.92);
+}
 [data-theme="light"] .voice-label {
   color: rgba(26, 35, 50, 0.55);
 }
@@ -2701,6 +2949,9 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 .msg-flash .bubble {
   outline: 2px solid var(--accent);
   animation: ui-pop-in 200ms ease;
+}
+.msg-flash .bubble.bare {
+  background: transparent;
 }
 .badge.mention-badge { background: var(--accent); }
 .mention {
@@ -2782,6 +3033,9 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   transition: outline-color 0.3s ease;
+}
+.msg-highlight .bubble.bare {
+  background: transparent;
 }
 /* In-chat search spans the same full chat pane as messages/composer. */
 .chat-pane > .search-results,
@@ -2973,9 +3227,6 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   margin-top: 12px;
 }
-.mute-group-actions .btn {
-  width: 100%;
-}
 .group-qr-block {
   width: 100%;
   margin: 12px 0;
@@ -3069,6 +3320,10 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   justify-content: flex-end;
   padding: 24px;
   background: rgba(0, 0, 0, 0.35);
+}
+.forward-modal.is-centered {
+  align-items: center;
+  justify-content: center;
 }
 .forward-modal-card {
   width: min(360px, 100%);
@@ -3870,6 +4125,9 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   color: var(--text-dim);
   text-align: center;
 }
+.menu-modal-hero-sub.is-enterprise {
+  color: var(--accent);
+}
 .menu-modal-hero-line .menu-modal-hero-sub {
   font-size: 14px;
   font-weight: 500;
@@ -4020,9 +4278,13 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 }
 .edit-group-photo.has-image .avatar,
 .edit-group-photo .avatar {
-  border-radius: 16px;
+  border-radius: 28%;
   width: 64px !important;
   height: 64px !important;
+}
+.edit-group-photo.has-image .avatar img,
+.edit-group-photo .avatar img {
+  border-radius: 28%;
 }
 .edit-group-photo-icon {
   font-size: 26px;
@@ -4328,6 +4590,32 @@ button.members-row {
   flex-direction: row;
   align-items: center;
   gap: 6px;
+}
+.groups-list-company {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 2px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  line-height: 1.25;
+}
+.groups-list-company.is-enterprise {
+  color: var(--accent);
+}
+.groups-list-company.is-icon-only {
+  margin-bottom: 1px;
+}
+.groups-list-company-icon {
+  flex: none;
+  opacity: 0.85;
+}
+.groups-list-company span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .groups-list-role {
   margin: 0;

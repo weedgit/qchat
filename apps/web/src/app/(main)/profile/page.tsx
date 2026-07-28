@@ -81,6 +81,8 @@ interface Profile {
   avatar_url: string;
   profile_visibility: string;
   friend_privacy: string;
+  enterprise_id: string;
+  enterprise_name: string;
 }
 
 export default function ProfilePage() {
@@ -150,6 +152,8 @@ export default function ProfilePage() {
         avatar_url: String(u?.avatar_url ?? ""),
         profile_visibility: String(u?.profile_visibility ?? "friends"),
         friend_privacy: String(u?.friend_privacy ?? "approval"),
+        enterprise_id: String(u?.enterprise_id ?? "").trim(),
+        enterprise_name: String(u?.enterprise_name ?? "").trim(),
       });
       initialDisplayNameRef.current = String(u?.display_name ?? u?.username ?? "").trim();
       initialUsernameRef.current = String(u?.username ?? "").trim();
@@ -327,6 +331,17 @@ export default function ProfilePage() {
             {"\u{1F4F7}"}
           </span>
         </button>
+        {me ? (
+          <div
+            className={`menu-modal-hero-sub${me.enterprise_id ? " is-enterprise" : ""}`}
+          >
+            {me.enterprise_id
+              ? me.enterprise_name
+                ? `${t("account.enterprise")} · ${me.enterprise_name}`
+                : t("account.enterprise")
+              : t("account.personal")}
+          </div>
+        ) : null}
         <input
           ref={avatarInputRef}
           type="file"
@@ -353,9 +368,6 @@ export default function ProfilePage() {
               <RowIcon d={ROW_ICONS.phone} />
               <span className="menu-modal-row-main">
                 <span className="menu-modal-value">{me.phone || "—"}</span>
-                {copiedField === "phone" ? (
-                  <span className="menu-modal-label">{t("me.idCopied")}</span>
-                ) : null}
               </span>
               <CopyHintIcon copied={copiedField === "phone"} />
             </button>
