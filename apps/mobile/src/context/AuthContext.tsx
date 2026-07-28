@@ -1,13 +1,14 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, clearToken, getToken, initTokens, setOnUnauthorized, setSessionRevokedReason, setTokens } from "../lib/api";
 import { getAuthDevice } from "../lib/device";
-import type { CurrentUser } from "../lib/types";
+import type { CurrentUser, PresenceStatus } from "../lib/types";
 
 type AuthContextValue = {
   ready: boolean;
   user: CurrentUser | null;
   signedIn: boolean;
   refreshMe: () => Promise<void>;
+  setMyStatus: (status: PresenceStatus) => Promise<void>;
   signIn: (access: string, refresh: string) => Promise<void>;
   signOut: () => Promise<void>;
   /** Clear local session without calling logout (remote revoke / kick). */
@@ -15,6 +16,12 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function parseStatus(raw: unknown): PresenceStatus | undefined {
+  const s = String(raw ?? "");
+  if (s === "online" || s === "away" || s === "dnd" || s === "offline") return s;
+  return undefined;
+}
 
 function mapMe(u: any): CurrentUser {
   return {
@@ -29,6 +36,9 @@ function mapMe(u: any): CurrentUser {
     signature: String(u?.signature ?? "") || undefined,
     profileVisibility: String(u?.profile_visibility ?? "friends"),
     friendPrivacy: String(u?.friend_privacy ?? "approval"),
+    enterpriseId: String(u?.enterprise_id ?? "").trim() || undefined,
+    enterpriseName: String(u?.enterprise_name ?? "").trim() || undefined,
+    status: parseStatus(u?.status) ?? "online",
   };
 }
 
@@ -43,6 +53,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const u = await api<any>("/v1/me");
     setUser(mapMe(u));
+  }, []);
+
+  const setMyStatus = useCallback(async (status: PresenceStatus) => {
+    await api("/v1/me/status", {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+    setUser((prev) => (prev ? { ...prev, status } : prev));
   }, []);
 
   const signIn = useCallback(async (access: string, refresh: string) => {
@@ -89,11 +107,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       signedIn: Boolean(user),
       refreshMe,
+      setMyStatus,
       signIn,
       signOut,
       forceLocalSignOut,
     }),
-    [ready, user, refreshMe, signIn, signOut, forceLocalSignOut]
+    [ready, user, refreshMe, setMyStatus, signIn, signOut, forceLocalSignOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

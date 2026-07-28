@@ -1,3 +1,5 @@
+export type PresenceStatus = "online" | "away" | "dnd" | "offline";
+
 export interface CurrentUser {
   id: string;
   phone: string;
@@ -10,6 +12,12 @@ export interface CurrentUser {
   signature?: string;
   profileVisibility?: string;
   friendPrivacy?: string;
+  /** Non-empty when the user belongs to an enterprise. */
+  enterpriseId?: string;
+  /** Enterprise display name when enterpriseId is set. */
+  enterpriseName?: string;
+  /** Manual / idle presence status from GET /v1/me. */
+  status?: PresenceStatus;
 }
 
 export interface Conversation {
@@ -34,6 +42,8 @@ export interface Conversation {
   role?: string;
   /** Company-wide default internal chat. */
   isEnterpriseDefault?: boolean;
+  /** Owning enterprise display name when this conversation belongs to a company. */
+  enterpriseName?: string;
   pinnedMessageId?: string;
   pinnedMessage?: string;
   /** All pins for this conversation, ordered by seq ascending (top→bottom). */
@@ -138,6 +148,7 @@ export function normalizeConversation(raw: any): Conversation {
     muted: Boolean(raw?.muted),
     role: str(raw?.role) || undefined,
     isEnterpriseDefault: Boolean(raw?.is_enterprise_default),
+    enterpriseName: str(raw?.enterprise_name).trim() || undefined,
     pinnedMessageId: str(raw?.pinned_message_id) || undefined,
     pinnedMessage: str(raw?.pinned_message) || undefined,
     pinnedMessages: (() => {
@@ -239,4 +250,24 @@ export function normalizeFriend(raw: any): Friend {
     note: str(raw?.note) || undefined,
     tags,
   };
+}
+
+/** Company chip for conversation list / details. */
+export function conversationCompanyLabel(c: Conversation): string | undefined {
+  if (c.enterpriseName) return c.enterpriseName;
+  if (c.isEnterpriseDefault) return "Company";
+  if (c.type === "social_group" || c.type === "group") return "Personal social";
+  return undefined;
+}
+
+/** Last-online label for offline peers. */
+export function formatLastSeen(iso: string | undefined): string {
+  if (!iso) return "Offline";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Offline";
+  const diff = Date.now() - d.getTime();
+  if (diff < 60_000) return "Last seen just now";
+  if (diff < 3_600_000) return `Last seen ${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `Last seen ${Math.floor(diff / 3_600_000)}h ago`;
+  return `Last seen ${d.toLocaleDateString([], { month: "short", day: "numeric" })}`;
 }
