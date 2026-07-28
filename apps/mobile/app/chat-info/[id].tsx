@@ -18,15 +18,17 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { Avatar } from "../../src/components/Avatar";
 import { GroupQr } from "../../src/components/GroupQr";
 import { useAuth } from "../../src/context/AuthContext";
 import { useChat } from "../../src/context/ChatContext";
-import { api, asList } from "../../src/lib/api";
+import { api, asList, uploadMedia } from "../../src/lib/api";
 import { encodeGroupJoinPayload } from "../../src/lib/groupQr";
 import {
   Friend,
+  conversationCompanyLabel,
   conversationDisplayName,
   normalizeFriend,
 } from "../../src/lib/types";
@@ -85,8 +87,16 @@ function formatMuteLabel(muteUntil?: string): string {
 export default function ChatInfoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const convId = String(id);
-  const { conversations, updateConversationPrefs, loadConversations, leaveGroup, subscribeEvents } =
-    useChat();
+  const {
+    conversations,
+    updateConversationPrefs,
+    loadConversations,
+    leaveGroup,
+    clearHistory,
+    deleteConversation,
+    blockUser,
+    subscribeEvents,
+  } = useChat();
   const { user: me } = useAuth();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -104,6 +114,7 @@ export default function ChatInfoScreen() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [tagsText, setTagsText] = useState("");
+  const [editTitle, setEditTitle] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [lookupHits, setLookupHits] = useState<
@@ -149,6 +160,7 @@ export default function ChatInfoScreen() {
         ownerId: String(g?.owner_id ?? ""),
         members,
       });
+      setEditTitle(String(g?.title ?? ""));
       if (role === "owner" || role === "admin") {
         try {
           const pend = await api<any>(`/v1/groups/${convId}/pending`);
@@ -475,6 +487,148 @@ export default function ChatInfoScreen() {
     ]);
   }
 
+  async function saveGroupTitle() {
+    if (!canManageGroup || !group) return;
+    const next = editTitle.trim();
+    if (!next) {
+      Alert.alert("Title required", "Enter a group name.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const g = await api<any>(`/v1/groups/${convId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title: next }),
+      });
+      const saved = String(g?.title ?? next);
+      setGroup({ ...group, title: saved });
+      setEditTitle(saved);
+      await loadConversations();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not update group");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pickGroupAvatar() {
+    if (!canManageGroup || !group || busy) return;
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Permission needed", "Allow photo library access to change the group avatar.");
+      return;
+    }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.85,
+      allowsEditing: true,
+      aspect: [1, 1],
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    const name = a.fileName || `group.${(a.uri.split(".").pop() || "jpg").split("?")[0]}`;
+    setBusy(true);
+    try {
+      const up = await uploadMedia(a.uri, "avatar", name, a.mimeType || "image/jpeg");
+      const url = String(up.url || "");
+      const g = await api<any>(`/v1/groups/${convId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ avatar_url: url }),
+      });
+      const saved = String(g?.avatar_url ?? url);
+      setGroup({ ...group, avatarUrl: saved });
+      await loadConversations();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Could not update avatar");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function confirmDeleteGroup() {
+    Alert.alert(
+      "Delete group",
+      "Permanently delete this group for everyone? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setBusy(true);
+            api(`/v1/groups/${convId}`, { method: "DELETE" })
+              .then(() => loadConversations())
+              .then(() => router.replace("/(tabs)/chats"))
+              .catch((e: any) => Alert.alert("Error", e?.message || "Could not delete group"))
+              .finally(() => setBusy(false));
+          },
+        },
+      ]
+    );
+  }
+
+  function confirmClearHistory() {
+    Alert.alert(
+      "Clear history",
+      "Delete all messages in this conversation? The chat stays in your list.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: () => {
+            setBusy(true);
+            clearHistory(convId)
+              .then(() => Alert.alert("Done", "History cleared."))
+              .catch((e: any) => Alert.alert("Error", e?.message || "Could not clear history"))
+              .finally(() => setBusy(false));
+          },
+        },
+      ]
+    );
+  }
+
+  function confirmDeleteConversation() {
+    Alert.alert("Delete conversation", "Remove this conversation from your list?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          setBusy(true);
+          deleteConversation(convId)
+            .then(() => router.replace("/(tabs)/chats"))
+            .catch((e: any) =>
+              Alert.alert("Error", e?.message || "Could not delete conversation")
+            )
+            .finally(() => setBusy(false));
+        },
+      },
+    ]);
+  }
+
+  function confirmBlockPeer() {
+    if (!conversation?.friendshipId && !conversation?.peerId) return;
+    const name = conversationDisplayName(conversation);
+    Alert.alert("Block user", `Block ${name}? They won’t be able to message you.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Block",
+        style: "destructive",
+        onPress: () => {
+          setBusy(true);
+          blockUser(conversation.friendshipId || conversation.peerId!)
+            .then(() => {
+              Alert.alert("Blocked", `${name} has been blocked.`);
+              return loadConversations();
+            })
+            .catch((e: any) => Alert.alert("Error", e?.message || "Could not block"))
+            .finally(() => setBusy(false));
+        },
+      },
+    ]);
+  }
+
  /** Owner/admin: role, speak-mute, kick (channel member menu). */
   function onMemberLongPress(m: GroupMember) {
     if (m.userId === me?.id || m.role === "owner") return;
@@ -566,9 +720,11 @@ export default function ChatInfoScreen() {
                 onPress={() => {
                   if (isDm && conversation.peerId) {
                     router.push({ pathname: "/user/[id]", params: { id: conversation.peerId } });
+                  } else if (isGroup && canManageGroup) {
+                    pickGroupAvatar();
                   }
                 }}
-                disabled={!isDm || !conversation.peerId}
+                disabled={isDm ? !conversation.peerId : !canManageGroup}
                 style={{ alignItems: "center", gap: spacing.sm }}
               >
                 <Avatar
@@ -577,7 +733,20 @@ export default function ChatInfoScreen() {
                   size={88}
                 />
                 <Text style={styles.name}>{title}</Text>
+                {isGroup && canManageGroup ? (
+                  <Text style={styles.link}>Change photo</Text>
+                ) : null}
               </Pressable>
+              {conversationCompanyLabel(conversation) ? (
+                <Text
+                  style={[
+                    styles.sub,
+                    conversation.enterpriseName ? styles.enterpriseSub : null,
+                  ]}
+                >
+                  {conversationCompanyLabel(conversation)}
+                </Text>
+              ) : null}
               {isDm && conversation.friendNote ? (
                 <Text style={styles.sub}>{conversation.title}</Text>
               ) : null}
@@ -603,6 +772,23 @@ export default function ChatInfoScreen() {
                 </View>
               ) : null}
             </View>
+
+            {isGroup && group && canManageGroup ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Edit group</Text>
+                <Text style={styles.label}>Group name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editTitle}
+                  onChangeText={setEditTitle}
+                  placeholder="Group name"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <Pressable style={styles.primaryBtn} onPress={saveGroupTitle} disabled={busy}>
+                  <Text style={styles.primaryBtnText}>Save name</Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             {isGroup && canManageGroup ? (
               <Pressable style={styles.addMembersBtn} onPress={openAddMembers} disabled={busy}>
@@ -779,6 +965,65 @@ export default function ChatInfoScreen() {
               </Pressable>
             ) : null}
 
+            {isGroup && group && isOwner ? (
+              <Pressable
+                style={styles.leaveBtn}
+                onPress={confirmDeleteGroup}
+                disabled={busy}
+              >
+                <Text style={styles.leaveBtnText}>Delete group</Text>
+              </Pressable>
+            ) : null}
+
+            {isDm ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Chat actions</Text>
+                <Pressable
+                  style={styles.secondaryAction}
+                  onPress={confirmClearHistory}
+                  disabled={busy}
+                >
+                  <Text style={styles.secondaryActionText}>Clear history</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.secondaryAction}
+                  onPress={confirmDeleteConversation}
+                  disabled={busy}
+                >
+                  <Text style={styles.dangerActionText}>Delete conversation</Text>
+                </Pressable>
+                {conversation.friendshipId || conversation.peerId ? (
+                  <Pressable
+                    style={styles.secondaryAction}
+                    onPress={confirmBlockPeer}
+                    disabled={busy}
+                  >
+                    <Text style={styles.dangerActionText}>Block user</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
+
+            {!isDm ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Chat actions</Text>
+                <Pressable
+                  style={styles.secondaryAction}
+                  onPress={confirmClearHistory}
+                  disabled={busy}
+                >
+                  <Text style={styles.secondaryActionText}>Clear history</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.secondaryAction}
+                  onPress={confirmDeleteConversation}
+                  disabled={busy}
+                >
+                  <Text style={styles.dangerActionText}>Delete conversation</Text>
+                </Pressable>
+              </View>
+            ) : null}
+
             <View style={styles.card}>
               <InfoLine label="Type" value={conversation.type} />
               <InfoLine label="Conversation ID" value={conversation.id} />
@@ -894,6 +1139,7 @@ function makeStyles(c: ColorTokens) {
   },
   name: { fontSize: 20, fontWeight: "700" as const, color: c.text, textAlign: "center" as const },
   sub: { fontSize: 13, color: c.textSecondary, textAlign: "center" as const },
+  enterpriseSub: { color: c.accent, fontWeight: "600" as const },
   tagRow: { flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 6, justifyContent: "center" as const },
   tag: {
     backgroundColor: c.inputBg,
@@ -923,6 +1169,13 @@ function makeStyles(c: ColorTokens) {
     borderColor: c.danger,
   },
   leaveBtnText: { color: c.danger, fontWeight: "700" as const, fontSize: 16 },
+  secondaryAction: {
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.border,
+  },
+  secondaryActionText: { color: c.text, fontSize: 15, fontWeight: "500" as const },
+  dangerActionText: { color: c.danger, fontSize: 15, fontWeight: "600" as const },
   card: {
     backgroundColor: c.surface,
     borderRadius: radius.md,

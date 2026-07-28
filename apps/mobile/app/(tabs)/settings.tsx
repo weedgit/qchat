@@ -304,9 +304,12 @@ export default function SettingsScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t("settings.notifications")}</Text>
-        <Text style={styles.cardHint}>{t("settings.notificationsHint")}</Text>
+        <Text style={styles.cardHint}>
+          Mute and sound preferences for local in-app banners while the app is open.
+          Remote push (FCM / APNs / Expo) is deferred and not available in this build.
+        </Text>
         <DropdownSelect
-          label={t("settings.desktopNotifications")}
+          label="Banner alerts"
           value={notify.desktop}
           options={[
             { value: "all" as const, label: t("settings.notifyAll") },

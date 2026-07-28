@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -10,6 +12,12 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useTrackVolume, VideoTrack } from "@livekit/react-native";
 import type { LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
+import {
+  GroupCallInviteSheet,
+  loadGroupCallInviteMembers,
+  type GroupCallInviteMember,
+} from "./GroupCallInviteSheet";
+import { useAuth } from "../context/AuthContext";
 import type { useCall } from "../lib/useCall";
 import { useThemedStyles } from "../context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../theme";
@@ -111,6 +119,7 @@ function ControlBtn({
 /** Incoming ring + in-call panel (Calls UI placement). */
 export function CallOverlay({ call }: { call: CallApi }) {
   const styles = useThemedStyles(makeStyles);
+  const { user } = useAuth();
   const {
     incoming,
     active,
@@ -123,25 +132,65 @@ export function CallOverlay({ call }: { call: CallApi }) {
     localVideoRef,
     localAudioTrack,
     remoteAudioTrack,
+    remotePeers,
     answerCall,
     declineCall,
     hangup,
+    inviteToCall,
+    kickFromCall,
     toggleMic,
     toggleCamera,
   } = call;
 
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteMembers, setInviteMembers] = useState<GroupCallInviteMember[]>([]);
+
   const visible = Boolean(incoming || active);
+
+  useEffect(() => {
+    if (!inviteOpen || !active?.conversationId) return;
+    let cancelled = false;
+    setInviteLoading(true);
+    const exclude = [
+      user?.id ?? "",
+      ...remotePeers.map((p) => p.userId),
+    ].filter(Boolean);
+    loadGroupCallInviteMembers(active.conversationId, exclude)
+      .then((members) => {
+        if (!cancelled) setInviteMembers(members);
+      })
+      .catch(() => {
+        if (!cancelled) setInviteMembers([]);
+      })
+      .finally(() => {
+        if (!cancelled) setInviteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Load once when sheet opens; peer list at open time is enough for exclusions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: open + conversation only
+  }, [inviteOpen, active?.conversationId, user?.id]);
+
   if (!visible) return null;
 
+  const isGroup = Boolean(incoming?.isGroup || active?.isGroup);
   const statusTitle =
     active?.status === "ringing"
-      ? `Calling… (${active.kind})`
+      ? `Calling… (${active.kind}${active.isGroup ? " · group" : ""})`
       : connecting
         ? "Connecting…"
-        : `${active?.kind === "video" ? "Video" : "Voice"} call`;
+        : `${active?.kind === "video" ? "Video" : "Voice"} call${
+            active?.isGroup ? " · Group" : ""
+          }`;
 
   const showVideo = active?.status === "active" && active.kind === "video" && !connecting;
-  const showMeters = active?.status === "active" && !connecting;
+  const showMeters =
+    active?.status === "active" && !connecting && !(active.isGroup && remotePeers.length > 0);
+  const showGroupPeers =
+    Boolean(active?.isGroup) && active?.status === "active" && !connecting;
 
   return (
     <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" statusBarTranslucent>
@@ -160,7 +209,7 @@ export function CallOverlay({ call }: { call: CallApi }) {
                 {(
                   incoming?.initiatorName ||
                   active?.peerName ||
-                  "?"
+                  (isGroup ? "G" : "?")
                 )
                   .trim()
                   .charAt(0)
@@ -184,13 +233,16 @@ export function CallOverlay({ call }: { call: CallApi }) {
           {incoming ? (
             <>
               <Text style={styles.title}>
-                Incoming {incoming.kind === "video" ? "video" : "voice"} call
+                Incoming {incoming.isGroup ? "group " : ""}
+                {incoming.kind === "video" ? "video" : "voice"} call
               </Text>
               <Text style={styles.name}>{incoming.initiatorName || "Someone"}</Text>
+              {incoming.isGroup ? <Text style={styles.groupBadge}>Group</Text> : null}
             </>
           ) : (
             <>
               <Text style={styles.title}>{statusTitle}</Text>
+              {active?.isGroup ? <Text style={styles.groupBadge}>Group</Text> : null}
               {active?.status === "ringing" ? (
                 <Text style={styles.name}>{active.peerName || "Calling…"}</Text>
               ) : null}
@@ -202,6 +254,48 @@ export function CallOverlay({ call }: { call: CallApi }) {
           )}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
+
+        {showGroupPeers ? (
+          <ScrollView
+            horizontal
+            style={styles.peersScroll}
+            contentContainerStyle={styles.peersRow}
+            showsHorizontalScrollIndicator={false}
+          >
+            {remotePeers.map((p) => (
+              <View key={p.identity} style={styles.peerCard}>
+                <View style={styles.peerAvatar}>
+                  <Text style={styles.peerLetter}>
+                    {(p.name || "?").trim().charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={styles.peerName} numberOfLines={1}>
+                  {p.name}
+                </Text>
+                {active?.isHost ? (
+                  <Pressable
+                    onPress={() =>
+                      kickFromCall(p.userId).catch((e) =>
+                        Alert.alert("Kick failed", e?.message || "Could not remove participant")
+                      )
+                    }
+                    hitSlop={6}
+                    style={styles.kickBtn}
+                    accessibilityLabel={`Remove ${p.name}`}
+                  >
+                    <Text style={styles.kickText}>Remove</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+            <View style={styles.peerCard}>
+              <View style={[styles.peerAvatar, styles.peerAvatarYou]}>
+                <Text style={styles.peerLetter}>Y</Text>
+              </View>
+              <Text style={styles.peerName}>You</Text>
+            </View>
+          </ScrollView>
+        ) : null}
 
         {showMeters ? (
           <View style={styles.metersRow}>
@@ -239,6 +333,11 @@ export function CallOverlay({ call }: { call: CallApi }) {
                   <Ionicons name={cameraOff ? "videocam-off" : "videocam"} size={26} color="#fff" />
                 </ControlBtn>
               ) : null}
+              {active?.isGroup && active.status === "active" ? (
+                <ControlBtn label="Invite" onPress={() => setInviteOpen(true)}>
+                  <Ionicons name="person-add" size={24} color="#fff" />
+                </ControlBtn>
+              ) : null}
               <ControlBtn label="Hang up" danger onPress={() => hangup().catch(() => {})}>
                 <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
               </ControlBtn>
@@ -246,6 +345,31 @@ export function CallOverlay({ call }: { call: CallApi }) {
           )}
         </View>
       </View>
+
+      <GroupCallInviteSheet
+        visible={inviteOpen}
+        title="Invite to call"
+        confirmLabel="Invite"
+        members={inviteMembers}
+        loading={inviteLoading}
+        busy={inviteBusy}
+        onCancel={() => {
+          if (!inviteBusy) setInviteOpen(false);
+        }}
+        onConfirm={(ids) => {
+          void (async () => {
+            setInviteBusy(true);
+            try {
+              await inviteToCall(ids);
+              setInviteOpen(false);
+            } catch (e: any) {
+              Alert.alert("Invite failed", e?.message || "Could not invite");
+            } finally {
+              setInviteBusy(false);
+            }
+          })();
+        }}
+      />
     </Modal>
   );
 }
@@ -305,6 +429,19 @@ function makeStyles(c: ColorTokens) {
     marginTop: 8,
     textAlign: "center" as const,
   },
+  groupBadge: {
+    marginTop: 8,
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 12,
+    fontWeight: "600" as const,
+    letterSpacing: 0.4,
+    textTransform: "uppercase" as const,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    overflow: "hidden" as const,
+  },
   duration: {
     color: "rgba(255,255,255,0.8)",
     fontSize: 16,
@@ -315,6 +452,54 @@ function makeStyles(c: ColorTokens) {
     color: "#fecaca",
     marginTop: 12,
     textAlign: "center" as const,
+  },
+  peersScroll: {
+    maxHeight: 140,
+    marginBottom: 8,
+  },
+  peersRow: {
+    paddingHorizontal: spacing.xl,
+    gap: 14,
+    alignItems: "flex-start" as const,
+  },
+  peerCard: {
+    width: 84,
+    alignItems: "center" as const,
+  },
+  peerAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  peerAvatarYou: {
+    backgroundColor: c.accent,
+  },
+  peerLetter: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700" as const,
+  },
+  peerName: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: "center" as const,
+    maxWidth: 84,
+  },
+  kickBtn: {
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    backgroundColor: "rgba(220,38,38,0.35)",
+  },
+  kickText: {
+    color: "#fecaca",
+    fontSize: 11,
+    fontWeight: "600" as const,
   },
   metersRow: {
     flexDirection: "row" as const,

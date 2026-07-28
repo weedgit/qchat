@@ -14,24 +14,25 @@ import { router } from "expo-router";
 import { Avatar } from "../../src/components/Avatar";
 import { useChat } from "../../src/context/ChatContext";
 import { api, asList } from "../../src/lib/api";
-import { Friend, normalizeFriend } from "../../src/lib/types";
+import { Friend } from "../../src/lib/types";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 type Row =
   | { kind: "header"; title: string; key: string }
   | { kind: "incoming"; friend: Friend }
-  | { kind: "friend"; friend: Friend };
+  | { kind: "friend"; friend: Friend }
+  | { kind: "blocked"; friend: Friend };
 
 function friendName(f: Friend): string {
   return f.note || f.nickname || f.username || "Unknown";
 }
 
 export default function ContactsScreen() {
-  const { openDM } = useChat();
+  const { openDM, friends, loadFriends, presenceByUser, unblockUser, subscribeEvents } =
+    useChat();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const [friends, setFriends] = useState<Friend[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -41,17 +42,24 @@ export default function ContactsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const body = await api<any>("/v1/friends");
-      setFriends(asList(body, "friends", "users").map(normalizeFriend));
+      await loadFriends();
       setError(null);
     } catch (e: any) {
       setError(e.message);
     }
-  }, []);
+  }, [loadFriends]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    return subscribeEvents((type) => {
+      if (type === "friend.request" || type === "friend.updated" || type === "friend.accepted") {
+        void loadFriends().catch(() => {});
+      }
+    });
+  }, [subscribeEvents, loadFriends]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -70,6 +78,10 @@ export default function ContactsScreen() {
       .filter((f) => f.status === "accepted")
       .filter(match)
       .sort((a, b) => friendName(a).localeCompare(friendName(b)));
+    const blocked = friends
+      .filter((f) => f.status === "blocked")
+      .filter(match)
+      .sort((a, b) => friendName(a).localeCompare(friendName(b)));
 
     const out: Row[] = [];
     if (incoming.length > 0) {
@@ -82,6 +94,14 @@ export default function ContactsScreen() {
       key: "hdr-friends",
     });
     for (const f of accepted) out.push({ kind: "friend", friend: f });
+    if (blocked.length > 0) {
+      out.push({
+        kind: "header",
+        title: `Blocked (${blocked.length})`,
+        key: "hdr-blocked",
+      });
+      for (const f of blocked) out.push({ kind: "blocked", friend: f });
+    }
     return out;
   }, [friends, query]);
 
@@ -142,8 +162,27 @@ export default function ContactsScreen() {
     }
   }
 
+  async function onUnblock(f: Friend) {
+    setBusy(true);
+    try {
+      await unblockUser(f.friendshipId || f.userId);
+      await load();
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function isOnline(f: Friend): boolean {
+    return Boolean(presenceByUser[f.userId]?.online ?? f.online);
+  }
+
   const hasPeople = friends.some(
-    (f) => f.status === "accepted" || (f.status === "pending" && f.incoming)
+    (f) =>
+      f.status === "accepted" ||
+      f.status === "blocked" ||
+      (f.status === "pending" && f.incoming)
   );
 
   return (
@@ -204,14 +243,34 @@ export default function ContactsScreen() {
               </View>
             );
           }
+          if (item.kind === "blocked") {
+            return (
+              <View style={styles.row}>
+                <Avatar name={name} url={f.avatarUrl} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{name}</Text>
+                  <Text style={styles.sub}>@{f.username} · Blocked</Text>
+                </View>
+                <Pressable
+                  style={styles.unblock}
+                  onPress={() => onUnblock(f)}
+                  disabled={busy}
+                >
+                  <Text style={styles.unblockText}>Unblock</Text>
+                </Pressable>
+              </View>
+            );
+          }
           return (
             <Pressable style={styles.row} onPress={() => openChat(f)}>
-              <Avatar name={name} url={f.avatarUrl} />
+              <View style={styles.avatarWrap}>
+                <Avatar name={name} url={f.avatarUrl} />
+                {isOnline(f) ? <View style={styles.onlineDot} /> : null}
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{name}</Text>
                 <Text style={styles.sub}>@{f.username}</Text>
               </View>
-              {f.online ? <View style={styles.dot} /> : null}
               <Text style={styles.messageHint}>Message</Text>
             </Pressable>
           );
@@ -299,10 +358,21 @@ function makeStyles(c: ColorTokens) {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: c.border,
   },
+  avatarWrap: { position: "relative" as const },
+  onlineDot: {
+    position: "absolute" as const,
+    right: -1,
+    bottom: -1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: c.online,
+    borderWidth: 2,
+    borderColor: c.surface,
+  },
   name: { fontSize: 16, fontWeight: "600" as const, color: c.text },
   sub: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
   messageHint: { fontSize: 13, color: c.accent, fontWeight: "600" as const },
-  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: c.online },
   accept: {
     backgroundColor: c.accent,
     paddingHorizontal: 12,
@@ -318,6 +388,13 @@ function makeStyles(c: ColorTokens) {
     borderRadius: radius.sm,
   },
   rejectText: { color: c.textSecondary, fontSize: 13 },
+  unblock: {
+    backgroundColor: c.inputBg,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+  },
+  unblockText: { color: c.accent, fontWeight: "600" as const, fontSize: 13 },
   modalBg: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",

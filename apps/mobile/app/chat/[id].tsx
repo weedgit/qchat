@@ -21,14 +21,21 @@ import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
 import { ChatComposer, type MentionMember } from "../../src/components/ChatComposer";
+import {
+  GroupCallInviteSheet,
+  loadGroupCallInviteMembers,
+  type GroupCallInviteMember,
+} from "../../src/components/GroupCallInviteSheet";
 import { MessageBody } from "../../src/components/MessageBody";
 import { MessageActionPopup } from "../../src/components/MessageActionPopup";
 import { VoiceNotePlayer } from "../../src/components/VoiceNotePlayer";
+import { useAuth } from "../../src/context/AuthContext";
 import { useChat } from "../../src/context/ChatContext";
 import { useCallApi } from "../../src/context/CallContext";
-import { api, mediaAuthURL } from "../../src/lib/api";
+import { api, asList, mediaAuthURL } from "../../src/lib/api";
+import type { CallKind } from "../../src/lib/useCall";
 import { isVideoAttachmentHint } from "../../src/lib/mediaLimits";
-import { Conversation, Message, Reaction, conversationDisplayName } from "../../src/lib/types";
+import { Conversation, Message, Reaction, conversationDisplayName, formatLastSeen } from "../../src/lib/types";
 import {
   nextPinnedFromScroll,
   previousPinnedInCycle,
@@ -671,8 +678,13 @@ export default function ChatScreen() {
     pinMessage,
     editMessage,
     sendMediaMessage,
+    sendRemoteImage,
     sendVoiceMessage,
+    typingByConv,
+    presenceByUser,
+    notifyTyping,
   } = useChat();
+  const { user } = useAuth();
   const call = useCallApi();
   const [text, setText] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -686,6 +698,16 @@ export default function ChatScreen() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [mentionMembers, setMentionMembers] = useState<MentionMember[]>([]);
+  const [groupCallInvite, setGroupCallInvite] = useState<CallKind | null>(null);
+  const [groupCallInviteBusy, setGroupCallInviteBusy] = useState(false);
+  const [groupCallInviteLoading, setGroupCallInviteLoading] = useState(false);
+  const [groupCallInviteMembers, setGroupCallInviteMembers] = useState<GroupCallInviteMember[]>([]);
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
+  const [threadSearchQuery, setThreadSearchQuery] = useState("");
+  const [threadSearchHits, setThreadSearchHits] = useState<
+    { id: string; body: string; createdAt: string }[]
+  >([]);
+  const [threadSearchBusy, setThreadSearchBusy] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
   const nearBottomRef = useRef(true);
   const loadingOlderRef = useRef(false);
@@ -840,6 +862,44 @@ export default function ChatScreen() {
   );
 
   useEffect(() => {
+    if (!threadSearchOpen) return;
+    const q = threadSearchQuery.trim();
+    if (q.length < 2) {
+      setThreadSearchHits([]);
+      setThreadSearchBusy(false);
+      return;
+    }
+    let cancelled = false;
+    setThreadSearchBusy(true);
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ q, conversation_id: convId });
+      api<any>(`/v1/search?${params}`)
+        .then((body) => {
+          if (cancelled) return;
+          setThreadSearchHits(
+            asList(body, "messages")
+              .map((m: any) => ({
+                id: String(m?.id ?? ""),
+                body: String(m?.body ?? ""),
+                createdAt: String(m?.created_at ?? ""),
+              }))
+              .filter((h: { id: string }) => h.id)
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setThreadSearchHits([]);
+        })
+        .finally(() => {
+          if (!cancelled) setThreadSearchBusy(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [threadSearchOpen, threadSearchQuery, convId]);
+
+  useEffect(() => {
     return () => {
       if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
     };
@@ -890,6 +950,24 @@ export default function ChatScreen() {
     const isDm = conversation?.type === "dm";
     const callBusy = Boolean(call.active || call.incoming);
     const title = conversation ? conversationDisplayName(conversation) : "Chat";
+    const typers = typingByConv[convId] ?? [];
+    let subtitle = "";
+    if (typers.length === 1) {
+      subtitle = `${typers[0].name} is typing…`;
+    } else if (typers.length > 1) {
+      subtitle = `${typers.length} people typing…`;
+    } else if (isDm && conversation?.peerId) {
+      const presence = presenceByUser[conversation.peerId];
+      const online = presence?.online ?? conversation.peerOnline;
+      if (online) subtitle = "Online";
+      else {
+        subtitle = formatLastSeen(
+          presence?.lastActiveAt || conversation.peerLastActiveAt
+        );
+      }
+    } else if (conversation?.enterpriseName) {
+      subtitle = conversation.enterpriseName;
+    }
     const openChatInfo = () => {
       if (!conversation) return;
       router.push({ pathname: "/chat-info/[id]", params: { id: conversation.id } });
@@ -904,12 +982,20 @@ export default function ChatScreen() {
       }
       openChatInfo();
     };
+    const startDmCall = (kind: CallKind) => {
+      if (callBusy || !conversation) return;
+      call
+        .startCall(conversation.id, kind, {
+          peerName: conversationDisplayName(conversation),
+        })
+        .catch((e) => Alert.alert("Call failed", e?.message || "Could not start call"));
+    };
     navigation.setOptions({
       headerShown: !selecting,
       title,
       headerTitleAlign: "left",
       headerTitle: () => (
-        <Pressable onPress={openTitleTarget} hitSlop={6} style={{ maxWidth: 180 }}>
+        <Pressable onPress={openTitleTarget} hitSlop={6} style={{ maxWidth: 200 }}>
           <Text
             numberOfLines={1}
             style={{
@@ -920,6 +1006,19 @@ export default function ChatScreen() {
           >
             {title}
           </Text>
+          {subtitle ? (
+            <Text
+              numberOfLines={1}
+              style={{
+                color: "rgba(255,255,255,0.75)",
+                fontSize: 12,
+                fontWeight: "500",
+                marginTop: 1,
+              }}
+            >
+              {subtitle}
+            </Text>
+          ) : null}
         </Pressable>
       ),
       headerLeft: undefined,
@@ -931,14 +1030,16 @@ export default function ChatScreen() {
             marginRight: Platform.OS === "ios" ? 8 : 4,
           }}
         >
-          {isDm ? (
+          {isDm || isGroup ? (
             <>
               <Pressable
                 onPress={() => {
                   if (callBusy || !conversation) return;
-                  call
-                    .startCall(conversation.id, "voice", conversationDisplayName(conversation))
-                    .catch((e) => Alert.alert("Call failed", e?.message || "Could not start call"));
+                  if (isGroup) {
+                    setGroupCallInvite("voice");
+                    return;
+                  }
+                  startDmCall("voice");
                 }}
                 disabled={callBusy}
                 hitSlop={10}
@@ -950,9 +1051,11 @@ export default function ChatScreen() {
               <Pressable
                 onPress={() => {
                   if (callBusy || !conversation) return;
-                  call
-                    .startCall(conversation.id, "video", conversationDisplayName(conversation))
-                    .catch((e) => Alert.alert("Call failed", e?.message || "Could not start call"));
+                  if (isGroup) {
+                    setGroupCallInvite("video");
+                    return;
+                  }
+                  startDmCall("video");
                 }}
                 disabled={callBusy}
                 hitSlop={10}
@@ -963,6 +1066,18 @@ export default function ChatScreen() {
               </Pressable>
             </>
           ) : null}
+          <Pressable
+            onPress={() => {
+              setThreadSearchOpen(true);
+              setThreadSearchQuery("");
+              setThreadSearchHits([]);
+            }}
+            hitSlop={10}
+            style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+            accessibilityLabel="Search in chat"
+          >
+            <Ionicons name="search-outline" size={22} color="#fff" />
+          </Pressable>
           <Pressable
             onPress={openChatInfo}
             hitSlop={10}
@@ -979,10 +1094,33 @@ export default function ChatScreen() {
     conversation,
     selecting,
     pinsListOpen,
+    isGroup,
     call.active,
     call.incoming,
     call.startCall,
+    typingByConv,
+    presenceByUser,
+    convId,
   ]);
+
+  useEffect(() => {
+    if (!groupCallInvite || !conversation || !isGroup) return;
+    let cancelled = false;
+    setGroupCallInviteLoading(true);
+    loadGroupCallInviteMembers(conversation.id, [user?.id ?? ""].filter(Boolean))
+      .then((members) => {
+        if (!cancelled) setGroupCallInviteMembers(members);
+      })
+      .catch(() => {
+        if (!cancelled) setGroupCallInviteMembers([]);
+      })
+      .finally(() => {
+        if (!cancelled) setGroupCallInviteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [groupCallInvite, conversation, isGroup, user?.id]);
 
   useEffect(() => {
     if (pinsListOpen && pinnedList.length === 0) {
@@ -1396,6 +1534,11 @@ export default function ChatScreen() {
             sendVoiceMessage(convId, uri, durationSec, replyTo?.id).catch(() => {});
             setReplyTo(null);
           }}
+          onSendRemoteImage={(url, caption) => {
+            sendRemoteImage(convId, url, caption, replyTo?.id).catch(() => {});
+            setReplyTo(null);
+          }}
+          onTyping={() => notifyTyping(convId)}
           mentionEnabled={isGroup}
           mentionMembers={mentionMembers}
         />
@@ -1435,6 +1578,106 @@ export default function ChatScreen() {
           }}
         />
       ) : null}
+
+      <Modal
+        visible={threadSearchOpen}
+        animationType="slide"
+        onRequestClose={() => setThreadSearchOpen(false)}
+      >
+        <View style={[styles.threadSearchRoot, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.threadSearchBar}>
+            <Ionicons name="search-outline" size={18} color="#9ca3af" />
+            <TextInput
+              style={styles.threadSearchInput}
+              value={threadSearchQuery}
+              onChangeText={setThreadSearchQuery}
+              placeholder="Search in this chat"
+              placeholderTextColor="#8e8e93"
+              autoFocus
+              autoCorrect={false}
+              returnKeyType="search"
+            />
+            <Pressable
+              onPress={() => setThreadSearchOpen(false)}
+              hitSlop={8}
+              accessibilityLabel="Close search"
+            >
+              <Text style={styles.threadSearchClose}>Close</Text>
+            </Pressable>
+          </View>
+          {threadSearchBusy ? (
+            <ActivityIndicator color={colors.accent} style={{ marginTop: 24 }} />
+          ) : (
+            <FlatList
+              data={threadSearchHits}
+              keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+              ListEmptyComponent={
+                threadSearchQuery.trim().length >= 2 ? (
+                  <Text style={styles.threadSearchEmpty}>No messages found</Text>
+                ) : (
+                  <Text style={styles.threadSearchEmpty}>Type at least 2 characters</Text>
+                )
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.threadSearchHit}
+                  onPress={() => {
+                    setThreadSearchOpen(false);
+                    requestAnimationFrame(() => {
+                      jumpToMessageId(item.id, { missingTitle: "Search result" });
+                    });
+                  }}
+                >
+                  <Text style={styles.threadSearchHitBody} numberOfLines={3}>
+                    {item.body || "(empty)"}
+                  </Text>
+                  {item.createdAt ? (
+                    <Text style={styles.threadSearchHitMeta}>
+                      {new Date(item.createdAt).toLocaleString([], {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              )}
+            />
+          )}
+        </View>
+      </Modal>
+
+      <GroupCallInviteSheet
+        visible={Boolean(groupCallInvite) && isGroup}
+        title={groupCallInvite === "video" ? "Start video call" : "Start voice call"}
+        confirmLabel="Start"
+        members={groupCallInviteMembers}
+        loading={groupCallInviteLoading}
+        busy={groupCallInviteBusy}
+        onCancel={() => {
+          if (!groupCallInviteBusy) setGroupCallInvite(null);
+        }}
+        onConfirm={(inviteeIds) => {
+          if (!conversation || !groupCallInvite) return;
+          void (async () => {
+            setGroupCallInviteBusy(true);
+            try {
+              await call.startCall(conversation.id, groupCallInvite, {
+                peerName: conversationDisplayName(conversation),
+                inviteeIds,
+              });
+              setGroupCallInvite(null);
+            } catch (e: any) {
+              Alert.alert("Call failed", e?.message || "Could not start call");
+            } finally {
+              setGroupCallInviteBusy(false);
+            }
+          })();
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -1744,5 +1987,52 @@ function makeStyles(c: ColorTokens) {
   },
   forwardSendDisabled: { opacity: 0.45 },
   forwardSendText: { color: "#fff", fontWeight: "700" as const, fontSize: 15 },
+  threadSearchRoot: {
+    flex: 1,
+    backgroundColor: c.bg,
+    paddingHorizontal: spacing.md,
+  },
+  threadSearchBar: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    backgroundColor: c.inputBg,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: spacing.sm,
+  },
+  threadSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: c.text,
+    paddingVertical: 6,
+  },
+  threadSearchClose: {
+    color: c.accent,
+    fontWeight: "700" as const,
+    fontSize: 15,
+  },
+  threadSearchEmpty: {
+    textAlign: "center" as const,
+    color: c.textMuted,
+    paddingVertical: spacing.xl,
+    fontSize: 14,
+  },
+  threadSearchHit: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.border,
+  },
+  threadSearchHitBody: {
+    fontSize: 15,
+    color: c.text,
+    lineHeight: 20,
+  },
+  threadSearchHitMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: c.textMuted,
+  },
 };
 }

@@ -1,5 +1,6 @@
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -12,10 +13,22 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
-import { useChat } from "../../src/context/ChatContext";
-import { Conversation, conversationDisplayName } from "../../src/lib/types";
+import { useChat, type TypingUser } from "../../src/context/ChatContext";
+import { api, asList } from "../../src/lib/api";
+import {
+  Conversation,
+  conversationCompanyLabel,
+  conversationDisplayName,
+} from "../../src/lib/types";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../../src/theme";
+
+type SearchHit = {
+  id: string;
+  conversationId: string;
+  body: string;
+  createdAt: string;
+};
 
 function formatTime(iso?: string): string {
   if (!iso) return "";
@@ -44,6 +57,13 @@ function previewText(c: Conversation): string {
   return c.lastMessage;
 }
 
+function formatTypingPreview(users: TypingUser[]): string {
+  if (users.length === 0) return "";
+  if (users.length === 1) return `${users[0].name} is typing…`;
+  if (users.length === 2) return `${users[0].name} and ${users[1].name} are typing…`;
+  return "Several people are typing…";
+}
+
 export default function ChatsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -54,14 +74,22 @@ export default function ChatsScreen() {
     loadConversations,
     updateConversationPrefs,
     markConversationRead,
+    markUnread,
+    clearHistory,
+    deleteConversation,
+    typingByConv,
+    presenceByUser,
     connected,
     loadError,
   } = useChat();
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
 
   const selecting = selectedIds.length > 0;
+  const searchActive = query.trim().length >= 2;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,6 +99,41 @@ export default function ChatsScreen() {
       return name.includes(q) || (c.lastMessage || "").toLowerCase().includes(q);
     });
   }, [conversations, query]);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setSearchHits([]);
+      setSearchBusy(false);
+      return;
+    }
+    let cancelled = false;
+    setSearchBusy(true);
+    const timer = setTimeout(() => {
+      api<any>(`/v1/search?q=${encodeURIComponent(q)}`)
+        .then((body) => {
+          if (cancelled) return;
+          setSearchHits(
+            asList(body, "messages").map((m: any) => ({
+              id: String(m?.id ?? ""),
+              conversationId: String(m?.conversation_id ?? ""),
+              body: String(m?.body ?? ""),
+              createdAt: String(m?.created_at ?? ""),
+            })).filter((h: SearchHit) => h.id && h.conversationId)
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setSearchHits([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearchBusy(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   const selectedConvs = useMemo(
     () => conversations.filter((c) => selectedIds.includes(c.id)),
@@ -144,7 +207,61 @@ export default function ChatsScreen() {
     clearSelection();
   }, [selectedIds, markConversationRead, clearSelection]);
 
+  const applyMarkUnread = useCallback(async () => {
+    await Promise.all(selectedIds.map((id) => markUnread(id).catch(() => {})));
+    clearSelection();
+  }, [selectedIds, markUnread, clearSelection]);
+
+  const applyClearHistory = useCallback(() => {
+    const n = selectedIds.length;
+    Alert.alert(
+      "Clear history",
+      n === 1
+        ? "Delete all messages in this conversation? The chat stays in your list."
+        : `Clear message history in ${n} conversations?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            await Promise.all(selectedIds.map((id) => clearHistory(id).catch(() => {})));
+            clearSelection();
+          },
+        },
+      ]
+    );
+  }, [selectedIds, clearHistory, clearSelection]);
+
+  const applyDelete = useCallback(() => {
+    const n = selectedIds.length;
+    Alert.alert(
+      "Delete conversation",
+      n === 1
+        ? "Remove this conversation from your list?"
+        : `Remove ${n} conversations from your list?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await Promise.all(
+              selectedIds.map((id) => deleteConversation(id).catch(() => {}))
+            );
+            clearSelection();
+          },
+        },
+      ]
+    );
+  }, [selectedIds, deleteConversation, clearSelection]);
+
   const anyUnread = selectedConvs.some((c) => c.unreadCount > 0);
+
+  function peerIsOnline(item: Conversation): boolean {
+    if (item.type !== "dm" || !item.peerId) return false;
+    return Boolean(presenceByUser[item.peerId]?.online ?? item.peerOnline);
+  }
 
   return (
     <View style={styles.root}>
@@ -193,7 +310,32 @@ export default function ChatsScreen() {
             >
               <Ionicons name="mail-open-outline" size={22} color="#fff" />
             </Pressable>
-          ) : null}
+          ) : (
+            <Pressable
+              style={styles.actionBtn}
+              onPress={applyMarkUnread}
+              hitSlop={8}
+              accessibilityLabel="Mark as unread"
+            >
+              <Ionicons name="mail-unread-outline" size={22} color="#fff" />
+            </Pressable>
+          )}
+          <Pressable
+            style={styles.actionBtn}
+            onPress={applyClearHistory}
+            hitSlop={8}
+            accessibilityLabel="Clear history"
+          >
+            <Ionicons name="trash-bin-outline" size={22} color="#fff" />
+          </Pressable>
+          <Pressable
+            style={styles.actionBtn}
+            onPress={applyDelete}
+            hitSlop={8}
+            accessibilityLabel="Delete conversation"
+          >
+            <Ionicons name="trash-outline" size={22} color="#fff" />
+          </Pressable>
         </View>
       ) : (
         <View style={styles.searchWrap}>
@@ -201,7 +343,7 @@ export default function ChatsScreen() {
             <Ionicons name="search" size={16} color={colors.textMuted} />
             <TextInput
               style={styles.search}
-              placeholder={connected ? "Search" : "Reconnecting…"}
+              placeholder={connected ? "Search chats & messages" : "Reconnecting…"}
               placeholderTextColor={colors.textMuted}
               value={query}
               onChangeText={setQuery}
@@ -227,6 +369,43 @@ export default function ChatsScreen() {
         </View>
       )}
       {loadError ? <Text style={styles.error}>{loadError}</Text> : null}
+
+      {searchActive && !selecting ? (
+        <View style={styles.searchResults}>
+          <Text style={styles.searchSection}>
+            {searchBusy ? "Searching messages…" : `Messages (${searchHits.length})`}
+          </Text>
+          {searchHits.length === 0 && !searchBusy ? (
+            <Text style={styles.searchEmpty}>No message matches</Text>
+          ) : (
+            searchHits.slice(0, 20).map((hit) => {
+              const conv = conversations.find((c) => c.id === hit.conversationId);
+              const title = conv ? conversationDisplayName(conv) : "Chat";
+              return (
+                <Pressable
+                  key={hit.id}
+                  style={styles.searchHit}
+                  onPress={() => router.push(`/chat/${hit.conversationId}`)}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.searchHitTitle} numberOfLines={1}>
+                      {title}
+                    </Text>
+                    <Text style={styles.searchHitBody} numberOfLines={2}>
+                      {hit.body || "(empty)"}
+                    </Text>
+                  </View>
+                  <Text style={styles.searchHitTime}>{formatTime(hit.createdAt)}</Text>
+                </Pressable>
+              );
+            })
+          )}
+          <Text style={[styles.searchSection, { marginTop: spacing.sm }]}>
+            Conversations
+          </Text>
+        </View>
+      ) : null}
+
       <FlatList
         style={styles.list}
         data={filtered}
@@ -241,7 +420,9 @@ export default function ChatsScreen() {
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
-            No conversations yet. Tap New for a DM, or the people icon to create a group.
+            {query.trim()
+              ? "No matching conversations"
+              : "No conversations yet. Tap New for a DM, or the people icon to create a group."}
           </Text>
         }
         renderItem={({ item }) => {
@@ -249,6 +430,9 @@ export default function ChatsScreen() {
           const muted = Boolean(item.muted);
           const mention = (item.mentionCount ?? 0) > 0;
           const selected = selectedIds.includes(item.id);
+          const company = conversationCompanyLabel(item);
+          const typing = formatTypingPreview(typingByConv[item.id] ?? []);
+          const online = peerIsOnline(item);
           return (
             <Pressable
               style={[
@@ -272,6 +456,7 @@ export default function ChatsScreen() {
             >
               <View style={styles.avatarWrap}>
                 <Avatar name={name} url={item.avatarUrl} />
+                {online && !selected ? <View style={styles.onlineDot} /> : null}
                 {selected ? (
                   <View style={styles.checkBadge}>
                     <Ionicons name="checkmark" size={14} color="#fff" />
@@ -279,6 +464,17 @@ export default function ChatsScreen() {
                 ) : null}
               </View>
               <View style={styles.meta}>
+                {company ? (
+                  <Text
+                    style={[
+                      styles.company,
+                      item.enterpriseName ? styles.companyEnterprise : null,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {company}
+                  </Text>
+                ) : null}
                 <View style={styles.topLine}>
                   <Text style={[styles.title, muted && styles.titleMuted]} numberOfLines={1}>
                     {item.favorite ? "★ " : ""}
@@ -291,12 +487,13 @@ export default function ChatsScreen() {
                   <Text
                     style={[
                       styles.preview,
-                      item.lastMessageRecalled && styles.previewRecalled,
+                      typing ? styles.previewTyping : null,
+                      !typing && item.lastMessageRecalled && styles.previewRecalled,
                       muted && styles.previewMuted,
                     ]}
                     numberOfLines={1}
                   >
-                    {previewText(item)}
+                    {typing || previewText(item)}
                   </Text>
                   {!selecting && item.unreadCount > 0 ? (
                     <View
@@ -328,14 +525,14 @@ function makeStyles(c: ColorTokens) {
   actionBar: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
-    gap: 4,
+    gap: 2,
     paddingHorizontal: spacing.sm,
     paddingBottom: 10,
     backgroundColor: c.headerBlue,
     minHeight: 52,
   },
   actionBtn: {
-    width: 40,
+    width: 36,
     height: 40,
     alignItems: "center" as const,
     justifyContent: "center" as const,
@@ -389,6 +586,41 @@ function makeStyles(c: ColorTokens) {
     backgroundColor: c.inputBg,
   },
   newChatText: { color: "#fff", fontWeight: "700" as const, fontSize: 13 },
+  searchResults: {
+    backgroundColor: c.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: c.border,
+    maxHeight: 220,
+    paddingBottom: spacing.xs,
+  },
+  searchSection: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 4,
+    fontSize: 12,
+    fontWeight: "700" as const,
+    color: c.textMuted,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.4,
+  },
+  searchEmpty: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    color: c.textSecondary,
+    fontSize: 13,
+  },
+  searchHit: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: c.border,
+  },
+  searchHitTitle: { fontSize: 14, fontWeight: "600" as const, color: c.text },
+  searchHitBody: { fontSize: 13, color: c.textSecondary, marginTop: 2 },
+  searchHitTime: { fontSize: 11, color: c.textMuted },
   list: { flex: 1, backgroundColor: c.bg },
   listContent: { paddingBottom: spacing.sm },
   error: { color: c.danger, padding: spacing.md, backgroundColor: c.bg },
@@ -405,6 +637,17 @@ function makeStyles(c: ColorTokens) {
   rowMuted: { opacity: 0.85 },
   rowSelected: { backgroundColor: "#e8f0fe" },
   avatarWrap: { position: "relative" as const },
+  onlineDot: {
+    position: "absolute" as const,
+    right: -1,
+    bottom: -1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: c.online,
+    borderWidth: 2,
+    borderColor: c.surface,
+  },
   checkBadge: {
     position: "absolute" as const,
     right: -2,
@@ -419,6 +662,13 @@ function makeStyles(c: ColorTokens) {
     borderColor: c.surface,
   },
   meta: { flex: 1, minWidth: 0 },
+  company: {
+    fontSize: 11,
+    color: c.textMuted,
+    marginBottom: 2,
+    fontWeight: "500" as const,
+  },
+  companyEnterprise: { color: c.accent },
   topLine: { flexDirection: "row" as const, justifyContent: "space-between" as const, gap: spacing.sm },
   title: { flex: 1, fontSize: 16, fontWeight: "600" as const, color: c.text },
   titleMuted: { color: c.textSecondary },
@@ -430,6 +680,7 @@ function makeStyles(c: ColorTokens) {
     gap: spacing.sm,
   },
   preview: { flex: 1, fontSize: 13, color: c.textSecondary },
+  previewTyping: { color: c.accent, fontStyle: "italic" as const },
   previewRecalled: { fontStyle: "italic" as const },
   previewMuted: { color: c.textMuted },
   badge: {
