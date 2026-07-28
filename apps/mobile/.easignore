@@ -1,0 +1,19 @@
+# Keep EAS uploads small and free of secrets / local native trees.
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+credentials.json
+google-services.json
+GoogleService-Info.plist
+android/
+ios/
+node_modules/
+.expo/
+dist/
+web-build/
+*.log

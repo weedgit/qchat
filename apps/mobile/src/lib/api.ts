@@ -15,7 +15,27 @@ export function setOnUnauthorized(fn: (() => void) | null) {
 }
 
 export function apiBaseUrl(): string {
-  return (process.env.EXPO_PUBLIC_API_URL ?? "http://192.168.91.136:8080").replace(/\/$/, "");
+  const raw = process.env.EXPO_PUBLIC_API_URL?.trim();
+  const appEnv = (
+    process.env.APP_ENV ||
+    process.env.EAS_BUILD_PROFILE ||
+    ""
+  ).toLowerCase();
+  const isRelease =
+    appEnv === "production" ||
+    appEnv === "preview" ||
+    process.env.NODE_ENV === "production";
+
+  if (!raw) {
+    if (isRelease) {
+      throw new Error(
+        "EXPO_PUBLIC_API_URL is required for preview/production mobile builds"
+      );
+    }
+    // Local LAN fallback for Metro / emulator tunnels only.
+    return "http://192.168.91.136:8080";
+  }
+  return raw.replace(/\/$/, "");
 }
 
 export async function initTokens(): Promise<void> {

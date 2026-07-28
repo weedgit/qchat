@@ -1,0 +1,46 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "development",
+        "QCHAT_TRUST_CERT": "1",
+        "QCHAT_ALLOW_CLEARTEXT": "1"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "autoIncrement": true,
+      "env": {
+        "APP_ENV": "preview",
+        "QCHAT_TRUST_CERT": "1",
+        "QCHAT_ALLOW_CLEARTEXT": "0"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "APP_ENV": "production",
+        "QCHAT_TRUST_CERT": "0",
+        "QCHAT_ALLOW_CLEARTEXT": "0"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
