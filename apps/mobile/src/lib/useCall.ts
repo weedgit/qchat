@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PermissionsAndroid, Platform } from "react-native";
 import {
+  ConnectionQuality,
   ConnectionState,
   Room,
   RoomEvent,
@@ -12,6 +13,7 @@ import {
   type LocalAudioTrack,
   type LocalParticipant,
   type LocalTrackPublication,
+  type Participant,
   type RemoteAudioTrack,
   type RemoteParticipant,
   type RemoteTrack,
@@ -21,6 +23,11 @@ import {
 import { AndroidAudioTypePresets, AudioSession } from "@livekit/react-native";
 import type { TrackReference } from "@livekit/components-react";
 import { api } from "./api";
+import {
+  isDegradedQuality,
+  qualityFromLiveKit,
+  type CallQualityLevel,
+} from "./callQuality";
 
 function asVideoTrackRef(
   participant: LocalParticipant | RemoteParticipant,
@@ -117,6 +124,9 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
   const [connectedAt, setConnectedAt] = useState<number | null>(null);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
+  const [speakerOn, setSpeakerOn] = useState(true);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [connectionQuality, setConnectionQuality] = useState<CallQualityLevel>("unknown");
   const [remoteVideoRef, setRemoteVideoRef] = useState<TrackReference | null>(null);
   const [localVideoRef, setLocalVideoRef] = useState<TrackReference | null>(null);
   const [localAudioTrack, setLocalAudioTrack] = useState<LocalAudioTrack | null>(null);
@@ -138,6 +148,9 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     setConnectedAt(null);
     setMicMuted(false);
     setCameraOff(false);
+    setSpeakerOn(true);
+    setReconnecting(false);
+    setConnectionQuality("unknown");
     setRemoteVideoRef(null);
     setLocalVideoRef(null);
     setLocalAudioTrack(null);
@@ -229,7 +242,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
             preferredOutputList: ["bluetooth", "headset", "speaker", "earpiece"],
             audioTypeOptions: AndroidAudioTypePresets.communication,
           },
-          ios: { defaultOutput: "speaker" },
+          ios: { defaultOutput: kind === "video" ? "speaker" : "speaker" },
         });
         await AudioSession.startAudioSession();
         if (Platform.OS === "ios") {
@@ -239,11 +252,24 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
             audioMode: kind === "video" ? "videoChat" : "voiceChat",
           });
         }
+        // Default to speaker for both voice/video (toggle can switch to earpiece).
+        try {
+          if (Platform.OS === "ios") {
+            await AudioSession.selectAudioOutput("force_speaker");
+          } else {
+            await AudioSession.selectAudioOutput("speaker");
+          }
+          setSpeakerOn(true);
+        } catch {
+          /* device may not support forced routing */
+        }
         if (!stillCurrent()) return;
 
         room = new Room({ adaptiveStream: true, dynacast: true });
         roomRef.current = room;
         hadRemoteRef.current = false;
+        setReconnecting(false);
+        setConnectionQuality("unknown");
 
         room.on(
           RoomEvent.TrackSubscribed,
@@ -341,6 +367,22 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
           hangupServer(callId).catch(() => {});
           endingRef.current = false;
         });
+        room.on(RoomEvent.Reconnecting, () => {
+          if (gen !== connectGenRef.current) return;
+          setReconnecting(true);
+        });
+        room.on(RoomEvent.Reconnected, () => {
+          if (gen !== connectGenRef.current) return;
+          setReconnecting(false);
+        });
+        room.on(
+          RoomEvent.ConnectionQualityChanged,
+          (quality: ConnectionQuality, participant: Participant) => {
+            if (gen !== connectGenRef.current) return;
+            if (participant !== room?.localParticipant) return;
+            setConnectionQuality(qualityFromLiveKit(quality));
+          }
+        );
 
         await room.connect(lkUrl, token, {
           websocketTimeout: 60_000,
@@ -659,6 +701,20 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     }
   }, [cameraOff, active?.kind]);
 
+  const toggleSpeaker = useCallback(async () => {
+    const next = !speakerOn;
+    try {
+      if (Platform.OS === "ios") {
+        await AudioSession.selectAudioOutput(next ? "force_speaker" : "default");
+      } else {
+        await AudioSession.selectAudioOutput(next ? "speaker" : "earpiece");
+      }
+      setSpeakerOn(next);
+    } catch {
+      setError((prev) => prev || "Could not switch speaker");
+    }
+  }, [speakerOn]);
+
   return {
     incoming,
     active,
@@ -667,6 +723,10 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     connectedAt,
     micMuted,
     cameraOff,
+    speakerOn,
+    reconnecting,
+    connectionQuality,
+    qualityDegraded: isDegradedQuality(connectionQuality),
     remoteVideoRef,
     localVideoRef,
     localAudioTrack,
@@ -680,5 +740,6 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     kickFromCall,
     toggleMic,
     toggleCamera,
+    toggleSpeaker,
   };
 }

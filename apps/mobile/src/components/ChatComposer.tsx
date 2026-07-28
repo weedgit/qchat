@@ -27,7 +27,7 @@ import {
 } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { searchGifs, type GifItem } from "../lib/gifSearch";
-import { isVideoAttachmentHint, isVideoMime } from "../lib/mediaLimits";
+import { isVideoAttachmentHint, isVideoMime, MESSAGE_MAX_CHARS, clipMessageText, messageCharCount } from "../lib/mediaLimits";
 import { STICKER_PACKS } from "../lib/stickerData";
 import { Message } from "../lib/types";
 import { useTheme, useThemedStyles } from "../context/ThemeContext";
@@ -68,7 +68,13 @@ export type ChatComposerProps = {
   replyTo: Message | null;
   onCancelEdit: () => void;
   onCancelReply: () => void;
-  onPickMedia: (uri: string, kind: "image" | "file", name: string, mimeType?: string) => void;
+  onPickMedia: (
+    uri: string,
+    kind: "image" | "file",
+    name: string,
+    mimeType?: string,
+    caption?: string
+  ) => void;
   onSendVoice: (uri: string, durationSec: number) => void;
   /** Sticker / GIF remote image send (mirror web sendRemoteImage). */
   onSendRemoteImage?: (url: string, caption: string) => void;
@@ -77,6 +83,9 @@ export type ChatComposerProps = {
   /** When true, typing @ in a group opens member autocomplete. */
   mentionEnabled?: boolean;
   mentionMembers?: MentionMember[];
+  /** Group mute-all / speak-mute blocks sending. */
+  disabled?: boolean;
+  disabledReason?: string;
 };
 
 /**
@@ -97,6 +106,8 @@ export function ChatComposer({
   onTyping,
   mentionEnabled = false,
   mentionMembers = [],
+  disabled = false,
+  disabledReason,
 }: ChatComposerProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTab, setPickerTab] = useState<PickerTab>("emoji");
@@ -112,10 +123,18 @@ export function ChatComposer({
   const recorderState = useAudioRecorderState(recorder);
   const recording = Boolean(recorderState?.isRecording);
   const hasText = text.trim().length > 0;
+  const draftChars = messageCharCount(text);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [mentionMenu, setMentionMenu] = useState<{
     query: string;
     start: number;
+  } | null>(null);
+  const [mediaDraft, setMediaDraft] = useState<{
+    uri: string;
+    kind: "image" | "file";
+    name: string;
+    mimeType?: string;
+    caption: string;
   } | null>(null);
 
   useEffect(() => {
@@ -215,11 +234,12 @@ export function ChatComposer({
   }
 
   function handleChangeText(v: string) {
-    onChangeText(v);
-    onTyping?.();
+    const clipped = clipMessageText(v);
+    onChangeText(clipped);
+    if (!disabled) onTyping?.();
     const approx =
-      v.length >= text.length ? v.length : Math.min(selection.start, v.length);
-    updateMentionMenu(v, approx);
+      clipped.length >= text.length ? clipped.length : Math.min(selection.start, clipped.length);
+    updateMentionMenu(clipped, approx);
   }
 
   function handleSelectionChange(
@@ -230,7 +250,17 @@ export function ChatComposer({
     updateMentionMenu(text, next.start);
   }
 
+  function queueMediaDraft(
+    uri: string,
+    kind: "image" | "file",
+    name: string,
+    mimeType?: string
+  ) {
+    setMediaDraft({ uri, kind, name, mimeType, caption: "" });
+  }
+
   async function pickPhoto() {
+    if (disabled) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       Alert.alert("Permission needed", "Allow photo library access to send images.");
@@ -243,10 +273,11 @@ export function ChatComposer({
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
     const name = a.fileName || `photo.${(a.uri.split(".").pop() || "jpg").split("?")[0]}`;
-    onPickMedia(a.uri, "image", name, a.mimeType || "image/jpeg");
+    queueMediaDraft(a.uri, "image", name, a.mimeType || "image/jpeg");
   }
 
   async function pickFile() {
+    if (disabled) return;
     const res = await DocumentPicker.getDocumentAsync({
       copyToCacheDirectory: true,
       multiple: false,
@@ -259,10 +290,11 @@ export function ChatComposer({
       mime = "video/mp4";
     }
     const kind = mime.startsWith("image/") ? "image" : "file";
-    onPickMedia(a.uri, kind, name, mime);
+    queueMediaDraft(a.uri, kind, name, mime);
   }
 
   function openAttach() {
+    if (disabled) return;
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
@@ -317,12 +349,13 @@ export function ChatComposer({
   }
 
   function insertEmoji(emoji: string) {
-    onChangeText(text + emoji);
+    if (disabled) return;
+    onChangeText(clipMessageText(text + emoji));
     onTyping?.();
   }
 
   function sendRemote(url: string, caption: string) {
-    if (!onSendRemoteImage || !url) return;
+    if (disabled || !onSendRemoteImage || !url) return;
     onSendRemoteImage(url, caption);
     setPickerOpen(false);
   }
@@ -336,6 +369,12 @@ export function ChatComposer({
 
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+      {disabled && disabledReason ? (
+        <View style={styles.muteBanner}>
+          <Ionicons name="mic-off-outline" size={16} color="#fbbf24" />
+          <Text style={styles.muteBannerText}>{disabledReason}</Text>
+        </View>
+      ) : null}
       {editing ? (
         <View style={styles.banner}>
           <Ionicons name="pencil-outline" size={18} color={colors.accent} />
@@ -387,7 +426,7 @@ export function ChatComposer({
         </View>
       ) : null}
 
-      {recording ? (
+      {recording && !disabled ? (
         <View style={styles.recordBar}>
           <View style={styles.recordDot} />
           <Text style={styles.recordText}>
@@ -401,14 +440,15 @@ export function ChatComposer({
           </Pressable>
         </View>
       ) : (
-        <View style={styles.pill}>
+        <View style={[styles.pill, disabled && styles.pillDisabled]}>
           <Pressable
             style={styles.iconBtn}
             onPress={openAttach}
             accessibilityLabel="Attach"
             hitSlop={6}
+            disabled={disabled}
           >
-            <Ionicons name="attach" size={22} color="#b0b0b0" />
+            <Ionicons name="attach" size={22} color={disabled ? "#6b7280" : "#b0b0b0"} />
           </Pressable>
           <TextInput
             style={styles.input}
@@ -416,37 +456,60 @@ export function ChatComposer({
             onChangeText={handleChangeText}
             onSelectionChange={handleSelectionChange}
             selection={selection}
+            editable={!disabled}
             placeholder={
-              editing ? "Edit message" : mentionEnabled ? "Message · @ to mention" : "Message"
+              disabled
+                ? disabledReason || "Messaging disabled"
+                : editing
+                  ? "Edit message"
+                  : mentionEnabled
+                    ? "Message · @ to mention"
+                    : "Message"
             }
             placeholderTextColor="#8e8e93"
             multiline
-            maxLength={1000}
+            maxLength={MESSAGE_MAX_CHARS}
           />
+          {draftChars >= MESSAGE_MAX_CHARS - 50 ? (
+            <Text
+              style={[
+                styles.charCount,
+                draftChars >= MESSAGE_MAX_CHARS && styles.charCountWarn,
+              ]}
+            >
+              {draftChars}/{MESSAGE_MAX_CHARS}
+            </Text>
+          ) : null}
           <Pressable
             style={styles.iconBtn}
-            onPress={() => setPickerOpen(true)}
+            onPress={() => !disabled && setPickerOpen(true)}
             accessibilityLabel="Emoji stickers GIFs"
             hitSlop={6}
+            disabled={disabled}
           >
-            <Ionicons name="happy-outline" size={22} color="#b0b0b0" />
+            <Ionicons name="happy-outline" size={22} color={disabled ? "#6b7280" : "#b0b0b0"} />
           </Pressable>
           {hasText || editing ? (
             <Pressable
-              style={styles.sendBtn}
+              style={[styles.sendBtn, disabled && styles.sendBtnDisabled]}
               onPress={() => {
+                if (disabled) return;
                 setMentionMenu(null);
                 onSend();
               }}
               accessibilityLabel={editing ? "Save" : "Send"}
+              disabled={disabled}
             >
               <Ionicons name="send" size={18} color="#fff" />
             </Pressable>
           ) : (
             <Pressable
-              style={styles.micBtn}
-              onPress={startRecording}
+              style={[styles.micBtn, disabled && styles.sendBtnDisabled]}
+              onPress={() => {
+                if (!disabled) startRecording().catch(() => {});
+              }}
               accessibilityLabel="Voice message"
+              disabled={disabled}
             >
               <Ionicons name="mic" size={20} color="#fff" />
             </Pressable>
@@ -455,7 +518,63 @@ export function ChatComposer({
       )}
 
       <Modal
-        visible={pickerOpen}
+        visible={Boolean(mediaDraft)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMediaDraft(null)}
+      >
+        <Pressable style={styles.emojiBg} onPress={() => setMediaDraft(null)}>
+          <Pressable style={styles.captionSheet} onPress={() => {}}>
+            <Text style={styles.captionTitle}>
+              {mediaDraft?.kind === "image" ? "Send photo" : "Send file"}
+            </Text>
+            {mediaDraft?.kind === "image" ? (
+              <Image source={{ uri: mediaDraft.uri }} style={styles.captionPreview} />
+            ) : (
+              <Text style={styles.captionFileName} numberOfLines={2}>
+                {mediaDraft?.name}
+              </Text>
+            )}
+            <TextInput
+              style={styles.captionInput}
+              value={mediaDraft?.caption ?? ""}
+              onChangeText={(v) =>
+                setMediaDraft((prev) =>
+                  prev ? { ...prev, caption: clipMessageText(v) } : prev
+                )
+              }
+              placeholder="Add a caption (optional)"
+              placeholderTextColor="#8e8e93"
+              multiline
+              maxLength={MESSAGE_MAX_CHARS}
+            />
+            <View style={styles.captionActions}>
+              <Pressable style={styles.captionCancel} onPress={() => setMediaDraft(null)}>
+                <Text style={styles.captionCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.captionSend}
+                onPress={() => {
+                  if (!mediaDraft) return;
+                  onPickMedia(
+                    mediaDraft.uri,
+                    mediaDraft.kind,
+                    mediaDraft.name,
+                    mediaDraft.mimeType,
+                    mediaDraft.caption.trim() || undefined
+                  );
+                  setMediaDraft(null);
+                }}
+              >
+                <Text style={styles.captionSendText}>Send</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={pickerOpen && !disabled}
         transparent
         animationType="slide"
         onRequestClose={() => setPickerOpen(false)}
@@ -603,6 +722,51 @@ function makeStyles(c: ColorTokens) {
     bannerBody: { flex: 1, minWidth: 0 },
     bannerTitle: { fontSize: 12, fontWeight: "700" as const, color: c.accent },
     bannerText: { fontSize: 13, color: c.textSecondary, marginTop: 1 },
+    muteBanner: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+      backgroundColor: "rgba(251,191,36,0.12)",
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 8,
+    },
+    muteBannerText: { flex: 1, color: "#fbbf24", fontSize: 13, fontWeight: "600" as const },
+    pillDisabled: { opacity: 0.72 },
+    charCount: { fontSize: 11, color: "#9ca3af", alignSelf: "center" as const, marginRight: 2 },
+    charCountWarn: { color: "#f87171", fontWeight: "700" as const },
+    sendBtnDisabled: { opacity: 0.45 },
+    captionSheet: {
+      backgroundColor: "#1c1c1e",
+      borderTopLeftRadius: 16,
+      borderTopRightRadius: 16,
+      padding: 16,
+      gap: 12,
+      marginTop: "auto" as const,
+    },
+    captionTitle: { color: "#fff", fontSize: 16, fontWeight: "700" as const },
+    captionPreview: { width: "100%" as const, height: 180, borderRadius: 12, backgroundColor: "#111" },
+    captionFileName: { color: "#d1d5db", fontSize: 14 },
+    captionInput: {
+      minHeight: 72,
+      maxHeight: 120,
+      borderRadius: 12,
+      backgroundColor: "#111",
+      color: "#fff",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 15,
+    },
+    captionActions: { flexDirection: "row" as const, justifyContent: "flex-end" as const, gap: 10 },
+    captionCancel: { paddingHorizontal: 14, paddingVertical: 10 },
+    captionCancelText: { color: "#9ca3af", fontWeight: "600" as const },
+    captionSend: {
+      backgroundColor: c.accent,
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    captionSendText: { color: "#fff", fontWeight: "700" as const },
     mentionMenu: {
       backgroundColor: "#1c1c1e",
       borderRadius: radius.md,

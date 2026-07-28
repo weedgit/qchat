@@ -30,6 +30,12 @@ type SearchHit = {
   createdAt: string;
 };
 
+type SearchUserHit = {
+  id: string;
+  username: string;
+  displayName: string;
+};
+
 function formatTime(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -86,6 +92,7 @@ export default function ChatsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
+  const [searchUsers, setSearchUsers] = useState<SearchUserHit[]>([]);
   const [searchBusy, setSearchBusy] = useState(false);
 
   const selecting = selectedIds.length > 0;
@@ -96,7 +103,12 @@ export default function ChatsScreen() {
     if (!q) return conversations;
     return conversations.filter((c) => {
       const name = conversationDisplayName(c).toLowerCase();
-      return name.includes(q) || (c.lastMessage || "").toLowerCase().includes(q);
+      const note = (c.friendNote || "").toLowerCase();
+      return (
+        name.includes(q) ||
+        note.includes(q) ||
+        (c.lastMessage || "").toLowerCase().includes(q)
+      );
     });
   }, [conversations, query]);
 
@@ -104,6 +116,7 @@ export default function ChatsScreen() {
     const q = query.trim();
     if (q.length < 2) {
       setSearchHits([]);
+      setSearchUsers([]);
       setSearchBusy(false);
       return;
     }
@@ -114,16 +127,30 @@ export default function ChatsScreen() {
         .then((body) => {
           if (cancelled) return;
           setSearchHits(
-            asList(body, "messages").map((m: any) => ({
-              id: String(m?.id ?? ""),
-              conversationId: String(m?.conversation_id ?? ""),
-              body: String(m?.body ?? ""),
-              createdAt: String(m?.created_at ?? ""),
-            })).filter((h: SearchHit) => h.id && h.conversationId)
+            asList(body, "messages")
+              .map((m: any) => ({
+                id: String(m?.id ?? ""),
+                conversationId: String(m?.conversation_id ?? ""),
+                body: String(m?.body ?? ""),
+                createdAt: String(m?.created_at ?? ""),
+              }))
+              .filter((h: SearchHit) => h.id && h.conversationId)
+          );
+          setSearchUsers(
+            asList(body, "users")
+              .map((u: any) => ({
+                id: String(u?.id ?? ""),
+                username: String(u?.username ?? ""),
+                displayName: String(u?.display_name ?? u?.username ?? ""),
+              }))
+              .filter((u: SearchUserHit) => Boolean(u.id))
           );
         })
         .catch(() => {
-          if (!cancelled) setSearchHits([]);
+          if (!cancelled) {
+            setSearchHits([]);
+            setSearchUsers([]);
+          }
         })
         .finally(() => {
           if (!cancelled) setSearchBusy(false);
@@ -373,6 +400,34 @@ export default function ChatsScreen() {
       {searchActive && !selecting ? (
         <View style={styles.searchResults}>
           <Text style={styles.searchSection}>
+            {searchBusy
+              ? "Searching people…"
+              : `People (${searchUsers.length})`}
+          </Text>
+          {searchUsers.length === 0 && !searchBusy ? (
+            <Text style={styles.searchEmpty}>No people matches</Text>
+          ) : (
+            searchUsers.slice(0, 12).map((u) => (
+              <Pressable
+                key={u.id}
+                style={styles.searchHit}
+                onPress={() => router.push(`/user/${u.id}`)}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.searchHitTitle} numberOfLines={1}>
+                    {u.displayName || u.username || "User"}
+                  </Text>
+                  {u.username ? (
+                    <Text style={styles.searchHitBody} numberOfLines={1}>
+                      @{u.username}
+                    </Text>
+                  ) : null}
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+              </Pressable>
+            ))
+          )}
+          <Text style={[styles.searchSection, { marginTop: spacing.sm }]}>
             {searchBusy ? "Searching messages…" : `Messages (${searchHits.length})`}
           </Text>
           {searchHits.length === 0 && !searchBusy ? (

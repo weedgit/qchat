@@ -11,7 +11,6 @@ import { AppState, type AppStateStatus } from "react-native";
 import { router } from "expo-router";
 import { api, asList, ensureAccessToken, getToken, setTokens, uploadMedia, wsUrl } from "../lib/api";
 import { getAuthDevice } from "../lib/device";
-import { isVideoMime } from "../lib/mediaLimits";
 import { notificationPort } from "../lib/notifyPort";
 import { loadLocalNotifyProps, getNotifyProps, shouldNotify, saveLocalNotifyProps, normalizeNotifyProps } from "../lib/notifyProps";
 import {
@@ -55,7 +54,13 @@ type ChatContextValue = {
   sendMediaMessage: (
     convId: string,
     localUri: string,
-    opts: { kind: "image" | "file"; name: string; mimeType?: string; replyToId?: string }
+    opts: {
+      kind: "image" | "file";
+      name: string;
+      mimeType?: string;
+      replyToId?: string;
+      caption?: string;
+    }
   ) => Promise<void>;
   sendRemoteImage: (
     convId: string,
@@ -69,6 +74,8 @@ type ChatContextValue = {
     durationSec: number,
     replyToId?: string
   ) => Promise<void>;
+  retryMessage: (convId: string, msg: Message) => Promise<void>;
+  cancelUpload: (convId: string, msg: Message) => void;
   notifyTyping: (convId: string) => void;
   stopTyping: (convId: string) => void;
   openDM: (userId: string) => Promise<string>;
@@ -125,6 +132,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const typingActiveRef = useRef<Record<string, boolean>>({});
   const typingIdleRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const appActiveRef = useRef(true);
+  const uploadControllersRef = useRef(new Map<string, AbortController>());
+  const cancelledUploadsRef = useRef(new Set<string>());
 
   meRef.current = user;
   activeIdRef.current = activeId;
@@ -679,7 +688,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               payload?.avatar_url != null
                 ? String(payload.avatar_url) || undefined
                 : c.avatarUrl;
-            return { ...c, title, avatarUrl };
+            const muteAll =
+              payload?.mute_all != null ? Boolean(payload.mute_all) : c.muteAll;
+            return { ...c, title, avatarUrl, muteAll };
           })
         );
         const addedRaw = payload?.added_member_ids;
@@ -1019,12 +1030,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const sendMessage = useCallback(async (convId: string, content: string, replyToId?: string) => {
     stopTyping(convId);
+    const { clipMessageText } = await import("../lib/mediaLimits");
+    const text = clipMessageText(content);
+    if (!text.trim()) return;
     const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimistic: Message = {
       id: clientMsgId,
       conversationId: convId,
       senderId: meRef.current?.id ?? "me",
-      content,
+      content: text,
       type: "text",
       createdAt: new Date().toISOString(),
       mine: true,
@@ -1042,7 +1056,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           c.id === convId
             ? {
                 ...c,
-                lastMessage: content,
+                lastMessage: text,
                 lastMessageAt: optimistic.createdAt,
                 lastMessageSender: meRef.current?.nickname || meRef.current?.username,
                 lastMessageMine: true,
@@ -1057,7 +1071,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         body: JSON.stringify({
           type: "text",
-          body: content,
+          body: text,
           client_msg_id: clientMsgId,
           reply_to_id: replyToId || undefined,
         }),
@@ -1066,7 +1080,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         {
           ...body,
           conversation_id: convId,
-          body: body?.body ?? content,
+          body: body?.body ?? text,
           sender_id: meRef.current?.id,
         },
         meRef.current?.id
@@ -1079,28 +1093,57 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             : m
         ),
       }));
-    } catch {
+    } catch (e: any) {
       setMessages((prev) => ({
         ...prev,
         [convId]: (prev[convId] ?? []).map((m) =>
-          m.id === clientMsgId ? { ...m, pending: false, failed: true } : m
+          m.id === clientMsgId
+            ? { ...m, pending: false, failed: true, error: e?.message || "Send failed" }
+            : m
         ),
       }));
     }
   }, [stopTyping]);
 
+  const cancelUpload = useCallback((convId: string, msg: Message) => {
+    const key = msg.clientMsgId || msg.id;
+    cancelledUploadsRef.current.add(key);
+    const controller = uploadControllersRef.current.get(key);
+    if (controller) {
+      controller.abort();
+      uploadControllersRef.current.delete(key);
+    }
+    setMessages((prev) => ({
+      ...prev,
+      [convId]: (prev[convId] ?? []).filter((m) => m.id !== msg.id && m.clientMsgId !== key),
+    }));
+  }, []);
+
   const sendMediaMessage = useCallback(
     async (
       convId: string,
       localUri: string,
-      opts: { kind: "image" | "file"; name: string; mimeType?: string; replyToId?: string }
+      opts: {
+        kind: "image" | "file";
+        name: string;
+        mimeType?: string;
+        replyToId?: string;
+        caption?: string;
+      }
     ) => {
       stopTyping(convId);
       const { kind, name, mimeType, replyToId } = opts;
-      const isVideo = kind === "file" && isVideoMime(mimeType);
+      const { clipMessageText, isVideoMime: isVid } = await import("../lib/mediaLimits");
+      const isVideo = kind === "file" && isVid(mimeType);
       const uploadKind = kind === "image" ? "image" : isVideo ? "video" : "file";
-      const preview = kind === "image" ? "Photo" : name || (isVideo ? "Video" : "File");
+      const trimmedCaption = clipMessageText(opts.caption?.trim() || "");
+      const preview =
+        kind === "image"
+          ? trimmedCaption || "Photo"
+          : trimmedCaption || name || (isVideo ? "Video" : "File");
       const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const controller = new AbortController();
+      uploadControllersRef.current.set(clientMsgId, controller);
       const optimistic: Message = {
         id: clientMsgId,
         conversationId: convId,
@@ -1111,8 +1154,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date().toISOString(),
         mine: true,
         pending: true,
+        uploadProgress: 0,
         clientMsgId,
         replyToId,
+        localUri,
+        localMimeType: mimeType,
+        localName: name,
       };
       setMessages((prev) => ({
         ...prev,
@@ -1135,6 +1182,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         )
       );
       try {
+        let lastPct = -1;
         const uploaded = await uploadMedia(
           localUri,
           uploadKind,
@@ -1144,8 +1192,29 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               ? "image/jpeg"
               : isVideo
                 ? "video/mp4"
-                : "application/octet-stream")
+                : "application/octet-stream"),
+          (loaded, total) => {
+            if (cancelledUploadsRef.current.has(clientMsgId)) return;
+            const pct = Math.min(1, loaded / total);
+            const stepped = Math.floor(pct * 20);
+            if (stepped === lastPct) return;
+            lastPct = stepped;
+            setMessages((prev) => ({
+              ...prev,
+              [convId]: (prev[convId] ?? []).map((m) =>
+                m.id === clientMsgId || m.clientMsgId === clientMsgId
+                  ? { ...m, uploadProgress: pct }
+                  : m
+              ),
+            }));
+          },
+          controller.signal
         );
+        if (controller.signal.aborted || cancelledUploadsRef.current.has(clientMsgId)) {
+          uploadControllersRef.current.delete(clientMsgId);
+          cancelledUploadsRef.current.delete(clientMsgId);
+          return;
+        }
         const body = await api<any>(`/v1/conversations/${convId}/messages`, {
           method: "POST",
           body: JSON.stringify({
@@ -1156,6 +1225,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             reply_to_id: replyToId || undefined,
           }),
         });
+        if (cancelledUploadsRef.current.has(clientMsgId)) {
+          uploadControllersRef.current.delete(clientMsgId);
+          cancelledUploadsRef.current.delete(clientMsgId);
+          return;
+        }
         const saved = normalizeMessage(
           {
             ...body,
@@ -1167,19 +1241,55 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           },
           meRef.current?.id
         );
+        uploadControllersRef.current.delete(clientMsgId);
+        cancelledUploadsRef.current.delete(clientMsgId);
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
             m.id === clientMsgId || m.clientMsgId === clientMsgId
-              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              ? {
+                  ...saved,
+                  mine: true,
+                  pending: false,
+                  failed: false,
+                  uploadProgress: undefined,
+                  localUri: undefined,
+                  localMimeType: undefined,
+                  localName: undefined,
+                  clientMsgId,
+                  replyToId,
+                }
               : m
           ),
         }));
-      } catch {
+      } catch (e: any) {
+        uploadControllersRef.current.delete(clientMsgId);
+        const cancelled =
+          controller.signal.aborted ||
+          cancelledUploadsRef.current.has(clientMsgId) ||
+          e?.message === "upload aborted";
+        cancelledUploadsRef.current.delete(clientMsgId);
+        if (cancelled) {
+          setMessages((prev) => ({
+            ...prev,
+            [convId]: (prev[convId] ?? []).filter(
+              (m) => m.id !== clientMsgId && m.clientMsgId !== clientMsgId
+            ),
+          }));
+          return;
+        }
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
-            m.id === clientMsgId ? { ...m, pending: false, failed: true } : m
+            m.id === clientMsgId
+              ? {
+                  ...m,
+                  pending: false,
+                  failed: true,
+                  uploadProgress: undefined,
+                  error: e?.message || "Upload failed",
+                }
+              : m
           ),
         }));
       }
@@ -1190,8 +1300,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const sendRemoteImage = useCallback(
     async (convId: string, mediaUrl: string, caption: string, replyToId?: string) => {
       stopTyping(convId);
+      const { clipMessageText } = await import("../lib/mediaLimits");
       const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const preview = caption.trim() || "Photo";
+      const preview = clipMessageText(caption.trim() || "Photo");
       const optimistic: Message = {
         id: clientMsgId,
         conversationId: convId,
@@ -1255,11 +1366,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
               : m
           ),
         }));
-      } catch {
+      } catch (e: any) {
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
-            m.clientMsgId === clientMsgId ? { ...m, pending: false, failed: true } : m
+            m.clientMsgId === clientMsgId
+              ? { ...m, pending: false, failed: true, error: e?.message || "Send failed" }
+              : m
           ),
         }));
       }
@@ -1272,6 +1385,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       stopTyping(convId);
       const preview = `Voice message (${Math.max(1, Math.round(durationSec))}s)`;
       const clientMsgId = `c-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const controller = new AbortController();
+      uploadControllersRef.current.set(clientMsgId, controller);
       const optimistic: Message = {
         id: clientMsgId,
         conversationId: convId,
@@ -1282,8 +1397,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date().toISOString(),
         mine: true,
         pending: true,
+        uploadProgress: 0,
         clientMsgId,
         replyToId,
+        localUri,
       };
       setMessages((prev) => ({
         ...prev,
@@ -1306,7 +1423,34 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         )
       );
       try {
-        const uploaded = await uploadMedia(localUri, "voice", "voice.m4a", "audio/mp4");
+        let lastPct = -1;
+        const uploaded = await uploadMedia(
+          localUri,
+          "voice",
+          "voice.m4a",
+          "audio/mp4",
+          (loaded, total) => {
+            if (cancelledUploadsRef.current.has(clientMsgId)) return;
+            const pct = Math.min(1, loaded / total);
+            const stepped = Math.floor(pct * 20);
+            if (stepped === lastPct) return;
+            lastPct = stepped;
+            setMessages((prev) => ({
+              ...prev,
+              [convId]: (prev[convId] ?? []).map((m) =>
+                m.id === clientMsgId || m.clientMsgId === clientMsgId
+                  ? { ...m, uploadProgress: pct }
+                  : m
+              ),
+            }));
+          },
+          controller.signal
+        );
+        if (controller.signal.aborted || cancelledUploadsRef.current.has(clientMsgId)) {
+          uploadControllersRef.current.delete(clientMsgId);
+          cancelledUploadsRef.current.delete(clientMsgId);
+          return;
+        }
         const body = await api<any>(`/v1/conversations/${convId}/messages`, {
           method: "POST",
           body: JSON.stringify({
@@ -1318,6 +1462,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             duration_sec: Math.max(1, Math.min(60, Math.round(durationSec))),
           }),
         });
+        if (cancelledUploadsRef.current.has(clientMsgId)) {
+          uploadControllersRef.current.delete(clientMsgId);
+          cancelledUploadsRef.current.delete(clientMsgId);
+          return;
+        }
         const saved = normalizeMessage(
           {
             ...body,
@@ -1329,24 +1478,91 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           },
           meRef.current?.id
         );
+        uploadControllersRef.current.delete(clientMsgId);
+        cancelledUploadsRef.current.delete(clientMsgId);
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
             m.id === clientMsgId || m.clientMsgId === clientMsgId
-              ? { ...saved, mine: true, pending: false, failed: false, clientMsgId, replyToId }
+              ? {
+                  ...saved,
+                  mine: true,
+                  pending: false,
+                  failed: false,
+                  uploadProgress: undefined,
+                  localUri: undefined,
+                  clientMsgId,
+                  replyToId,
+                }
               : m
           ),
         }));
-      } catch {
+      } catch (e: any) {
+        uploadControllersRef.current.delete(clientMsgId);
+        const cancelled =
+          controller.signal.aborted ||
+          cancelledUploadsRef.current.has(clientMsgId) ||
+          e?.message === "upload aborted";
+        cancelledUploadsRef.current.delete(clientMsgId);
+        if (cancelled) {
+          setMessages((prev) => ({
+            ...prev,
+            [convId]: (prev[convId] ?? []).filter(
+              (m) => m.id !== clientMsgId && m.clientMsgId !== clientMsgId
+            ),
+          }));
+          return;
+        }
         setMessages((prev) => ({
           ...prev,
           [convId]: (prev[convId] ?? []).map((m) =>
-            m.id === clientMsgId ? { ...m, pending: false, failed: true } : m
+            m.id === clientMsgId
+              ? {
+                  ...m,
+                  pending: false,
+                  failed: true,
+                  uploadProgress: undefined,
+                  error: e?.message || "Upload failed",
+                }
+              : m
           ),
         }));
       }
     },
     [stopTyping]
+  );
+
+  const retryMessage = useCallback(
+    async (convId: string, msg: Message) => {
+      setMessages((prev) => ({
+        ...prev,
+        [convId]: (prev[convId] ?? []).filter((m) => m.id !== msg.id),
+      }));
+      if ((msg.type === "image" || msg.type === "file") && msg.localUri) {
+        const caption =
+          msg.type === "image" && msg.content && msg.content !== "Photo" ? msg.content : undefined;
+        await sendMediaMessage(convId, msg.localUri, {
+          kind: msg.type === "image" ? "image" : "file",
+          name: msg.localName || (msg.type === "image" ? "photo.jpg" : "file.bin"),
+          mimeType: msg.localMimeType,
+          replyToId: msg.replyToId,
+          caption,
+        });
+        return;
+      }
+      if (msg.type === "voice" && msg.localUri) {
+        const match = msg.content.match(/\((\d+)s\)/);
+        const duration = match ? Number(match[1]) : 1;
+        await sendVoiceMessage(convId, msg.localUri, duration, msg.replyToId);
+        return;
+      }
+      if (msg.type === "image" && msg.mediaUrl && !msg.localUri) {
+        await sendRemoteImage(convId, msg.mediaUrl, msg.content || "Photo", msg.replyToId);
+        return;
+      }
+      await sendMessage(convId, msg.content, msg.replyToId);
+    },
+    [sendMessage, sendMediaMessage, sendVoiceMessage, sendRemoteImage]
   );
 
   const recallMessage = useCallback(async (messageId: string, convId: string) => {
@@ -1690,6 +1906,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       sendMediaMessage,
       sendRemoteImage,
       sendVoiceMessage,
+      retryMessage,
+      cancelUpload,
       notifyTyping,
       stopTyping,
       openDM,
@@ -1729,6 +1947,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       sendMediaMessage,
       sendRemoteImage,
       sendVoiceMessage,
+      retryMessage,
+      cancelUpload,
       notifyTyping,
       stopTyping,
       openDM,

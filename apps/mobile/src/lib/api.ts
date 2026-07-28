@@ -236,55 +236,112 @@ export type MediaUploadResult = {
   size?: number;
 };
 
-/** React Native FormData upload to POST /v1/media/upload (mirror web uploadMedia). */
+export type UploadProgressFn = (loaded: number, total: number) => void;
+
+/**
+ * Upload local media via XHR so callers get progress + AbortSignal cancel
+ * (mirrors web uploadMedia).
+ */
 export async function uploadMedia(
   localUri: string,
   kind: "image" | "file" | "voice" | "video" | "avatar",
   filename: string,
-  mimeType = "application/octet-stream"
+  mimeType = "application/octet-stream",
+  onProgress?: UploadProgressFn,
+  signal?: AbortSignal
 ): Promise<MediaUploadResult> {
   await ensureAccessToken();
-  const form = new FormData();
-  form.append("file", {
-    uri: localUri,
-    name: filename,
-    type: mimeType,
-  } as any);
-  form.append("kind", kind);
+  if (signal?.aborted) {
+    throw new ApiError(0, "upload aborted", null);
+  }
 
-  const headers: Record<string, string> = {};
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const doUpload = (retried: boolean) =>
+    new Promise<MediaUploadResult>((resolve, reject) => {
+      const form = new FormData();
+      form.append("file", {
+        uri: localUri,
+        name: filename,
+        type: mimeType,
+      } as any);
+      form.append("kind", kind);
 
-  const res = await fetch(`${apiBaseUrl()}/v1/media/upload`, {
-    method: "POST",
-    headers,
-    body: form,
-  });
-  const text = await res.text();
-  let body: any = null;
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = text;
-    }
-  }
-  if (res.status === 401) {
-    const ok = await refreshAccess();
-    if (ok) return uploadMedia(localUri, kind, filename, mimeType);
-    await clearToken();
-    onUnauthorized?.();
-  }
-  if (!res.ok) {
-    const msg =
-      body?.message ?? body?.error ?? (res.status === 413 ? "File too large" : `upload failed (${res.status})`);
-    throw new ApiError(res.status, String(msg), body);
-  }
-  const data = body?.data ?? body;
-  return {
-    url: String(data?.url ?? data?.media_url ?? ""),
-    kind: data?.kind,
-    size: data?.size,
-  };
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${apiBaseUrl()}/v1/media/upload`);
+      const token = getToken();
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      const onAbort = () => {
+        xhr.abort();
+      };
+      if (signal) {
+        if (signal.aborted) {
+          reject(new ApiError(0, "upload aborted", null));
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+
+      const cleanup = () => {
+        signal?.removeEventListener("abort", onAbort);
+      };
+
+      xhr.upload.onprogress = (ev) => {
+        if (!onProgress || !ev.lengthComputable || ev.total <= 0) return;
+        onProgress(ev.loaded, ev.total);
+      };
+
+      xhr.onload = () => {
+        cleanup();
+        let body: any = null;
+        const text = xhr.responseText;
+        if (text) {
+          try {
+            body = JSON.parse(text);
+          } catch {
+            body = text;
+          }
+        }
+        if (xhr.status === 401 && !retried) {
+          refreshAccess()
+            .then((ok) => {
+              if (ok) {
+                doUpload(true).then(resolve, reject);
+                return;
+              }
+              void clearToken();
+              onUnauthorized?.();
+              reject(new ApiError(401, "unauthorized", body));
+            })
+            .catch(reject);
+          return;
+        }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          const msg =
+            body?.message ??
+            body?.error ??
+            (xhr.status === 413 ? "File too large" : `upload failed (${xhr.status})`);
+          reject(new ApiError(xhr.status, String(msg), body));
+          return;
+        }
+        const data = body?.data ?? body;
+        resolve({
+          url: String(data?.url ?? data?.media_url ?? ""),
+          kind: data?.kind,
+          size: data?.size,
+        });
+      };
+
+      xhr.onerror = () => {
+        cleanup();
+        reject(new ApiError(0, "upload failed", null));
+      };
+      xhr.onabort = () => {
+        cleanup();
+        reject(new ApiError(0, "upload aborted", null));
+      };
+
+      xhr.send(form);
+    });
+
+  return doUpload(false);
 }

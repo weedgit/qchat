@@ -38,6 +38,8 @@ export interface Conversation {
   peerLastActiveAt?: string;
   favorite?: boolean;
   muted?: boolean;
+  /** Group speak-mute-all (from group.updated / group details). */
+  muteAll?: boolean;
   /** My membership role in this conversation (owner|admin|member). */
   role?: string;
   /** Company-wide default internal chat. */
@@ -85,6 +87,13 @@ export interface Message {
   mine?: boolean;
   pending?: boolean;
   failed?: boolean;
+  error?: string;
+  /** 0–1 while media is uploading. */
+  uploadProgress?: number;
+  /** Local file URI kept for retry after a failed media send. */
+  localUri?: string;
+  localMimeType?: string;
+  localName?: string;
   clientMsgId?: string;
   seq?: number;
   recalled?: boolean;
