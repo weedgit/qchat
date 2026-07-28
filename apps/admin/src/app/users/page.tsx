@@ -300,46 +300,73 @@ export default function UsersPage() {
           <div className="page-sub" style={{ marginBottom: 12 }}>
             Assisted registration — admin creates a member allowlist-style without self-service OTP.
           </div>
-          <div className="toolbar" style={{ flexWrap: "wrap", gap: 8 }}>
-            <input
-              placeholder="Phone (11 digits)"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
-            />
-            <input
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
-            <input
-              placeholder="Display name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
-            <PasswordInput
-              placeholder="Temp password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              {can(meRole, "createMember") ? <option value="member">member</option> : null}
-              {can(meRole, "createConsoleRole") ? (
-                <>
-                  <option value="compliance">compliance</option>
-                  <option value="support">support</option>
-                  <option value="read_only">read_only</option>
-                </>
-              ) : null}
-              {can(meRole, "issueEnterpriseAdmin") ? (
-                <option value="enterprise_admin">enterprise_admin (this enterprise)</option>
-              ) : null}
-            </select>
-            <button className="btn" type="submit" disabled={createBusy}>
-              {createBusy ? "Creating…" : "Provision"}
-            </button>
+          <div className="form-rows" style={{ marginTop: 4 }}>
+            <div className="form-row">
+              <label htmlFor="admin-create-phone">Phone</label>
+              <input
+                id="admin-create-phone"
+                placeholder="11 digits"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="admin-create-username">Username</label>
+              <input
+                id="admin-create-username"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="admin-create-display">Display name</label>
+              <input
+                id="admin-create-display"
+                placeholder="Display name"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="admin-create-password">Temp password</label>
+              <PasswordInput
+                id="admin-create-password"
+                placeholder="Temporary password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="admin-create-role">Role</label>
+              <select
+                id="admin-create-role"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+              >
+                {can(meRole, "createMember") ? <option value="member">member</option> : null}
+                {can(meRole, "createConsoleRole") ? (
+                  <>
+                    <option value="compliance">compliance</option>
+                    <option value="support">support</option>
+                    <option value="read_only">read_only</option>
+                  </>
+                ) : null}
+                {can(meRole, "issueEnterpriseAdmin") ? (
+                  <option value="enterprise_admin">enterprise_admin (this enterprise)</option>
+                ) : null}
+              </select>
+            </div>
+            <div className="form-row">
+              <span />
+              <button className="btn" type="submit" disabled={createBusy}>
+                {createBusy ? "Creating…" : "Provision"}
+              </button>
+            </div>
           </div>
           {createMsg && <div className="notice" style={{ marginTop: 8 }}>{createMsg}</div>}
         </form>
@@ -387,6 +414,7 @@ export default function UsersPage() {
                   placeholder="New temporary password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
                 />
                 <button
                   className="btn"

@@ -232,38 +232,62 @@ export default function EnterprisesPage() {
           <p className="muted" style={{ marginTop: 0 }}>
             Platform owners issue a company and its first enterprise administrator account.
           </p>
-          <form onSubmit={createEnterprise} style={{ display: "grid", gap: 10 }}>
-            <input
-              required
-              placeholder="Company name"
-              value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
-            />
-            <input
-              placeholder="Invite code (optional)"
-              value={createInvite}
-              onChange={(e) => setCreateInvite(e.target.value)}
-            />
-            <input
-              required
-              placeholder="Admin phone (11 digits)"
-              value={adminPhone}
-              onChange={(e) => setAdminPhone(e.target.value)}
-            />
-            <input
-              placeholder="Admin username (optional)"
-              value={adminUsername}
-              onChange={(e) => setAdminUsername(e.target.value)}
-            />
-            <PasswordInput
-              required
-              placeholder="Admin password"
-              value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
-            />
-            <button className="btn" type="submit" disabled={busy === "create"}>
-              {busy === "create" ? "Creating…" : "Create enterprise"}
-            </button>
+          <form onSubmit={createEnterprise} className="form-rows">
+            <div className="form-row">
+              <label htmlFor="ent-create-name">Company name</label>
+              <input
+                id="ent-create-name"
+                required
+                placeholder="Acme Corp"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="ent-create-invite">Invite code</label>
+              <input
+                id="ent-create-invite"
+                placeholder="Optional"
+                value={createInvite}
+                onChange={(e) => setCreateInvite(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="ent-create-phone">Admin phone</label>
+              <input
+                id="ent-create-phone"
+                required
+                placeholder="11 digits"
+                value={adminPhone}
+                onChange={(e) => setAdminPhone(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="ent-create-username">Admin username</label>
+              <input
+                id="ent-create-username"
+                placeholder="Optional"
+                value={adminUsername}
+                onChange={(e) => setAdminUsername(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="ent-create-password">Admin password</label>
+              <PasswordInput
+                id="ent-create-password"
+                required
+                placeholder="Password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="form-row">
+              <span />
+              <button className="btn" type="submit" disabled={busy === "create"}>
+                {busy === "create" ? "Creating…" : "Create enterprise"}
+              </button>
+            </div>
           </form>
         </div>
       ) : null}
@@ -273,37 +297,53 @@ export default function EnterprisesPage() {
           <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>
             Issue admin for {issueFor.name}
           </h2>
-          <form onSubmit={issueAdmin} style={{ display: "grid", gap: 10 }}>
-            <input
-              required
-              placeholder="Phone (11 digits)"
-              value={issuePhone}
-              onChange={(e) => setIssuePhone(e.target.value)}
-            />
-            <input
-              required
-              placeholder="Username"
-              value={issueUsername}
-              onChange={(e) => setIssueUsername(e.target.value)}
-            />
-            <PasswordInput
-              required
-              placeholder="Password"
-              value={issuePassword}
-              onChange={(e) => setIssuePassword(e.target.value)}
-            />
-            <div className="toolbar" style={{ margin: 0 }}>
-              <button className="btn" type="submit" disabled={busy === "issue"}>
-                {busy === "issue" ? "Issuing…" : "Issue enterprise admin"}
-              </button>
-              <button
-                className="btn"
-                type="button"
-                disabled={!!busy}
-                onClick={() => setIssueFor(null)}
-              >
-                Cancel
-              </button>
+          <form onSubmit={issueAdmin} className="form-rows">
+            <div className="form-row">
+              <label htmlFor="ent-issue-phone">Phone</label>
+              <input
+                id="ent-issue-phone"
+                required
+                placeholder="11 digits"
+                value={issuePhone}
+                onChange={(e) => setIssuePhone(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="ent-issue-username">Username</label>
+              <input
+                id="ent-issue-username"
+                required
+                placeholder="Username"
+                value={issueUsername}
+                onChange={(e) => setIssueUsername(e.target.value)}
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="ent-issue-password">Password</label>
+              <PasswordInput
+                id="ent-issue-password"
+                required
+                placeholder="Password"
+                value={issuePassword}
+                onChange={(e) => setIssuePassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="form-row">
+              <span />
+              <div className="toolbar" style={{ margin: 0 }}>
+                <button className="btn" type="submit" disabled={busy === "issue"}>
+                  {busy === "issue" ? "Issuing…" : "Issue enterprise admin"}
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={!!busy}
+                  onClick={() => setIssueFor(null)}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </form>
         </div>
