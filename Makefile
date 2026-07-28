@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down media api web admin admin-dev desktop desktop-check desktop-pack desktop-dist-win-docker mobile mobile-typecheck mobile-check-release test test-api test-e2e migrate seed generate check-openapi redeploy
+.PHONY: infra-up infra-down media api web admin admin-dev desktop desktop-check desktop-pack desktop-dist-win-docker mobile mobile-typecheck mobile-check-release test test-api test-e2e migrate seed generate check-openapi redeploy soak soak-multi
 
 infra-up:
 	./deploy/render-media-config.sh
@@ -68,6 +68,12 @@ smoke:
 
 redeploy:
 	bash deploy/redeploy.sh
+
+soak:
+	bash deploy/soak.sh
+
+soak-multi:
+	bash deploy/soak.sh --multi
 
 test: test-api check-openapi smoke
 	cd apps/web && npm run typecheck

@@ -1,16 +1,19 @@
 // Command ws_soak opens many WebSocket sessions against the API to validate
 // ≥1000 concurrent online connections, reconnect churn, and message fan-out
-// latency (contract: delivery under one second).
+// latency (working SLO: p95 first delivery ≤ 1s).
 //
-// Usage:
+// Single-user (legacy — one account, many sockets):
 //
-//	go run ./cmd/ws_soak -n 1000 -base http://localhost:8080 \
-//	  -phone 13800000002 -password user12345
+//	go run ./cmd/ws_soak -n 1000 -base http://localhost:8080
 //
-// Latency mode (default on) creates a throwaway group, sends probe messages,
-// and measures time until message.new arrives on all local sockets:
+// Multi-user (distinct accounts in one group — closer to real concurrency):
 //
-//	go run ./cmd/ws_soak -n 1000 -latency-rounds 20 -latency-max 1s
+//	go run ./cmd/ws_soak -n 200 -users 50 -base http://localhost:8080
+//
+// Dual API + Redis (cross-node fan-out; both bases must share Redis):
+//
+//	go run ./cmd/ws_soak -n 100 -users 20 \
+//	  -base http://localhost:8080 -base2 http://localhost:8081
 package main
 
 import (
@@ -22,7 +25,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,70 +37,127 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type soakUser struct {
+	token  string
+	userID string
+	phone  string
+}
+
+type sockSlot struct {
+	conn *websocket.Conn
+	base string
+	tok  string
+	uid  string
+}
+
 func main() {
-	n := flag.Int("n", 1000, "concurrent WebSocket connections")
-	base := flag.String("base", "http://localhost:8080", "API base URL")
-	token := flag.String("token", "", "access token (optional if phone/password set)")
-	phone := flag.String("phone", "13800000002", "login phone")
-	password := flag.String("password", "user12345", "login password")
-	invite := flag.String("invite", "ACME2026", "invite code for login (unused when registering not required)")
-	hold := flag.Duration("hold", 5*time.Second, "how long to hold connections open after latency probes")
+	n := flag.Int("n", 1000, "total concurrent WebSocket connections")
+	users := flag.Int("users", 1, "distinct users (≥2 registers soak accounts and builds a real group)")
+	base := flag.String("base", "http://localhost:8080", "primary API base URL")
+	base2 := flag.String("base2", "", "optional second API base (Redis multi-node fan-out)")
+	token := flag.String("token", "", "access token when -users=1 (optional if phone/password set)")
+	phone := flag.String("phone", "13800000002", "login phone when -users=1")
+	password := flag.String("password", "user12345", "password for login/register")
+	invite := flag.String("invite", "ACME2026", "enterprise invite code")
+	hold := flag.Duration("hold", 5*time.Second, "hold connections open after latency probes")
 	reconnects := flag.Int("reconnects", 1, "disconnect/reconnect cycles after initial hold")
 	latencyRounds := flag.Int("latency-rounds", 20, "message fan-out probes (0 to skip)")
 	latencyMax := flag.Duration("latency-max", time.Second, "fail if p95 first-delivery latency exceeds this")
 	fanoutMax := flag.Duration("fanout-max", 2*time.Second, "fail if p95 full-fanout latency exceeds this")
+	dialConcurrency := flag.Int("dial-concurrency", 64, "max parallel WS dials")
+	checkMetrics := flag.Bool("check-metrics", true, "assert WS send-drop counter stays within budget")
+	maxDrops := flag.Float64("max-drops", 50, "max allowed increase in qchat_ws_send_drops_total during soak")
 	flag.Parse()
 
-	tok := *token
-	if tok == "" {
-		var err error
-		tok, err = login(*base, *phone, *password, *invite)
-		if err != nil {
-			log.Fatalf("login: %v", err)
+	if *n < 1 {
+		log.Fatal("-n must be ≥ 1")
+	}
+	if *users < 1 {
+		log.Fatal("-users must be ≥ 1")
+	}
+	if *users > *n {
+		log.Fatalf("-users (%d) cannot exceed -n (%d)", *users, *n)
+	}
+	if *dialConcurrency < 1 {
+		*dialConcurrency = 1
+	}
+
+	bases := []string{strings.TrimRight(*base, "/")}
+	if strings.TrimSpace(*base2) != "" {
+		bases = append(bases, strings.TrimRight(*base2, "/"))
+	}
+
+	dropsBefore := 0.0
+	if *checkMetrics {
+		if d, err := scrapeMetric(bases[0]+"/metrics", "qchat_ws_send_drops_total"); err == nil {
+			dropsBefore = d
+		} else {
+			log.Printf("metrics: could not read drops before soak: %v (continuing)", err)
 		}
-		log.Printf("logged in as %s", *phone)
 	}
 
-	wsURL := toWS(*base) + "/v1/ws?token=" + url.QueryEscape(tok)
-	log.Printf("opening %d connections to %s", *n, strings.Split(wsURL, "?")[0])
+	accounts, err := prepareAccounts(*users, bases[0], *token, *phone, *password, *invite)
+	if err != nil {
+		log.Fatalf("accounts: %v", err)
+	}
+	log.Printf("accounts=%d bases=%v connections=%d", len(accounts), bases, *n)
 
-	var ok, fail atomic.Int64
-	conns := make([]*websocket.Conn, *n)
+	convID := ""
+	senderTok := accounts[0].token
+	if *latencyRounds > 0 {
+		memberIDs := make([]string, 0, len(accounts)-1)
+		for i := 1; i < len(accounts); i++ {
+			memberIDs = append(memberIDs, accounts[i].userID)
+		}
+		convID, err = ensureSoakConversation(bases[0], senderTok, memberIDs)
+		if err != nil {
+			log.Fatalf("conversation: %v", err)
+		}
+		log.Printf("soak group conv=%s members=%d", convID, len(accounts))
+	}
+
+	slots := make([]*sockSlot, *n)
 	var mu sync.Mutex
+	var ok, fail atomic.Int64
+	sem := make(chan struct{}, *dialConcurrency)
 
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 64)
-	for i := 0; i < *n; i++ {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(i int) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-			if err != nil {
-				fail.Add(1)
-				return
-			}
-			ok.Add(1)
-			mu.Lock()
-			conns[i] = c
-			mu.Unlock()
-		}(i)
+	dialAll := func() {
+		var wg sync.WaitGroup
+		for i := 0; i < *n; i++ {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(i int) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				acct := accounts[i%len(accounts)]
+				apiBase := bases[i%len(bases)]
+				wsURL := toWS(apiBase) + "/v1/ws?token=" + url.QueryEscape(acct.token)
+				c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+				if err != nil {
+					fail.Add(1)
+					return
+				}
+				ok.Add(1)
+				mu.Lock()
+				slots[i] = &sockSlot{conn: c, base: apiBase, tok: acct.token, uid: acct.userID}
+				mu.Unlock()
+			}(i)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
+
+	log.Printf("opening %d connections (dial concurrency %d)", *n, *dialConcurrency)
+	dialAll()
 	log.Printf("connected=%d failed=%d", ok.Load(), fail.Load())
 	if ok.Load() < int64(*n)*9/10 {
 		log.Fatalf("soak failed: fewer than 90%% connections succeeded")
 	}
 
 	if *latencyRounds > 0 {
-		convID, err := ensureSoakConversation(*base, tok)
-		if err != nil {
-			log.Fatalf("conversation: %v", err)
-		}
-		log.Printf("latency probes: rounds=%d conv=%s max_first=%s max_fanout=%s",
-			*latencyRounds, convID, *latencyMax, *fanoutMax)
-		if err := runLatencyProbes(*base, tok, convID, liveConns(&mu, conns), *latencyRounds, *latencyMax, *fanoutMax); err != nil {
+		live := liveSlots(&mu, slots)
+		log.Printf("latency probes: rounds=%d conv=%s listeners=%d max_first=%s max_fanout=%s",
+			*latencyRounds, convID, len(live), *latencyMax, *fanoutMax)
+		if err := runLatencyProbes(bases[0], senderTok, convID, live, *latencyRounds, *latencyMax, *fanoutMax); err != nil {
 			log.Fatalf("latency: %v", err)
 		}
 	}
@@ -105,69 +167,166 @@ func main() {
 	for cycle := 1; cycle <= *reconnects; cycle++ {
 		log.Printf("reconnect cycle %d/%d", cycle, *reconnects)
 		mu.Lock()
-		for i, c := range conns {
-			if c != nil {
-				_ = c.Close()
-				conns[i] = nil
+		for i, s := range slots {
+			if s != nil && s.conn != nil {
+				_ = s.conn.Close()
 			}
+			slots[i] = nil
 		}
 		mu.Unlock()
 		time.Sleep(500 * time.Millisecond)
-
-		var rok, rfail atomic.Int64
-		var rwg sync.WaitGroup
-		for i := 0; i < *n; i++ {
-			rwg.Add(1)
-			sem <- struct{}{}
-			go func(i int) {
-				defer rwg.Done()
-				defer func() { <-sem }()
-				c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-				if err != nil {
-					rfail.Add(1)
-					return
-				}
-				rok.Add(1)
-				mu.Lock()
-				conns[i] = c
-				mu.Unlock()
-			}(i)
-		}
-		rwg.Wait()
-		log.Printf("reconnect connected=%d failed=%d", rok.Load(), rfail.Load())
-		if rok.Load() < int64(*n)*9/10 {
+		ok.Store(0)
+		fail.Store(0)
+		dialAll()
+		log.Printf("reconnect connected=%d failed=%d", ok.Load(), fail.Load())
+		if ok.Load() < int64(*n)*9/10 {
 			log.Fatalf("reconnect soak failed")
 		}
 		time.Sleep(*hold / 2)
 	}
 
 	mu.Lock()
-	for _, c := range conns {
-		if c != nil {
-			_ = c.Close()
+	for _, s := range slots {
+		if s != nil && s.conn != nil {
+			_ = s.conn.Close()
 		}
 	}
 	mu.Unlock()
+
+	if *checkMetrics {
+		if d, err := scrapeMetric(bases[0]+"/metrics", "qchat_ws_send_drops_total"); err == nil {
+			delta := d - dropsBefore
+			log.Printf("metrics: qchat_ws_send_drops_total delta=%.0f (max %.0f)", delta, *maxDrops)
+			if delta > *maxDrops {
+				log.Fatalf("too many WS send drops during soak: %.0f > %.0f", delta, *maxDrops)
+			}
+		} else {
+			log.Printf("metrics: could not read drops after soak: %v", err)
+		}
+	}
+
 	fmt.Println("SOAK OK")
 	os.Exit(0)
 }
 
-func liveConns(mu *sync.Mutex, conns []*websocket.Conn) []*websocket.Conn {
+func prepareAccounts(userCount int, base, token, phone, password, invite string) ([]soakUser, error) {
+	if userCount == 1 {
+		tok := token
+		if tok == "" {
+			var err error
+			tok, err = login(base, phone, password, invite)
+			if err != nil {
+				return nil, err
+			}
+			log.Printf("logged in as %s", phone)
+		}
+		uid, err := fetchMeID(base, tok)
+		if err != nil {
+			// Still usable for single-user empty-group soak.
+			log.Printf("me: %v (continuing without user id)", err)
+		}
+		return []soakUser{{token: tok, userID: uid, phone: phone}}, nil
+	}
+
+	out := make([]soakUser, 0, userCount)
+	for i := 0; i < userCount; i++ {
+		u, err := registerSoakUser(base, password, invite, i)
+		if err != nil {
+			return nil, fmt.Errorf("register user %d: %w", i, err)
+		}
+		out = append(out, u)
+		if (i+1)%10 == 0 || i+1 == userCount {
+			log.Printf("registered %d/%d users", i+1, userCount)
+		}
+	}
+	return out, nil
+}
+
+func registerSoakUser(base, password, invite string, idx int) (soakUser, error) {
+	phone := fmt.Sprintf("137%08d", (time.Now().UnixNano()+int64(idx))%100000000)
+	username := "soak" + uuid.NewString()[:8]
+
+	cap1, err := getJSON(base + "/v1/auth/captcha")
+	if err != nil {
+		return soakUser{}, err
+	}
+	otp, err := postJSON(base+"/v1/auth/register/otp", map[string]any{
+		"phone": phone, "captcha_id": cap1["captcha_id"], "captcha": captchaAnswer(cap1),
+	})
+	if err != nil {
+		return soakUser{}, fmt.Errorf("otp: %w", err)
+	}
+	cap2, err := getJSON(base + "/v1/auth/captcha")
+	if err != nil {
+		return soakUser{}, err
+	}
+	body, err := postJSON(base+"/v1/auth/register", map[string]any{
+		"phone": phone, "password": password, "username": username,
+		"captcha_id": cap2["captcha_id"], "captcha": captchaAnswer(cap2),
+		"sms_challenge_id": otp["challenge_id"], "sms_code": otp["dev_code"],
+		"invite_code": invite,
+		"device_type": "web", "device_name": "ws-soak", "device_id": "soak-" + username,
+		"remember_me": true,
+	})
+	if err != nil {
+		return soakUser{}, err
+	}
+	tok, _ := body["access_token"].(string)
+	uid, _ := body["user_id"].(string)
+	if tok == "" || uid == "" {
+		return soakUser{}, fmt.Errorf("register response missing token/user_id: %v", body)
+	}
+	return soakUser{token: tok, userID: uid, phone: phone}, nil
+}
+
+func captchaAnswer(cap map[string]any) any {
+	if v, ok := cap["dev_answer"]; ok && v != nil {
+		return v
+	}
+	return cap["challenge"]
+}
+
+func fetchMeID(base, token string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, base+"/v1/me", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	var out map[string]any
+	_ = json.Unmarshal(raw, &out)
+	if res.StatusCode >= 300 {
+		return "", fmt.Errorf("%s: %s", res.Status, string(raw))
+	}
+	id, _ := out["id"].(string)
+	return id, nil
+}
+
+func liveSlots(mu *sync.Mutex, slots []*sockSlot) []*sockSlot {
 	mu.Lock()
 	defer mu.Unlock()
-	out := make([]*websocket.Conn, 0, len(conns))
-	for _, c := range conns {
-		if c != nil {
-			out = append(out, c)
+	out := make([]*sockSlot, 0, len(slots))
+	for _, s := range slots {
+		if s != nil && s.conn != nil {
+			out = append(out, s)
 		}
 	}
 	return out
 }
 
-func ensureSoakConversation(base, token string) (string, error) {
-	body, err := postJSONAuth(base+"/v1/groups", token, map[string]any{
+func ensureSoakConversation(base, token string, memberIDs []string) (string, error) {
+	payload := map[string]any{
 		"title": "ws-soak-" + uuid.NewString()[:8],
-	})
+	}
+	if len(memberIDs) > 0 {
+		payload["member_ids"] = memberIDs
+	}
+	body, err := postJSONAuth(base+"/v1/groups", token, payload)
 	if err != nil {
 		return "", err
 	}
@@ -184,18 +343,20 @@ type latencySample struct {
 	got    int
 }
 
-func runLatencyProbes(base, token, convID string, conns []*websocket.Conn, rounds int, maxFirst, maxFanout time.Duration) error {
-	if len(conns) == 0 {
+func runLatencyProbes(base, token, convID string, slots []*sockSlot, rounds int, maxFirst, maxFanout time.Duration) error {
+	if len(slots) == 0 {
 		return fmt.Errorf("no live connections")
 	}
 	type hit struct {
 		clientMsgID string
 		at          time.Time
 	}
-	hits := make(chan hit, len(conns)*2)
+	// Large buffer so we never silently drop hits under 1k sockets.
+	hits := make(chan hit, len(slots)*rounds*2+64)
+	var hitDrops atomic.Int64
 	var readers sync.WaitGroup
 	stop := make(chan struct{})
-	for _, c := range conns {
+	for _, s := range slots {
 		readers.Add(1)
 		go func(conn *websocket.Conn) {
 			defer readers.Done()
@@ -211,7 +372,6 @@ func runLatencyProbes(base, token, convID string, conns []*websocket.Conn, round
 					if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						return
 					}
-					// deadline / transient — keep reading until stop
 					continue
 				}
 				var ev struct {
@@ -228,18 +388,18 @@ func runLatencyProbes(base, token, convID string, conns []*websocket.Conn, round
 				select {
 				case hits <- hit{clientMsgID: cid, at: time.Now()}:
 				default:
+					hitDrops.Add(1)
 				}
 			}
-		}(c)
+		}(s.conn)
 	}
 	defer func() {
 		close(stop)
-		// briefly drain
 		time.Sleep(50 * time.Millisecond)
 	}()
 
 	samples := make([]latencySample, 0, rounds)
-	need := len(conns)
+	need := len(slots)
 	for i := 0; i < rounds; i++ {
 		clientMsgID := "soak-" + uuid.NewString()
 		start := time.Now()
@@ -251,7 +411,7 @@ func runLatencyProbes(base, token, convID string, conns []*websocket.Conn, round
 		if err != nil {
 			return fmt.Errorf("send probe %d: %w", i+1, err)
 		}
-		deadline := time.Now().Add(10 * time.Second)
+		deadline := time.Now().Add(15 * time.Second)
 		got := 0
 		var firstAt time.Time
 		var lastAt time.Time
@@ -290,6 +450,10 @@ func runLatencyProbes(base, token, convID string, conns []*websocket.Conn, round
 		}
 	}
 
+	if hitDrops.Load() > 0 {
+		return fmt.Errorf("harness dropped %d hit samples (buffer pressure)", hitDrops.Load())
+	}
+
 	firsts := make([]time.Duration, len(samples))
 	fanouts := make([]time.Duration, len(samples))
 	for i, s := range samples {
@@ -325,6 +489,28 @@ func percentile(vals []time.Duration, p int) time.Duration {
 	return cp[idx]
 }
 
+func scrapeMetric(metricsURL, name string) (float64, error) {
+	res, err := http.Get(metricsURL)
+	if err != nil {
+		return 0, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		return 0, err
+	}
+	if res.StatusCode >= 300 {
+		return 0, fmt.Errorf("%s", res.Status)
+	}
+	// Match plain counters: name 123 or name{...} 123
+	re := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(name) + `(?:\{[^}]*\})?\s+([0-9.eE+-]+)`)
+	m := re.FindSubmatch(raw)
+	if m == nil {
+		return 0, fmt.Errorf("metric %s not found", name)
+	}
+	return strconv.ParseFloat(string(m[1]), 64)
+}
+
 func login(base, phone, password, invite string) (string, error) {
 	capBody, err := getJSON(base + "/v1/auth/captcha")
 	if err != nil {
@@ -332,7 +518,7 @@ func login(base, phone, password, invite string) (string, error) {
 	}
 	payload := map[string]any{
 		"phone": phone, "password": password, "invite_code": invite,
-		"captcha_id": capBody["captcha_id"], "captcha": capBody["dev_answer"],
+		"captcha_id": capBody["captcha_id"], "captcha": captchaAnswer(capBody),
 		"device_type": "web", "device_name": "ws-soak", "device_id": "ws-soak-device", "remember_me": true,
 	}
 	body, err := postJSON(base+"/v1/auth/login", payload)
