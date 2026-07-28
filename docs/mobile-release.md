@@ -75,8 +75,12 @@ npx eas-cli submit --profile production --platform ios
 
 ## CI
 
-`.github/workflows/mobile.yml` runs `typecheck` + `check:release` on mobile changes.
-Optional `workflow_dispatch` can trigger an EAS build when repository secret `EXPO_TOKEN` is set.
+Example workflow: [`docs/ci/mobile.workflow.example.yml`](ci/mobile.workflow.example.yml).
+
+Copy it to `.github/workflows/mobile.yml` with a token that has the `workflow` scope
+(OAuth apps without that scope cannot push workflow files). It runs `typecheck` +
+`check:release` on mobile changes. Optional `workflow_dispatch` can trigger an EAS
+build when repository secret `EXPO_TOKEN` is set.
 
 ## Prebuild notes
 
