@@ -20,12 +20,13 @@
     "start:headless": "xvfb-run -a node scripts/launch.js",
     "check": "node scripts/check.js && node scripts/check-protocol.js && node scripts/check-context-menu.js && node scripts/check-sandbox.js && node scripts/check-signing.js",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:linux": "electron-builder --linux AppImage deb",
-    "dist:win": "electron-builder --win nsis",
-    "dist:mac": "electron-builder --mac dmg",
-    "dist:win:signed": "electron-builder --win nsis",
-    "dist:mac:signed": "electron-builder --mac dmg"
+    "dist": "electron-builder --publish never",
+    "dist:linux": "electron-builder --linux AppImage deb --publish never",
+    "dist:win": "electron-builder --win nsis --publish never",
+    "dist:win:docker": "bash scripts/dist-win-docker.sh",
+    "dist:mac": "electron-builder --mac dmg --publish never",
+    "dist:win:signed": "electron-builder --win nsis --publish never",
+    "dist:mac:signed": "electron-builder --mac dmg --publish never"
   },
   "build": {
     "appId": "com.qchat.desktop",
@@ -34,6 +35,12 @@
     "afterPack": "./scripts/afterPack.js",
     "afterSign": "./scripts/afterSign.js",
     "forceCodeSigning": false,
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://example.com/desktop-updates/"
+      }
+    ],
     "directories": {
       "output": "dist",
       "buildResources": "assets"
