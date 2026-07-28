@@ -53,4 +53,22 @@ assert(
   "afterSign.js must gate notarize on Apple credentials"
 );
 
+const publish = Array.isArray(build.publish) ? build.publish : [];
+assert(publish.length >= 1, "build.publish must define at least one provider");
+assert(
+  publish[0] && publish[0].provider === "generic",
+  "build.publish[0].provider must be generic (runtime feed still uses updateUrl)"
+);
+assert(
+  publish[0] && typeof publish[0].url === "string" && publish[0].url.includes("desktop-updates"),
+  "build.publish[0].url should point at a /desktop-updates/ style feed (placeholder OK)"
+);
+
+const wineScript = path.join(ROOT, "scripts/dist-win-docker.sh");
+assert(fs.existsSync(wineScript), "scripts/dist-win-docker.sh missing (PACK-02)");
+assert(
+  pkg.scripts && typeof pkg.scripts["dist:win:docker"] === "string",
+  "package.json scripts.dist:win:docker required"
+);
+
 console.log("signing scaffold: ok");

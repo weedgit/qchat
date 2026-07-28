@@ -234,5 +234,5 @@ npm run start:local
 | Electron main | `apps/desktop/main.js` |
 | Preload | `apps/desktop/preload.js` |
 | URL config | `apps/desktop/config.js`, `production.json` |
-| Packager | `apps/desktop/package.json` → `build`, `dist-win.sh` |
+| Packager | `apps/desktop/package.json` → `build`, `scripts/dist-win-docker.sh` |
 | Shell sources | `apps/desktop/src/` |

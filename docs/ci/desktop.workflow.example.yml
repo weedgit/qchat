@@ -1,0 +1,46 @@
+name: desktop
+
+# Example workflow — copy to .github/workflows/desktop.yml when enabling CI.
+# OAuth apps without the `workflow` scope cannot push live workflow files.
+
+on:
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "docs/ci/desktop.workflow.example.yml"
+      - ".github/workflows/desktop.yml"
+  push:
+    branches: [master, main]
+    paths:
+      - "apps/desktop/**"
+      - "docs/ci/desktop.workflow.example.yml"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+    inputs:
+      pack:
+        description: "Also run electron-builder --dir (Linux unpackaged dir)"
+        type: boolean
+        default: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Scaffold checks
+        run: npm run check
+      - name: Optional pack
+        if: github.event_name == 'workflow_dispatch' && inputs.pack
+        run: npm run pack
+
+  # Wine NSIS is slow; keep it manual (npm run dist:win:docker) rather than PR CI.

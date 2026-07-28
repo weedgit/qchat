@@ -164,15 +164,24 @@ TLS certificate when it is self-signed (nginx IP cert), so the installer does
 not fail with `ERR_CERT_AUTHORITY_INVALID`.
 
 ```bash
-npm run pack          # unpacked app for a fast smoke test
-npm run dist:linux    # AppImage + deb; build on Linux
-npm run dist:win      # NSIS .exe; build on Windows (recommended)
-npm run dist:mac      # dmg; build on macOS
-npm run dist          # current platform defaults
+npm run pack              # unpacked app for a fast smoke test
+npm run dist:linux        # AppImage + deb; build on Linux
+npm run dist:win          # NSIS .exe; build on Windows (recommended)
+npm run dist:win:docker   # NSIS via Wine Docker on Linux (PACK-02)
+npm run dist:mac          # dmg; build on macOS
+npm run dist              # current platform defaults (--publish never)
 ```
 
-Windows installers can be cross-built on Linux only with Wine configured.
-Building `dist:win` on Windows 11 is the supported development workflow.
+Root Makefile helpers: `make desktop-check`, `make desktop-pack`,
+`make desktop-dist-win-docker`.
+
+Windows installers can be cross-built on Linux with Docker:
+
+```bash
+npm run dist:win:docker   # electronuserland/builder:wine
+```
+
+Building `dist:win` natively on Windows 11 remains the fastest local workflow.
 Signing is optional and env-driven (PACK-04 / PACK-05). Unsigned `dist:*` builds
 still work. To sign:
 
@@ -191,9 +200,22 @@ export APPLE_TEAM_ID='ABCDE12345'
 npm run dist:mac:signed
 ```
 
-Auto-update is scaffolded: set `updateUrl` in
-`production.json` / `userData/config.json` or `QCHAT_UPDATE_URL` to a generic
-electron-builder feed, then ship installs that host `latest*.yml` + artifacts.
+Auto-update uses `electron-updater` with a **generic** feed. electron-builder
+`publish.generic` is a placeholder (`https://example.com/desktop-updates/`);
+runtime still reads `updateUrl` / `QCHAT_UPDATE_URL` / `userData/config.json`.
+Leave `production.json` `updateUrl` empty until ops hosts the feed.
+
+Typical nginx path (see `deploy/nginx-qchat.conf`):
+
+```text
+https://<host>/desktop-updates/   → /var/www/qchat-desktop-updates/
+```
+
+Host `latest*.yml` + installers there, then set client `updateUrl` to
+`https://<host>/desktop-updates` (no trailing slash; the shell strips it).
+
+CI scaffold checks: copy `docs/ci/desktop.workflow.example.yml` to
+`.github/workflows/desktop.yml` when enabling GitHub Actions.
 
 After changing `production.json` or main-process security, rebuild the
 installer (`npm run dist:win`) and reinstall — an old Setup.exe still embeds
