@@ -87,7 +87,7 @@ build when repository secret `EXPO_TOKEN` is set.
 - Managed workflow: prefer `eas build` (cloud) over committing `android/` / `ios/`.
 - If you run `npx expo prebuild` locally, keep generated trees gitignored.
 - After changing native plugins (LiveKit, WebRTC, cert trust), rebuild the native binary — Metro reload is not enough.
-- Remote push (FCM/APNs) is still deferred (`src/lib/notifyPort.ts`); store builds can ship without it.
+- Remote push: Expo tokens register with the API (`docs/push.md`). Native FCM/APNs credentials are optional for non-Expo tokens. OEM vendor SDKs remain deferred.
 
 ## Related
 

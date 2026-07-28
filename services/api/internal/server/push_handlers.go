@@ -12,16 +12,27 @@ import (
 
 func (s *Server) pushCfg() push.Config {
 	return push.Config{
-		VAPIDPublic:  s.cfg.VAPIDPublic,
-		VAPIDPrivate: s.cfg.VAPIDPrivate,
-		Subject:      s.cfg.VAPIDSubject,
+		VAPIDPublic:        s.cfg.VAPIDPublic,
+		VAPIDPrivate:       s.cfg.VAPIDPrivate,
+		Subject:            s.cfg.VAPIDSubject,
+		ExpoPushEnabled:    s.cfg.ExpoPushEnabled,
+		ExpoAccessToken:    s.cfg.ExpoAccessToken,
+		FCMProjectID:       s.cfg.FCMProjectID,
+		FCMCredentialsJSON: s.cfg.FCMCredentialsJSON,
+		APNsKeyID:          s.cfg.APNsKeyID,
+		APNsTeamID:         s.cfg.APNsTeamID,
+		APNsBundleID:       s.cfg.APNsBundleID,
+		APNsKeyPath:        s.cfg.APNsKeyPath,
+		APNsProduction:     s.cfg.APNsProduction,
 	}
 }
 
 func (s *Server) handlePushVAPID(w http.ResponseWriter, r *http.Request) {
+	cfg := s.pushCfg()
 	writeJSON(w, 200, map[string]any{
 		"public_key": s.cfg.VAPIDPublic,
-		"enabled":    s.pushCfg().Enabled(),
+		"enabled":    cfg.WebEnabled(),
+		"adapters":   cfg.EnabledAdapters(),
 	})
 }
 
@@ -78,7 +89,9 @@ func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"ok":       true,
-		"adapters": []string{"web-push", "apns", "fcm", "huawei", "xiaomi", "oppo", "vivo"},
+		"adapters": s.pushCfg().EnabledAdapters(),
+		// OEM platforms may be registered but are not delivered until adapters ship.
+		"oem_deferred": []string{"huawei", "xiaomi", "oppo", "vivo"},
 	})
 }
 
@@ -151,28 +164,24 @@ func (s *Server) handlePushUnregister(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) pushToUser(ctx context.Context, cfg push.Config, userID string, p push.WebPayload) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id::text, token FROM push_devices
-		WHERE platform='web' AND user_id=$1`, userID)
+		SELECT id::text, platform, token FROM push_devices
+		WHERE user_id=$1`, userID)
 	if err != nil {
 		return
 	}
-	type device struct {
-		id    string
-		token string
-	}
-	devices := make([]device, 0)
+	devices := make([]push.Device, 0)
 	for rows.Next() {
-		var d device
-		if rows.Scan(&d.id, &d.token) != nil {
+		var d push.Device
+		if rows.Scan(&d.ID, &d.Platform, &d.Token) != nil {
 			continue
 		}
 		devices = append(devices, d)
 	}
 	rows.Close()
 	for _, d := range devices {
-		status, err := push.SendWeb(ctx, cfg, d.token, p)
+		status, err := push.Dispatch(ctx, cfg, d, p)
 		if err == nil && (status == http.StatusNotFound || status == http.StatusGone) {
-			_, _ = s.db.Exec(ctx, `DELETE FROM push_devices WHERE id::text=$1`, d.id)
+			_, _ = s.db.Exec(ctx, `DELETE FROM push_devices WHERE id::text=$1`, d.ID)
 		}
 	}
 }

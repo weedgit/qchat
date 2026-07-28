@@ -345,6 +345,28 @@ export default function SettingsPage() {
 
       {ready && (
         <section className="menu-modal-section">
+          <div className="menu-modal-section-title">{t("settings.installApp")}</div>
+          <div className="menu-modal-hint">{t("settings.installAppHint")}</div>
+          <div className="menu-modal-hint">{t("settings.installAppIos")}</div>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              try {
+                localStorage.removeItem("qchat.pwaInstallDismissed");
+              } catch {
+                /* ignore */
+              }
+              window.dispatchEvent(new Event("qchat:pwa-install-reshow"));
+            }}
+          >
+            {t("settings.installAppAction")}
+          </button>
+        </section>
+      )}
+
+      {ready && (
+        <section className="menu-modal-section">
           <div className="menu-modal-section-title">{t("settings.pushDevices")}</div>
           <div className="menu-modal-hint">{t("settings.pushDevicesHint")}</div>
           {pushDeviceError && (

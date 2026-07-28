@@ -36,6 +36,16 @@ type Config struct {
 	VAPIDPublic  string
 	VAPIDPrivate string
 	VAPIDSubject string
+	// Mobile push — Expo first (covers FCM/APNs for Expo apps); native FCM/APNs optional.
+	ExpoPushEnabled    string
+	ExpoAccessToken    string
+	FCMProjectID       string
+	FCMCredentialsJSON string
+	APNsKeyID          string
+	APNsTeamID         string
+	APNsBundleID       string
+	APNsKeyPath        string
+	APNsProduction     string
 	// SMSProvider selects the verification-code gateway. "dev" only logs codes
 	// locally and is refused in production.
 	SMSProvider string
@@ -65,6 +75,15 @@ func Load() Config {
 		VAPIDPublic:            getenv("QCHAT_VAPID_PUBLIC", "BFdXB2ANYUTz51uvhyiHY690_q7gwTQugmCht6XglXgTLyoubrPvnpQVk4Jac5cP_zVayT88l0gTgnCt1gK5cfA"),
 		VAPIDPrivate:           getenv("QCHAT_VAPID_PRIVATE", "bUnBIxgamtcANH9nAryWvxT0v8s4iosetHMSeOmcB7g"),
 		VAPIDSubject:           getenv("QCHAT_VAPID_SUBJECT", "mailto:admin@qchat.local"),
+		ExpoPushEnabled:        getenv("QCHAT_EXPO_PUSH_ENABLED", "true"),
+		ExpoAccessToken:        strings.TrimSpace(getenv("QCHAT_EXPO_ACCESS_TOKEN", "")),
+		FCMProjectID:           strings.TrimSpace(getenv("QCHAT_FCM_PROJECT_ID", "")),
+		FCMCredentialsJSON:     strings.TrimSpace(getenv("QCHAT_FCM_CREDENTIALS_JSON", "")),
+		APNsKeyID:              strings.TrimSpace(getenv("QCHAT_APNS_KEY_ID", "")),
+		APNsTeamID:             strings.TrimSpace(getenv("QCHAT_APNS_TEAM_ID", "")),
+		APNsBundleID:           strings.TrimSpace(getenv("QCHAT_APNS_BUNDLE_ID", "")),
+		APNsKeyPath:            strings.TrimSpace(getenv("QCHAT_APNS_KEY_PATH", "")),
+		APNsProduction:         getenv("QCHAT_APNS_PRODUCTION", "1"),
 		SMSProvider:            strings.ToLower(getenv("QCHAT_SMS_PROVIDER", "dev")),
 		GiphyAPIKey:            strings.TrimSpace(getenv("QCHAT_GIPHY_API_KEY", "")),
 	}

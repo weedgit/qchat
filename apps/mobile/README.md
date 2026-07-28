@@ -132,4 +132,4 @@ npm run check:release
 npm run eas:build:preview   # requires eas-cli login + project
 ```
 
-Remote push (FCM/APNs) remains deferred via `src/lib/notifyPort.ts`.
+Remote push uses Expo tokens via `src/lib/remotePush.ts` → `POST /v1/push/register`. See **[docs/push.md](../../docs/push.md)**. OEM vendor channels remain deferred.

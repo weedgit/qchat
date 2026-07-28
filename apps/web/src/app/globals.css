@@ -79,6 +79,7 @@ body {
   right: 0;
   z-index: 12000;
   padding: 7px 12px;
+  padding-top: max(7px, env(safe-area-inset-top));
   text-align: center;
   font-size: 13px;
   font-weight: 600;
@@ -97,6 +98,49 @@ body {
 [data-theme="light"] .shell-connection-banner.reconnect {
   background: #e0a820;
   color: #1a1408;
+}
+
+/* PWA install chip — mobile web / Chrome install + iOS A2HS hint */
+.pwa-install-banner {
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 11000;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-panel, #152033);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.pwa-install-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 160px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-dim, #9aa8bc);
+}
+.pwa-install-copy strong {
+  color: var(--text, #e8eef7);
+  font-size: 14px;
+}
+.pwa-install-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+@media (min-width: 900px) {
+  .pwa-install-banner {
+    left: auto;
+    width: min(420px, calc(100vw - 32px));
+  }
 }
 
 a {
@@ -639,9 +683,11 @@ select:focus {
   }
 
   .chat-header {
-    height: 54px;
+    height: auto;
+    min-height: 54px;
     padding: 0 10px;
     gap: 8px;
+    padding-top: max(0px, env(safe-area-inset-top));
     padding-left: max(10px, env(safe-area-inset-left));
     padding-right: max(10px, env(safe-area-inset-right));
   }

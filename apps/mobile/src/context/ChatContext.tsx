@@ -932,6 +932,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     loadConversations();
     void loadFriends();
     void notificationPort.ensureLocalPermission().catch(() => {});
+    void notificationPort.registerRemote().catch(() => {});
     const detachNotifyTap = notificationPort.attachTapListener();
     // Hydrate notify prefs so mention/all switcher applies to local banners.
     loadLocalNotifyProps()
