@@ -348,7 +348,7 @@ function ConversationRow({
 }
 
 function receiptMark(msg: Message): ReactNode {
-  // JD / WeChat-style: ⏳ sending → ✓ sent → ✓✓ delivered → blue ✓✓ read
+  // ✓ sent/delivered (peer may still have unread) → blue ✓✓ only when actually read.
   if (msg.pending) return " \u23F3";
   if (msg.failed) return " !";
   if (!msg.mine || msg.recalled) return "";
@@ -362,13 +362,12 @@ function receiptMark(msg: Message): ReactNode {
         {" \u2713\u2713"}
       </span>
     );
-  if (msg.delivered)
-    return (
-      <span className="receipt-tick delivered" title="Delivered">
-        {" \u2713\u2713"}
-      </span>
-    );
-  return <span className="receipt-tick" title="Sent">{" \u2713"}</span>;
+  // Delivered must not look like read — peer can still show unread on another chat.
+  return (
+    <span className="receipt-tick" title={msg.delivered ? "Delivered" : "Sent"}>
+      {" \u2713"}
+    </span>
+  );
 }
 
 function MenuIcon({
