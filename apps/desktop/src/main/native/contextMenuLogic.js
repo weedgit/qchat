@@ -8,6 +8,8 @@
  */
 const CUSTOM_CTX_SELECTOR = [
   ".msg-row",
+  ".call-row",
+  ".msg-scroll",
   ".conv-item",
   ".ctx-menu",
   ".ctx-wrap",

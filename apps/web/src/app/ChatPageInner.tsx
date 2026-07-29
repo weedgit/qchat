@@ -518,7 +518,25 @@ function Bubble({
       ? myAvatar || msg.senderAvatar
       : msg.senderAvatar || peerAvatar;
     return (
-      <div className={`msg-row call-row ${msg.mine ? "mine" : ""}`}>
+      <div
+        className={`msg-row call-row ${msg.mine ? "mine" : ""} ${selectMode ? "select-mode" : ""} ${selected ? "selected" : ""}`}
+        onClick={selectMode && selectable ? onToggleSelect : undefined}
+        onContextMenu={onContextMenu}
+      >
+        {selectable && selectMode && (
+          <button
+            type="button"
+            className={`select-dot ${selected ? "on" : ""}`}
+            title={selected ? t("chat.deselect") : t("chat.select")}
+            aria-pressed={selected}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.();
+            }}
+          >
+            {selected ? "\u2713" : ""}
+          </button>
+        )}
         {!msg.mine && (
           <div className="msg-avatar" aria-hidden>
             <Avatar name={avatarName} url={avatarUrl} size={34} />
@@ -1635,7 +1653,8 @@ export default function ChatPageInner() {
     e.preventDefault();
     e.stopPropagation();
     if (msg.pending) return;
-    const hasEmojiRow = !selectMode && !msg.recalled && !msg.failed;
+    const hasEmojiRow =
+      !selectMode && !msg.recalled && !msg.failed && msg.type !== "call";
     const MENU_W = 200;
     // the emoji row is wider than the menu and centered over it, so it
     // overhangs each side; keep that overhang on-screen too
@@ -1647,9 +1666,10 @@ export default function ChatPageInner() {
     } else if (selectMode) {
       itemCount = 1;
     } else {
+      const isCall = msg.type === "call";
       itemCount =
         2 + // copy + select always
-        (!msg.recalled && !msg.failed ? 2 : 0) + // reply + forward
+        (!msg.recalled && !msg.failed && !isCall ? 2 : 0) + // reply + forward (not for call logs)
         (canRecallMsg(msg) ? 1 : 0) + // recall (own or group admin)
         (msg.failed ? 1 : 0); // retry
     }
@@ -1734,7 +1754,11 @@ export default function ChatPageInner() {
   }, [memberMenu]);
 
   async function copyOne(msg: Message) {
-    await copyTextToClipboard(msg.content);
+    const text =
+      msg.type === "call"
+        ? localizeChatLabel(msg.content, t, { type: "call" }) || msg.content
+        : msg.content;
+    await copyTextToClipboard(text || "");
   }
 
   useEffect(() => {
@@ -4436,7 +4460,7 @@ export default function ChatPageInner() {
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
-          {!ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
+          {!ctxMsg.recalled && !ctxMsg.failed && ctxMsg.type !== "call" && chat.activeId && (
             <div className="ctx-emoji-row">
               {QUICK_EMOJIS.map((em) => (
                 <button
@@ -4458,7 +4482,7 @@ export default function ChatPageInner() {
             </div>
           )}
           <div className="ctx-menu">
-            {!ctxMsg.recalled && !ctxMsg.failed && (
+            {!ctxMsg.recalled && !ctxMsg.failed && ctxMsg.type !== "call" && (
               <button
                 className="ctx-item"
                 onClick={() => {
@@ -4482,7 +4506,7 @@ export default function ChatPageInner() {
               <MenuIcon d={ICONS.copy} />
               {t("ctx.copy")}
             </button>
-            {!ctxMsg.recalled && !ctxMsg.failed && (
+            {!ctxMsg.recalled && !ctxMsg.failed && ctxMsg.type !== "call" && (
               <button
                 className="ctx-item"
                 onClick={() => {
@@ -4520,7 +4544,10 @@ export default function ChatPageInner() {
             {ctxMsg.mine && !ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
               <>
                 <div className="ctx-sep" />
-                {ctxMsg.type !== "voice" && ctxMsg.type !== "image" && ctxMsg.type !== "file" && (
+                {ctxMsg.type !== "voice" &&
+                  ctxMsg.type !== "image" &&
+                  ctxMsg.type !== "file" &&
+                  ctxMsg.type !== "call" && (
                   <button
                     className="ctx-item"
                     onClick={() => {
@@ -4532,7 +4559,7 @@ export default function ChatPageInner() {
                     {t("ctx.edit")}
                   </button>
                 )}
-                {canPin && (
+                {canPin && ctxMsg.type !== "call" && (
                   <button
                     className="ctx-item"
                     onClick={() => {
@@ -4559,7 +4586,7 @@ export default function ChatPageInner() {
                 {t("chat.recall")}
               </button>
             )}
-            {!ctxMsg.mine && !ctxMsg.recalled && canPin && chat.activeId && (
+            {!ctxMsg.mine && !ctxMsg.recalled && canPin && ctxMsg.type !== "call" && chat.activeId && (
               <button
                 className="ctx-item"
                 onClick={() => {
