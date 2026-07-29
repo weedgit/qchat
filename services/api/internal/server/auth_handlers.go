@@ -310,6 +310,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	s.audit(r.Context(), uid, entID, "user.login", "user", uid, "", ip, map[string]any{
 		"device": dtype, "device_id": deviceID,
 	})
+	// Self-heal: older enterprises may predate default company chat.
+	if entID != "" {
+		_ = s.addUserToEnterpriseDefaultChat(r.Context(), entID, uid)
+	}
 	writeJSON(w, 200, tok)
 }
 

@@ -4003,6 +4003,22 @@ export default function ChatPageInner() {
                         ? ` · ${formatLastSeen(dmPeerProfile.last_active_at, t)}`
                         : ""}
                   </div>
+                  {(active.friendNote || (active.friendTags && active.friendTags.length > 0)) && (
+                    <div className="dm-friend-note-block">
+                      {active.friendNote ? (
+                        <div className="dm-friend-note">{active.friendNote}</div>
+                      ) : null}
+                      {active.friendTags && active.friendTags.length > 0 && (
+                        <div className="tag-chip-row">
+                          {active.friendTags.map((tag) => (
+                            <span key={tag} className="tag-chip">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {dmPeerProfile.signature ? (
                     <div className="member-profile-signature">{dmPeerProfile.signature}</div>
                   ) : null}
@@ -4056,26 +4072,15 @@ export default function ChatPageInner() {
                   {t("common.loading")}
                 </div>
               )}
-              {active.friendNote ? (
-                <div className="muted" style={{ fontSize: 13, marginTop: 8 }}>
-                  {active.title}
-                </div>
-              ) : null}
-              {active.friendTags && active.friendTags.length > 0 && (
-                <div className="tag-chip-row" style={{ marginTop: 8 }}>
-                  {active.friendTags.map((tag) => (
-                    <span key={tag} className="tag-chip">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              )}
               {active.friendshipId && (
                 <FriendNoteEditor
                   friendshipId={active.friendshipId}
                   note={active.friendNote ?? ""}
                   tags={active.friendTags ?? []}
-                  onSaved={() => chat.reload()}
+                  onSaved={(saved) => {
+                    chat.updateFriendNote(active.id, saved.note, saved.tags);
+                    void chat.reload();
+                  }}
                 />
               )}
             </div>

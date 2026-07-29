@@ -1830,6 +1830,24 @@ export function useChat() {
     []
   );
 
+  const updateFriendNote = useCallback(
+    (conversationId: string, note: string, tags: string[]) => {
+      if (!conversationId) return;
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId
+            ? {
+                ...c,
+                friendNote: note || undefined,
+                friendTags: tags.length ? tags : undefined,
+              }
+            : c
+        )
+      );
+    },
+    []
+  );
+
   const markUnread = useCallback(async (convId: string) => {
     const res = await api<any>(`/v1/conversations/${convId}/unread`, { method: "POST" });
     setConversations((prev) =>
@@ -1966,6 +1984,7 @@ export function useChat() {
     pinMessage,
     editMessage,
     updateConversationPrefs,
+    updateFriendNote,
     markUnread,
     clearHistory,
     deleteConversation,

@@ -238,7 +238,7 @@ export default function UserProfileScreen() {
 
             <View style={styles.card}>
               {profile.signature != null ? (
-                <Row label="Signature" value={profile.signature || "—"} styles={styles} />
+                <Row label="Role" value={profile.signature || "—"} styles={styles} />
               ) : null}
               {profile.real_name != null ? (
                 <Row label="Real name" value={profile.real_name || "—"} styles={styles} />

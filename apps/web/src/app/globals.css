@@ -3329,9 +3329,27 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   align-items: center;
   text-align: center;
 }
+.dm-friend-note-block {
+  width: 100%;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.dm-friend-note {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted, #9aa4b2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .dm-profile-block .friend-note-editor,
 .dm-profile-block .tag-chip-row {
   width: 100%;
+}
+.dm-profile-block .tag-chip-row {
+  justify-content: center;
 }
 .dm-user-qr-block {
   margin-top: 14px;

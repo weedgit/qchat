@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
@@ -8,7 +8,7 @@ type Props = {
   friendshipId: string;
   note: string;
   tags: string[];
-  onSaved: () => void;
+  onSaved: (saved: { note: string; tags: string[] }) => void;
   compact?: boolean;
   /** When true, open the editor immediately (modal use). */
   startOpen?: boolean;
@@ -41,6 +41,13 @@ export default function FriendNoteEditor({
   const [error, setError] = useState<string | null>(null);
   const sheet = layout === "sheet";
 
+  // Keep closed-button label in sync after parent reloads prefs.
+  useEffect(() => {
+    if (open) return;
+    setNoteDraft(note);
+    setTagList(tags);
+  }, [note, tags, open]);
+
   function startEdit() {
     setNoteDraft(note);
     setTagList(tags);
@@ -69,15 +76,19 @@ export default function FriendNoteEditor({
     e.preventDefault();
     setBusy(true);
     setError(null);
+    const nextNote = noteDraft.trim();
+    const nextTags = [...tagList];
     try {
       await api(`/v1/friends/${friendshipId}`, {
         method: "PATCH",
-        body: JSON.stringify({ note: noteDraft.trim(), tags: tagList }),
+        body: JSON.stringify({ note: nextNote, tags: nextTags }),
       });
+      setNoteDraft(nextNote);
+      setTagList(nextTags);
       setOpen(false);
-      onSaved();
+      onSaved({ note: nextNote, tags: nextTags });
     } catch (err: any) {
-      setError(err.message);
+      setError(err?.message || t("common.error"));
     } finally {
       setBusy(false);
     }

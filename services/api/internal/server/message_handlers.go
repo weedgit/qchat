@@ -180,7 +180,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 					SELECT f.id::text, COALESCE(p.note,''), COALESCE(p.tags, '{}')
 					FROM friendships f
 					LEFT JOIN friendship_user_preferences p
-					  ON p.friendship_id = f.id AND p.user_id = $2
+					  ON p.friendship_id = f.id AND p.user_id = $1
 					WHERE f.status='accepted'
 					  AND ((f.requester_id=$1 AND f.addressee_id=$2)
 					    OR (f.requester_id=$2 AND f.addressee_id=$1))

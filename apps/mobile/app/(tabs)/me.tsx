@@ -399,7 +399,7 @@ export default function MeScreen() {
             colors={colors}
           />
           <Field
-            label="Signature"
+            label="Role"
             value={me.signature}
             onChangeText={(text) => setMe({ ...me, signature: text })}
             styles={styles}
