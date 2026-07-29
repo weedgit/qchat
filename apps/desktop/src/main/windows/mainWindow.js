@@ -123,18 +123,40 @@ function focusMainWindow(createIfMissing) {
     if (createIfMissing) createIfMissing();
     return;
   }
-  // After close-to-tray we call app.hide() on macOS so banners can appear;
-  // reverse that when the user brings the shell back.
+  // After close-to-tray we call app.hide() on macOS; reverse that and steal
+  // focus so a toast / tray click reliably brings the chat forward.
   if (process.platform === "darwin") {
     try {
       app.show();
     } catch {
       /* ignore */
     }
+    try {
+      if (typeof app.focus === "function") {
+        app.focus({ steal: true });
+      }
+    } catch {
+      /* ignore */
+    }
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
+  try {
+    mainWindow.moveTop();
+  } catch {
+    /* ignore */
+  }
+  mainWindow.show();
   mainWindow.focus();
+  try {
+    if (typeof mainWindow.focusOnWebView === "function") {
+      mainWindow.focusOnWebView();
+    } else {
+      mainWindow.webContents?.focus?.();
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 function sendConversationToRenderer(conversationId) {

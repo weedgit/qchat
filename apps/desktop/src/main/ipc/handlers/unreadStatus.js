@@ -34,7 +34,11 @@ function createUnreadStatusHandler(deps) {
     if (!seenInitial) {
       seenInitial = true;
     } else if (increased) {
-      maybeNotifyFromUnread(status, { getMainWindow: deps.getMainWindow });
+      // Delay so notifyMessage can claim the toast first; avoids double banners
+      // that macOS then throttles/hides (esp. Script Editor / osascript path).
+      setTimeout(() => {
+        maybeNotifyFromUnread(status, { getMainWindow: deps.getMainWindow });
+      }, 900);
     }
 
     return true;

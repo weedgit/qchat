@@ -9,6 +9,10 @@ const {
   getDesktopRoot,
 } = require("../../app/configuration/paths");
 const { requestWindowAttention } = require("../../native/attention");
+const {
+  shouldUseMacToastFallback,
+  showMacToastNotification,
+} = require("../../native/macNotify");
 
 function isWindows10OrNewer() {
   if (process.platform !== "win32") return false;
@@ -99,6 +103,30 @@ function createNotifyHandler(deps) {
 
     if (isMention && typeof deps.getMainWindow === "function") {
       requestWindowAttention(deps.getMainWindow, { mention: true });
+    }
+
+    // Unpackaged macOS: native UNNotification often never banners. Show an
+    // always-on-top toast window instead of dock-bounce / Script Editor.
+    if (shouldUseMacToastFallback()) {
+      try {
+        const { markDesktopToastShown } = require("../../native/notifyUnread");
+        markDesktopToastShown();
+      } catch {
+        /* ignore */
+      }
+      const ok = await showMacToastNotification({
+        title,
+        body,
+        silent: Boolean(payload.silent),
+        onClick: () => {
+          deps.focusMainWindow();
+          deps.sendConversationToRenderer(conversationId);
+        },
+      });
+      if (ok) {
+        console.log("[qchat-desktop] message toast shown (mac window):", title);
+      }
+      return ok;
     }
 
     try {

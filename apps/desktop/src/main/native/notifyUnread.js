@@ -1,5 +1,9 @@
-const { Notification } = require("electron");
+const { Notification, app } = require("electron");
 const { APP_TITLE } = require("../../shared/constants");
+const {
+  shouldUseMacToastFallback,
+  showMacToastNotification,
+} = require("./macNotify");
 
 /** @type {number} */
 let lastToastAt = 0;
@@ -8,7 +12,7 @@ function markDesktopToastShown() {
   lastToastAt = Date.now();
 }
 
-function recentlyToasted(withinMs = 2500) {
+function recentlyToasted(withinMs = 4000) {
   return Date.now() - lastToastAt < withinMs;
 }
 
@@ -31,7 +35,7 @@ function maybeNotifyFromUnread(status, deps = {}) {
 
   if (windowActive) return false;
   if (recentlyToasted()) return false;
-  if (!Notification.isSupported()) return false;
+  if (!Notification.isSupported() && !shouldUseMacToastFallback()) return false;
 
   const unread = Number(status.unread) || 0;
   const mentions = Number(status.mentions) || 0;
@@ -43,19 +47,68 @@ function maybeNotifyFromUnread(status, deps = {}) {
       ? `You have ${mentions} unread mention${mentions === 1 ? "" : "s"}`
       : `You have ${unread} unread message${unread === 1 ? "" : "s"}`;
 
+  const onClick = () => {
+    console.log("[qchat-desktop] unread toast clicked — focusing main window");
+    if (process.platform === "darwin") {
+      try {
+        app.show();
+      } catch {
+        /* ignore */
+      }
+      try {
+        if (typeof app.focus === "function") app.focus({ steal: true });
+      } catch {
+        /* ignore */
+      }
+    }
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      if (!win.isVisible()) win.show();
+      try {
+        win.moveTop();
+      } catch {
+        /* ignore */
+      }
+      win.show();
+      win.focus();
+      try {
+        win.webContents?.focus?.();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  if (shouldUseMacToastFallback()) {
+    console.log("[qchat-desktop] show unread backup toast (mac window):", {
+      unread,
+      mentions,
+    });
+    void showMacToastNotification({
+      title,
+      body,
+      silent: false,
+      onClick,
+    }).then((ok) => {
+      if (ok) {
+        console.log(
+          "[qchat-desktop] unread backup toast shown (mac window):",
+          body
+        );
+        markDesktopToastShown();
+      }
+    });
+    markDesktopToastShown();
+    return true;
+  }
+
   try {
     const notification = new Notification({
       title,
       body,
       silent: false,
     });
-    notification.on("click", () => {
-      if (win && !win.isDestroyed()) {
-        if (win.isMinimized()) win.restore();
-        if (!win.isVisible()) win.show();
-        win.focus();
-      }
-    });
+    notification.on("click", onClick);
     notification.on("show", () => {
       console.log("[qchat-desktop] unread backup toast shown:", body);
       markDesktopToastShown();
