@@ -54,12 +54,19 @@ export function useChat() {
   const eventListenersRef = useRef<Set<(type: string, payload: any) => void>>(new Set());
   const activeIdRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
-  /** Mattermost-style: OS window focus from desktop main process (not document.hasFocus). */
-  const windowFocusedRef = useRef(true);
+  /** Mattermost-style: OS/window focus (desktop IPC or browser focus+visibility). */
+  const windowFocusedRef = useRef(
+    typeof document !== "undefined" ? !document.hidden && document.hasFocus() : true
+  );
   /** Other-member count for the active group (excludes self); seeds live receipt UI. */
   const activeGroupMemberCountRef = useRef(0);
   /** Stable latest markConversationRead for focus/visibility handlers. */
   const markConversationReadRef = useRef<(convId: string) => Promise<void>>(async () => {});
+  /** True only when the shell is focused and the page is visible — required to mark read. */
+  const isShellFocused = () => {
+    if (typeof document !== "undefined" && document.hidden) return false;
+    return windowFocusedRef.current;
+  };
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
@@ -102,24 +109,28 @@ export function useChat() {
     };
   }, []);
 
-  // Browser: catch up reads when the tab becomes visible again.
+  // Browser: catch up reads when the tab becomes visible *and* focused again.
   useEffect(() => {
     if (isQchatDesktop()) return;
+    const syncFocus = () => {
+      windowFocusedRef.current = !document.hidden && document.hasFocus();
+    };
     const onVisibility = () => {
-      windowFocusedRef.current = !document.hidden;
-      if (!document.hidden && activeIdRef.current) {
+      syncFocus();
+      if (!document.hidden && document.hasFocus() && activeIdRef.current) {
         void markConversationReadRef.current?.(activeIdRef.current);
       }
     };
     const onFocus = () => {
-      windowFocusedRef.current = true;
-      if (activeIdRef.current) {
+      windowFocusedRef.current = !document.hidden;
+      if (!document.hidden && activeIdRef.current) {
         void markConversationReadRef.current?.(activeIdRef.current);
       }
     };
     const onBlur = () => {
       windowFocusedRef.current = false;
     };
+    syncFocus();
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
@@ -279,10 +290,7 @@ export function useChat() {
       hasMoreRef.current = { ...hasMoreRef.current, [convId]: more };
       setHasMoreByConv((prev) => ({ ...prev, [convId]: more }));
 
-      const shellFocused = isQchatDesktop()
-        ? windowFocusedRef.current
-        : !document.hidden;
-      if (shellFocused && activeIdRef.current === convId) {
+      if (isShellFocused() && activeIdRef.current === convId) {
         await markConversationReadRef.current(convId);
       }
     } catch (e: any) {
@@ -294,6 +302,8 @@ export function useChat() {
   /** Mark last peer message read (mobile markConversationRead). Clears local unread. */
   const markConversationRead = useCallback(async (convId: string) => {
     if (!convId) return;
+    // Never mark read while minimized / unfocused / tab hidden.
+    if (!isShellFocused()) return;
     setConversations((prev) =>
       prev.map((c) => (c.id === convId ? { ...c, unreadCount: 0, mentionCount: 0 } : c))
     );
@@ -798,9 +808,7 @@ export function useChat() {
         return prev;
       }
       // Mattermost: only treat the open chat as "read" when the window is active.
-      const shellFocused = isQchatDesktop()
-        ? windowFocusedRef.current
-        : !document.hidden;
+      const shellFocused = isShellFocused();
       const viewingHere =
         shellFocused && activeIdRef.current === msg.conversationId;
       return prev.map((c) =>
@@ -832,9 +840,7 @@ export function useChat() {
 
     if (!msg.mine && msg.id) {
       api(`/v1/messages/${msg.id}/delivered`, { method: "POST" }).catch(() => {});
-      const shellFocused = isQchatDesktop()
-        ? windowFocusedRef.current
-        : !document.hidden;
+      const shellFocused = isShellFocused();
       const viewingHere =
         shellFocused && activeIdRef.current === msg.conversationId;
       // Mattermost MM-58567: do not mark read while the window is in the background.
