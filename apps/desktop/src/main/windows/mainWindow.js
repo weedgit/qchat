@@ -123,6 +123,15 @@ function focusMainWindow(createIfMissing) {
     if (createIfMissing) createIfMissing();
     return;
   }
+  // After close-to-tray we call app.hide() on macOS so banners can appear;
+  // reverse that when the user brings the shell back.
+  if (process.platform === "darwin") {
+    try {
+      app.show();
+    } catch {
+      /* ignore */
+    }
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.focus();
@@ -202,6 +211,13 @@ function createMainWindow(opts) {
     } catch (err) {
       console.warn("[qchat-desktop] setIcon failed:", err?.message || err);
     }
+  }
+
+  // Keep WS / timers alive while hidden to tray so message toasts still fire.
+  try {
+    mainWindow.webContents.setBackgroundThrottling(false);
+  } catch {
+    /* older Electron */
   }
 
   if (detachWindowFocusBridge) {
@@ -292,6 +308,25 @@ function createMainWindow(opts) {
     event.preventDefault();
     mainWindow.blur();
     mainWindow.hide();
+    // macOS suppresses banners for the frontmost app. Resign active so
+    // Notification Center can show toasts while we sit in the tray.
+    if (process.platform === "darwin") {
+      try {
+        app.hide();
+      } catch {
+        /* ignore */
+      }
+    }
+  });
+
+  // Same: after minimize, resign active on macOS so OS toasts can banner.
+  mainWindow.on("minimize", () => {
+    if (process.platform !== "darwin") return;
+    try {
+      app.hide();
+    } catch {
+      /* ignore */
+    }
   });
 
   attachNavigationGuards(mainWindow, webUrl, { onDeepLink });

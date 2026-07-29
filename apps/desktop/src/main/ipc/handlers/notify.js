@@ -72,8 +72,8 @@ function createNotifyHandler(deps) {
     const win =
       typeof deps.getMainWindow === "function" ? deps.getMainWindow() : null;
 
-    // Mattermost shouldSkipNotification: only skip when the window is focused
-    // AND the user is already looking at this conversation.
+    // Skip whenever the shell is focused and visible — user asked for toasts
+    // only when closed / minimized / unfocused (not while using the app).
     const windowActive =
       Boolean(win) &&
       !win.isDestroyed() &&
@@ -81,10 +81,11 @@ function createNotifyHandler(deps) {
       !win.isMinimized() &&
       win.isFocused();
 
-    if (viewingConversation && windowActive) {
+    if (windowActive) {
       console.log(
-        "[qchat-desktop] skip toast — focused on this conversation:",
-        conversationId
+        "[qchat-desktop] skip toast — window focused:",
+        conversationId || "(no conversation)",
+        viewingConversation ? "(viewing this chat)" : ""
       );
       return false;
     }
@@ -128,7 +129,17 @@ function createNotifyHandler(deps) {
         }
       });
       notification.on("failed", (_e, error) => {
-        console.warn("[qchat-desktop] notification failed:", error);
+        const msg = String(error || "");
+        console.warn("[qchat-desktop] notification failed:", msg);
+        if (
+          process.platform === "darwin" &&
+          /UNErrorDomain|NotificationsNotAllowed/i.test(msg)
+        ) {
+          console.warn(
+            "[qchat-desktop] macOS UNNotification requires a signed Electron.app. " +
+              "Quit and re-run npm start (auto sign:dev), or: npm run sign:dev"
+          );
+        }
       });
       notification.show();
       return true;

@@ -145,7 +145,12 @@ npm start                 # desktop only; defaults to localhost when unpackaged
 npm run dev:desktop       # desktop + DevTools; web must already be running
 npm run start:server      # connect to the deployed Qchat server
 npm start -- --url=http://10.80.45.152
+npm run sign:dev          # macOS: sign Electron.app so UNNotification toasts work
 ```
+
+On macOS, Electron 42+ requires a code-signed binary for Notification Center
+(`UNErrorDomain error 1` otherwise). `npm start` / `postinstall` run `sign:dev`
+automatically (ad-hoc, or identity `QCHAT_ELECTRON_DEV_IDENTITY` / `Electron Dev`).
 
 Config precedence:
 

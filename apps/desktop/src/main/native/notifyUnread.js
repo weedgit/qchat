@@ -68,7 +68,16 @@ function maybeNotifyFromUnread(status, deps = {}) {
       }
     });
     notification.on("failed", (_e, error) => {
-      console.warn("[qchat-desktop] unread backup toast failed:", error);
+      const msg = String(error || "");
+      console.warn("[qchat-desktop] unread backup toast failed:", msg);
+      if (
+        process.platform === "darwin" &&
+        /UNErrorDomain|NotificationsNotAllowed/i.test(msg)
+      ) {
+        console.warn(
+          "[qchat-desktop] macOS notifications need a signed Electron.app — run: npm run sign:dev"
+        );
+      }
     });
     console.log("[qchat-desktop] show unread backup toast:", { unread, mentions });
     notification.show();
