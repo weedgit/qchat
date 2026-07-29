@@ -1849,16 +1849,18 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   font-weight: 600;
 }
 .receipt-tick.delivered {
-  color: rgba(255, 255, 255, 0.7);
+  /* Gray double-check = delivered to device (notification may show); not read. */
+  color: rgba(255, 255, 255, 0.55);
 }
 .receipt-tick.read {
+  /* Blue double-check = peer actually opened/viewed the chat. */
   color: var(--accent);
 }
 [data-theme="light"] .receipt-tick {
   color: rgba(26, 35, 50, 0.7);
 }
 [data-theme="light"] .receipt-tick.delivered {
-  color: rgba(26, 35, 50, 0.7);
+  color: rgba(26, 35, 50, 0.45);
 }
 [data-theme="light"] .receipt-tick.read {
   color: var(--accent);

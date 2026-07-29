@@ -356,9 +356,19 @@ function receiptMark(msg: Message): ReactNode {
     const n = msg.readCount ?? msg.readBy?.length ?? 0;
     return ` ${n}/${msg.memberCount}`;
   }
-  if (msg.read) return <span className="receipt-tick read">{" \u2713\u2713"}</span>;
-  if (msg.delivered) return <span className="receipt-tick delivered">{" \u2713\u2713"}</span>;
-  return <span className="receipt-tick">{" \u2713"}</span>;
+  if (msg.read)
+    return (
+      <span className="receipt-tick read" title="Read">
+        {" \u2713\u2713"}
+      </span>
+    );
+  if (msg.delivered)
+    return (
+      <span className="receipt-tick delivered" title="Delivered">
+        {" \u2713\u2713"}
+      </span>
+    );
+  return <span className="receipt-tick" title="Sent">{" \u2713"}</span>;
 }
 
 function MenuIcon({

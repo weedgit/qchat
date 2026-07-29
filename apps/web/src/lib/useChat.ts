@@ -67,6 +67,26 @@ export function useChat() {
     if (typeof document !== "undefined" && document.hidden) return false;
     return windowFocusedRef.current;
   };
+  /** Refresh focus from Electron (or document) before read vs notify decisions. */
+  const refreshShellFocus = async (): Promise<boolean> => {
+    if (typeof document !== "undefined" && document.hidden) {
+      windowFocusedRef.current = false;
+      return false;
+    }
+    if (isQchatDesktop() && window.qchatDesktop?.isWindowFocused) {
+      try {
+        const s = await window.qchatDesktop.isWindowFocused();
+        if (s && typeof s.focused === "boolean") {
+          windowFocusedRef.current = s.focused;
+        }
+      } catch {
+        /* keep last known */
+      }
+    } else if (typeof document !== "undefined") {
+      windowFocusedRef.current = !document.hidden && document.hasFocus();
+    }
+    return isShellFocused();
+  };
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoffRef = useRef(1000);
@@ -801,52 +821,59 @@ export function useChat() {
       }
       return { ...prev, [msg.conversationId]: [...list, msg] };
     });
-    setConversations((prev) => {
-      const exists = prev.some((c) => c.id === msg.conversationId);
-      if (!exists) {
-        loadConversations();
-        return prev;
-      }
-      // Mattermost: only treat the open chat as "read" when the window is active.
-      const shellFocused = isShellFocused();
-      const viewingHere =
-        shellFocused && activeIdRef.current === msg.conversationId;
-      return prev.map((c) =>
-        c.id === msg.conversationId
-          ? {
-              ...c,
-              lastMessage: msg.content || c.lastMessage,
-              lastMessageAt: msg.createdAt,
-              lastMessageSender: msg.mine
-                ? meRef.current?.nickname || meRef.current?.username
-                : msg.senderName,
-              lastMessageMine: Boolean(msg.mine),
-              unreadCount:
-                viewingHere || msg.mine ? c.unreadCount : c.unreadCount + 1,
-              mentionCount:
-                viewingHere || msg.mine
-                  ? c.mentionCount ?? 0
-                  : (() => {
-                      const isMention =
-                        Boolean((payload as any)?.mention_all) ||
-                        (Array.isArray((payload as any)?.mentions) &&
-                          (payload as any).mentions.includes(meRef.current?.id));
-                      return (c.mentionCount ?? 0) + (isMention ? 1 : 0);
-                    })(),
-            }
-          : c
-      );
-    });
 
-    if (!msg.mine && msg.id) {
-      api(`/v1/messages/${msg.id}/delivered`, { method: "POST" }).catch(() => {});
-      const shellFocused = isShellFocused();
+    // Read receipts and notifications must stay independent:
+    // delivered = device received (may toast); read = user is actively viewing this chat.
+    void (async () => {
+      const shellFocused = await refreshShellFocus();
       const viewingHere =
         shellFocused && activeIdRef.current === msg.conversationId;
-      // Mattermost MM-58567: do not mark read while the window is in the background.
+
+      setConversations((prev) => {
+        const exists = prev.some((c) => c.id === msg.conversationId);
+        if (!exists) {
+          loadConversations();
+          return prev;
+        }
+        return prev.map((c) =>
+          c.id === msg.conversationId
+            ? {
+                ...c,
+                lastMessage: msg.content || c.lastMessage,
+                lastMessageAt: msg.createdAt,
+                lastMessageSender: msg.mine
+                  ? meRef.current?.nickname || meRef.current?.username
+                  : msg.senderName,
+                lastMessageMine: Boolean(msg.mine),
+                unreadCount:
+                  viewingHere || msg.mine ? c.unreadCount : c.unreadCount + 1,
+                mentionCount:
+                  viewingHere || msg.mine
+                    ? c.mentionCount ?? 0
+                    : (() => {
+                        const isMention =
+                          Boolean((payload as any)?.mention_all) ||
+                          (Array.isArray((payload as any)?.mentions) &&
+                            (payload as any).mentions.includes(meRef.current?.id));
+                        return (c.mentionCount ?? 0) + (isMention ? 1 : 0);
+                      })(),
+              }
+            : c
+        );
+      });
+
+      if (msg.mine || !msg.id) return;
+
+      // Delivered only means the client got the event — never implies read.
+      api(`/v1/messages/${msg.id}/delivered`, { method: "POST" }).catch(() => {});
+
       if (viewingHere) {
+        // Actively viewing this chat: mark read, never toast.
         api(`/v1/messages/${msg.id}/read`, { method: "POST" }).catch(() => {});
+        return;
       }
+
+      // Not viewing: notify only — do not call /read.
       const conversation = conversationsRef.current.find(
         (c) => c.id === msg.conversationId
       );
@@ -861,56 +888,39 @@ export function useChat() {
           isMention,
         })
       ) {
-        /* skip per notify_props */
-      } else if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
-        // Always hand off to main; main skips whenever the shell window is focused.
-        const sender = msg.senderName || conversation?.title || "New message";
-        const target =
-          conversation?.type === "dm"
-            ? meRef.current?.nickname ?? ""
-            : conversation?.title ?? "";
-        let title = target ? `${sender} → ${target}` : sender;
-        if (isMention) {
-          title = Boolean((payload as any)?.mention_all)
-            ? `Mentioned everyone · ${title}`
-            : `Mentioned you · ${title}`;
-        }
+        return;
+      }
+
+      const sender = msg.senderName || conversation?.title || "New message";
+      const target =
+        conversation?.type === "dm"
+          ? meRef.current?.nickname ?? ""
+          : conversation?.title ?? "";
+      let title = target ? `${sender} → ${target}` : sender;
+      if (isMention) {
+        title = Boolean((payload as any)?.mention_all)
+          ? `Mentioned everyone · ${title}`
+          : `Mentioned you · ${title}`;
+      }
+      const body = msg.content || (msg.mediaUrl ? "Attachment" : "New message");
+
+      if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
         window.qchatDesktop
           .notifyMessage({
             title,
-            body: msg.content || (msg.mediaUrl ? "Attachment" : "New message"),
+            body,
             conversationId: msg.conversationId,
             silent: !notify.sound,
             mention: isMention,
-            suppressIfFocused: activeIdRef.current === msg.conversationId,
-          })
-          .then((ok) => {
-            if (!ok) {
-              console.warn("[qchat] desktop notifyMessage returned false", {
-                conversationId: msg.conversationId,
-                title,
-              });
-            }
+            suppressIfFocused: false,
           })
           .catch((err) => {
             console.error("[qchat] desktop notifyMessage failed:", err);
           });
-      } else if (
-        (!shellFocused || activeIdRef.current !== msg.conversationId) &&
-        "Notification" in window &&
-        Notification.permission === "granted"
-      ) {
-        const sender = msg.senderName || conversation?.title || "New message";
-        const target =
-          conversation?.type === "dm"
-            ? meRef.current?.nickname ?? ""
-            : conversation?.title ?? "";
-        let title = target ? `${sender} → ${target}` : sender;
-        if (isMention) {
-          title = Boolean((payload as any)?.mention_all)
-            ? `Mentioned everyone · ${title}`
-            : `Mentioned you · ${title}`;
-        }
+        return;
+      }
+
+      if ("Notification" in window && Notification.permission === "granted") {
         const notification = new Notification(title, {
           body: msg.content,
           tag: `qchat-${msg.conversationId}`,
@@ -918,20 +928,15 @@ export function useChat() {
           icon: mediaAuthURL(msg.senderAvatar),
         });
         notification.onclick = () => {
+          // Clicking a toast means the user is opening the chat — enable read after focus.
+          windowFocusedRef.current = true;
           window.focus();
           setActiveId(msg.conversationId);
-          setConversations((prev) =>
-            prev.map((c) =>
-              c.id === msg.conversationId
-                ? { ...c, unreadCount: 0, mentionCount: 0 }
-                : c
-            )
-          );
-          loadMessages(msg.conversationId);
+          void loadMessages(msg.conversationId);
           notification.close();
         };
       }
-    }
+    })();
   }, [loadConversations, loadMessages, clearTypingUser, upsertTypingUser]);
 
   const handleIncomingRef = useRef(handleIncoming);
