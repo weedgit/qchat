@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/locale";
 import {
   detectDownloadOs,
   downloadHref,
+  FALLBACK_DOWNLOAD_MANIFEST,
   formatBytes,
   isElectronShell,
   loadDownloadManifest,
@@ -65,19 +66,24 @@ function AppCard({
   getLabel,
   soonLabel,
   recommendedLabel,
+  delayMs = 0,
 }: {
   app: DownloadApp;
   recommended?: boolean;
   getLabel: string;
   soonLabel: string;
   recommendedLabel: string;
+  delayMs?: number;
 }) {
   const href = downloadHref(app);
   const size = formatBytes(app.sizeBytes);
   const ready = Boolean(href);
 
   return (
-    <article className={`dl-card${recommended ? " is-recommended" : ""}${ready ? "" : " is-soon"}`}>
+    <article
+      className={`dl-card dl-reveal${recommended ? " is-recommended" : ""}${ready ? "" : " is-soon"}`}
+      style={{ ["--dl-delay" as string]: `${delayMs}ms` }}
+    >
       <div className="dl-card-icon" data-os={app.os}>
         <PlatformIcon os={app.os} />
       </div>
@@ -104,9 +110,41 @@ export default function DownloadPage() {
   const router = useRouter();
   const { t } = useLocale();
   const [os, setOs] = useState<DownloadOs>("unknown");
-  const [manifest, setManifest] = useState<DownloadManifest | null>(null);
+  const [manifest, setManifest] = useState<DownloadManifest>(FALLBACK_DOWNLOAD_MANIFEST);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const pageRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    document.documentElement.classList.add("dl-route");
+    return () => {
+      document.documentElement.classList.remove("dl-route");
+    };
+  }, []);
+
+  useEffect(() => {
+    const root = pageRef.current;
+    if (!root) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const nodes = Array.from(root.querySelectorAll<HTMLElement>(".dl-reveal"));
+    if (reduce) {
+      nodes.forEach((el) => el.classList.add("is-in"));
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add("is-in");
+          io.unobserve(entry.target);
+        }
+      },
+      { root, rootMargin: "0px 0px -8% 0px", threshold: 0.12 }
+    );
+    nodes.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [manifest]);
 
   useEffect(() => {
     if (isElectronShell()) {
@@ -123,9 +161,8 @@ export default function DownloadPage() {
           setError(null);
         }
       } catch {
+        // Keep fallback cards visible; only surface a soft error.
         if (!cancelled) setError("load-error");
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
     return () => {
@@ -133,14 +170,26 @@ export default function DownloadPage() {
     };
   }, [router]);
 
-  const apps = manifest?.apps ?? [];
+  const apps = manifest.apps ?? [];
   const recommended = useMemo(() => pickRecommended(apps, os), [apps, os]);
   const desktop = apps.filter((a) => a.group === "desktop");
   const mobile = apps.filter((a) => a.group === "mobile");
   const primaryHref = recommended ? downloadHref(recommended) : null;
 
+  function scrollToId(id: string) {
+    const target = document.getElementById(id);
+    const root = pageRef.current;
+    if (!target || !root) return;
+    const top =
+      target.getBoundingClientRect().top -
+      root.getBoundingClientRect().top +
+      root.scrollTop -
+      16;
+    root.scrollTo({ top, behavior: "smooth" });
+  }
+
   return (
-    <div className="dl-page">
+    <div className="dl-page" ref={pageRef}>
       <div className="dl-bg" aria-hidden />
       <header className="dl-top">
         <Link href="/login" className="dl-brand">
@@ -174,15 +223,23 @@ export default function DownloadPage() {
                   {t("download.forPlatform", { platform: recommended.title })}
                 </a>
               ) : (
-                <a className="dl-btn-primary" href="#desktop">
+                <button
+                  type="button"
+                  className="dl-btn-primary"
+                  onClick={() => scrollToId("desktop")}
+                >
                   {t("download.browseAll")}
-                </a>
+                </button>
               )}
-              <a className="dl-btn-secondary" href="#mobile">
+              <button
+                type="button"
+                className="dl-btn-secondary"
+                onClick={() => scrollToId("mobile")}
+              >
                 {t("download.mobileCta")}
-              </a>
+              </button>
             </div>
-            {manifest?.version && (
+            {manifest.version && (
               <p className="dl-version">
                 {t("download.version", { version: manifest.version })}
                 {manifest.updatedAt ? ` · ${manifest.updatedAt}` : ""}
@@ -201,10 +258,9 @@ export default function DownloadPage() {
         </section>
 
         {error && <div className="dl-banner-error">{t("download.loadError")}</div>}
-        {loading && <div className="dl-banner-muted">{t("common.loading")}</div>}
 
         <section className="dl-section" id="desktop">
-          <div className="dl-section-head">
+          <div className="dl-section-head dl-reveal">
             <div>
               <h2>{t("download.desktopTitle")}</h2>
               <p>{t("download.desktopLead")}</p>
@@ -219,7 +275,7 @@ export default function DownloadPage() {
             />
           </div>
           <div className="dl-grid">
-            {desktop.map((app) => (
+            {desktop.map((app, i) => (
               <AppCard
                 key={app.id}
                 app={app}
@@ -227,13 +283,14 @@ export default function DownloadPage() {
                 getLabel={t("download.get")}
                 soonLabel={t("download.comingSoon")}
                 recommendedLabel={t("download.recommended")}
+                delayMs={80 + i * 70}
               />
             ))}
           </div>
         </section>
 
         <section className="dl-section" id="mobile">
-          <div className="dl-section-head">
+          <div className="dl-section-head dl-reveal">
             <div>
               <h2>{t("download.mobileTitle")}</h2>
               <p>{t("download.mobileLead")}</p>
@@ -248,7 +305,7 @@ export default function DownloadPage() {
             />
           </div>
           <div className="dl-grid">
-            {mobile.map((app) => (
+            {mobile.map((app, i) => (
               <AppCard
                 key={app.id}
                 app={app}
@@ -256,12 +313,13 @@ export default function DownloadPage() {
                 getLabel={t("download.get")}
                 soonLabel={t("download.comingSoon")}
                 recommendedLabel={t("download.recommended")}
+                delayMs={80 + i * 70}
               />
             ))}
           </div>
         </section>
 
-        <section className="dl-web-note">
+        <section className="dl-web-note dl-reveal">
           <div className="dl-web-note-inner">
             <h2>{t("download.webTitle")}</h2>
             <p>{t("download.webLead")}</p>

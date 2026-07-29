@@ -1,5 +1,4 @@
-import type { Room } from "livekit-client";
-import { ConnectionQuality, Track } from "livekit-client";
+import type { Room, Track } from "livekit-client";
 
 /** DEGRADED_CALL_QUALITY_ALERT_WAIT — avoid flashing on brief dips. */
 export const DEGRADED_CALL_QUALITY_ALERT_WAIT_MS = 20_000;
@@ -13,15 +12,16 @@ export type CallRtcStats = {
   bitrateKbps: number | null;
 };
 
-export function qualityFromLiveKit(q: ConnectionQuality): CallQualityLevel {
+/** Map LiveKit ConnectionQuality string enum without importing the runtime package. */
+export function qualityFromLiveKit(q: string): CallQualityLevel {
   switch (q) {
-    case ConnectionQuality.Excellent:
+    case "excellent":
       return "excellent";
-    case ConnectionQuality.Good:
+    case "good":
       return "good";
-    case ConnectionQuality.Poor:
+    case "poor":
       return "poor";
-    case ConnectionQuality.Lost:
+    case "lost":
       return "lost";
     default:
       return "unknown";
@@ -94,7 +94,7 @@ export async function sampleCallStats(room: Room | null): Promise<CallRtcStats> 
   const empty: CallRtcStats = { rttMs: null, jitterMs: null, packetsLost: null, bitrateKbps: null };
   if (!room) return empty;
   try {
-    const pub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+    const pub = room.localParticipant.getTrackPublication("microphone" as Track.Source);
     const track = pub?.track as { sender?: RTCRtpSender } | undefined;
     const sender = track?.sender;
     if (!sender) return empty;
@@ -128,7 +128,6 @@ export async function sampleCallStats(room: Room | null): Promise<CallRtcStats> 
       }
       if (r.type === "outbound-rtp") {
         const out = r as RTCOutboundRtpStreamStats & { bytesSent?: number; timestamp?: number };
-        // Instantaneous bitrate needs a delta; expose bytes/s approx when available via targetBitrate.
         const target = (r as { targetBitrate?: number }).targetBitrate;
         if (typeof target === "number" && target > 0) {
           bitrateKbps = Math.round(target / 1000);

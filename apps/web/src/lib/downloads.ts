@@ -87,3 +87,66 @@ export async function loadDownloadManifest(): Promise<DownloadManifest> {
   }
   return data;
 }
+
+/** Static catalog so the page never sits on an empty “Loading…” banner. */
+export const FALLBACK_DOWNLOAD_MANIFEST: DownloadManifest = {
+  version: "0.1.0",
+  updatedAt: undefined,
+  apps: [
+    {
+      id: "windows",
+      group: "desktop",
+      os: "windows",
+      title: "Windows",
+      subtitle: "NSIS installer (.exe)",
+      file: "qchat-desktop-Setup-0.1.0.exe",
+      available: false,
+    },
+    {
+      id: "macos",
+      group: "desktop",
+      os: "macos",
+      title: "macOS",
+      subtitle: "Disk image (.dmg)",
+      file: "qchat-desktop-0.1.0-x64.dmg",
+      available: false,
+    },
+    {
+      id: "linux-appimage",
+      group: "desktop",
+      os: "linux",
+      title: "Linux",
+      subtitle: "AppImage (x64)",
+      file: "qchat-desktop-0.1.0-x64.AppImage",
+      available: false,
+    },
+    {
+      id: "linux-deb",
+      group: "desktop",
+      os: "linux",
+      title: "Debian / Ubuntu",
+      subtitle: "Package (.deb)",
+      file: "qchat-desktop-0.1.0-amd64.deb",
+      available: false,
+    },
+    {
+      id: "android",
+      group: "mobile",
+      os: "android",
+      title: "Android",
+      subtitle: "APK install",
+      file: "qchat-mobile.apk",
+      available: false,
+    },
+    {
+      id: "ios",
+      group: "mobile",
+      os: "ios",
+      title: "iPhone & iPad",
+      subtitle: "App Store / TestFlight",
+      file: null,
+      storeUrl: null,
+      available: false,
+    },
+  ],
+};

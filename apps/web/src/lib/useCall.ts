@@ -1,17 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ConnectionQuality,
+import type {
+  LocalAudioTrack,
+  RemoteAudioTrack,
+  LocalTrackPublication,
+  Participant,
+  RemoteTrack,
   Room,
-  RoomEvent,
   Track,
-  createAudioAnalyser,
-  type LocalAudioTrack,
-  type RemoteAudioTrack,
-  type LocalTrackPublication,
-  type Participant,
-  type RemoteTrack,
 } from "livekit-client";
 import { api } from "@/lib/api";
 import {
@@ -39,6 +36,7 @@ import {
   type CallQualityLevel,
   type CallRtcStats,
 } from "@/lib/callQuality";
+import { loadLiveKit, liveKitOrThrow, prefetchLiveKit } from "@/lib/livekitRuntime";
 
 export type CallKind = "voice" | "video";
 
@@ -234,7 +232,7 @@ export function useCall(opts: {
     const room = roomRef.current;
     if (!room || !el) return;
     room.localParticipant.trackPublications.forEach((pub) => {
-      if (pub.track?.kind === Track.Kind.Video) {
+      if (pub.track?.kind === "video") {
         pub.track.attach(el);
         el.play().catch(() => {});
       }
@@ -262,6 +260,7 @@ export function useCall(opts: {
     onLevel: (v: number) => void,
     shouldZero?: () => boolean
   ): () => void {
+    const { createAudioAnalyser } = liveKitOrThrow();
     const { calculateVolume, cleanup } = createAudioAnalyser(track, {
       cloneTrack: false,
       fftSize: 512,
@@ -342,7 +341,7 @@ export function useCall(opts: {
       participantIdentity?: string
     ) => {
       if (!track) return;
-      if (track.kind === Track.Kind.Video) {
+      if (track.kind === "video") {
         if (participantLocal) {
           const el = localVideoElRef.current;
           if (el) {
@@ -358,7 +357,7 @@ export function useCall(opts: {
           track.attach(el);
           el.play().catch(() => {});
         }
-      } else if (track.kind === Track.Kind.Audio && !participantLocal) {
+      } else if (track.kind === "audio" && !participantLocal) {
         const identity = participantIdentity || "default";
         let el = peerAudioElsRef.current.get(identity);
         if (!el) {
@@ -395,8 +394,8 @@ export function useCall(opts: {
     room.remoteParticipants.forEach((p) => {
       const identity = String(p.identity || "");
       const userId = identity.split(":")[0] || identity;
-      const micPub = p.getTrackPublication(Track.Source.Microphone);
-      const camPub = p.getTrackPublication(Track.Source.Camera);
+      const micPub = p.getTrackPublication("microphone" as Track.Source);
+      const camPub = p.getTrackPublication("camera" as Track.Source);
       const hasMic = Boolean(micPub?.track);
       const hasCam = Boolean(camPub?.track);
       next.push({
@@ -420,7 +419,7 @@ export function useCall(opts: {
       if (!room || !el) return;
       const p = room.remoteParticipants.get(identity);
       p?.trackPublications.forEach((pub) => {
-        if (pub.track?.kind === Track.Kind.Video) {
+        if (pub.track?.kind === "video") {
           pub.track.attach(el);
           el.play().catch(() => {});
         }
@@ -473,6 +472,8 @@ export function useCall(opts: {
               : "Microphone API unavailable in this browser"
           );
         }
+        // Load WebRTC SDK in parallel with the mic permission probe.
+        const lkPromise = loadLiveKit();
         try {
           // Probe mic only. Opening camera here then stopping it often causes
           // Chrome/Electron "Could not start video source" when LiveKit opens
@@ -494,6 +495,7 @@ export function useCall(opts: {
           );
         }
 
+        const { Room, RoomEvent } = await lkPromise;
         const room = new Room({ adaptiveStream: true, dynacast: true });
         roomRef.current = room;
         hadRemoteRef.current = false;
@@ -508,19 +510,19 @@ export function useCall(opts: {
         room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub, participant) => {
           hadRemoteRef.current = true;
           attachTrack(track, false, participant.identity);
-          if (track.kind === Track.Kind.Audio) {
+          if (track.kind === "audio") {
             startRemoteMicMeter(track as RemoteAudioTrack);
           }
           syncRemotePeers();
         });
         room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
-          if (track.kind === Track.Kind.Audio) stopRemoteMicMeter();
+          if (track.kind === "audio") stopRemoteMicMeter();
           track.detach();
           syncRemotePeers();
         });
         room.on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
           if (pub.track) attachTrack(pub.track, true);
-          if (pub.track?.kind === Track.Kind.Audio) {
+          if (pub.track?.kind === "audio") {
             startMicMeter(pub.track as LocalAudioTrack);
           }
         });
@@ -554,7 +556,7 @@ export function useCall(opts: {
           reattachRemoteMedia();
           room.startAudio().catch(() => {});
         });
-        room.on(RoomEvent.ConnectionQualityChanged, (quality: ConnectionQuality, participant: Participant) => {
+        room.on(RoomEvent.ConnectionQualityChanged, (quality: string, participant: Participant) => {
           if (participant !== room.localParticipant) return;
           const level = qualityFromLiveKit(quality);
           setConnectionQuality(level);
@@ -638,8 +640,8 @@ export function useCall(opts: {
         try {
           await room.localParticipant.setMicrophoneEnabled(true);
           setMicMuted(false);
-          const micPub = room.localParticipant.getTrackPublication(Track.Source.Microphone);
-          if (micPub?.track?.kind === Track.Kind.Audio) {
+          const micPub = room.localParticipant.getTrackPublication("microphone" as Track.Source);
+          if (micPub?.track?.kind === "audio") {
             startMicMeter(micPub.track as LocalAudioTrack);
           }
         } catch (micErr: any) {
@@ -670,7 +672,7 @@ export function useCall(opts: {
           p.trackPublications.forEach((pub) => {
             if (pub.track) {
               attachTrack(pub.track, false, p.identity);
-              if (pub.track.kind === Track.Kind.Audio) {
+              if (pub.track.kind === "audio") {
                 startRemoteMicMeter(pub.track as RemoteAudioTrack);
               }
             }
@@ -722,6 +724,7 @@ export function useCall(opts: {
         const callId = String(payload?.call_id ?? payload?.id ?? "");
         const initiatorId = String(payload?.initiator_id ?? "");
         if (!callId || (meId && initiatorId === meId)) return;
+        prefetchLiveKit();
         setError(null);
         const conversationId = String(payload?.conversation_id ?? "");
         const fromPayload = String(payload?.initiator_avatar ?? "").trim();
@@ -890,6 +893,7 @@ export function useCall(opts: {
       inviteeIds?: string[]
     ) => {
       setError(null);
+      prefetchLiveKit();
       const body: Record<string, unknown> = { conversation_id: conversationId, kind };
       if (inviteeIds && inviteeIds.length > 0) {
         body.invitee_ids = inviteeIds;
@@ -933,6 +937,7 @@ export function useCall(opts: {
   const answerCall = useCallback(async () => {
     if (!incoming) return;
     setError(null);
+    prefetchLiveKit();
     const kind = incoming.kind;
     const callId = incoming.callId;
     const convId = incoming.conversationId;
