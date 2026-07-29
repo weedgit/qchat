@@ -23,6 +23,7 @@
     "check": "node scripts/check.js && node scripts/check-protocol.js && node scripts/check-context-menu.js && node scripts/check-sandbox.js && node scripts/check-signing.js",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --publish never",
+    "icon:ico": "node scripts/build-icon-ico.js",
     "dist:linux": "electron-builder --linux AppImage deb --publish never",
     "dist:win": "electron-builder --win nsis --publish never",
     "dist:win:docker": "bash scripts/dist-win-docker.sh",
@@ -126,7 +127,8 @@
   "devDependencies": {
     "@electron/notarize": "^3.1.1",
     "electron": "^43.1.1",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "2.1.8"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"
