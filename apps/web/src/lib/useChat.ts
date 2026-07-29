@@ -857,8 +857,7 @@ export function useChat() {
       ) {
         /* skip per notify_props */
       } else if (isQchatDesktop() && window.qchatDesktop?.notifyMessage) {
-        // Always hand off to main; main skips only when focused on this chat
-        // (Mattermost displayMention + shouldSkipNotification).
+        // Always hand off to main; main skips whenever the shell window is focused.
         const sender = msg.senderName || conversation?.title || "New message";
         const target =
           conversation?.type === "dm"
