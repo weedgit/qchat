@@ -1,0 +1,68 @@
+{
+  "version": "0.1.0",
+  "updatedAt": "2026-07-29",
+  "notes": "Copy built installers into this folder, then set available=true and matching file names. See README.md.",
+  "apps": [
+    {
+      "id": "windows",
+      "group": "desktop",
+      "os": "windows",
+      "title": "Windows",
+      "subtitle": "NSIS installer (.exe)",
+      "file": "qchat-desktop-Setup-0.1.0.exe",
+      "sizeBytes": null,
+      "available": false
+    },
+    {
+      "id": "macos",
+      "group": "desktop",
+      "os": "macos",
+      "title": "macOS",
+      "subtitle": "Disk image (.dmg)",
+      "file": "qchat-desktop-0.1.0-x64.dmg",
+      "sizeBytes": null,
+      "available": false
+    },
+    {
+      "id": "linux-appimage",
+      "group": "desktop",
+      "os": "linux",
+      "title": "Linux",
+      "subtitle": "AppImage (x64)",
+      "file": "qchat-desktop-0.1.0-x64.AppImage",
+      "sizeBytes": null,
+      "available": false
+    },
+    {
+      "id": "linux-deb",
+      "group": "desktop",
+      "os": "linux",
+      "title": "Debian / Ubuntu",
+      "subtitle": "Package (.deb)",
+      "file": "qchat-desktop-0.1.0-amd64.deb",
+      "sizeBytes": null,
+      "available": false
+    },
+    {
+      "id": "android",
+      "group": "mobile",
+      "os": "android",
+      "title": "Android",
+      "subtitle": "APK install",
+      "file": "qchat-mobile.apk",
+      "sizeBytes": null,
+      "available": false
+    },
+    {
+      "id": "ios",
+      "group": "mobile",
+      "os": "ios",
+      "title": "iPhone & iPad",
+      "subtitle": "App Store / TestFlight",
+      "file": null,
+      "storeUrl": null,
+      "sizeBytes": null,
+      "available": false
+    }
+  ]
+}

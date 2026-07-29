@@ -507,6 +507,30 @@ const en = {
   "join.joining": "Joining…",
   "join.submit": "Join",
   "chat.noConversationsYet": "No conversations yet. Add a friend or create a group.",
+
+  "download.nav": "Download",
+  "download.eyebrow": "Apps for every device",
+  "download.title": "Download Qchat",
+  "download.lead":
+    "Stay connected with your team on desktop and mobile — the same secure enterprise messenger, wherever you work.",
+  "download.forPlatform": "Download for {platform}",
+  "download.browseAll": "Browse desktop apps",
+  "download.mobileCta": "Mobile apps",
+  "download.version": "Version {version}",
+  "download.desktopTitle": "Desktop",
+  "download.desktopLead": "Native apps for Windows, macOS, and Linux with notifications, tray, and screen share.",
+  "download.mobileTitle": "Mobile",
+  "download.mobileLead": "Take chats, calls, and notifications with you on Android and iOS.",
+  "download.webTitle": "Prefer the browser?",
+  "download.webLead": "Qchat works in modern browsers — no install required. Sign in to get started.",
+  "download.openWeb": "Open Qchat Web",
+  "download.get": "Download",
+  "download.comingSoon": "Coming soon",
+  "download.recommended": "For you",
+  "download.signIn": "Sign in",
+  "download.createAccount": "Create account",
+  "download.backToLogin": "Back to sign in",
+  "download.loadError": "Could not load download catalog. Try again later.",
 } as const;
 
 const zh: Record<MessageKey, string> = {
@@ -1008,6 +1032,30 @@ const zh: Record<MessageKey, string> = {
   "join.joining": "加入中…",
   "join.submit": "加入",
   "chat.noConversationsYet": "还没有会话。添加好友或创建群组。",
+
+  "download.nav": "下载",
+  "download.eyebrow": "全平台应用",
+  "download.title": "下载 Qchat",
+  "download.lead":
+    "在桌面和手机上与团队保持联系 —— 同一套安全的企业即时通讯，随时随地高效协作。",
+  "download.forPlatform": "下载 {platform} 版",
+  "download.browseAll": "浏览桌面应用",
+  "download.mobileCta": "移动应用",
+  "download.version": "版本 {version}",
+  "download.desktopTitle": "桌面端",
+  "download.desktopLead": "支持 Windows、macOS 与 Linux，含系统通知、托盘与屏幕共享。",
+  "download.mobileTitle": "移动端",
+  "download.mobileLead": "在 Android 与 iOS 上随时收发消息、通话与通知。",
+  "download.webTitle": "更想用浏览器？",
+  "download.webLead": "Qchat 可在现代浏览器中直接使用，无需安装。登录即可开始。",
+  "download.openWeb": "打开网页版",
+  "download.get": "下载",
+  "download.comingSoon": "即将推出",
+  "download.recommended": "推荐",
+  "download.signIn": "登录",
+  "download.createAccount": "注册账号",
+  "download.backToLogin": "返回登录",
+  "download.loadError": "无法加载下载列表，请稍后重试。",
 };
 
 export const catalogs: Record<ResolvedLocale, Record<MessageKey, string>> = {

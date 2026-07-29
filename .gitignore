@@ -22,3 +22,11 @@ deploy/generated/*
 # Self-signed / local TLS material
 deploy/certs/
 .cursor/
+
+# Built client installers (keep manifest + images + README in git)
+apps/web/public/downloads/*
+!apps/web/public/downloads/.gitkeep
+!apps/web/public/downloads/README.md
+!apps/web/public/downloads/manifest.json
+!apps/web/public/downloads/images/
+!apps/web/public/downloads/images/**

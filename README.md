@@ -59,8 +59,17 @@ Web/PWA, admin, desktop, and mobile icons are generated from
 
 See [`docs/`](docs/) for requirements, architecture decisions, implementation plans, and operational guidance.
 
-- Dual deploy (VPS vs local LAN): [`docs/deployment-modes.md`](docs/deployment-modes.md)
+- **End-user & admin guide:** [`docs/user-guide.md`](docs/user-guide.md)
+- **Security implementation:** [`docs/security-implementation.md`](docs/security-implementation.md)
+- Dual deploy (VPS vs LAN): [`docs/deployment-modes.md`](docs/deployment-modes.md)
 - Always-on VPS with systemd + nginx: [`docs/deployment-nginx-systemd.md`](docs/deployment-nginx-systemd.md)
+
+### Client downloads (web)
+
+After building desktop/mobile installers, copy them into
+`apps/web/public/downloads/` and set `"available": true` in
+`manifest.json` (helper: `./scripts/publish-downloads.sh`).
+Users open **Download** on the login page → `/download`.
 
 To pull updates and redeploy on a host:
 

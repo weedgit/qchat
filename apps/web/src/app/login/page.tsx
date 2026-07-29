@@ -1,12 +1,15 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import LoadingSplash from "@/components/LoadingSplash";
 import { PasswordInput } from "@/components/PasswordInput";
 import { ApiError, api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
 import { isValidPhone, validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
+import { isElectronShell } from "@/lib/downloads";
+import { useLocale } from "@/lib/locale";
 
 interface CaptchaState {
   id: string;
@@ -15,6 +18,7 @@ interface CaptchaState {
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useLocale();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +37,11 @@ export default function LoginPage() {
   const [checkingSession, setCheckingSession] = useState(true);
   /** Keep splash up through navigation so desktop never flashes an empty black window. */
   const [enteringApp, setEnteringApp] = useState(false);
+  const [showDownload, setShowDownload] = useState(false);
+
+  useEffect(() => {
+    setShowDownload(!isElectronShell());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,6 +258,14 @@ export default function LoginPage() {
 
   return (
     <div className="auth-wrap">
+      {showDownload && (
+        <Link href="/download" className="auth-download-link" aria-label={t("download.nav")}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <path d="M12 3a1 1 0 0 1 1 1v9.6l2.8-2.8a1 1 0 1 1 1.4 1.4l-4.5 4.5a1 1 0 0 1-1.4 0L6.8 12.2a1 1 0 1 1 1.4-1.4L11 13.6V4a1 1 0 0 1 1-1zm-7 14a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1z" />
+          </svg>
+          {t("download.nav")}
+        </Link>
+      )}
       <form className="auth-card" onSubmit={onSubmit}>
         <div className="auth-logo">Q</div>
         <div className="auth-title">
