@@ -260,8 +260,12 @@ function GroupVideoStage({
   const focusedName =
     focusedId === LOCAL_FOCUS_ID ? t("chat.you") : focusedPeer?.name || "User";
   const focusedMicMuted = focusedId === LOCAL_FOCUS_ID ? micMuted : Boolean(focusedPeer?.micMuted);
+  const focusedScreenSharing =
+    focusedId === LOCAL_FOCUS_ID ? screenSharing : Boolean(focusedPeer?.screenSharing);
   const focusedCameraOff =
-    focusedId === LOCAL_FOCUS_ID ? cameraOff : Boolean(focusedPeer?.cameraOff);
+    focusedId === LOCAL_FOCUS_ID
+      ? cameraOff && !screenSharing
+      : Boolean(focusedPeer?.cameraOff);
 
   function selectFocus(id: string) {
     setFocusedId(id);
@@ -431,7 +435,7 @@ function GroupVideoStage({
                 title={t("call.focusPeer")}
               >
                 <video
-                  className="call-video remote"
+                  className={`call-video remote${p.screenSharing ? " is-screenshare" : ""}`}
                   ref={(el) => bindPeerVideoEl(p.identity, el)}
                   autoPlay
                   playsInline
@@ -454,13 +458,13 @@ function GroupVideoStage({
               title={t("call.focusPeer")}
             >
               <video
-                className="call-video"
+                className={`call-video${screenSharing ? " is-screenshare" : ""}`}
                 ref={(el) => setLocalVideoEl(el)}
                 autoPlay
                 playsInline
                 muted
               />
-              {cameraOff ? (
+              {cameraOff && !screenSharing ? (
                 <div className="call-video-fallback">
                   <Avatar name={t("chat.you")} size={64} />
                 </div>
@@ -475,7 +479,7 @@ function GroupVideoStage({
           <div className="call-focus-stage">
             {focusedId === LOCAL_FOCUS_ID ? (
               <video
-                className="call-video call-focus-video"
+                className={`call-video call-focus-video${focusedScreenSharing ? " is-screenshare" : ""}`}
                 ref={(el) => setLocalVideoEl(el)}
                 autoPlay
                 playsInline
@@ -484,7 +488,7 @@ function GroupVideoStage({
             ) : (
               <video
                 key={focusedId}
-                className="call-video call-focus-video"
+                className={`call-video call-focus-video${focusedScreenSharing ? " is-screenshare" : ""}`}
                 ref={(el) => bindPeerVideoEl(focusedId, el)}
                 autoPlay
                 playsInline
@@ -506,13 +510,13 @@ function GroupVideoStage({
             {focusedId !== LOCAL_FOCUS_ID ? (
               <div className="call-focus-pip">
                 <video
-                  className="call-video call-pip-self"
+                  className={`call-video call-pip-self${screenSharing ? " is-screenshare" : ""}`}
                   ref={(el) => setLocalVideoEl(el)}
                   autoPlay
                   playsInline
                   muted
                 />
-                {cameraOff ? (
+                {cameraOff && !screenSharing ? (
                   <div className="call-video-fallback">
                     <Avatar name={t("chat.you")} size={36} />
                   </div>
@@ -650,60 +654,29 @@ export default function CallOverlay({
     enableSound,
     toggleCallStats,
     audioPlaybackOk,
-    popOutCall,
     focusPopout,
   } = call;
 
-  const [embedGroupVideo, setEmbedGroupVideo] = useState(false);
-  const [popoutError, setPopoutError] = useState<string | null>(null);
-  const autoPopRef = useRef<string | null>(null);
+  const [embedGroupVideo, setEmbedGroupVideo] = useState(true);
+  const lastGroupVideoCallId = useRef<string | null>(null);
 
   const isGroupVideoActive =
     Boolean(active?.isGroup) &&
     active?.kind === "video" &&
     active?.status === "active";
 
-  // Telegram-style: open a dedicated video-chat window (stage + participant list).
+  // Group video stays in this window (fullscreen stage). No OS/browser pop-out.
   useEffect(() => {
     if (variant !== "main") return;
-    if (!isGroupVideoActive || poppedOut || connecting) return;
-    if (!active?.callId) return;
-    if (autoPopRef.current === active.callId) return;
-    autoPopRef.current = active.callId;
-    const timer = window.setTimeout(() => {
-      popOutCall()
-        .then((ok) => {
-          if (!ok) {
-            setEmbedGroupVideo(true);
-            setPopoutError(t("call.popOutFailed"));
-          } else {
-            setPopoutError(null);
-            setEmbedGroupVideo(false);
-          }
-        })
-        .catch(() => {
-          setEmbedGroupVideo(true);
-          setPopoutError(t("call.popOutFailed"));
-        });
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [
-    variant,
-    isGroupVideoActive,
-    poppedOut,
-    connecting,
-    active?.callId,
-    popOutCall,
-    t,
-  ]);
-
-  useEffect(() => {
-    if (!isGroupVideoActive) {
-      autoPopRef.current = null;
-      setEmbedGroupVideo(false);
-      setPopoutError(null);
+    if (!isGroupVideoActive || !active?.callId) {
+      if (!isGroupVideoActive) lastGroupVideoCallId.current = null;
+      return;
     }
-  }, [isGroupVideoActive]);
+    if (lastGroupVideoCallId.current !== active.callId) {
+      lastGroupVideoCallId.current = active.callId;
+      setEmbedGroupVideo(true);
+    }
+  }, [variant, isGroupVideoActive, active?.callId]);
 
   const statusTitle =
     active?.status === "ringing"
@@ -796,7 +769,43 @@ export default function CallOverlay({
       {audioEl}
       {incomingUi}
 
-      {/* Main chat: thin dock while Telegram-style call window holds media */}
+      {/* Compact dock while user is chatting during an in-window group video call */}
+      {isGroupVideoActive && !poppedOut && !embedGroupVideo && (
+        <div className="call-dock" role="status">
+          <div className="call-dock-text">
+            <strong>{t("call.inProgress")}</strong>
+            <span className="muted">
+              {" "}
+              · {remotePeers.length + 1} {t("call.participants").toLowerCase()}
+            </span>
+          </div>
+          <div className="call-dock-actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setEmbedGroupVideo(true)}
+            >
+              {t("call.expand")}
+            </button>
+            {onInviteClick ? (
+              <button type="button" className="btn-ghost" onClick={onInviteClick}>
+                {t("call.invite")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="call-control danger call-dock-hangup"
+              aria-label="End call"
+              title="Hang up"
+              onClick={() => hangup().catch(() => {})}
+            >
+              <CallIcon name="phoneEnd" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Legacy pop-out dock (only if a separate /call window was opened) */}
       {poppedOut && active && active.status === "active" && (
         <div className="call-dock" role="status">
           <div className="call-dock-text">
@@ -828,10 +837,9 @@ export default function CallOverlay({
         </div>
       )}
 
-      {/* Fallback if pop-up blocked: embed Telegram layout over chat */}
+      {/* In-window fullscreen group video (same window as chat) */}
       {isGroupVideoActive && !poppedOut && embedGroupVideo && (
         <div className="call-overlay call-group-fullscreen">
-          {popoutError ? <div className="error-text call-group-error">{popoutError}</div> : null}
           <GroupVideoStage
             call={call}
             onInviteClick={onInviteClick}
@@ -840,7 +848,7 @@ export default function CallOverlay({
         </div>
       )}
 
-      {active && !poppedOut && !(isGroupVideoActive && embedGroupVideo) && (
+      {active && !poppedOut && !isGroupVideoActive && (
         <div
           className={`call-overlay ${active.status === "ringing" ? "calling" : "in-call"} ${active.kind}`}
           role="dialog"
@@ -882,40 +890,20 @@ export default function CallOverlay({
                   : "Connection unstable — check your network or move closer to Wi‑Fi."}
               </div>
             )}
-            {isGroupVideoActive && (
-              <button
-                type="button"
-                className="btn call-expand-btn"
-                onClick={() => {
-                  setPopoutError(null);
-                  popOutCall()
-                    .then((ok) => {
-                      if (!ok) {
-                        setEmbedGroupVideo(true);
-                        setPopoutError(t("call.popOutFailed"));
-                      }
-                    })
-                    .catch(() => setEmbedGroupVideo(true));
-                }}
-              >
-                <span className="call-expand-btn-inner">
-                  <CallIcon name="popout" />
-                  {t("call.openWindow")}
-                </span>
-              </button>
-            )}
             {(active.kind === "video" || screenSharing) &&
               active.status === "active" &&
               !isGroupVideoActive && (
                 <div className="call-videos">
                   <video
-                    className="call-video remote"
+                    className={`call-video remote${
+                      remotePeers.some((p) => p.screenSharing) ? " is-screenshare" : ""
+                    }`}
                     ref={(el) => setRemoteVideoEl(el)}
                     autoPlay
                     playsInline
                   />
                   <video
-                    className="call-video local"
+                    className={`call-video local${screenSharing ? " is-screenshare" : ""}`}
                     ref={(el) => setLocalVideoEl(el)}
                     autoPlay
                     playsInline

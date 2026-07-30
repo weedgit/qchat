@@ -26,6 +26,7 @@ import {
   clearIncomingCallAlerts,
   notifyIncomingCall,
   ringForIncomingCall,
+  ringForOutgoingCall,
 } from "@/lib/callNotify";
 import {
   DEGRADED_CALL_QUALITY_ALERT_WAIT_MS,
@@ -73,9 +74,20 @@ export type CallRemotePeer = {
   userId: string;
   micMuted: boolean;
   cameraOff: boolean;
+  /** True when this peer is publishing a screen-share track. */
+  screenSharing: boolean;
 };
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
+
+/** Prefer screen share over camera so partners see the full desktop, not a cropped cam tile. */
+function preferredVideoTrack(participant: {
+  getTrackPublication: (source: Track.Source) => { track?: any } | undefined;
+}): any {
+  const screen = participant.getTrackPublication("screen_share" as Track.Source)?.track;
+  if (screen) return screen;
+  return participant.getTrackPublication("camera" as Track.Source)?.track ?? null;
+}
 
 /**
  * LiveKit WS URL the browser can reach.
@@ -225,18 +237,37 @@ export function useCall(opts: {
   const setRemoteVideoEl = useCallback((el: HTMLVideoElement | null) => {
     remoteVideoElRef.current = el;
     setRemoteVideoElState(el);
+    const room = roomRef.current;
+    if (!room || !el) return;
+    // DM stage: prefer the first remote peer's screen share over camera.
+    let attached = false;
+    room.remoteParticipants.forEach((p) => {
+      if (attached) return;
+      const track = preferredVideoTrack(p);
+      if (!track || track.kind !== "video") return;
+      track.attach(el);
+      el.play().catch(() => {});
+      el.classList.toggle(
+        "is-screenshare",
+        Boolean(p.getTrackPublication("screen_share" as Track.Source)?.track)
+      );
+      attached = true;
+    });
   }, []);
   const setLocalVideoEl = useCallback((el: HTMLVideoElement | null) => {
     localVideoElRef.current = el;
     setLocalVideoElState(el);
     const room = roomRef.current;
     if (!room || !el) return;
-    room.localParticipant.trackPublications.forEach((pub) => {
-      if (pub.track?.kind === "video") {
-        pub.track.attach(el);
-        el.play().catch(() => {});
-      }
-    });
+    const track = preferredVideoTrack(room.localParticipant);
+    if (track) {
+      track.attach(el);
+      el.play().catch(() => {});
+      el.classList.toggle(
+        "is-screenshare",
+        Boolean(room.localParticipant.getTrackPublication("screen_share" as Track.Source)?.track)
+      );
+    }
   }, []);
   const setRemoteAudioEl = useCallback((el: HTMLAudioElement | null) => {
     remoteAudioElRef.current = el;
@@ -342,21 +373,38 @@ export function useCall(opts: {
     ) => {
       if (!track) return;
       if (track.kind === "video") {
+        const room = roomRef.current;
         if (participantLocal) {
           const el = localVideoElRef.current;
-          if (el) {
-            track.attach(el);
-            el.play().catch(() => {});
-          }
+          if (!el || !room) return;
+          const preferred = preferredVideoTrack(room.localParticipant);
+          // Ignore camera frames while a screen-share track is the preferred source.
+          if (preferred && preferred !== track) return;
+          track.attach(el);
+          el.play().catch(() => {});
+          el.classList.toggle(
+            "is-screenshare",
+            Boolean(room.localParticipant.getTrackPublication("screen_share" as Track.Source)?.track)
+          );
           return;
         }
         const identity = participantIdentity || "";
         const peerEl = identity ? peerVideoElsRef.current.get(identity) : undefined;
         const el = peerEl || remoteVideoElRef.current;
-        if (el) {
-          track.attach(el);
-          el.play().catch(() => {});
+        if (!el) return;
+        if (room && identity) {
+          const p = room.remoteParticipants.get(identity);
+          if (p) {
+            const preferred = preferredVideoTrack(p);
+            if (preferred && preferred !== track) return;
+            el.classList.toggle(
+              "is-screenshare",
+              Boolean(p.getTrackPublication("screen_share" as Track.Source)?.track)
+            );
+          }
         }
+        track.attach(el);
+        el.play().catch(() => {});
       } else if (track.kind === "audio" && !participantLocal) {
         const identity = participantIdentity || "default";
         let el = peerAudioElsRef.current.get(identity);
@@ -396,14 +444,18 @@ export function useCall(opts: {
       const userId = identity.split(":")[0] || identity;
       const micPub = p.getTrackPublication("microphone" as Track.Source);
       const camPub = p.getTrackPublication("camera" as Track.Source);
+      const screenPub = p.getTrackPublication("screen_share" as Track.Source);
       const hasMic = Boolean(micPub?.track);
       const hasCam = Boolean(camPub?.track);
+      const hasScreen = Boolean(screenPub?.track);
       next.push({
         identity,
         name: String(p.name || userId || "User"),
         userId,
         micMuted: !hasMic || Boolean(micPub?.isMuted),
-        cameraOff: !hasCam || Boolean(camPub?.isMuted),
+        // Screen share counts as visible video (don't cover with avatar).
+        cameraOff: (!hasCam || Boolean(camPub?.isMuted)) && !hasScreen,
+        screenSharing: hasScreen,
       });
     });
     setRemotePeers(next);
@@ -418,12 +470,16 @@ export function useCall(opts: {
       const room = roomRef.current;
       if (!room || !el) return;
       const p = room.remoteParticipants.get(identity);
-      p?.trackPublications.forEach((pub) => {
-        if (pub.track?.kind === "video") {
-          pub.track.attach(el);
-          el.play().catch(() => {});
-        }
-      });
+      if (!p) return;
+      const track = preferredVideoTrack(p);
+      if (track && track.kind === "video") {
+        track.attach(el);
+        el.play().catch(() => {});
+      }
+      el.classList.toggle(
+        "is-screenshare",
+        Boolean(p.getTrackPublication("screen_share" as Track.Source)?.track)
+      );
     },
     []
   );
@@ -433,8 +489,10 @@ export function useCall(opts: {
     const room = roomRef.current;
     if (!room) return;
     room.remoteParticipants.forEach((p) => {
+      const track = preferredVideoTrack(p);
+      if (track) attachTrack(track as RemoteTrack, false, p.identity);
       p.trackPublications.forEach((pub) => {
-        if (pub.track) attachTrack(pub.track, false, p.identity);
+        if (pub.track?.kind === "audio") attachTrack(pub.track, false, p.identity);
       });
     });
   }, [attachTrack]);
@@ -515,19 +573,49 @@ export function useCall(opts: {
           }
           syncRemotePeers();
         });
-        room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub, participant) => {
           if (track.kind === "audio") stopRemoteMicMeter();
           track.detach();
           syncRemotePeers();
+          // Screen share ended → fall back to camera on that peer's tile.
+          if (track.kind === "video" && participant) {
+            const preferred = preferredVideoTrack(participant);
+            if (preferred) attachTrack(preferred as RemoteTrack, false, participant.identity);
+          }
         });
         room.on(RoomEvent.LocalTrackPublished, (pub: LocalTrackPublication) => {
           if (pub.track) attachTrack(pub.track, true);
           if (pub.track?.kind === "audio") {
             startMicMeter(pub.track as LocalAudioTrack);
           }
+          if (pub.source === ("screen_share" as Track.Source)) {
+            setScreenSharing(true);
+            const el = localVideoElRef.current;
+            const preferred = preferredVideoTrack(room.localParticipant);
+            if (el && preferred) {
+              preferred.attach(el);
+              el.play().catch(() => {});
+              el.classList.add("is-screenshare");
+            }
+          }
+        });
+        room.on(RoomEvent.LocalTrackUnpublished, (pub: LocalTrackPublication) => {
+          if (pub.source === ("screen_share" as Track.Source)) {
+            setScreenSharing(false);
+            const el = localVideoElRef.current;
+            const preferred = preferredVideoTrack(room.localParticipant);
+            if (el && preferred) {
+              preferred.attach(el);
+              el.play().catch(() => {});
+              el.classList.remove("is-screenshare");
+            } else if (el) {
+              el.classList.remove("is-screenshare");
+            }
+          }
         });
         room.on(RoomEvent.ParticipantConnected, (participant) => {
           hadRemoteRef.current = true;
+          clearRingAlerts();
           const name = String(participant?.name ?? "").trim();
           if (name) {
             setActive((prev) =>
@@ -614,6 +702,7 @@ export function useCall(opts: {
         );
         if (room.remoteParticipants.size > 0) {
           hadRemoteRef.current = true;
+          clearRingAlerts();
           room.remoteParticipants.forEach((p) => {
             const name = String(p.name ?? "").trim();
             if (name) {
@@ -724,6 +813,10 @@ export function useCall(opts: {
         const callId = String(payload?.call_id ?? payload?.id ?? "");
         const initiatorId = String(payload?.initiator_id ?? "");
         if (!callId || (meId && initiatorId === meId)) return;
+        // Already in this call — ignore duplicate rings (re-invite / race).
+        const cur = activeRef.current;
+        if (cur && cur.callId === callId && cur.status === "active") return;
+        // Busy in another call: keep media, still show incoming so user can decline.
         prefetchLiveKit();
         setError(null);
         const conversationId = String(payload?.conversation_id ?? "");
@@ -742,7 +835,7 @@ export function useCall(opts: {
           isGroup: Boolean(payload?.is_group),
         };
         setIncoming(incomingCall);
- // ringForCall + DID_NOTIFY_FOR_CALL (background tab).
+        // ringForCall + DID_NOTIFY_FOR_CALL (background tab).
         clearRingAlerts();
         ringForIncomingCall();
         incomingNotifyRef.current = notifyIncomingCall({
@@ -806,48 +899,40 @@ export function useCall(opts: {
       if (type === "call.taken") {
         // Another device of this user answered — clear local ring UI only.
         const callId = String(payload?.call_id ?? payload?.id ?? "");
-        const convId = String(payload?.conversation_id ?? "");
         clearRingAlerts();
         setIncoming((prev) => {
           if (!prev) return null;
           if (!callId || prev.callId === callId) return null;
-          if (convId && prev.conversationId === convId) return null;
           return prev;
         });
         return;
       }
       if (type === "call.ended") {
         const callId = String(payload?.call_id ?? payload?.id ?? "");
-        const convId = String(payload?.conversation_id ?? "");
+        // Match by call id only — never tear down an active call because another
+        // session in the same conversation ended (or was "replaced").
         endingRef.current = true;
         clearRingAlerts();
         setIncoming((prev) => {
           if (!prev) return null;
           if (!callId || prev.callId === callId) return null;
-          if (convId && prev.conversationId === convId) return null;
           return prev;
         });
         const endedActive = activeRef.current;
-        const matchesActive =
-          endedActive &&
-          ((!callId || endedActive.callId === callId) ||
-            (convId && endedActive.conversationId === convId));
+        const matchesActive = Boolean(
+          endedActive && callId && endedActive.callId === callId
+        );
         if (matchesActive && endedActive) {
           postCallChannel({ type: "call-ended", callId: endedActive.callId });
+          setActive(null);
+          resetMediaUi();
+          setError(null);
+          disconnectRoom().catch(() => {});
+          if (isPopoutWindow) {
+            window.setTimeout(() => window.close(), 250);
+          }
         }
-        setActive((prev) => {
-          if (!prev) return null;
-          if (!callId || prev.callId === callId) return null;
-          if (convId && prev.conversationId === convId) return null;
-          return prev;
-        });
-        resetMediaUi();
-        setError(null);
-        disconnectRoom().catch(() => {});
         endingRef.current = false;
-        if (isPopoutWindow) {
-          window.setTimeout(() => window.close(), 250);
-        }
       }
     });
   }, [subscribe, meId, connectLiveKit, disconnectRoom, clearRingAlerts, resetMediaUi, isPopoutWindow]);
@@ -921,6 +1006,8 @@ export function useCall(opts: {
         isGroup,
         isHost: true,
       });
+      // Phone-style ringback while waiting for answer / first peer.
+      ringForOutgoingCall();
       const token = String(res?.livekit_token ?? "");
       const url = String(res?.livekit_url ?? "");
       if (isGroup && token && url) {
@@ -948,6 +1035,18 @@ export function useCall(opts: {
       undefined;
     const isGroup = Boolean(incoming.isGroup);
     clearRingAlerts();
+
+    // Leaving a prior call before joining another — hangupServer leaves (non-host)
+    // or ends (host/DM); never leave media half-connected across rooms.
+    const prev = activeRef.current;
+    if (prev && prev.callId !== callId) {
+      const leaveId = prev.callId;
+      setActive(null);
+      resetMediaUi();
+      await disconnectRoom().catch(() => {});
+      await hangupServer(leaveId).catch(() => {});
+    }
+
     const res = await api<any>(`/v1/calls/${callId}/answer`, { method: "POST" });
     const token = String(res?.livekit_token ?? "");
     const url = String(res?.livekit_url ?? incoming.livekitUrl ?? "");
@@ -968,7 +1067,7 @@ export function useCall(opts: {
     } catch {
       /* error shown on overlay; user can Hang up */
     }
-  }, [incoming, connectLiveKit, clearRingAlerts]);
+  }, [incoming, connectLiveKit, clearRingAlerts, disconnectRoom, hangupServer, resetMediaUi]);
 
   const inviteToCall = useCallback(async (userIds: string[]) => {
     const cur = activeRef.current;
@@ -1216,6 +1315,14 @@ export function useCall(opts: {
     try {
       await room.localParticipant.setScreenShareEnabled(next);
       setScreenSharing(next);
+      const el = localVideoElRef.current;
+      const track = preferredVideoTrack(room.localParticipant);
+      if (el && track) {
+        track.attach(el);
+        el.play().catch(() => {});
+        el.classList.toggle("is-screenshare", next);
+      }
+      syncRemotePeers();
     } catch (err: any) {
       setScreenSharing(false);
       const msg = String(err?.message || err || "");
@@ -1227,7 +1334,7 @@ export function useCall(opts: {
         setError(msg || "Could not start screen share");
       }
     }
-  }, [screenSharing, active?.status]);
+  }, [screenSharing, active?.status, syncRemotePeers]);
 
   return {
     incoming,

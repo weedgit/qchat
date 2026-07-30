@@ -25,14 +25,21 @@ import UserQr from "@/components/UserQr";
 import EmojiPicker, { type PickerMedia } from "@/components/EmojiPicker";
 import { AnimatedEmojiOnlyBody } from "@/components/AnimatedEmoji";
 import MessageBody, { formatComposerMentions } from "@/components/MessageBody";
-import { api, asList, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
+import { api, asList, ApiError, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
+import { countIncomingPending, notifyFriendRequest } from "@/lib/friendNotify";
 import { getAuthDevice } from "@/lib/device";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
 import { parseUserPayload } from "@/lib/userQr";
 import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
 import { useCall } from "@/lib/useCall";
-import { Conversation, Message, conversationDisplayName, formatLastSeen } from "@/lib/types";
+import {
+  Conversation,
+  Message,
+  conversationDisplayName,
+  formatLastSeen,
+  normalizeFriend,
+} from "@/lib/types";
 import { useTheme } from "@/lib/theme";
 import { useLocale } from "@/lib/locale";
 import {
@@ -1085,6 +1092,8 @@ export default function ChatPageInner() {
   const [inviteIdCopied, setInviteIdCopied] = useState(false);
   const [groupCallInvite, setGroupCallInvite] = useState<"voice" | "video" | "mid" | null>(null);
   const [groupCallInviteBusy, setGroupCallInviteBusy] = useState(false);
+  const [pendingFriendCount, setPendingFriendCount] = useState(0);
+  const [friendRequestToast, setFriendRequestToast] = useState<string | null>(null);
   const [muteNowMs, setMuteNowMs] = useState(() => Date.now());
   const [memberMenu, setMemberMenu] = useState<{
     x: number;
@@ -1403,17 +1412,13 @@ export default function ChatPageInner() {
       chat.myRole === "owner" ||
       chat.myRole === "admin");
 
-  /** Open DM with a group member and show their user detail panel. */
-  async function openMemberChat(userId: string) {
-    if (!userId || userId === chat.me?.id) return;
-    try {
-      await chat.openDM(userId);
-      setMobileChatOpen(true);
-      setShowDetails(true);
-      setMemberProfile(null);
-    } catch (e: any) {
-      logChatError(e?.message || "Could not open chat");
-    }
+  /** Open Contacts and prefill search with a group member's username. */
+  function openAddContact(username: string) {
+    const q = username.trim();
+    if (!q) return;
+    setMemberProfile(null);
+    setShowDetails(false);
+    router.push(`/friends?q=${encodeURIComponent(q)}`);
   }
 
   /** Show a group member's profile inside the right details panel. */
@@ -1989,6 +1994,57 @@ export default function ChatPageInner() {
     window.addEventListener("qchat:group-pending", onPending);
     return () => window.removeEventListener("qchat:group-pending", onPending);
   }, [showDetails, active?.id, active?.type, groupDetails?.role, chat.myRole]);
+
+  // Pending friend-request badge + live toast/notification.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const body = await api<any>("/v1/friends");
+        if (cancelled) return;
+        const friends = asList(body, "friends").map(normalizeFriend);
+        setPendingFriendCount(countIncomingPending(friends));
+      } catch {
+        /* ignore — badge is best-effort */
+      }
+    };
+    void refresh();
+    const onFriend = (ev: Event) => {
+      const detail = (
+        ev as CustomEvent<{
+          status?: string;
+          type?: string;
+          from_name?: string;
+          from_username?: string;
+        }>
+      ).detail;
+      void refresh();
+      const status = String(detail?.status ?? "");
+      const type = String(detail?.type ?? "");
+      // New incoming request (pending) — surface it outside Contacts.
+      if (type === "friend.request" && (status === "pending" || status === "")) {
+        const name =
+          detail?.from_name?.trim() ||
+          (detail?.from_username?.trim() ? `@${detail.from_username.trim()}` : "") ||
+          t("contacts.add");
+        setFriendRequestToast(t("contacts.requestToast", { name }));
+        notifyFriendRequest({
+          fromName: detail?.from_name,
+          fromUsername: detail?.from_username,
+        });
+        window.setTimeout(() => {
+          setFriendRequestToast((cur) =>
+            cur === t("contacts.requestToast", { name }) ? null : cur
+          );
+        }, 8000);
+      }
+    };
+    window.addEventListener("qchat:friend-request", onFriend);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("qchat:friend-request", onFriend);
+    };
+  }, [t]);
 
   // Keep RHS group policy in sync when another admin toggles forbid-friend-add.
   useEffect(() => {
@@ -2739,6 +2795,26 @@ export default function ChatPageInner() {
         reconnectOnly
         reconnecting={!chat.connected && wsEverConnected}
       />
+      {friendRequestToast ? (
+        <div className="friend-request-toast" role="status" aria-live="polite">
+          <span>{friendRequestToast}</span>
+          <Link
+            href="/friends"
+            className="btn friend-request-toast-btn"
+            onClick={() => setFriendRequestToast(null)}
+          >
+            {t("contacts.openRequests")}
+          </Link>
+          <button
+            type="button"
+            className="icon-btn friend-request-toast-close"
+            aria-label={t("chat.close")}
+            onClick={() => setFriendRequestToast(null)}
+          >
+            {"\u2715"}
+          </button>
+        </div>
+      ) : null}
       <aside className="sidebar">
         <div className="sidebar-header">
           <button
@@ -2756,6 +2832,9 @@ export default function ChatPageInner() {
             }}
           >
             <MenuIcon d={ICONS.menu} />
+            {pendingFriendCount > 0 ? (
+              <span className="menu-pending-dot" aria-hidden />
+            ) : null}
           </button>
           <div className="search-wrap">
             <MenuIcon
@@ -2851,7 +2930,12 @@ export default function ChatPageInner() {
               </Link>
               <Link className="ctx-item" href="/friends" onClick={() => setMainMenuOpen(false)}>
                 <MenuIcon d={ICONS.user} />
-                {t("menu.contacts")}
+                <span className="ctx-item-label">{t("menu.contacts")}</span>
+                {pendingFriendCount > 0 ? (
+                  <span className="badge ctx-item-badge" title={t("contacts.pendingBadge", { n: pendingFriendCount })}>
+                    {pendingFriendCount > 99 ? "99+" : pendingFriendCount}
+                  </span>
+                ) : null}
               </Link>
               <Link className="ctx-item" href="/groups" onClick={() => setMainMenuOpen(false)}>
                 <MenuIcon d={ICONS.users} />
@@ -3113,7 +3197,12 @@ export default function ChatPageInner() {
               onClick={() => setComposeOpen(false)}
             >
               <MenuIcon d={ICONS.user} />
-              {t("menu.newPrivateChat")}
+              <span className="ctx-item-label">{t("menu.newPrivateChat")}</span>
+              {pendingFriendCount > 0 ? (
+                <span className="badge ctx-item-badge" title={t("contacts.pendingBadge", { n: pendingFriendCount })}>
+                  {pendingFriendCount > 99 ? "99+" : pendingFriendCount}
+                </span>
+              ) : null}
             </Link>
             <button
               type="button"
@@ -3948,10 +4037,21 @@ export default function ChatPageInner() {
                   <button
                     type="button"
                     className="btn member-profile-message"
-                    disabled={memberProfileBusy}
-                    onClick={() => openMemberChat(memberProfile.id).catch(() => {})}
+                    disabled={
+                      memberProfileBusy ||
+                      Boolean(memberProfile.is_friend) ||
+                      Boolean(groupDetails?.forbid_member_friend_add)
+                    }
+                    title={
+                      memberProfile.is_friend
+                        ? t("details.alreadyContact")
+                        : groupDetails?.forbid_member_friend_add
+                          ? t("details.membersCannotAdd")
+                          : t("contacts.add")
+                    }
+                    onClick={() => openAddContact(memberProfile.username)}
                   >
-                    {t("details.sendMessage")}
+                    {memberProfile.is_friend ? t("details.alreadyContact") : t("contacts.add")}
                   </button>
                 </>
               ) : null}
@@ -4996,7 +5096,11 @@ export default function ChatPageInner() {
                 }
                 setGroupCallInvite(null);
               } catch (e: any) {
-                logChatError(e?.message || "Could not start call");
+                if (e instanceof ApiError && e.code === "call_in_progress") {
+                  logChatError(t("call.alreadyInProgress"));
+                } else {
+                  logChatError(e?.message || "Could not start call");
+                }
               } finally {
                 setGroupCallInviteBusy(false);
               }

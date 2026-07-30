@@ -740,6 +740,9 @@ export function useChat() {
               id: String(payload?.id ?? ""),
               peer_id: String(payload?.peer_id ?? "") || undefined,
               conversation_id: String(payload?.conversation_id ?? "") || undefined,
+              from_name: String(payload?.from_name ?? "") || undefined,
+              from_username: String(payload?.from_username ?? "") || undefined,
+              type,
             },
           })
         );

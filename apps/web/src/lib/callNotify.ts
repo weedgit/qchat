@@ -14,7 +14,7 @@ export function notifyIncomingCall(opts: {
   const props = loadLocalNotifyProps();
   if (props.desktop === "none") return null;
 
- // : desktop notify only when document is hidden.
+  // desktop notify only when document is hidden.
   if (document.visibilityState !== "hidden" && !document.hidden) return null;
 
   const who = opts.initiatorName?.trim() || "Someone";
@@ -31,11 +31,18 @@ export function notifyIncomingCall(opts: {
   return n;
 }
 
-/** Start ringtone if notify sound is enabled (ringForCall). */
+/** Start ringtone if notify sound is enabled (callee). */
 export function ringForIncomingCall(): void {
   const props = loadLocalNotifyProps();
   if (!props.sound) return;
-  startCallRing();
+  startCallRing("incoming");
+}
+
+/** Ringback while the caller waits for answer / first peer (phone-style). */
+export function ringForOutgoingCall(): void {
+  const props = loadLocalNotifyProps();
+  if (!props.sound) return;
+  startCallRing("outgoing");
 }
 
 export function clearIncomingCallAlerts(notification?: Notification | null): void {

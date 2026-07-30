@@ -138,10 +138,36 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Replace leftover ringing/active sessions in this conversation.
+	// Only clear unanswered ringing leftovers. Never auto-kill an active call —
+	// starting a second group video was ending everyone's in-progress session.
+	var activeCallID string
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT id::text FROM call_sessions
+		WHERE conversation_id=$1 AND status='active'
+		ORDER BY COALESCE(answered_at, created_at) DESC
+		LIMIT 1`, req.ConversationID).Scan(&activeCallID)
+	if activeCallID != "" {
+		if isGroup {
+			writeErrCode(w, 409, "call_in_progress",
+				"a call is already in progress in this group — join or invite to that call instead of starting a new one")
+			return
+		}
+		// DM: replace the previous 1:1 session so a new dial can proceed.
+		_, _ = s.db.Exec(r.Context(), `
+			UPDATE call_sessions SET status='ended', ended_at=COALESCE(ended_at, now())
+			WHERE id=$1 AND status='active'`, activeCallID)
+		s.hub.PublishToUsers(members, ws.Event{
+			Type: "call.ended",
+			Payload: map[string]any{
+				"id": activeCallID, "call_id": activeCallID, "conversation_id": req.ConversationID,
+				"status": "ended", "reason": "replaced", "by": c.UserID,
+			},
+		})
+	}
+
 	rows, _ := s.db.Query(r.Context(), `
 		SELECT id::text FROM call_sessions
-		WHERE conversation_id=$1 AND status IN ('ringing','active')`, req.ConversationID)
+		WHERE conversation_id=$1 AND status='ringing'`, req.ConversationID)
 	var staleIDs []string
 	if rows != nil {
 		for rows.Next() {
@@ -155,7 +181,7 @@ func (s *Server) handleStartCall(w http.ResponseWriter, r *http.Request) {
 	if len(staleIDs) > 0 {
 		_, _ = s.db.Exec(r.Context(), `
 			UPDATE call_sessions SET status='ended', ended_at=COALESCE(ended_at, now())
-			WHERE conversation_id=$1 AND status IN ('ringing','active')`, req.ConversationID)
+			WHERE conversation_id=$1 AND status='ringing'`, req.ConversationID)
 		for _, sid := range staleIDs {
 			s.hub.PublishToUsers(members, ws.Event{
 				Type: "call.ended",

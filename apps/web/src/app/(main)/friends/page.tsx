@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import MenuModal from "@/components/MenuModal";
@@ -26,6 +26,8 @@ export default function FriendsPage() {
   const [addMsg, setAddMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [searchBusy, setSearchBusy] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const seededFromUrl = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -40,6 +42,19 @@ export default function FriendsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Prefill from /friends?q=username (group member → Add contact).
+  useEffect(() => {
+    if (seededFromUrl.current || typeof window === "undefined") return;
+    const q = new URLSearchParams(window.location.search).get("q")?.trim() || "";
+    if (!q) return;
+    seededFromUrl.current = true;
+    setQuery(q);
+    window.requestAnimationFrame(() => {
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    });
+  }, []);
 
   // Live pending/accepted updates from WS (hub publishes friend.request).
   useEffect(() => {
@@ -173,6 +188,7 @@ export default function FriendsPage() {
   }
 
   const incoming = friends.filter((f) => f.status === "pending" && f.incoming);
+  const outgoing = friends.filter((f) => f.status === "pending" && f.outgoing && !f.incoming);
   const blocked = friends.filter((f) => f.status === "blocked");
 
   return (
@@ -184,10 +200,62 @@ export default function FriendsPage() {
       {loadError && <div className="menu-modal-error">{loadError}</div>}
       {addMsg && <div className="menu-modal-hint">{addMsg}</div>}
 
+      {incoming.length > 0 ? (
+        <section className="menu-modal-section">
+          <div className="menu-modal-section-title">
+            {t("contacts.incomingCount", { n: incoming.length })}
+          </div>
+          {incoming.map((f) => (
+            <div className="menu-modal-list-row is-pending-friend" key={f.friendshipId}>
+              <Avatar name={f.nickname} url={f.avatarUrl} size={42} />
+              <div className="menu-modal-list-main">
+                <div className="menu-modal-list-title">{f.nickname}</div>
+                <div className="menu-modal-list-sub">@{f.username}</div>
+                <div className="menu-modal-list-sub contacts-pending-tag">{t("contacts.pending")}</div>
+              </div>
+              <div className="menu-modal-list-actions">
+                <button className="btn" disabled={busy} onClick={() => accept(f)}>
+                  {t("contacts.accept")}
+                </button>
+                <button className="btn-ghost" disabled={busy} onClick={() => reject(f)}>
+                  {t("contacts.reject")}
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
+      {outgoing.length > 0 ? (
+        <section className="menu-modal-section">
+          <div className="menu-modal-section-title">
+            {t("contacts.sentCount", { n: outgoing.length })}
+          </div>
+          {outgoing.map((f) => (
+            <div className="menu-modal-list-row is-pending-friend" key={f.friendshipId}>
+              <Avatar name={f.nickname} url={f.avatarUrl} size={42} />
+              <div className="menu-modal-list-main">
+                <div className="menu-modal-list-title">{f.nickname}</div>
+                <div className="menu-modal-list-sub">@{f.username}</div>
+                <div className="menu-modal-list-sub contacts-pending-tag">
+                  {t("contacts.waitingAccept")}
+                </div>
+              </div>
+              <div className="menu-modal-list-actions">
+                <button className="btn-ghost" disabled={busy} onClick={() => reject(f)}>
+                  {t("contacts.cancelRequest")}
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
+
       <section className="menu-modal-section">
         <div className="menu-modal-section-title">{t("contacts.add")}</div>
         <div className="menu-modal-panel">
           <input
+            ref={searchRef}
             type="search"
             placeholder={t("contacts.searchPlaceholder")}
             value={query}
@@ -215,30 +283,6 @@ export default function FriendsPage() {
             <div className="menu-modal-list-actions">
               <button className="btn-ghost" disabled={busy} onClick={() => requestUser(u)}>
                 {t("contacts.addButton")}
-              </button>
-            </div>
-          </div>
-        ))}
-      </section>
-
-      <section className="menu-modal-section">
-        <div className="menu-modal-section-title">{t("contacts.incoming")}</div>
-        {!loadError && incoming.length === 0 && (
-          <div className="menu-modal-empty">{t("contacts.noIncoming")}</div>
-        )}
-        {incoming.map((f) => (
-          <div className="menu-modal-list-row" key={f.friendshipId}>
-            <Avatar name={f.nickname} url={f.avatarUrl} size={42} />
-            <div className="menu-modal-list-main">
-              <div className="menu-modal-list-title">{f.nickname}</div>
-              <div className="menu-modal-list-sub">@{f.username}</div>
-            </div>
-            <div className="menu-modal-list-actions">
-              <button className="btn-ghost" disabled={busy} onClick={() => accept(f)}>
-                {t("contacts.accept")}
-              </button>
-              <button className="btn-ghost" disabled={busy} onClick={() => reject(f)}>
-                {t("contacts.reject")}
               </button>
             </div>
           </div>

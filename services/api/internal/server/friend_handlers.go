@@ -519,7 +519,16 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 			WHERE ((requester_id=$1 AND addressee_id=$2) OR (requester_id=$2 AND addressee_id=$1))
 			LIMIT 1`, c.UserID, targetID).Scan(&id)
 	}
-	payload := map[string]any{"from": c.UserID, "status": status, "id": id.String()}
+	payload := map[string]any{
+		"from":          c.UserID,
+		"status":        status,
+		"id":            id.String(),
+		"from_name":     s.userDisplayName(r, c.UserID),
+		"from_username": "",
+	}
+	var fromUser string
+	_ = s.db.QueryRow(r.Context(), `SELECT username FROM users WHERE id=$1`, c.UserID).Scan(&fromUser)
+	payload["from_username"] = fromUser
 	resp := map[string]any{"id": id.String(), "status": status}
 	if status == "accepted" {
 		convID, dmErr := s.ensureDMConversation(r, c.UserID, targetID, ent)
@@ -574,7 +583,8 @@ func (s *Server) handleFriendReject(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	tag, err := s.db.Exec(r.Context(), `
 		UPDATE friendships SET status='rejected'
-		WHERE id=$1 AND addressee_id=$2 AND status='pending'`,
+		WHERE id=$1 AND status='pending'
+		  AND (addressee_id=$2 OR requester_id=$2)`,
 		id, c.UserID)
 	if err != nil || tag.RowsAffected() == 0 {
 		writeErrCode(w, 404, "request_not_found", "request not found")
