@@ -54,8 +54,8 @@ export default function AdminShell({
     <div className="admin-shell">
       <aside className="admin-sidebar" aria-label="Admin navigation">
         <div className="admin-brand">
-          <span className="logo">Q</span>
-          <span className="admin-brand-text">Qchat Admin</span>
+          <span className="logo">R</span>
+          <span className="admin-brand-text">Rchat Admin</span>
         </div>
         <div className="admin-nav-label">Menu</div>
         <nav className="admin-nav">

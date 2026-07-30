@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
   platformLabel: osLabel,
   version: argumentValue("qchat-version"),
   webUrl: argumentValue("qchat-web-url"),
-  deviceName: `Qchat Desktop (${osLabel})`,
+  deviceName: `Rchat Desktop (${osLabel})`,
   notifyMessage: (payload) => ipcRenderer.invoke(IPC.DESKTOP_NOTIFY, payload),
   showAbout: () => ipcRenderer.invoke(IPC.SHOW_ABOUT),
   fetchCaptcha: () => ipcRenderer.invoke(IPC.FETCH_CAPTCHA),

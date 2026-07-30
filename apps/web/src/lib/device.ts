@@ -45,7 +45,7 @@ export async function getAuthDevice(): Promise<{
       const info = detectDesktopPlatform();
       return {
         deviceType: "desktop",
-        deviceName: desk.deviceName || `Qchat Desktop (${desk.platform || "unknown"})`,
+        deviceName: desk.deviceName || `Rchat Desktop (${desk.platform || "unknown"})`,
         deviceId,
         platform: info.platform,
       };

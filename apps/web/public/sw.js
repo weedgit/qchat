@@ -1,5 +1,5 @@
 /* Qchat PWA + Web Push service worker — keep one root-scoped worker. */
-const CACHE_NAME = "qchat-shell-v2";
+const CACHE_NAME = "qchat-shell-v3";
 const OFFLINE_URL = "/offline.html";
 const APP_SHELL = [
   "/",
@@ -89,7 +89,7 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let data = { title: "Qchat", body: "New message", tag: "qchat", type: "message", url: "/" };
+  let data = { title: "Rchat", body: "New message", tag: "qchat", type: "message", url: "/" };
   try {
     if (event.data) data = { ...data, ...event.data.json() };
   } catch (_) {
@@ -110,7 +110,7 @@ self.addEventListener("push", (event) => {
       } catch (_) {
         /* show anyway */
       }
-      await self.registration.showNotification(data.title || "Qchat", {
+      await self.registration.showNotification(data.title || "Rchat", {
         body: data.body || "",
         tag: data.tag || "qchat",
         icon: data.icon || "/icons/icon-192.png",

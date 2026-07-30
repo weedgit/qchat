@@ -71,5 +71,5 @@ func New(provider string) Sender {
 }
 
 func FormatPhoneCode(code string) string {
-	return fmt.Sprintf("Your Qchat verification code is %s. It expires in 10 minutes.", code)
+	return fmt.Sprintf("Your Rchat verification code is %s. It expires in 10 minutes.", code)
 }

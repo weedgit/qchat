@@ -127,7 +127,7 @@ func (s *Server) handleMFASetup(w http.ResponseWriter, r *http.Request) {
 	} else if phone != "" {
 		account = phone
 	}
-	uri := auth.TOTPURI("Qchat", account, secret)
+	uri := auth.TOTPURI("Rchat", account, secret)
 	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.mfa_setup", "user", c.UserID, "", clientIP(r), nil)
 	writeJSON(w, 200, map[string]any{
 		"secret":      secret,

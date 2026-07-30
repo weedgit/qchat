@@ -297,7 +297,7 @@ function createMainWindow(opts) {
     }
   }
 
-  /** Show local "Starting Qchat" splash immediately so startup never looks frozen. */
+  /** Show local "Starting Rchat" splash immediately so startup never looks frozen. */
   async function showStartupSplash() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
@@ -361,8 +361,8 @@ function createMainWindow(opts) {
       if (!isMainFrame || errorCode === -3) return;
       showMainWindow();
       dialog.showErrorBox(
-        "Qchat Desktop",
-        `Could not load Qchat web UI.\n\n` +
+        "Rchat Desktop",
+        `Could not load Rchat web UI.\n\n` +
           `URL: ${validatedURL || webUrl}\n` +
           `Error: ${errorDescription} (${errorCode})\n\n` +
           `Start apps/web (npm run dev) or set QCHAT_WEB_URL, e.g.\n` +
@@ -421,13 +421,13 @@ function createMainWindow(opts) {
           var path = location.pathname || "/";
           if (path !== "/" && path !== "") return;
           var text = (document.body && document.body.innerText || "").trim();
-          if (text !== "Loading…" && text !== "Loading..." && text.indexOf("Starting Qchat") === -1) return;
+          if (text !== "Loading…" && text !== "Loading..." && text.indexOf("Starting Rchat") === -1) return;
           setTimeout(function () {
             var still = (document.body && document.body.innerText || "").trim();
             if (
               still === "Loading…" ||
               still === "Loading..." ||
-              still.indexOf("Starting Qchat") !== -1
+              still.indexOf("Starting Rchat") !== -1
             ) {
               location.replace("/login");
             }

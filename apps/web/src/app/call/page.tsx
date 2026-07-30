@@ -22,7 +22,7 @@ export default function CallPopoutPage() {
   });
 
   useEffect(() => {
-    document.title = "Qchat Video Chat";
+    document.title = "Rchat Video Chat";
   }, []);
 
   useEffect(() => {

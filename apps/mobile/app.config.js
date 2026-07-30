@@ -21,7 +21,7 @@ const allowCleartext =
 
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
-  name: "Qchat",
+  name: "Rchat",
   slug: "qchat",
   version: "1.0.0",
   orientation: "portrait",
@@ -77,20 +77,20 @@ module.exports = {
     [
       "expo-audio",
       {
-        microphonePermission: "Allow Qchat to record voice messages.",
+        microphonePermission: "Allow Rchat to record voice messages.",
       },
     ],
     [
       "expo-image-picker",
       {
-        photosPermission: "Allow Qchat to send photos from your library.",
-        cameraPermission: "Allow Qchat to take photos for chat.",
+        photosPermission: "Allow Rchat to send photos from your library.",
+        cameraPermission: "Allow Rchat to take photos for chat.",
       },
     ],
     [
       "expo-camera",
       {
-        cameraPermission: "Allow Qchat to scan group invite QR codes.",
+        cameraPermission: "Allow Rchat to scan group invite QR codes.",
         microphonePermission: false,
         recordAudioAndroid: false,
       },
@@ -106,8 +106,8 @@ module.exports = {
     [
       "@config-plugins/react-native-webrtc",
       {
-        cameraPermission: "Allow Qchat to use your camera for video calls.",
-        microphonePermission: "Allow Qchat to use your microphone for calls.",
+        cameraPermission: "Allow Rchat to use your camera for video calls.",
+        microphonePermission: "Allow Rchat to use your microphone for calls.",
       },
     ],
   ],

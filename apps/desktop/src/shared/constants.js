@@ -1,4 +1,4 @@
-const APP_TITLE = "Qchat Desktop";
+const APP_TITLE = "Rchat Desktop";
 /** Must match package.json build.appId — required for Windows toast notifications. */
 const APP_ID = "com.qchat.desktop";
 /**

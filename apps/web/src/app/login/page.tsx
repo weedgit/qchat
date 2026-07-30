@@ -253,7 +253,7 @@ export default function LoginPage() {
   }
 
   if (checkingSession || enteringApp) {
-    return <LoadingSplash label={enteringApp ? "Opening chat" : "Starting Qchat"} />;
+    return <LoadingSplash label={enteringApp ? "Opening chat" : "Starting Rchat"} />;
   }
 
   return (
@@ -267,9 +267,9 @@ export default function LoginPage() {
         </Link>
       )}
       <form className="auth-card" onSubmit={onSubmit}>
-        <div className="auth-logo">Q</div>
+        <div className="auth-logo">R</div>
         <div className="auth-title">
-          {mode === "login" ? "Sign in to Qchat" : "Create your account"}
+          {mode === "login" ? "Sign in to Rchat" : "Create your account"}
         </div>
         <div className="auth-sub">
           {mode === "login"

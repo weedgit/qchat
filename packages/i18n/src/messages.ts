@@ -6,7 +6,7 @@ export type ResolvedLocale = "en" | "zh";
 export type MessageKey = keyof typeof en;
 
 const en = {
-  "app.name": "Qchat",
+  "app.name": "Rchat",
 
   "nav.chats": "Chats",
   "nav.contacts": "Contacts",
@@ -121,11 +121,11 @@ const en = {
   "settings.loadPushDevicesError": "Could not load notification devices",
   "settings.revokeSessionError": "Could not revoke session",
   "settings.removePushDeviceError": "Could not remove notification device",
-  "settings.installApp": "Install Qchat",
-  "settings.installAppHint": "Add Qchat to your home screen for a full-screen app experience.",
+  "settings.installApp": "Install Rchat",
+  "settings.installAppHint": "Add Rchat to your home screen for a full-screen app experience.",
   "settings.installAppAction": "Install",
   "settings.installAppIos": "On iPhone/iPad: Share → Add to Home Screen",
-  "pwa.installTitle": "Install Qchat",
+  "pwa.installTitle": "Install Rchat",
   "pwa.installBody": "Install for faster launch and a full-screen chat experience.",
   "pwa.installIosHint": "Tap Share, then Add to Home Screen.",
   "pwa.installAction": "Install",
@@ -520,7 +520,7 @@ const en = {
 
   "download.nav": "Download",
   "download.eyebrow": "Apps for every device",
-  "download.title": "Download Qchat",
+  "download.title": "Download Rchat",
   "download.lead":
     "Stay connected with your team on desktop and mobile — the same secure enterprise messenger, wherever you work.",
   "download.forPlatform": "Download for {platform}",
@@ -532,8 +532,8 @@ const en = {
   "download.mobileTitle": "Mobile",
   "download.mobileLead": "Take chats, calls, and notifications with you on Android and iOS.",
   "download.webTitle": "Prefer the browser?",
-  "download.webLead": "Qchat works in modern browsers — no install required. Sign in to get started.",
-  "download.openWeb": "Open Qchat Web",
+  "download.webLead": "Rchat works in modern browsers — no install required. Sign in to get started.",
+  "download.openWeb": "Open Rchat Web",
   "download.get": "Download",
   "download.comingSoon": "Coming soon",
   "download.recommended": "For you",
@@ -544,7 +544,7 @@ const en = {
 } as const;
 
 const zh: Record<MessageKey, string> = {
-  "app.name": "Qchat",
+  "app.name": "Rchat",
 
   "nav.chats": "聊天",
   "nav.contacts": "通讯录",
@@ -657,11 +657,11 @@ const zh: Record<MessageKey, string> = {
   "settings.loadPushDevicesError": "无法加载通知设备",
   "settings.revokeSessionError": "无法撤销会话",
   "settings.removePushDeviceError": "无法移除通知设备",
-  "settings.installApp": "安装 Qchat",
+  "settings.installApp": "安装 Rchat",
   "settings.installAppHint": "添加到主屏幕，获得全屏应用体验。",
   "settings.installAppAction": "安装",
   "settings.installAppIos": "在 iPhone/iPad：分享 → 添加到主屏幕",
-  "pwa.installTitle": "安装 Qchat",
+  "pwa.installTitle": "安装 Rchat",
   "pwa.installBody": "安装后启动更快，并以全屏方式聊天。",
   "pwa.installIosHint": "点分享，然后选择“添加到主屏幕”。",
   "pwa.installAction": "安装",
@@ -1055,7 +1055,7 @@ const zh: Record<MessageKey, string> = {
 
   "download.nav": "下载",
   "download.eyebrow": "全平台应用",
-  "download.title": "下载 Qchat",
+  "download.title": "下载 Rchat",
   "download.lead":
     "在桌面和手机上与团队保持联系 —— 同一套安全的企业即时通讯，随时随地高效协作。",
   "download.forPlatform": "下载 {platform} 版",
@@ -1067,7 +1067,7 @@ const zh: Record<MessageKey, string> = {
   "download.mobileTitle": "移动端",
   "download.mobileLead": "在 Android 与 iOS 上随时收发消息、通话与通知。",
   "download.webTitle": "更想用浏览器？",
-  "download.webLead": "Qchat 可在现代浏览器中直接使用，无需安装。登录即可开始。",
+  "download.webLead": "Rchat 可在现代浏览器中直接使用，无需安装。登录即可开始。",
   "download.openWeb": "打开网页版",
   "download.get": "下载",
   "download.comingSoon": "即将推出",

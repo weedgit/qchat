@@ -1,8 +1,8 @@
 {
   "id": "/admin/",
-  "name": "Qchat Admin",
-  "short_name": "Qchat Admin",
-  "description": "Qchat administration console",
+  "name": "Rchat Admin",
+  "short_name": "Rchat Admin",
+  "description": "Rchat administration console",
   "start_url": "/admin/",
   "scope": "/admin/",
   "display": "standalone",

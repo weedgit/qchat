@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Qchat Admin",
-  description: "Qchat administration console",
-  applicationName: "Qchat Admin",
+  title: "Rchat Admin",
+  description: "Rchat administration console",
+  applicationName: "Rchat Admin",
   manifest: "/admin/manifest.webmanifest",
   icons: {
     icon: [
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    title: "Qchat Admin",
+    title: "Rchat Admin",
     statusBarStyle: "black-translucent",
   },
 };

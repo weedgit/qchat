@@ -195,7 +195,7 @@ export default function DownloadPage() {
         <Link href="/login" className="dl-brand">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/downloads/images/qchat-icon.png" alt="" width={36} height={36} />
-          <span>Qchat</span>
+          <span>Rchat</span>
         </Link>
         <nav className="dl-top-nav">
           <Link href="/login" className="dl-link-quiet">
@@ -331,7 +331,7 @@ export default function DownloadPage() {
       </main>
 
       <footer className="dl-foot">
-        <span>© Qchat</span>
+        <span>© Rchat</span>
         <Link href="/login">{t("download.backToLogin")}</Link>
       </footer>
     </div>

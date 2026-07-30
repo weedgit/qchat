@@ -81,7 +81,7 @@ function toastHtml(title, body) {
 </style></head>
 <body>
   <div class="toast" id="t">
-    <div class="brand">Qchat</div>
+    <div class="brand">Rchat</div>
     <div class="title">${escapeHtml(title)}</div>
     <div class="body">${escapeHtml(body)}</div>
   </div>
@@ -106,7 +106,7 @@ function showMacToastNotification(opts) {
   }
   lastToastAt = now;
 
-  const title = sanitizeNotifyText(opts.title || "Qchat Desktop") || "Qchat Desktop";
+  const title = sanitizeNotifyText(opts.title || "Rchat Desktop") || "Rchat Desktop";
   const body = sanitizeNotifyText(opts.body || "New message") || "New message";
 
   return new Promise((resolve) => {

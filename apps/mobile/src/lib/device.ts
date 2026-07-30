@@ -52,7 +52,7 @@ export async function getAuthDevice(): Promise<{
   const platform = mobilePlatformLabel();
   return {
     deviceType: "phone",
-    deviceName: `Qchat Mobile (${os} · ${model})`,
+    deviceName: `Rchat Mobile (${os} · ${model})`,
     deviceId,
     platform: `Mobile · ${platform}`,
   };

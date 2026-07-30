@@ -107,7 +107,7 @@ export function detectDesktopPlatform(): ClientPlatformInfo {
   const desk = typeof window !== "undefined" ? window.qchatDesktop : undefined;
   const label =
     desk?.platformLabel ||
-    desk?.deviceName?.replace(/^Qchat Desktop\s*\(/, "").replace(/\)$/, "") ||
+    desk?.deviceName?.replace(/^Rchat Desktop\s*\(/, "").replace(/^Qchat Desktop\s*\(/, "").replace(/\)$/, "") ||
     desk?.platform ||
     "Desktop";
   return { platform: label, os: label };

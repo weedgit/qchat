@@ -33,7 +33,7 @@ func TOTPURI(issuer, account, secret string) string {
 	issuer = strings.TrimSpace(issuer)
 	account = strings.TrimSpace(account)
 	if issuer == "" {
-		issuer = "Qchat"
+		issuer = "Rchat"
 	}
 	label := url.PathEscape(issuer + ":" + account)
 	q := url.Values{}

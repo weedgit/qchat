@@ -14,8 +14,8 @@ function showAbout(mainWindow, webUrl) {
       `Version: ${app.getVersion()}\n` +
       `Platform: ${process.platform}\n` +
       `Web URL: ${webUrl}\n\n` +
-      "Electron shell around the Qchat web client.\n\n" +
-      "Open this dialog anytime from Help → About Qchat Desktop\n" +
+      "Electron shell around the Rchat web client.\n\n" +
+      "Open this dialog anytime from Help → About Rchat Desktop\n" +
       "(or press Ctrl+Shift+A).",
     buttons: ["OK"],
   };

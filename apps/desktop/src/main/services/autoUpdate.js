@@ -121,7 +121,7 @@ function registerAutoUpdater(deps) {
       type: "info",
       title: APP_TITLE,
       message: "Update ready to install",
-      detail: `Version ${version} was downloaded. Restart Qchat Desktop to apply it.`,
+      detail: `Version ${version} was downloaded. Restart Rchat Desktop to apply it.`,
       buttons: ["Restart now", "Later"],
       defaultId: 0,
       cancelId: 1,

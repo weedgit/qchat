@@ -31,11 +31,13 @@ func displayPlatform(platform, deviceName, deviceType, ua string) string {
 		return platform
 	}
 	if !weakPlatformLabel(deviceName) && !strings.EqualFold(deviceName, "web") {
-		// e.g. "Qchat Desktop (Windows 11)" → Windows 11
-		if strings.HasPrefix(deviceName, "Qchat Desktop (") && strings.HasSuffix(deviceName, ")") {
-			return strings.TrimSuffix(strings.TrimPrefix(deviceName, "Qchat Desktop ("), ")")
+		// e.g. "Rchat Desktop (Windows 11)" → Windows 11
+		for _, prefix := range []string{"Rchat Desktop (", "Qchat Desktop ("} {
+			if strings.HasPrefix(deviceName, prefix) && strings.HasSuffix(deviceName, ")") {
+				return strings.TrimSuffix(strings.TrimPrefix(deviceName, prefix), ")")
+			}
 		}
-		if strings.HasPrefix(deviceName, "Qchat Mobile (") {
+		if strings.HasPrefix(deviceName, "Rchat Mobile (") || strings.HasPrefix(deviceName, "Qchat Mobile (") {
 			return deviceName
 		}
 	}

@@ -31,7 +31,7 @@ export default function OverviewPage() {
   return (
     <AdminShell>
       <h1>Overview</h1>
-      <div className="page-sub">Qchat administration console · API {API_URL}</div>
+      <div className="page-sub">Rchat administration console · API {API_URL}</div>
 
       <div className="stat-grid">
         <div className="stat-card">

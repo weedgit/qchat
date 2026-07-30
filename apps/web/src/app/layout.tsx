@@ -6,9 +6,9 @@ import PwaBootstrap from "@/components/PwaBootstrap";
 import ShellConnectionBanner from "@/components/ShellConnectionBanner";
 
 export const metadata: Metadata = {
-  title: "Qchat",
-  description: "Qchat — secure enterprise messaging",
-  applicationName: "Qchat",
+  title: "Rchat",
+  description: "Rchat — secure enterprise messaging",
+  applicationName: "Rchat",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    title: "Qchat",
+    title: "Rchat",
     statusBarStyle: "black-translucent",
   },
 };

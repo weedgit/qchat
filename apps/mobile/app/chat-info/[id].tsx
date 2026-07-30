@@ -448,7 +448,7 @@ export default function ChatInfoScreen() {
     const payload = encodeGroupJoinPayload(group.publicId);
     try {
       await Share.share({
-        message: `Join my Qchat group with invite ${group.publicId}\n${payload}`,
+        message: `Join my Rchat group with invite ${group.publicId}\n${payload}`,
       });
     } catch {
       /* user dismissed */

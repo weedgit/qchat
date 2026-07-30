@@ -1,10 +1,10 @@
 {
   "name": "qchat-desktop",
-  "productName": "Qchat Desktop",
+  "productName": "Rchat Desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Qchat desktop shell (Electron + web client)",
-  "author": "Qchat <dev@qchat.local>",
+  "description": "Rchat desktop shell (Electron + web client)",
+  "author": "Rchat <dev@qchat.local>",
   "homepage": "https://github.com/qchat/qchat",
   "main": "src/main/index.js",
   "desktopName": "qchat-desktop",
@@ -33,8 +33,8 @@
   },
   "build": {
     "appId": "com.qchat.desktop",
-    "productName": "Qchat Desktop",
-    "copyright": "Copyright © Qchat",
+    "productName": "Rchat Desktop",
+    "copyright": "Copyright © Rchat",
     "afterPack": "./scripts/afterPack.js",
     "afterSign": "./scripts/afterSign.js",
     "forceCodeSigning": false,
@@ -58,7 +58,7 @@
       "main": "src/main/index.js"
     },
     "protocols": {
-      "name": "Qchat",
+      "name": "Rchat",
       "schemes": [
         "qchat"
       ]
@@ -71,8 +71,8 @@
       "category": "Network",
       "icon": "assets/icon.png",
       "executableName": "qchat-desktop",
-      "synopsis": "Qchat desktop client",
-      "maintainer": "Qchat <dev@qchat.local>",
+      "synopsis": "Rchat desktop client",
+      "maintainer": "Rchat <dev@qchat.local>",
       "artifactName": "qchat-desktop-${version}-${arch}.${ext}"
     },
     "win": {
@@ -94,7 +94,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Qchat Desktop"
+      "shortcutName": "Rchat Desktop"
     },
     "mac": {
       "target": [

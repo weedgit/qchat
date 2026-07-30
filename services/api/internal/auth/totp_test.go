@@ -40,7 +40,7 @@ func TestNewTOTPSecretAndURI(t *testing.T) {
 	if len(secret) < 16 {
 		t.Fatalf("secret too short: %s", secret)
 	}
-	uri := TOTPURI("Qchat", "admin@example.com", secret)
+	uri := TOTPURI("Rchat", "admin@example.com", secret)
 	if !strings.HasPrefix(uri, "otpauth://totp/") || !strings.Contains(uri, "secret="+secret) {
 		t.Fatalf("unexpected uri: %s", uri)
 	}

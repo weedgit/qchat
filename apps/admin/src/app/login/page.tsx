@@ -98,8 +98,8 @@ export default function AdminLoginPage() {
   return (
     <div className="auth-wrap">
       <form className="auth-card" onSubmit={onSubmit}>
-        <div className="auth-logo">Q</div>
-        <div className="auth-title">Qchat Admin Console</div>
+        <div className="auth-logo">R</div>
+        <div className="auth-title">Rchat Admin Console</div>
         <div className="auth-sub">Enterprise / platform administration</div>
 
         <div className="field">

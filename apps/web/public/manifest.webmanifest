@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Qchat",
-  "short_name": "Qchat",
+  "name": "Rchat",
+  "short_name": "Rchat",
   "description": "Secure enterprise messaging",
   "start_url": "/",
   "scope": "/",
