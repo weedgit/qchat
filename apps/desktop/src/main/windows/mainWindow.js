@@ -55,6 +55,99 @@ function getMainWindow() {
 }
 
 /**
+ * Remote Next.js SSR paints "Starting Rchat" before CSS/JS arrive. On a slow or
+ * flaky path to the VPS, Chromium can sit on that unstyled splash forever.
+ * Detect and hard-reload once; if still stuck, surface an error dialog.
+ *
+ * @param {Electron.BrowserWindow} win
+ * @param {string} webOrigin
+ */
+async function ensureRemoteUiHydrated(win, webOrigin) {
+  if (!win || win.isDestroyed()) return;
+  const probe = `
+    (async function () {
+      var deadline = Date.now() + 25000;
+      var started = Date.now();
+      while (Date.now() < deadline) {
+        if (document.querySelector(".auth-wrap, .auth-card, input[type=password], .chat-shell, [data-qchat-ready]")) {
+          return { ok: true, reason: "ui-ready" };
+        }
+        var splash = document.querySelector(".boot-splash");
+        if (splash && Date.now() - started > 5000) {
+          var display = window.getComputedStyle(splash).display;
+          var styled = display === "flex" || display === "grid";
+          if (!styled && document.styleSheets.length === 0) {
+            return { ok: false, reason: "no-css", sheets: 0 };
+          }
+        }
+        await new Promise(function (r) { setTimeout(r, 400); });
+      }
+      var text = ((document.body && document.body.innerText) || "").replace(/\\s+/g, " ").trim();
+      if (/Starting Rchat|Starting Qchat/i.test(text) && !document.querySelector("input, .auth-wrap")) {
+        return {
+          ok: false,
+          reason: "stuck-splash",
+          sheets: document.styleSheets.length,
+          text: text.slice(0, 80)
+        };
+      }
+      return { ok: true, reason: "assumed-ok" };
+    })()
+  `;
+
+  let result = null;
+  try {
+    result = await win.webContents.executeJavaScript(probe);
+  } catch (err) {
+    console.warn(
+      "[qchat-desktop] hydration probe failed:",
+      err?.message || err
+    );
+    return;
+  }
+  if (!result || result.ok) {
+    if (result?.reason) {
+      console.log("[qchat-desktop] remote UI:", result.reason);
+    }
+    return;
+  }
+
+  console.warn(
+    "[qchat-desktop] remote UI stuck (",
+    result.reason,
+    ") — reloading once"
+  );
+  try {
+    await win.webContents.reloadIgnoringCache();
+    await new Promise((r) => setTimeout(r, 1500));
+    result = await win.webContents.executeJavaScript(probe);
+  } catch (err) {
+    console.warn(
+      "[qchat-desktop] hydration reload failed:",
+      err?.message || err
+    );
+    result = { ok: false, reason: "reload-failed" };
+  }
+
+  if (result && result.ok) {
+    console.log("[qchat-desktop] remote UI recovered:", result.reason);
+    return;
+  }
+
+  dialog.showErrorBox(
+    "Rchat Desktop",
+    `Login UI did not load (web assets stalled).\n\n` +
+      `Server: ${webOrigin}\n` +
+      `Detail: ${result?.reason || "unknown"}\n\n` +
+      `The HTML shell loaded but CSS/JS did not finish. Check network reachability ` +
+      `to the server, disable VPN/proxy if needed, then reopen the app.\n\n` +
+      `Dev workaround: run local web + desktop:\n` +
+      `  cd apps/web && npm run dev\n` +
+      `  cd apps/desktop && npm run start:local`
+  );
+}
+
+/**
  * loadURL that swallows transient ERR_FAILED / ERR_ABORTED and retries.
  * The prod host uses a self-signed IP cert; the first handshake after a
  * debugger attach sometimes aborts (ERR_FAILED -2). did-fail-load already
@@ -355,6 +448,31 @@ function createMainWindow(opts) {
   // SHELL-22: native edit/link/image/spellcheck menu; gated so web chat menus still work.
   attachContextMenu(mainWindow);
 
+  // Log failed CSS/JS — common when the VPS path stalls and login never hydrates.
+  try {
+    const ses = mainWindow.webContents.session;
+    ses.webRequest.onErrorOccurred((details) => {
+      if (!details || details.resourceType === "mainFrame") return;
+      if (
+        details.resourceType === "stylesheet" ||
+        details.resourceType === "script" ||
+        details.resourceType === "xhr"
+      ) {
+        console.warn(
+          "[qchat-desktop] resource failed:",
+          details.resourceType,
+          details.error,
+          details.url
+        );
+      }
+    });
+  } catch (err) {
+    console.warn(
+      "[qchat-desktop] webRequest hook failed:",
+      err?.message || err
+    );
+  }
+
   mainWindow.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -464,12 +582,14 @@ function createMainWindow(opts) {
       await prepareEarlySessionBootstrap(mainWindow.webContents, webUrl, fresh);
       await loadUrlWithRetry(mainWindow, `${webOrigin}/`);
       revealMainWindow();
+      void ensureRemoteUiHydrated(mainWindow, webOrigin);
       return;
     }
 
     // No usable session — open login (splash already covered the wait).
     await loadUrlWithRetry(mainWindow, `${webOrigin}/login`);
     revealMainWindow();
+    void ensureRemoteUiHydrated(mainWindow, webOrigin);
   })();
 
   mainWindow.on("closed", () => {
