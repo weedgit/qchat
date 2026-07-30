@@ -4,6 +4,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PermissionsAndroid, Platform } from "react-native";
+import Constants from "expo-constants";
 import {
   ConnectionQuality,
   ConnectionState,
@@ -97,14 +98,27 @@ export type StartCallOpts = {
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
 
+function embeddedLivekitUrl(): string {
+  const extra = Constants.expoConfig?.extra as
+    | { livekitUrl?: string }
+    | undefined;
+  return String(extra?.livekitUrl ?? "").trim();
+}
+
 function resolveLiveKitUrl(url: string): string {
-  const fromEnv = process.env.EXPO_PUBLIC_LIVEKIT_URL?.trim();
+  const fromEnv =
+    process.env.EXPO_PUBLIC_LIVEKIT_URL?.trim() || embeddedLivekitUrl();
   let resolved = (fromEnv || url || "").trim();
   if (!resolved) return resolved;
   try {
     const normalized = resolved.replace(/^ws/i, "http");
     const u = new URL(normalized);
-    const apiBase = process.env.EXPO_PUBLIC_API_URL?.trim() || "";
+    const apiBase =
+      process.env.EXPO_PUBLIC_API_URL?.trim() ||
+      String(
+        (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ??
+          ""
+      ).trim();
     if (apiBase.startsWith("https:") && u.protocol === "http:") {
       u.protocol = "https:";
       if (u.port === "7880") u.port = "7443";

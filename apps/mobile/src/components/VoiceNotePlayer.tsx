@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system/legacy";
 
 type Props = {
   uri: string;
@@ -12,14 +13,29 @@ type Props = {
   mine: boolean;
 };
 
+const LOAD_TIMEOUT_MS = 12_000;
+
+function extFromUri(uri: string): string {
+  try {
+    const path = uri.split("?")[0] || uri;
+    const m = path.match(/\.([a-z0-9]+)$/i);
+    return (m?.[1] || "m4a").toLowerCase();
+  } catch {
+    return "m4a";
+  }
+}
+
 /**
  * Tap-to-play voice bubble using expo-av (mirrors web audio controls).
- * Unloads the sound when the bubble unmounts so FlatList recycling stays clean.
+ * Downloads remote notes to a cache file first so Android/iOS do not hang
+ * for ~20s probing streamed WebM without Range support.
  */
 export function VoiceNotePlayer({ uri, label, detail, tint, subTint, mine }: Props) {
   const soundRef = useRef<Audio.Sound | null>(null);
+  const localUriRef = useRef<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -28,8 +44,45 @@ export function VoiceNotePlayer({ uri, label, detail, tint, subTint, mine }: Pro
       if (sound) {
         void sound.unloadAsync().catch(() => {});
       }
+      const cached = localUriRef.current;
+      localUriRef.current = null;
+      if (cached?.startsWith(FileSystem.cacheDirectory || "file://")) {
+        void FileSystem.deleteAsync(cached, { idempotent: true }).catch(() => {});
+      }
     };
   }, []);
+
+  // Reset player when the message media URL changes (list recycling).
+  useEffect(() => {
+    const sound = soundRef.current;
+    soundRef.current = null;
+    if (sound) void sound.unloadAsync().catch(() => {});
+    const cached = localUriRef.current;
+    localUriRef.current = null;
+    if (cached?.startsWith(FileSystem.cacheDirectory || "file://")) {
+      void FileSystem.deleteAsync(cached, { idempotent: true }).catch(() => {});
+    }
+    setPlaying(false);
+    setLoading(false);
+    setFailed(false);
+  }, [uri]);
+
+  const ensureLocalUri = useCallback(async (): Promise<string> => {
+    if (localUriRef.current) return localUriRef.current;
+    if (!uri.startsWith("http://") && !uri.startsWith("https://")) {
+      localUriRef.current = uri;
+      return uri;
+    }
+    const base = FileSystem.cacheDirectory;
+    if (!base) {
+      localUriRef.current = uri;
+      return uri;
+    }
+    const dest = `${base}voice-${Date.now()}-${Math.random().toString(36).slice(2)}.${extFromUri(uri)}`;
+    const result = await FileSystem.downloadAsync(uri, dest);
+    localUriRef.current = result.uri;
+    return result.uri;
+  }, [uri]);
 
   const toggle = useCallback(async () => {
     if (loading) return;
@@ -40,12 +93,23 @@ export function VoiceNotePlayer({ uri, label, detail, tint, subTint, mine }: Pro
         return;
       }
       setLoading(true);
+      setFailed(false);
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
         allowsRecordingIOS: false,
       });
       if (!soundRef.current) {
-        const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
+        const playUri = await ensureLocalUri();
+        const createPromise = Audio.Sound.createAsync(
+          { uri: playUri },
+          { shouldPlay: true }
+        );
+        const { sound } = await Promise.race([
+          createPromise,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Voice load timed out")), LOAD_TIMEOUT_MS)
+          ),
+        ]);
         sound.setOnPlaybackStatusUpdate((status) => {
           if (!status.isLoaded) return;
           if (status.didJustFinish) {
@@ -61,10 +125,14 @@ export function VoiceNotePlayer({ uri, label, detail, tint, subTint, mine }: Pro
       }
     } catch {
       setPlaying(false);
+      setFailed(true);
+      const sound = soundRef.current;
+      soundRef.current = null;
+      if (sound) void sound.unloadAsync().catch(() => {});
     } finally {
       setLoading(false);
     }
-  }, [loading, playing, uri]);
+  }, [ensureLocalUri, loading, playing]);
 
   return (
     <Pressable
@@ -93,7 +161,7 @@ export function VoiceNotePlayer({ uri, label, detail, tint, subTint, mine }: Pro
           </Text>
         ) : (
           <Text style={[styles.detail, { color: subTint }]} numberOfLines={1}>
-            {playing ? "Playing…" : "Tap to play"}
+            {failed ? "Couldn’t play — tap to retry" : playing ? "Playing…" : "Tap to play"}
           </Text>
         )}
       </View>

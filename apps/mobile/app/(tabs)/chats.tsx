@@ -370,7 +370,7 @@ export default function ChatsScreen() {
             <Ionicons name="search" size={16} color={colors.textMuted} />
             <TextInput
               style={styles.search}
-              placeholder={connected ? "Search chats & messages" : "Reconnecting…"}
+              placeholder={connected ? "Search" : "Reconnecting…"}
               placeholderTextColor={colors.textMuted}
               value={query}
               onChangeText={setQuery}

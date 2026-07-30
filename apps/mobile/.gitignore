@@ -40,3 +40,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Local release/debug APKs (GitHub 100MB limit)
+*.apk

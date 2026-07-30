@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 
 const ACCESS_KEY = "qchat.access_token";
@@ -14,17 +15,31 @@ export function setOnUnauthorized(fn: (() => void) | null) {
   onUnauthorized = fn;
 }
 
-export function apiBaseUrl(): string {
-  const raw = process.env.EXPO_PUBLIC_API_URL?.trim();
-  const appEnv = (
-    process.env.APP_ENV ||
-    process.env.EAS_BUILD_PROFILE ||
-    ""
+function embeddedApiUrl(): string {
+  const extra = Constants.expoConfig?.extra as
+    | { apiUrl?: string; appEnv?: string }
+    | undefined;
+  return String(extra?.apiUrl ?? "").trim();
+}
+
+function embeddedAppEnv(): string {
+  const extra = Constants.expoConfig?.extra as { appEnv?: string } | undefined;
+  return String(
+    extra?.appEnv ||
+      process.env.APP_ENV ||
+      process.env.EAS_BUILD_PROFILE ||
+      ""
   ).toLowerCase();
+}
+
+export function apiBaseUrl(): string {
+  const raw =
+    process.env.EXPO_PUBLIC_API_URL?.trim() || embeddedApiUrl() || "";
+  const appEnv = embeddedAppEnv();
   const isRelease =
     appEnv === "production" ||
     appEnv === "preview" ||
-    process.env.NODE_ENV === "production";
+    (!__DEV__ && process.env.NODE_ENV === "production");
 
   if (!raw) {
     if (isRelease) {

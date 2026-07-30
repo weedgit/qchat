@@ -80,13 +80,60 @@ export type CallRemotePeer = {
 
 type SubscribeFn = (handler: (type: string, payload: any) => void) => () => void;
 
+type VideoParticipant = {
+  getTrackPublication: (source: Track.Source) => { track?: any; source?: string } | undefined;
+  trackPublications?: Map<string, { kind?: string; source?: string; track?: any; isMuted?: boolean }>;
+};
+
 /** Prefer screen share over camera so partners see the full desktop, not a cropped cam tile. */
-function preferredVideoTrack(participant: {
-  getTrackPublication: (source: Track.Source) => { track?: any } | undefined;
-}): any {
+function preferredVideoTrack(participant: VideoParticipant): any {
   const screen = participant.getTrackPublication("screen_share" as Track.Source)?.track;
   if (screen) return screen;
-  return participant.getTrackPublication("camera" as Track.Source)?.track ?? null;
+  const camera = participant.getTrackPublication("camera" as Track.Source)?.track;
+  if (camera) return camera;
+  // Mobile / some SFU paths publish video without a reliable Source enum — take any live video.
+  let fallback: any = null;
+  participant.trackPublications?.forEach((pub) => {
+    if (fallback || pub.kind !== "video" || !pub.track || pub.isMuted) return;
+    if (pub.source === "screen_share") {
+      fallback = pub.track;
+      return;
+    }
+    fallback = pub.track;
+  });
+  return fallback;
+}
+
+function participantHasLiveVideo(participant: VideoParticipant): boolean {
+  if (preferredVideoTrack(participant)) return true;
+  let found = false;
+  participant.trackPublications?.forEach((pub) => {
+    if (pub.kind === "video" && pub.track && !pub.isMuted) found = true;
+  });
+  return found;
+}
+
+function isScreenSharing(participant: VideoParticipant): boolean {
+  if (participant.getTrackPublication("screen_share" as Track.Source)?.track) return true;
+  let found = false;
+  participant.trackPublications?.forEach((pub) => {
+    if (pub.kind === "video" && pub.source === "screen_share" && pub.track) found = true;
+  });
+  return found;
+}
+
+function attachVideoToElement(track: { attach: (el: HTMLMediaElement) => void }, el: HTMLVideoElement) {
+  track.attach(el);
+  // Remote audio plays on separate <audio> nodes; mute the video element so
+  // browser autoplay policies cannot leave a black frame after attach.
+  el.muted = true;
+  el.playsInline = true;
+  const play = () => {
+    el.play().catch(() => {});
+  };
+  play();
+  // adaptiveStream may see 0×0 during the first layout pass — retry after paint.
+  requestAnimationFrame(() => requestAnimationFrame(play));
 }
 
 /**
@@ -235,38 +282,36 @@ export function useCall(opts: {
   }, []);
 
   const setRemoteVideoEl = useCallback((el: HTMLVideoElement | null) => {
+    // Ignore transient null from React callback-ref remounts so we don't drop
+    // the element mid-attach (common cause of a permanent black remote tile).
+    if (!el) return;
+    if (remoteVideoElRef.current === el) return;
     remoteVideoElRef.current = el;
     setRemoteVideoElState(el);
     const room = roomRef.current;
-    if (!room || !el) return;
+    if (!room) return;
     // DM stage: prefer the first remote peer's screen share over camera.
     let attached = false;
     room.remoteParticipants.forEach((p) => {
       if (attached) return;
       const track = preferredVideoTrack(p);
       if (!track || track.kind !== "video") return;
-      track.attach(el);
-      el.play().catch(() => {});
-      el.classList.toggle(
-        "is-screenshare",
-        Boolean(p.getTrackPublication("screen_share" as Track.Source)?.track)
-      );
+      attachVideoToElement(track, el);
+      el.classList.toggle("is-screenshare", isScreenSharing(p));
       attached = true;
     });
   }, []);
   const setLocalVideoEl = useCallback((el: HTMLVideoElement | null) => {
+    if (!el) return;
+    if (localVideoElRef.current === el) return;
     localVideoElRef.current = el;
     setLocalVideoElState(el);
     const room = roomRef.current;
-    if (!room || !el) return;
+    if (!room) return;
     const track = preferredVideoTrack(room.localParticipant);
     if (track) {
-      track.attach(el);
-      el.play().catch(() => {});
-      el.classList.toggle(
-        "is-screenshare",
-        Boolean(room.localParticipant.getTrackPublication("screen_share" as Track.Source)?.track)
-      );
+      attachVideoToElement(track, el);
+      el.classList.toggle("is-screenshare", isScreenSharing(room.localParticipant));
     }
   }, []);
   const setRemoteAudioEl = useCallback((el: HTMLAudioElement | null) => {
@@ -380,12 +425,8 @@ export function useCall(opts: {
           const preferred = preferredVideoTrack(room.localParticipant);
           // Ignore camera frames while a screen-share track is the preferred source.
           if (preferred && preferred !== track) return;
-          track.attach(el);
-          el.play().catch(() => {});
-          el.classList.toggle(
-            "is-screenshare",
-            Boolean(room.localParticipant.getTrackPublication("screen_share" as Track.Source)?.track)
-          );
+          attachVideoToElement(track, el);
+          el.classList.toggle("is-screenshare", isScreenSharing(room.localParticipant));
           return;
         }
         const identity = participantIdentity || "";
@@ -397,14 +438,10 @@ export function useCall(opts: {
           if (p) {
             const preferred = preferredVideoTrack(p);
             if (preferred && preferred !== track) return;
-            el.classList.toggle(
-              "is-screenshare",
-              Boolean(p.getTrackPublication("screen_share" as Track.Source)?.track)
-            );
+            el.classList.toggle("is-screenshare", isScreenSharing(p));
           }
         }
-        track.attach(el);
-        el.play().catch(() => {});
+        attachVideoToElement(track, el);
       } else if (track.kind === "audio" && !participantLocal) {
         const identity = participantIdentity || "default";
         let el = peerAudioElsRef.current.get(identity);
@@ -443,18 +480,16 @@ export function useCall(opts: {
       const identity = String(p.identity || "");
       const userId = identity.split(":")[0] || identity;
       const micPub = p.getTrackPublication("microphone" as Track.Source);
-      const camPub = p.getTrackPublication("camera" as Track.Source);
-      const screenPub = p.getTrackPublication("screen_share" as Track.Source);
       const hasMic = Boolean(micPub?.track);
-      const hasCam = Boolean(camPub?.track);
-      const hasScreen = Boolean(screenPub?.track);
+      const hasScreen = isScreenSharing(p);
+      const hasLiveVideo = participantHasLiveVideo(p);
       next.push({
         identity,
         name: String(p.name || userId || "User"),
         userId,
         micMuted: !hasMic || Boolean(micPub?.isMuted),
         // Screen share counts as visible video (don't cover with avatar).
-        cameraOff: (!hasCam || Boolean(camPub?.isMuted)) && !hasScreen,
+        cameraOff: !hasLiveVideo,
         screenSharing: hasScreen,
       });
     });
@@ -465,21 +500,20 @@ export function useCall(opts: {
   const bindPeerVideoEl = useCallback(
     (identity: string, el: HTMLVideoElement | null) => {
       if (!identity) return;
-      if (el) peerVideoElsRef.current.set(identity, el);
-      else peerVideoElsRef.current.delete(identity);
+      if (!el) {
+        // Keep last element through React remount churn; overwrite on next bind.
+        return;
+      }
+      peerVideoElsRef.current.set(identity, el);
       const room = roomRef.current;
-      if (!room || !el) return;
+      if (!room) return;
       const p = room.remoteParticipants.get(identity);
       if (!p) return;
       const track = preferredVideoTrack(p);
       if (track && track.kind === "video") {
-        track.attach(el);
-        el.play().catch(() => {});
+        attachVideoToElement(track, el);
       }
-      el.classList.toggle(
-        "is-screenshare",
-        Boolean(p.getTrackPublication("screen_share" as Track.Source)?.track)
-      );
+      el.classList.toggle("is-screenshare", isScreenSharing(p));
     },
     []
   );
@@ -554,7 +588,11 @@ export function useCall(opts: {
         }
 
         const { Room, RoomEvent } = await lkPromise;
-        const room = new Room({ adaptiveStream: true, dynacast: true });
+        const room = new Room({
+          // Keep adaptive streaming, but don't stall on a zero-size first layout.
+          adaptiveStream: { pixelDensity: "screen" },
+          dynacast: true,
+        });
         roomRef.current = room;
         hadRemoteRef.current = false;
         setAudioPlaybackOk(room.canPlaybackAudio);
@@ -593,8 +631,7 @@ export function useCall(opts: {
             const el = localVideoElRef.current;
             const preferred = preferredVideoTrack(room.localParticipant);
             if (el && preferred) {
-              preferred.attach(el);
-              el.play().catch(() => {});
+              attachVideoToElement(preferred, el);
               el.classList.add("is-screenshare");
             }
           }
@@ -605,8 +642,7 @@ export function useCall(opts: {
             const el = localVideoElRef.current;
             const preferred = preferredVideoTrack(room.localParticipant);
             if (el && preferred) {
-              preferred.attach(el);
-              el.play().catch(() => {});
+              attachVideoToElement(preferred, el);
               el.classList.remove("is-screenshare");
             } else if (el) {
               el.classList.remove("is-screenshare");
@@ -1318,8 +1354,7 @@ export function useCall(opts: {
       const el = localVideoElRef.current;
       const track = preferredVideoTrack(room.localParticipant);
       if (el && track) {
-        track.attach(el);
-        el.play().catch(() => {});
+        attachVideoToElement(track, el);
         el.classList.toggle("is-screenshare", next);
       }
       syncRemotePeers();

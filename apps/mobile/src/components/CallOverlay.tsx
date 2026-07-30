@@ -93,12 +93,14 @@ function ControlBtn({
   danger,
   answer,
   label,
+  compact,
   children,
 }: {
   onPress: () => void;
   danger?: boolean;
   answer?: boolean;
   label: string;
+  compact?: boolean;
   children: ReactNode;
 }) {
   const styles = useThemedStyles(makeStyles);
@@ -108,6 +110,7 @@ function ControlBtn({
       accessibilityLabel={label}
       style={[
         styles.control,
+        compact && styles.controlCompact,
         danger && styles.controlDanger,
         answer && styles.controlAnswer,
       ]}
@@ -183,6 +186,8 @@ export function CallOverlay({ call }: { call: CallApi }) {
   if (!visible) return null;
 
   const isGroup = Boolean(incoming?.isGroup || active?.isGroup);
+  const crowdedControls =
+    Boolean(active?.isGroup) && active?.kind === "video" && active?.status === "active";
   const statusTitle =
     active?.status === "ringing"
       ? `Calling… (${active.kind}${active.isGroup ? " · group" : ""})`
@@ -328,7 +333,7 @@ export function CallOverlay({ call }: { call: CallApi }) {
           </View>
         ) : null}
 
-        <View style={styles.actions}>
+        <View style={[styles.actions, crowdedControls ? styles.actionsCrowded : null]}>
           {incoming ? (
             <>
               <ControlBtn label="Decline" danger onPress={() => declineCall().catch(() => {})}>
@@ -343,16 +348,22 @@ export function CallOverlay({ call }: { call: CallApi }) {
               <ControlBtn
                 label={micMuted ? "Unmute" : "Mute"}
                 onPress={() => toggleMic().catch(() => {})}
+                compact={crowdedControls}
               >
-                <Ionicons name={micMuted ? "mic-off" : "mic"} size={26} color="#fff" />
+                <Ionicons
+                  name={micMuted ? "mic-off" : "mic"}
+                  size={crowdedControls ? 22 : 26}
+                  color="#fff"
+                />
               </ControlBtn>
               <ControlBtn
                 label={speakerOn ? "Speaker on" : "Earpiece"}
                 onPress={() => toggleSpeaker().catch(() => {})}
+                compact={crowdedControls}
               >
                 <Ionicons
                   name={speakerOn ? "volume-high" : "ear-outline"}
-                  size={26}
+                  size={crowdedControls ? 22 : 26}
                   color="#fff"
                 />
               </ControlBtn>
@@ -360,17 +371,36 @@ export function CallOverlay({ call }: { call: CallApi }) {
                 <ControlBtn
                   label={cameraOff ? "Camera on" : "Camera off"}
                   onPress={() => toggleCamera().catch(() => {})}
+                  compact={crowdedControls}
                 >
-                  <Ionicons name={cameraOff ? "videocam-off" : "videocam"} size={26} color="#fff" />
+                  <Ionicons
+                    name={cameraOff ? "videocam-off" : "videocam"}
+                    size={crowdedControls ? 22 : 26}
+                    color="#fff"
+                  />
                 </ControlBtn>
               ) : null}
               {active?.isGroup && active.status === "active" ? (
-                <ControlBtn label="Invite" onPress={() => setInviteOpen(true)}>
-                  <Ionicons name="person-add" size={24} color="#fff" />
+                <ControlBtn
+                  label="Invite"
+                  onPress={() => setInviteOpen(true)}
+                  compact={crowdedControls}
+                >
+                  <Ionicons name="person-add" size={crowdedControls ? 20 : 24} color="#fff" />
                 </ControlBtn>
               ) : null}
-              <ControlBtn label="Hang up" danger onPress={() => hangup().catch(() => {})}>
-                <Ionicons name="call" size={28} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
+              <ControlBtn
+                label="Hang up"
+                danger
+                onPress={() => hangup().catch(() => {})}
+                compact={crowdedControls}
+              >
+                <Ionicons
+                  name="call"
+                  size={crowdedControls ? 24 : 28}
+                  color="#fff"
+                  style={{ transform: [{ rotate: "135deg" }] }}
+                />
               </ControlBtn>
             </>
           )}
@@ -590,11 +620,19 @@ function makeStyles(c: ColorTokens) {
   },
   actions: {
     flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
     justifyContent: "center" as const,
     alignItems: "center" as const,
-    gap: 28,
+    alignContent: "center" as const,
+    gap: 20,
+    width: "100%" as const,
     paddingBottom: 56,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.lg,
+  },
+  /** Group video: 5 controls — shrink so they fit one phone width. */
+  actionsCrowded: {
+    gap: 12,
+    paddingHorizontal: spacing.md,
   },
   control: {
     width: 64,
@@ -603,6 +641,11 @@ function makeStyles(c: ColorTokens) {
     backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center" as const,
     justifyContent: "center" as const,
+  },
+  controlCompact: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
   controlDanger: {
     backgroundColor: c.danger,

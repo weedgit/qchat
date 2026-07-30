@@ -439,6 +439,7 @@ function GroupVideoStage({
                   ref={(el) => bindPeerVideoEl(p.identity, el)}
                   autoPlay
                   playsInline
+                  muted
                 />
                 {p.cameraOff ? (
                   <div className="call-video-fallback">
@@ -492,6 +493,7 @@ function GroupVideoStage({
                 ref={(el) => bindPeerVideoEl(focusedId, el)}
                 autoPlay
                 playsInline
+                muted
               />
             )}
             {focusedCameraOff ? (
@@ -901,6 +903,7 @@ export default function CallOverlay({
                     ref={(el) => setRemoteVideoEl(el)}
                     autoPlay
                     playsInline
+                    muted
                   />
                   <video
                     className={`call-video local${screenSharing ? " is-screenshare" : ""}`}

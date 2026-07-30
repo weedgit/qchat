@@ -4384,6 +4384,13 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   object-fit: cover;
   background: #0a1018;
 }
+/* Fill the stage so LiveKit adaptiveStream sees a non-zero tile (avoids black remote). */
+.call-videos > .call-video.remote {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
 /* Screen share is landscape; contain avoids cropping the desktop for peers. */
 .call-video.is-screenshare,
 .call-video-tile .call-video.is-screenshare,

@@ -218,14 +218,50 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rc.Close()
+	if contentType == "" {
+		contentType = contentTypeFromExt(filepath.Ext(rel))
+	}
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
+	}
+	// Prefer ServeContent when the body is seekable so phones can Range-probe media.
+	// Do not pre-set Content-Length — ServeContent owns Length/Range/206.
+	if rs, ok := rc.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, filepath.Base(rel), time.Time{}, rs)
+		return
 	}
 	if size > 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, rc)
+}
+
+func contentTypeFromExt(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".wav":
+		return "audio/wav"
+	case ".webm":
+		return "audio/webm"
+	case ".ogg":
+		return "audio/ogg"
+	case ".m4a", ".mp4":
+		return "audio/mp4"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".aac":
+		return "audio/aac"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	default:
+		return ""
+	}
 }
 
 func extFor(ct, name string) string {
@@ -245,11 +281,13 @@ func extFor(ct, name string) string {
 		return ".mp4"
 	case "audio/mpeg":
 		return ".mp3"
+	case "audio/wav", "audio/x-wav", "audio/wave":
+		return ".wav"
 	case "audio/webm":
 		return ".webm"
 	case "audio/ogg":
 		return ".ogg"
-	case "audio/mp4":
+	case "audio/mp4", "audio/aac", "audio/x-m4a":
 		return ".m4a"
 	default:
 		return ""

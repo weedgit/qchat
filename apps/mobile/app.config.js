@@ -116,6 +116,10 @@ module.exports = {
   },
   extra: {
     appEnv: profile,
+    // Baked into the native app config so release APKs still have the API
+    // host when Metro does not inline EXPO_PUBLIC_* (common with local Gradle).
+    apiUrl: (process.env.EXPO_PUBLIC_API_URL || "").trim().replace(/\/$/, ""),
+    livekitUrl: (process.env.EXPO_PUBLIC_LIVEKIT_URL || "").trim().replace(/\/$/, ""),
     eas: {
       // Run `npx eas-cli init` in apps/mobile and set EAS_PROJECT_ID or paste id here.
       projectId: process.env.EAS_PROJECT_ID || undefined,

@@ -54,6 +54,7 @@ import { useGlobalSearch } from "@/lib/useSearch";
 import { getDraft, saveDraft } from "@/lib/drafts";
 import { dataTransferHasFiles, filesFromDataTransfer, imagesFromClipboard, imagesFromClipboardApi } from "@/lib/fileDrop";
 import { makeImagePreviewUrl } from "@/lib/mediaPreview";
+import { normalizeVoiceForMobile, preferredVoiceRecorderMime } from "@/lib/voiceEncode";
 import {
   nextPinnedFromScroll,
   previousPinnedInCycle,
@@ -2710,13 +2711,15 @@ export default function ChatPageInner() {
     stopMediaTracks();
     setRecording(false);
     setRecordSecs(0);
-    const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+    const raw = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
     chunksRef.current = [];
-    if (!sendIt || blob.size < 200 || !chat.activeId) return;
+    if (!sendIt || raw.size < 200 || !chat.activeId) return;
     setVoiceBusy(true);
     const replyId = replyTo?.id;
     setReplyTo(null);
     try {
+      // Re-encode WebM/Opus → WAV so phones (expo-av) play without a ~20s native probe.
+      const blob = await normalizeVoiceForMobile(raw);
       await chat.sendVoiceMessage(chat.activeId, blob, durationSec, replyId);
     } catch {
       // Error is shown on the failed voice bubble.
@@ -2734,11 +2737,7 @@ export default function ChatPageInner() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "";
+      const mime = preferredVoiceRecorderMime();
       const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       chunksRef.current = [];
       rec.ondataavailable = (e) => {
@@ -2748,7 +2747,8 @@ export default function ChatPageInner() {
       recordStartedRef.current = Date.now();
       setRecordSecs(0);
       setRecording(true);
-      rec.start(250);
+      // No timeslice — a single final blob demuxes cleanly (and converts to WAV).
+      rec.start();
       recordTimerRef.current = setInterval(() => {
         setRecordSecs(
           Math.min(VOICE_MAX_SEC, Math.floor((Date.now() - recordStartedRef.current) / 1000))

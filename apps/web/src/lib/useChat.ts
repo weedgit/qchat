@@ -1535,7 +1535,15 @@ export function useChat() {
 
       try {
         const ext =
-          blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
+          blob.type.includes("wav")
+            ? "wav"
+            : blob.type.includes("ogg")
+              ? "ogg"
+              : blob.type.includes("mp4") || blob.type.includes("aac") || blob.type.includes("m4a")
+                ? "m4a"
+                : blob.type.includes("mpeg") || blob.type.includes("mp3")
+                  ? "mp3"
+                  : "webm";
         let lastPct = -1;
         const uploaded = await uploadMedia(
           blob,

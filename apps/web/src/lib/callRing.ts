@@ -1,10 +1,14 @@
 /**
  * Call ringtone / ringback via Web Audio (no asset file).
- * - incoming: alert double-pulse (callee)
- * - outgoing: classic PSTN ringback 440+480 Hz, 2s on / 4s off (caller)
+ *
+ * Incoming (callee): classic telephone ring — 440+480 Hz, 2s on / 4s off
+ *   (North-American PSTN cadence so phone→web matches a real handset ring).
+ * Outgoing (caller): same tones, slightly softer (ringback while waiting).
  */
 
 const RING_LENGTH_MS = 60_000;
+/** 2s tone + 4s silence (North-American ring / ringback cadence). */
+const RING_CYCLE_MS = 6_000;
 
 export type CallRingKind = "incoming" | "outgoing";
 
@@ -13,12 +17,14 @@ let stopTimer: ReturnType<typeof setTimeout> | null = null;
 let pulseTimer: ReturnType<typeof setInterval> | null = null;
 let ringing = false;
 let activeKind: CallRingKind | null = null;
-/** Oscillators for the long outgoing burst so we can cut them on stop. */
+/** Oscillators / gains for the active burst so we can cut them on stop. */
 let liveNodes: AudioNode[] = [];
 
 function ensureCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
-  const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  const AC =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AC) return null;
   if (!ctx) ctx = new AC();
   return ctx;
@@ -38,13 +44,13 @@ function clearLiveNodes() {
   liveNodes = [];
 }
 
-/** Dual-tone burst (classic North-American ring / ringback). */
+/** Dual-tone burst (classic North-American telephone ring / ringback). */
 function dualToneBurst(
   audio: AudioContext,
   freqs: [number, number],
   start: number,
   dur: number,
-  peak = 0.2
+  peak = 0.22
 ) {
   for (const freq of freqs) {
     const osc = audio.createOscillator();
@@ -63,25 +69,22 @@ function dualToneBurst(
   }
 }
 
-/** Incoming: two short dual-tone chirps (phone-like “ring ring”). */
+/** Incoming: full telephone ring (2s dual-tone). */
 function pulseIncoming() {
   const audio = ensureCtx();
   if (!audio) return;
   if (audio.state === "suspended") void audio.resume().catch(() => {});
   clearLiveNodes();
-  const t = audio.currentTime;
-  dualToneBurst(audio, [440, 480], t, 0.4, 0.22);
-  dualToneBurst(audio, [440, 480], t + 0.5, 0.4, 0.22);
+  dualToneBurst(audio, [440, 480], audio.currentTime, 2.0, 0.26);
 }
 
-/** Outgoing ringback: one long 2s dual-tone (then 4s silence via interval). */
+/** Outgoing ringback: same 2s dual-tone, softer. */
 function pulseOutgoing() {
   const audio = ensureCtx();
   if (!audio) return;
   if (audio.state === "suspended") void audio.resume().catch(() => {});
   clearLiveNodes();
-  const t = audio.currentTime;
-  dualToneBurst(audio, [440, 480], t, 2.0, 0.18);
+  dualToneBurst(audio, [440, 480], audio.currentTime, 2.0, 0.18);
 }
 
 /** Start ringing until stopCallRing or RING_LENGTH. */
@@ -89,20 +92,12 @@ export function startCallRing(kind: CallRingKind = "incoming"): void {
   stopCallRing();
   ringing = true;
   activeKind = kind;
-  if (kind === "outgoing") {
-    pulseOutgoing();
-    // 2s tone + 4s silence = 6s cadence (PSTN-style).
-    pulseTimer = setInterval(() => {
-      if (!ringing) return;
-      pulseOutgoing();
-    }, 6000);
-  } else {
-    pulseIncoming();
-    pulseTimer = setInterval(() => {
-      if (!ringing) return;
-      pulseIncoming();
-    }, 2800);
-  }
+  const pulse = kind === "outgoing" ? pulseOutgoing : pulseIncoming;
+  pulse();
+  pulseTimer = setInterval(() => {
+    if (!ringing) return;
+    pulse();
+  }, RING_CYCLE_MS);
   stopTimer = setTimeout(() => stopCallRing(), RING_LENGTH_MS);
 }
 
