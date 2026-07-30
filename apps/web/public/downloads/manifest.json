@@ -10,8 +10,8 @@
       "title": "Windows",
       "subtitle": "NSIS installer (.exe)",
       "file": "qchat-desktop-Setup-0.1.0.exe",
-      "sizeBytes": null,
-      "available": false
+      "sizeBytes": 100257792,
+      "available": true
     },
     {
       "id": "macos",
