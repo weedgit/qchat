@@ -50,6 +50,19 @@ function hasIdentity(name) {
   return list.includes(`"${name}"`);
 }
 
+function certificateExistsInKeychain(name) {
+  try {
+    execFileSync(
+      "security",
+      ["find-certificate", "-c", name],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function loginKeychainPath() {
   try {
     const out = execFileSync("security", ["login-keychain"], {
@@ -65,11 +78,25 @@ function loginKeychainPath() {
 
 /**
  * Create a free self-signed code-signing cert in the login keychain.
- * Requires user approval the first time (Keychain may prompt).
+ * Requires Trust → Code Signing = Always Trust in Keychain Access before
+ * `security find-identity -p codesigning` lists it.
  */
 function ensureElectronDevCertificate(identity = DEFAULT_IDENTITY) {
   if (hasIdentity(identity)) {
     return { ok: true, created: false, identity };
+  }
+
+  // Already imported earlier but not trusted — do not keep adding duplicates.
+  if (certificateExistsInKeychain(identity)) {
+    return {
+      ok: false,
+      untrusted: true,
+      identity,
+      reason:
+        `"${identity}" is in Keychain but not trusted for code signing. ` +
+        `Optional: Keychain Access → My Certificates → "${identity}" → ` +
+        `Trust → Code Signing = Always Trust, then npm run sign:dev -- --force`,
+    };
   }
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "qchat-electron-dev-"));
@@ -161,7 +188,6 @@ function ensureElectronDevCertificate(identity = DEFAULT_IDENTITY) {
       { stdio: "pipe" }
     );
 
-    // Allow codesign to use the private key without an interactive prompt.
     try {
       execFileSync(
         "security",
@@ -183,11 +209,12 @@ function ensureElectronDevCertificate(identity = DEFAULT_IDENTITY) {
     if (!hasIdentity(identity)) {
       return {
         ok: false,
+        untrusted: true,
         identity,
         reason:
-          `Imported "${identity}" but it is not a valid codesigning identity yet. ` +
-          `Open Keychain Access → My Certificates → "${identity}" → Trust → ` +
-          `Code Signing = "Always Trust", then re-run: npm run sign:dev -- --force`,
+          `Imported "${identity}" but it is not trusted for code signing yet. ` +
+          `Optional: Keychain Access → Trust → Code Signing = Always Trust, then ` +
+          `npm run sign:dev -- --force`,
       };
     }
 
@@ -253,17 +280,21 @@ function signDevElectron({ force = false, ensureCert = true } = {}) {
       ""
     ).trim() || null;
 
+  let certNote = "";
   if (!identity && ensureCert) {
     const ensured = ensureElectronDevCertificate(DEFAULT_IDENTITY);
-    if (!ensured.ok) {
-      return { ok: false, reason: ensured.reason };
+    if (ensured.ok) {
+      if (ensured.created) {
+        console.log(
+          `[qchat-desktop] created self-signed codesigning identity "${ensured.identity}"`
+        );
+      }
+      identity = ensured.identity;
+    } else {
+      // Unpackaged builds use the in-app mac toast window; ad-hoc is enough to boot.
+      certNote = ensured.reason || "named identity unavailable";
+      identity = "-";
     }
-    if (ensured.created) {
-      console.log(
-        `[qchat-desktop] created self-signed codesigning identity "${ensured.identity}"`
-      );
-    }
-    identity = ensured.identity;
   }
 
   if (!identity) {
@@ -283,20 +314,40 @@ function signDevElectron({ force = false, ensureCert = true } = {}) {
       skipped: true,
       reason: `already signed (${identity === "-" ? "ad-hoc" : identity})`,
       identity: identity === "-" ? "ad-hoc" : identity,
+      certNote,
     };
   }
 
-  try {
+  const trySign = (id) => {
     execFileSync(
       "codesign",
-      ["--force", "--deep", "--sign", identity, ELECTRON_APP],
-      { stdio: "inherit" }
+      ["--force", "--deep", "--sign", id, ELECTRON_APP],
+      { stdio: "pipe" }
     );
+  };
+
+  try {
+    trySign(identity);
   } catch (err) {
-    return {
-      ok: false,
-      reason: `codesign failed with "${identity}": ${err?.message || err}`,
-    };
+    if (identity !== "-") {
+      try {
+        trySign("-");
+        identity = "-";
+        certNote =
+          certNote ||
+          `codesign with named identity failed (${err?.message || err}); used ad-hoc`;
+      } catch (adhocErr) {
+        return {
+          ok: false,
+          reason: `codesign failed: ${adhocErr?.message || adhocErr}`,
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        reason: `codesign failed with ad-hoc: ${err?.message || err}`,
+      };
+    }
   }
 
   let after = "";
@@ -308,13 +359,7 @@ function signDevElectron({ force = false, ensureCert = true } = {}) {
   if (/linker-signed/i.test(after)) {
     return {
       ok: false,
-      reason: "still linker-signed after codesign — notifications will fail",
-    };
-  }
-  if (identity !== "-" && /Signature=adhoc\b/i.test(after) && !/Authority=/i.test(after)) {
-    return {
-      ok: false,
-      reason: "codesign produced ad-hoc signature; named identity did not apply",
+      reason: "still linker-signed after codesign",
     };
   }
 
@@ -322,6 +367,7 @@ function signDevElectron({ force = false, ensureCert = true } = {}) {
     ok: true,
     identity: identity === "-" ? "ad-hoc" : identity,
     after,
+    certNote,
   };
 }
 

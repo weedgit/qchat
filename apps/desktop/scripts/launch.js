@@ -11,18 +11,19 @@ const APP_ROOT = path.resolve(__dirname, "..");
  * QCHAT_DESKTOP_NO_SANDBOX=1. Never implied for normal start / start:server.
  */
 function launchElectron(argumentsList = process.argv.slice(2), options = {}) {
-  // Electron 42+: macOS UNNotification needs a real signature (not linker-signed).
+  // Electron 42+: drop linker-signed flag so the app can boot cleanly.
+  // Unpackaged Mac message toasts use the in-app window (macNotify), so a
+  // trusted "Electron Dev" identity is optional — fall back to ad-hoc.
   if (process.platform === "darwin") {
     const signed = signDevElectron();
     if (!signed.ok) {
       console.warn(
-        "[qchat-desktop] macOS notification signing failed:",
-        signed.reason,
-        "\n  Toasts may fail with UNErrorDomain error 1. Run: npm run sign:dev"
+        "[qchat-desktop] Electron.app signing skipped:",
+        signed.reason
       );
     } else if (!signed.skipped) {
       console.log(
-        `[qchat-desktop] Electron.app signed for notifications (${signed.identity})`
+        `[qchat-desktop] Electron.app signed (${signed.identity})`
       );
     }
   }
