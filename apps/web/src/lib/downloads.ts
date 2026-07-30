@@ -107,8 +107,8 @@ export const FALLBACK_DOWNLOAD_MANIFEST: DownloadManifest = {
       group: "desktop",
       os: "macos",
       title: "macOS",
-      subtitle: "Disk image (.dmg)",
-      file: "qchat-desktop-0.1.0-x64.dmg",
+      subtitle: "Disk image (.dmg, Apple Silicon)",
+      file: "qchat-desktop-0.1.0-arm64.dmg",
       available: false,
     },
     {
