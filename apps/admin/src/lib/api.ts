@@ -26,6 +26,28 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
 }
 
+/** Absolute media URL with admin access token for <img>/download links. */
+export function mediaAuthURL(path?: string | null): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith("data:") || path.startsWith("blob:")) return path;
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    if (path.includes("/v1/media/")) {
+      const token = getToken();
+      if (token && !path.includes("token=")) {
+        return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+      }
+    }
+    return path;
+  }
+  const rel = path.startsWith("/") ? path : `/${path}`;
+  const abs = `${apiBaseUrl()}${rel}`;
+  const token = getToken();
+  if (rel.startsWith("/v1/media/") && token) {
+    return `${abs}${abs.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  }
+  return abs;
+}
+
 export function setToken(token: string, remember: boolean) {
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(TOKEN_KEY);

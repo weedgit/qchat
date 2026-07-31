@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,12 +27,13 @@ import EmojiPicker, { type PickerMedia } from "@/components/EmojiPicker";
 import { AnimatedEmojiOnlyBody } from "@/components/AnimatedEmoji";
 import MessageBody, { formatComposerMentions } from "@/components/MessageBody";
 import { api, asList, ApiError, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
+import { saveMediaToDisk } from "@/lib/saveMedia";
 import { countIncomingPending, notifyFriendRequest } from "@/lib/friendNotify";
 import { getAuthDevice } from "@/lib/device";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
 import { parseUserPayload } from "@/lib/userQr";
-import { formatTypingLabel, useChat, type TypingUser } from "@/lib/useChat";
+import { formatTypingLabel, useChat } from "@/lib/useChat";
 import { useCall } from "@/lib/useCall";
 import {
   Conversation,
@@ -92,7 +94,6 @@ function fmtTime(iso?: string): string {
 function ConversationRow({
   conv,
   active,
-  typing,
   online,
   dropHover,
   onClick,
@@ -108,7 +109,6 @@ function ConversationRow({
 }: {
   conv: Conversation;
   active: boolean;
-  typing: TypingUser[];
   online?: boolean;
   dropHover?: boolean;
   onClick: () => void;
@@ -123,7 +123,6 @@ function ConversationRow({
   onFilesDrop?: (files: File[]) => void;
 }) {
   const { t } = useLocale();
-  const typingLabel = formatTypingLabel(typing, t);
   const isDM = conv.type === "dm";
   const isGroup = conv.type === "social_group" || conv.type === "group";
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -244,10 +243,8 @@ function ConversationRow({
           <span className="conv-time">{fmtTime(conv.lastMessageAt)}</span>
         </div>
         <div className="conv-bottom">
-          <span className={`conv-preview ${typingLabel ? "typing" : ""}`}>
-            {typingLabel ? (
-              typingLabel
-            ) : conv.lastMessage ? (
+          <span className="conv-preview">
+            {conv.lastMessage ? (
               <>
                 {(conv.lastMessageMine || conv.type !== "dm") && conv.lastMessageSender && (
                   <span className="conv-sender">
@@ -745,6 +742,21 @@ function Bubble({
                     : msg.mediaUrl
                 )}
                 alt={localizeChatLabel(msg.content, t, { type: "image" })}
+                className="media-image-savable"
+                title={t("ctx.saveImage")}
+                onContextMenu={(e) => {
+                  // Same Telegram message menu as text — not a native image menu.
+                  onContextMenu?.(e);
+                }}
+                onDoubleClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (msg.pending || msg.failed || !msg.mediaUrl) return;
+                  void saveMediaToDisk(msg.mediaUrl).catch((err: any) => {
+                    console.error("[rchat] save media failed:", err?.message || err);
+                    window.alert(err?.message || "Could not save file");
+                  });
+                }}
               />
               {msg.content && !isDefaultImageCaption(msg.content) && (
                 <div className="media-caption">
@@ -1168,6 +1180,9 @@ export default function ChatPageInner() {
   const activeMessages = chat.activeId ? chat.messages[chat.activeId] ?? [] : [];
   const draftChars = messageCharCount(draft);
   const isGroup = active?.type === "social_group" || active?.type === "group";
+  const peerTypingLabel = active
+    ? formatTypingLabel(chat.typingByConv[active.id] ?? [], t)
+    : "";
   const pinnedList: PinnedMessage[] = useMemo(() => {
     if (!active) return [];
     if (active.pinnedMessages?.length) return active.pinnedMessages;
@@ -1658,6 +1673,7 @@ export default function ChatPageInner() {
   }, [showDetails, groupDetails?.members]);
 
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState | null>(null);
+  const ctxWrapRef = useRef<HTMLDivElement | null>(null);
   const ctxMsg = ctxMenu
     ? activeMessages.find((m) => m.id === ctxMenu.msgId) ??
       pinnedThreadMessages.find((m) => m.id === ctxMenu.msgId) ??
@@ -1668,37 +1684,47 @@ export default function ChatPageInner() {
     e.preventDefault();
     e.stopPropagation();
     if (msg.pending) return;
-    const hasEmojiRow =
-      !selectMode && !msg.recalled && !msg.failed && msg.type !== "call";
-    const MENU_W = 200;
-    // the emoji row is wider than the menu and centered over it, so it
-    // overhangs each side; keep that overhang on-screen too
-    const EMOJI_OVERHANG = hasEmojiRow ? 35 : 0;
-    const EMOJI_ROW_H = hasEmojiRow ? 46 : 0;
-    let itemCount: number;
-    if (selectMode && selectedIds.has(msg.id)) {
-      itemCount = 3 + (recallableSelected.length > 0 ? 1 : 0);
-    } else if (selectMode) {
-      itemCount = 1;
-    } else {
-      const isCall = msg.type === "call";
-      itemCount =
-        2 + // copy + select always
-        (!msg.recalled && !msg.failed && !isCall ? 2 : 0) + // reply + forward (not for call logs)
-        (canRecallMsg(msg) ? 1 : 0) + // recall (own or group admin)
-        (msg.failed ? 1 : 0); // retry
-    }
-    const MENU_H = itemCount * 38 + 12;
-    const x = Math.min(
-      Math.max(e.clientX, 8 + EMOJI_OVERHANG),
-      window.innerWidth - MENU_W - 8 - EMOJI_OVERHANG
-    );
-    const y = Math.min(
-      Math.max(e.clientY, 8 + EMOJI_ROW_H),
-      window.innerHeight - MENU_H - 8
-    );
-    setCtxMenu({ x, y, msgId: msg.id });
+    // Place at the cursor; useLayoutEffect below clamps to the viewport
+    // after the real menu (and emoji row) have been measured.
+    setCtxMenu({ x: e.clientX, y: e.clientY, msgId: msg.id });
   }
+
+  // Keep the Telegram context menu fully on-screen (emoji row sits above wrap).
+  useLayoutEffect(() => {
+    if (!ctxMenu) return;
+    const el = ctxWrapRef.current;
+    if (!el) return;
+    const pad = 8;
+    const vv = window.visualViewport;
+    const viewTop = vv?.offsetTop ?? 0;
+    const viewLeft = vv?.offsetLeft ?? 0;
+    const viewW = vv?.width ?? window.innerWidth;
+    const viewH = vv?.height ?? window.innerHeight;
+    const viewRight = viewLeft + viewW;
+    const viewBottom = viewTop + viewH;
+
+    const menu = el.querySelector(".ctx-menu") as HTMLElement | null;
+    const emoji = el.querySelector(".ctx-emoji-row") as HTMLElement | null;
+    const menuRect = (menu || el).getBoundingClientRect();
+    const emojiRect = emoji?.getBoundingClientRect() ?? null;
+
+    const left = Math.min(menuRect.left, emojiRect?.left ?? menuRect.left);
+    const right = Math.max(menuRect.right, emojiRect?.right ?? menuRect.right);
+    const top = Math.min(menuRect.top, emojiRect?.top ?? menuRect.top);
+    const bottom = menuRect.bottom;
+
+    let dx = 0;
+    let dy = 0;
+    if (right > viewRight - pad) dx = viewRight - pad - right;
+    if (left + dx < viewLeft + pad) dx = viewLeft + pad - left;
+    if (bottom > viewBottom - pad) dy = viewBottom - pad - bottom;
+    if (top + dy < viewTop + pad) dy = viewTop + pad - top;
+
+    const x = Math.round(ctxMenu.x + dx);
+    const y = Math.round(ctxMenu.y + dy);
+    if (x === ctxMenu.x && y === ctxMenu.y) return;
+    setCtxMenu((prev) => (prev && prev.msgId === ctxMenu.msgId ? { ...prev, x, y } : prev));
+  }, [ctxMenu]);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -1852,26 +1878,58 @@ export default function ChatPageInner() {
       setMenuScanError(null);
       setMenuScanNotice(null);
       try {
-        const body = await api<any>(`/v1/users/lookup?q=${encodeURIComponent(userName)}`);
-        const users = asList(body, "users") as Array<{ id?: string; username?: string }>;
-        const hit =
-          users.find((u) => String(u?.username ?? "").toLowerCase() === userName.toLowerCase()) ??
-          users[0];
-        const id = String(hit?.id ?? "").trim();
-        if (!id) throw new Error(t("chat.noResults"));
-        setMenuScanOpen(false);
-        await chat.openDM(id);
-        setMobileChatOpen(true);
+        const res = await api<any>("/v1/friends/request", {
+          method: "POST",
+          body: JSON.stringify({ username: userName, message: "Hi!" }),
+        });
+        const status = String(res?.status ?? "pending");
+        if (status === "accepted") {
+          const convId = String(res?.conversation_id ?? "").trim();
+          setMenuScanOpen(false);
+          if (convId) {
+            await chat.openConversation(convId);
+            setMobileChatOpen(true);
+          } else {
+            const body = await api<any>(`/v1/users/lookup?q=${encodeURIComponent(userName)}`);
+            const users = asList(body, "users") as Array<{ id?: string; username?: string }>;
+            const hit =
+              users.find((u) => String(u?.username ?? "").toLowerCase() === userName.toLowerCase()) ??
+              users[0];
+            const id = String(hit?.id ?? "").trim();
+            if (id) {
+              await chat.openDM(id);
+              setMobileChatOpen(true);
+            } else {
+              router.push(`/friends?q=${encodeURIComponent(userName)}`);
+            }
+          }
+        } else {
+          setMenuScanNotice(t("contacts.requestSent"));
+          window.setTimeout(() => {
+            setMenuScanOpen(false);
+            setMenuScanNotice(null);
+            router.push(`/friends?q=${encodeURIComponent(userName)}`);
+          }, 900);
+        }
       } catch (err: any) {
+        // Fall back to contacts search so the user can still add manually.
         setMenuScanError(err?.message || t("chat.noResults"));
+        window.setTimeout(() => {
+          setMenuScanOpen(false);
+          setMenuScanError(null);
+          router.push(`/friends?q=${encodeURIComponent(userName)}`);
+        }, 1200);
       } finally {
         setMenuScanBusy(false);
       }
       return;
     }
 
-    const parsed = parseGroupJoinPayload(raw) ?? raw.trim();
-    if (!parsed) return;
+    const parsed = parseGroupJoinPayload(raw);
+    if (!parsed) {
+      setMenuScanError(t("groups.scanUnrecognized"));
+      return;
+    }
     setMenuScanBusy(true);
     setMenuScanError(null);
     setMenuScanNotice(null);
@@ -2040,12 +2098,17 @@ export default function ChatPageInner() {
         }, 8000);
       }
     };
+    const onOpenFriends = () => {
+      router.push("/friends");
+    };
     window.addEventListener("qchat:friend-request", onFriend);
+    window.addEventListener("qchat:open-friends", onOpenFriends);
     return () => {
       cancelled = true;
       window.removeEventListener("qchat:friend-request", onFriend);
+      window.removeEventListener("qchat:open-friends", onOpenFriends);
     };
-  }, [t]);
+  }, [t, router]);
 
   // Keep RHS group policy in sync when another admin toggles forbid-friend-add.
   useEffect(() => {
@@ -3086,7 +3149,6 @@ export default function ChatPageInner() {
                   conv={c}
                   active={c.id === chat.activeId}
                   dropHover={dropHoverConvId === c.id}
-                  typing={chat.typingByConv[c.id] ?? []}
                   online={
                     c.type === "dm" && c.peerId
                       ? chat.presenceByUser[c.peerId]?.online ?? c.peerOnline
@@ -3391,9 +3453,8 @@ export default function ChatPageInner() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="title">{conversationDisplayName(active)}</div>
                     <div className="sub">
-                      {formatTypingLabel(chat.typingByConv[active.id] ?? [], t) ||
-                        (active.type === "dm"
-                          ? (() => {
+                      {active.type === "dm"
+                        ? (() => {
                             const p = active.peerId
                               ? chat.presenceByUser[active.peerId]
                               : undefined;
@@ -3401,7 +3462,7 @@ export default function ChatPageInner() {
                             if (online) return t("presence.online");
                             return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt, t);
                           })()
-                          : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`)}
+                        : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`}
                     </div>
                   </div>
                 </div>
@@ -3803,12 +3864,20 @@ export default function ChatPageInner() {
                           <textarea
                             ref={draftRef}
                             rows={1}
+                            className={
+                              !composerBlockedByMute && !editingMessage && peerTypingLabel
+                                ? "is-typing-placeholder"
+                                : undefined
+                            }
                             placeholder={
                               composerBlockedByMute
                                 ? t("details.groupMutedAll")
-                                : isGroup
-                                ? t("chat.messagePlaceholderGroup")
-                                : t("chat.messagePlaceholder")
+                                : editingMessage
+                                  ? t("chat.editMessage")
+                                  : peerTypingLabel ||
+                                    (isGroup
+                                      ? t("chat.messagePlaceholderGroup")
+                                      : t("chat.messagePlaceholder"))
                             }
                             value={draft}
                             disabled={voiceBusy || composerBlockedByMute}
@@ -4480,6 +4549,7 @@ export default function ChatPageInner() {
         selectedIds.has(ctxMsg.id) &&
         createPortal(
         <div
+          ref={ctxWrapRef}
           className="ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onContextMenu={(e) => e.preventDefault()}
@@ -4543,6 +4613,7 @@ export default function ChatPageInner() {
         !selectedIds.has(ctxMsg.id) &&
         createPortal(
         <div
+          ref={ctxWrapRef}
           className="ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onContextMenu={(e) => e.preventDefault()}
@@ -4568,6 +4639,7 @@ export default function ChatPageInner() {
         !selectMode &&
         createPortal(
         <div
+          ref={ctxWrapRef}
           className="ctx-wrap"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onContextMenu={(e) => e.preventDefault()}
@@ -4658,10 +4730,7 @@ export default function ChatPageInner() {
             {ctxMsg.mine && !ctxMsg.recalled && !ctxMsg.failed && chat.activeId && (
               <>
                 <div className="ctx-sep" />
-                {ctxMsg.type !== "voice" &&
-                  ctxMsg.type !== "image" &&
-                  ctxMsg.type !== "file" &&
-                  ctxMsg.type !== "call" && (
+                {ctxMsg.type !== "voice" && ctxMsg.type !== "call" && (
                   <button
                     className="ctx-item"
                     onClick={() => {

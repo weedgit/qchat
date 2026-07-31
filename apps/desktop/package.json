@@ -94,7 +94,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Rchat Desktop"
+      "shortcutName": "Rchat Desktop",
+      "include": "assets/installer.nsh",
+      "runAfterFinish": true
     },
     "mac": {
       "target": [

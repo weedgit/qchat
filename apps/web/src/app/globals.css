@@ -1143,10 +1143,6 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 .conv-sender {
   color: var(--text);
 }
-.conv-preview.typing {
-  color: var(--accent);
-  font-style: italic;
-}
 .conv-item.muted-conv {
   opacity: 0.72;
 }
@@ -1706,13 +1702,30 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
 
 .menu-pending-dot {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 8px;
-  height: 8px;
+  top: 4px;
+  right: 4px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 2px var(--bg-panel);
+  animation: menu-pending-blink 1.2s ease-in-out infinite;
+}
+@keyframes menu-pending-blink {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-pending-dot {
+    animation: none;
+  }
 }
 .sidebar-header .icon-btn {
   position: relative;
@@ -2243,6 +2256,11 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   color: var(--text-faint);
   opacity: 1;
 }
+.composer textarea.is-typing-placeholder::placeholder {
+  color: var(--accent);
+  font-style: italic;
+  opacity: 1;
+}
 .composer textarea::selection {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
   color: transparent;
@@ -2341,6 +2359,11 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   max-height: 320px;
   object-fit: cover;
+}
+.media-image img.media-image-savable {
+  cursor: zoom-in;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .media-video {
   position: relative;
@@ -2831,6 +2854,8 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   background: var(--bg-panel-2);
   cursor: pointer;
   aspect-ratio: 1.2;
+  content-visibility: auto;
+  contain-intrinsic-size: 120px;
 }
 .gif-picker-cell:hover {
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
@@ -2839,6 +2864,7 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  background: var(--bg-panel-2);
   display: block;
   pointer-events: none;
 }

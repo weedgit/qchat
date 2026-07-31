@@ -34,6 +34,7 @@ import { useAuth } from "../../src/context/AuthContext";
 import { useChat } from "../../src/context/ChatContext";
 import { useCallApi } from "../../src/context/CallContext";
 import { api, asList, mediaAuthURL } from "../../src/lib/api";
+import { alertSaveResult, saveChatMedia } from "../../src/lib/saveMedia";
 import type { CallKind } from "../../src/lib/useCall";
 import { getDraft, saveDraft } from "../../src/lib/drafts";
 import { isVideoAttachmentHint } from "../../src/lib/mediaLimits";
@@ -1136,13 +1137,8 @@ export default function ChatScreen() {
     const isDm = conversation?.type === "dm";
     const callBusy = Boolean(call.active || call.incoming);
     const title = conversation ? conversationDisplayName(conversation) : "Chat";
-    const typers = typingByConv[convId] ?? [];
     let subtitle = "";
-    if (typers.length === 1) {
-      subtitle = `${typers[0].name} is typing…`;
-    } else if (typers.length > 1) {
-      subtitle = `${typers.length} people typing…`;
-    } else if (isDm && conversation?.peerId) {
+    if (isDm && conversation?.peerId) {
       const presence = presenceByUser[conversation.peerId];
       const online = presence?.online ?? conversation.peerOnline;
       if (online) subtitle = "Online";
@@ -1284,7 +1280,6 @@ export default function ChatScreen() {
     call.active,
     call.incoming,
     call.startCall,
-    typingByConv,
     presenceByUser,
     convId,
   ]);
@@ -1650,7 +1645,7 @@ export default function ChatScreen() {
               style={styles.actionBtn}
               onPress={onRecallSelected}
               hitSlop={8}
-              accessibilityLabel="Recall"
+              accessibilityLabel="Delete"
             >
               <Ionicons name="arrow-undo-outline" size={22} color="#fff" />
             </Pressable>
@@ -1750,6 +1745,12 @@ export default function ChatScreen() {
             setReplyTo(null);
           }}
           onTyping={() => notifyTyping(convId)}
+          typingPlaceholder={(() => {
+            const typers = typingByConv[convId] ?? [];
+            if (typers.length === 1) return `${typers[0].name} is typing…`;
+            if (typers.length > 1) return `${typers.length} people typing…`;
+            return undefined;
+          })()}
           mentionEnabled={isGroup}
           mentionMembers={mentionMembers}
           disabled={composerBlockedByMute}
@@ -1774,6 +1775,24 @@ export default function ChatScreen() {
           >
             <Ionicons name="close" size={28} color="#fff" />
           </Pressable>
+          {viewerUri ? (
+            <Pressable
+              style={styles.imageViewerSave}
+              onPress={(e) => {
+                e.stopPropagation?.();
+                void (async () => {
+                  const result = await saveChatMedia({
+                    mediaUrl: viewerUri,
+                    type: "image",
+                  });
+                  alertSaveResult(result);
+                })();
+              }}
+              accessibilityLabel="Save image"
+            >
+              <Ionicons name="download-outline" size={26} color="#fff" />
+            </Pressable>
+          ) : null}
         </Pressable>
       </Modal>
 
@@ -2135,6 +2154,12 @@ function makeStyles(c: ColorTokens) {
     position: "absolute" as const,
     top: 48,
     right: 20,
+    padding: 8,
+  },
+  imageViewerSave: {
+    position: "absolute" as const,
+    top: 48,
+    left: 20,
     padding: 8,
   },
   mediaRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, minWidth: 140 },

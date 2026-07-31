@@ -177,6 +177,10 @@ npm run dist:mac          # dmg; build on macOS
 npm run dist              # current platform defaults (--publish never)
 ```
 
+The Windows finish page launches the app with `ExecShell` (see
+`assets/installer.nsh`) so **Finish** closes immediately instead of waiting for
+the desktop process to exit.
+
 Root Makefile helpers: `make desktop-check`, `make desktop-pack`,
 `make desktop-dist-win-docker`.
 

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -9,6 +11,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/qchat/qchat/services/api/internal/auth"
+)
+
+var (
+	errAdminUserNotFound = errors.New("user not found")
+	errAdminUserInvalid  = errors.New("invalid user identifier")
 )
 
 const (
@@ -503,6 +510,48 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 	writeJSON(w, 200, map[string]any{"ok": true, "note": "password reset; existing password is never viewable"})
 }
 
+// resolveEnterpriseUserID maps an operator-supplied identifier to a user in
+// entID. Accepts username, 11-digit phone, or UUID (legacy user_id).
+func (s *Server) resolveEnterpriseUserID(ctx context.Context, entID, raw string) (uuid.UUID, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return uuid.Nil, errAdminUserInvalid
+	}
+	if id, err := uuid.Parse(raw); err == nil {
+		var exists bool
+		if err := s.db.QueryRow(ctx, `
+			SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enterprise_id=$2)`,
+			id, entID).Scan(&exists); err != nil {
+			return uuid.Nil, err
+		}
+		if !exists {
+			return uuid.Nil, errAdminUserNotFound
+		}
+		return id, nil
+	}
+	if auth.ValidatePhone(raw) {
+		var id uuid.UUID
+		err := s.db.QueryRow(ctx, `
+			SELECT id FROM users WHERE phone=$1 AND enterprise_id=$2`,
+			raw, entID).Scan(&id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, errAdminUserNotFound
+		}
+		return id, err
+	}
+	if !auth.ValidateUsername(raw) {
+		return uuid.Nil, errAdminUserInvalid
+	}
+	var id uuid.UUID
+	err := s.db.QueryRow(ctx, `
+		SELECT id FROM users WHERE lower(username)=lower($1) AND enterprise_id=$2`,
+		raw, entID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, errAdminUserNotFound
+	}
+	return id, err
+}
+
 func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	c := s.requirePerm(w, r, permMessagesInspect)
 	if c == nil {
@@ -511,14 +560,6 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 	reason := strings.TrimSpace(r.URL.Query().Get("reason"))
 	if len(reason) < 8 {
 		writeErr(w, 400, "reason required (≥8 chars) for message access")
-		return
-	}
-	// A specific user must be named: an empty target would dump the whole
-	// enterprise under a single audit entry. Validate the UUID here so a bad
-	// value is a clear 400 rather than a SQL cast 500.
-	userID, err := uuid.Parse(strings.TrimSpace(r.URL.Query().Get("user_id")))
-	if err != nil {
-		writeErr(w, 400, "user_id required (valid user id) for message access")
 		return
 	}
 
@@ -544,6 +585,35 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 		entID = rawEnt
 	}
 
+	// Prefer username/phone ("user"); keep user_id for older clients/tests.
+	target := strings.TrimSpace(r.URL.Query().Get("user"))
+	if target == "" {
+		target = strings.TrimSpace(r.URL.Query().Get("username"))
+	}
+	if target == "" {
+		target = strings.TrimSpace(r.URL.Query().Get("phone"))
+	}
+	if target == "" {
+		target = strings.TrimSpace(r.URL.Query().Get("user_id"))
+	}
+	if target == "" {
+		writeErr(w, 400, "username or phone required for message access")
+		return
+	}
+	userID, err := s.resolveEnterpriseUserID(r.Context(), entID, target)
+	if errors.Is(err, errAdminUserNotFound) {
+		writeErr(w, 404, "user not found")
+		return
+	}
+	if errors.Is(err, errAdminUserInvalid) {
+		writeErr(w, 400, "username or phone required for message access")
+		return
+	}
+	if err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+
 	var convFilter *uuid.UUID
 	if rawConv := strings.TrimSpace(r.URL.Query().Get("conversation_id")); rawConv != "" {
 		parsed, err := uuid.Parse(rawConv)
@@ -552,18 +622,6 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		convFilter = &parsed
-	}
-
-	var exists bool
-	if err := s.db.QueryRow(r.Context(), `
-		SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND enterprise_id=$2)`,
-		userID, entID).Scan(&exists); err != nil {
-		writeErr(w, 500, "query failed")
-		return
-	}
-	if !exists {
-		writeErr(w, 404, "user not found")
-		return
 	}
 
 	limit, offset := adminListRange(r)

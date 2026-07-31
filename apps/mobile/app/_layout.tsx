@@ -29,7 +29,7 @@ function RootNavigator() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="chat/[id]" options={{ title: t("nav.chats") }} />
         <Stack.Screen name="chat-info/[id]" options={{ title: t("menu.settings") }} />
-        <Stack.Screen name="join-group" options={{ title: "Join group" }} />
+        <Stack.Screen name="join-group" options={{ title: "Scan QR" }} />
         <Stack.Screen name="create-group" options={{ title: "New group" }} />
         <Stack.Screen name="user/[id]" options={{ title: t("nav.me") }} />
       </Stack>

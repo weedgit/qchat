@@ -12,6 +12,7 @@ const {
 const { createGetNetworkOnlineHandler } = require("./networkStatus");
 const { createGetWindowFocusedHandler } = require("./windowFocus");
 const { createWriteClipboardTextHandler } = require("./clipboard");
+const { createDownloadUrlHandler } = require("./download");
 const {
   openCallWindow,
   focusCallWindow,
@@ -68,6 +69,10 @@ function registerIpcHandlers(deps) {
     createGetWindowFocusedHandler({ getMainWindow: deps.getMainWindow })
   );
   ipcMain.handle(IPC.WRITE_CLIPBOARD_TEXT, createWriteClipboardTextHandler());
+  ipcMain.handle(
+    IPC.DOWNLOAD_URL,
+    createDownloadUrlHandler(deps.getMainWindow)
+  );
 
   ipcMain.handle(IPC.OPEN_CALL_WINDOW, (_event, payload) =>
     openCallWindow({

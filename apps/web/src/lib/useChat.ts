@@ -1078,6 +1078,12 @@ export function useChat() {
     if (!isQchatDesktop()) return;
     const detach = window.qchatDesktop?.onOpenConversation((conversationId) => {
       window.focus();
+      if (conversationId === "__friends__") {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("qchat:open-friends"));
+        }
+        return;
+      }
       openConversation(conversationId);
     });
     return () => {

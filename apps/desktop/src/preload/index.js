@@ -26,6 +26,7 @@ const IPC = Object.freeze({
   FOCUS_CALL_WINDOW: "qchat:focus-call-window",
   CLOSE_CALL_WINDOW: "qchat:close-call-window",
   FOCUS_MAIN_WINDOW: "qchat:focus-main-window",
+  DOWNLOAD_URL: "qchat:download-url",
 });
 
 function argumentValue(name) {
@@ -106,4 +107,6 @@ contextBridge.exposeInMainWorld("qchatDesktop", {
   focusCallWindow: () => ipcRenderer.invoke(IPC.FOCUS_CALL_WINDOW),
   closeCallWindow: () => ipcRenderer.invoke(IPC.CLOSE_CALL_WINDOW),
   focusMainWindow: () => ipcRenderer.invoke(IPC.FOCUS_MAIN_WINDOW),
+  /** Triggers native Save As via session will-download handler. */
+  downloadURL: (url) => ipcRenderer.invoke(IPC.DOWNLOAD_URL, { url }),
 });

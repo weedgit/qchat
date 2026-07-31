@@ -206,9 +206,7 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid path")
 		return
 	}
-	entOK := c.EnterpriseID != "" && strings.HasPrefix(rel, c.EnterpriseID+"/")
-	personalOK := strings.HasPrefix(rel, "personal/"+c.UserID+"/")
-	if !entOK && !personalOK {
+	if !s.canAccessMediaObject(r.Context(), c.UserID, c.EnterpriseID, rel) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -224,6 +222,14 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
+	// Force download when clients request Save (web/desktop/mobile).
+	if r.URL.Query().Get("download") == "1" {
+		name := filepath.Base(rel)
+		if name == "" || name == "." || name == "/" {
+			name = "download"
+		}
+		w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(name, `"`, "")+`"`)
+	}
 	// Prefer ServeContent when the body is seekable so phones can Range-probe media.
 	// Do not pre-set Content-Length — ServeContent owns Length/Range/206.
 	if rs, ok := rc.(io.ReadSeeker); ok {
@@ -235,6 +241,36 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, rc)
+}
+
+// canAccessMediaObject allows enterprise peers, the personal uploader, or any
+// conversation member who already received the object in a message (so DM
+// receivers can view/save personal/{sender}/… media).
+func (s *Server) canAccessMediaObject(ctx context.Context, userID, enterpriseID, rel string) bool {
+	if rel == "" {
+		return false
+	}
+	if enterpriseID != "" && strings.HasPrefix(rel, enterpriseID+"/") {
+		return true
+	}
+	if strings.HasPrefix(rel, "personal/"+userID+"/") {
+		return true
+	}
+	mediaPath := "/v1/media/files/" + rel
+	var ok bool
+	err := s.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM messages m
+			JOIN conversation_members cm ON cm.conversation_id = m.conversation_id
+			WHERE cm.user_id = $1::uuid
+			  AND m.media_url <> ''
+			  AND (
+			    split_part(m.media_url, '?', 1) = $2
+			    OR split_part(m.media_url, '?', 1) LIKE '%/' || $3
+			  )
+		)`, userID, mediaPath, rel).Scan(&ok)
+	return err == nil && ok
 }
 
 func contentTypeFromExt(ext string) string {

@@ -320,6 +320,46 @@ func (s *Server) notifyMessagePush(
 	}
 }
 
+// notifyFriendRequestPush wakes the addressee when they have no live WebSocket
+// (in-app / desktop clients already surface friend.request over WS).
+func (s *Server) notifyFriendRequestPush(ctx context.Context, userID, fromName, fromUsername string) {
+	cfg := s.pushCfg()
+	if !cfg.Enabled() {
+		return
+	}
+	if userID == "" || s.hub.IsOnline(userID) {
+		return
+	}
+	// Honour global desktop=none notify_props.
+	var raw []byte
+	_ = s.db.QueryRow(ctx, `SELECT COALESCE(notify_props, '{}'::jsonb) FROM users WHERE id=$1`, userID).Scan(&raw)
+	if len(raw) > 0 {
+		var props map[string]any
+		if json.Unmarshal(raw, &props) == nil {
+			if d, ok := props["desktop"].(string); ok && d == "none" {
+				return
+			}
+		}
+	}
+	who := strings.TrimSpace(fromName)
+	if who == "" {
+		who = strings.TrimSpace(fromUsername)
+		if who != "" {
+			who = "@" + who
+		}
+	}
+	if who == "" {
+		who = "Someone"
+	}
+	s.pushToUser(ctx, cfg, userID, push.WebPayload{
+		Title: "Friend request",
+		Body:  who + " wants to add you as a contact",
+		Tag:   "qchat-friend-request",
+		Type:  "friend",
+		URL:   "/friends",
+	})
+}
+
 // notifyCallRingPush wakes callees via Web Push (Calls background notify).
 // Skips users that already have a live WebSocket (they get call.ring over WS).
 func (s *Server) notifyCallRingPush(ctx context.Context, userIDs []string, kind, initiatorName, callID, conversationID string) {

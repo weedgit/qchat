@@ -8,21 +8,28 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 var giphyHTTP = &http.Client{Timeout: 8 * time.Second}
 
 type giphyImage struct {
-	URL string `json:"url"`
+	URL  string `json:"url"`
+	WebP string `json:"webp"`
+	MP4  string `json:"mp4"`
 }
 
 type giphyImages struct {
-	Original          giphyImage `json:"original"`
-	Downsized         giphyImage `json:"downsized"`
-	FixedHeightSmall  giphyImage `json:"fixed_height_small"`
-	FixedWidthSmall   giphyImage `json:"fixed_width_small"`
-	PreviewGif        giphyImage `json:"preview_gif"`
+	Original             giphyImage `json:"original"`
+	Downsized            giphyImage `json:"downsized"`
+	DownsizedSmall       giphyImage `json:"downsized_small"`
+	FixedHeightSmall     giphyImage `json:"fixed_height_small"`
+	FixedWidthSmall      giphyImage `json:"fixed_width_small"`
+	FixedHeightSmallStill giphyImage `json:"fixed_height_small_still"`
+	FixedWidthSmallStill giphyImage `json:"fixed_width_small_still"`
+	PreviewGif           giphyImage `json:"preview_gif"`
+	PreviewWebp          giphyImage `json:"preview_webp"`
 }
 
 type giphyItem struct {
@@ -35,7 +42,18 @@ type giphyResponse struct {
 	Data []giphyItem `json:"data"`
 }
 
+type gifCacheEntry struct {
+	at   time.Time
+	gifs []map[string]any
+}
+
+var (
+	gifSearchCache   sync.Map // string key → gifCacheEntry
+	gifSearchCacheTTL = 5 * time.Minute
+)
+
 // handleGifSearch proxies Giphy search/trending so the API key stays server-side.
+// Prefers WebP / still thumbnails so the picker grid loads quickly.
 // GET /v1/gifs?q=optional
 func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimSpace(s.cfg.GiphyAPIKey)
@@ -51,6 +69,17 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 50 {
 			limit = n
 		}
+	}
+
+	cacheKey := fmt.Sprintf("%s|%d", strings.ToLower(q), limit)
+	if cached, ok := gifSearchCache.Load(cacheKey); ok {
+		entry := cached.(gifCacheEntry)
+		if time.Since(entry.at) < gifSearchCacheTTL {
+			w.Header().Set("Cache-Control", "private, max-age=60")
+			writeJSON(w, 200, map[string]any{"gifs": entry.gifs, "cached": true})
+			return
+		}
+		gifSearchCache.Delete(cacheKey)
 	}
 
 	endpoint := "https://api.giphy.com/v1/gifs/trending"
@@ -92,17 +121,33 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]map[string]any, 0, len(parsed.Data))
 	for _, item := range parsed.Data {
-		preview := firstNonEmpty(
+		// Still first → instant grid paint; tiny WebP next; animated GIF last.
+		still := firstNonEmpty(
+			item.Images.FixedHeightSmallStill.URL,
+			item.Images.FixedWidthSmallStill.URL,
+		)
+		previewWebp := firstNonEmpty(
+			item.Images.FixedHeightSmall.WebP,
+			item.Images.FixedWidthSmall.WebP,
+			item.Images.PreviewWebp.URL,
+			item.Images.Downsized.WebP,
+		)
+		previewGif := firstNonEmpty(
 			item.Images.FixedHeightSmall.URL,
 			item.Images.FixedWidthSmall.URL,
 			item.Images.PreviewGif.URL,
+			item.Images.DownsizedSmall.URL,
 			item.Images.Downsized.URL,
-			item.Images.Original.URL,
 		)
+		// Grid thumb: prefer still (tiny), then WebP (much smaller than GIF).
+		preview := firstNonEmpty(still, previewWebp, previewGif)
+		// Hover / play: animated WebP when available, else small GIF.
+		animate := firstNonEmpty(previewWebp, previewGif, preview)
 		full := firstNonEmpty(
 			item.Images.Downsized.URL,
+			item.Images.Downsized.WebP,
 			item.Images.Original.URL,
-			item.Images.FixedHeightSmall.URL,
+			previewGif,
 			preview,
 		)
 		if preview == "" || full == "" {
@@ -113,12 +158,16 @@ func (s *Server) handleGifSearch(w http.ResponseWriter, r *http.Request) {
 			title = "GIF"
 		}
 		out = append(out, map[string]any{
-			"id":          item.ID,
-			"title":       title,
-			"preview_url": preview,
-			"url":         full,
+			"id":           item.ID,
+			"title":        title,
+			"preview_url":  preview,
+			"animate_url":  animate,
+			"url":          full,
 		})
 	}
+
+	gifSearchCache.Store(cacheKey, gifCacheEntry{at: time.Now(), gifs: out})
+	w.Header().Set("Cache-Control", "private, max-age=60")
 	writeJSON(w, 200, map[string]any{"gifs": out})
 }
 

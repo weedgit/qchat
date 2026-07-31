@@ -677,8 +677,12 @@ paths:
       summary: Inspect messages for a user
       parameters:
         - in: query
+          name: user
+          description: Username or 11-digit phone (preferred). UUID still accepted.
+          schema: { type: string }
+        - in: query
           name: user_id
-          required: true
+          description: Legacy user UUID; prefer user (username or phone)
           schema: { type: string, format: uuid }
         - in: query
           name: reason

@@ -450,6 +450,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           }
         });
         void loadFriends();
+        // Incoming pending request — local OS banner (WS path while app is alive).
+        if (type === "friend.request") {
+          const status = String(payload?.status ?? "pending");
+          if (status === "pending" || status === "") {
+            const who =
+              String(payload?.from_name ?? "").trim() ||
+              (String(payload?.from_username ?? "").trim()
+                ? `@${String(payload.from_username).trim()}`
+                : "") ||
+              "Someone";
+            notificationPort
+              .presentForegroundMessage({
+                title: "Friend request",
+                body: `${who} wants to add you as a contact`,
+                path: "/(tabs)/contacts",
+                sound: true,
+              })
+              .catch(() => {});
+          }
+        }
         if (type === "friend.blocked") {
           const peerId = String(payload?.peer_id ?? payload?.from ?? "");
           if (peerId) {

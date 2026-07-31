@@ -137,7 +137,7 @@ export function normalizeConversation(raw: any): Conversation {
     typeof last === "object" && last != null ? Boolean(last.recalled) : false;
   let lastMessage =
     typeof last === "string" ? last : str(last?.content ?? last?.body ?? last?.text) || undefined;
-  if (lastRecalled) lastMessage = "Message recalled";
+  if (lastRecalled) lastMessage = "Message deleted";
   return {
     id: str(raw?.id ?? raw?.conversation_id),
     type: typ,

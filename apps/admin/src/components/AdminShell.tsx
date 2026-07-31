@@ -80,13 +80,11 @@ export default function AdminShell({
         </nav>
         <div className="spacer" />
         {role ? (
-          <div className="admin-nav-item muted admin-role" style={{ cursor: "default" }}>
-            <span className="admin-nav-item-label">{role}</span>
+          <div className="admin-role" aria-label={`Signed in as ${role}`}>
+            {role}
           </div>
         ) : (
-          <div className="admin-nav-item muted" style={{ cursor: "default" }}>
-            <span className="admin-nav-item-label">Loading…</span>
-          </div>
+          <div className="admin-role is-loading">Loading…</div>
         )}
         <button
           type="button"

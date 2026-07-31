@@ -42,7 +42,7 @@ type WebPayload struct {
 	Title          string `json:"title"`
 	Body           string `json:"body"`
 	Tag            string `json:"tag"`
-	Type           string `json:"type,omitempty"` // message|call
+	Type           string `json:"type,omitempty"` // message|call|friend
 	Icon           string `json:"icon,omitempty"` // absolute URL only; SW cannot attach auth
 	URL            string `json:"url,omitempty"`
 	CallID         string `json:"call_id,omitempty"`

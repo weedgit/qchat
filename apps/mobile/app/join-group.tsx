@@ -1,6 +1,7 @@
 /**
- * Join a group by invite ID, pasted QR payload, or live camera scan.
- * Requests still require owner/admin approval.
+ * Scan / paste a QR payload to join a group or add a contact.
+ * - qchat://join/{publicId} → group join request
+ * - qchat://user/{username} → open profile (Add contact)
  */
 import { useCallback, useRef, useState } from "react";
 import {
@@ -19,8 +20,9 @@ import {
   type BarcodeScanningResult,
   useCameraPermissions,
 } from "expo-camera";
-import { api } from "../src/lib/api";
+import { api, asList } from "../src/lib/api";
 import { parseGroupJoinPayload } from "../src/lib/groupQr";
+import { parseUserPayload } from "../src/lib/userQr";
 import { useChat } from "../src/context/ChatContext";
 import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../src/theme";
@@ -34,6 +36,17 @@ export default function JoinGroupScreen() {
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const handledScan = useRef(false);
+
+  const openUserFromUsername = useCallback(async (username: string) => {
+    const body = await api<any>(`/v1/users/lookup?q=${encodeURIComponent(username)}`);
+    const users = asList(body, "users") as Array<{ id?: string; username?: string }>;
+    const hit =
+      users.find((u) => String(u?.username ?? "").toLowerCase() === username.toLowerCase()) ??
+      users[0];
+    const id = String(hit?.id ?? "").trim();
+    if (!id) throw new Error("User not found");
+    router.replace({ pathname: "/user/[id]", params: { id } });
+  }, []);
 
   const submitPublicId = useCallback(
     async (publicId: string) => {
@@ -69,9 +82,48 @@ export default function JoinGroupScreen() {
     [loadConversations]
   );
 
+  const handlePayload = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        Alert.alert(
+          "Scan QR",
+          "Scan a group invite (qchat://join/…) or a profile QR (qchat://user/…)."
+        );
+        return;
+      }
+
+      const userName = parseUserPayload(trimmed);
+      if (userName) {
+        setBusy(true);
+        try {
+          await openUserFromUsername(userName);
+        } catch (e: any) {
+          Alert.alert("Could not add contact", e?.message || "User not found");
+          handledScan.current = false;
+        } finally {
+          setBusy(false);
+          setScanning(false);
+        }
+        return;
+      }
+
+      const publicId = parseGroupJoinPayload(trimmed) ?? (/^G[A-Za-z0-9]+$/i.test(trimmed) ? trimmed : "");
+      if (!publicId) {
+        Alert.alert(
+          "Unrecognized QR",
+          "This code is not a group invite or profile QR. Ask them to show their Rchat QR."
+        );
+        handledScan.current = false;
+        return;
+      }
+      await submitPublicId(publicId);
+    },
+    [openUserFromUsername, submitPublicId]
+  );
+
   async function submit() {
-    const publicId = parseGroupJoinPayload(raw) ?? raw.trim();
-    await submitPublicId(publicId);
+    await handlePayload(raw);
   }
 
   async function startScan() {
@@ -85,7 +137,7 @@ export default function JoinGroupScreen() {
     if (!granted) {
       Alert.alert(
         "Camera permission",
-        "Allow camera access to scan a group invite QR code, or paste the invite instead."
+        "Allow camera access to scan a group invite or profile QR, or paste the code instead."
       );
       return;
     }
@@ -95,17 +147,19 @@ export default function JoinGroupScreen() {
 
   function onBarcode(result: BarcodeScanningResult) {
     if (busy || handledScan.current) return;
-    const publicId = parseGroupJoinPayload(String(result?.data ?? ""));
-    if (!publicId) return;
+    const data = String(result?.data ?? "").trim();
+    if (!data) return;
+    // Accept as soon as we recognize either payload type.
+    if (!parseUserPayload(data) && !parseGroupJoinPayload(data)) return;
     handledScan.current = true;
-    setRaw(publicId);
-    void submitPublicId(publicId);
+    setRaw(data);
+    void handlePayload(data);
   }
 
   if (scanning) {
     return (
       <>
-        <Stack.Screen options={{ title: "Scan invite QR" }} />
+        <Stack.Screen options={{ title: "Scan QR" }} />
         <View style={styles.scanRoot}>
           <CameraView
             style={StyleSheet.absoluteFill}
@@ -114,7 +168,9 @@ export default function JoinGroupScreen() {
             onBarcodeScanned={onBarcode}
           />
           <View style={styles.scanOverlay} pointerEvents="box-none">
-            <Text style={styles.scanHint}>Point at a group invite QR code</Text>
+            <Text style={styles.scanHint}>
+              Point at a group invite or profile QR
+            </Text>
             <View style={styles.scanFrame} />
             <Pressable
               style={[styles.btn, styles.scanCancel, busy && { opacity: 0.6 }]}
@@ -137,12 +193,12 @@ export default function JoinGroupScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: "Join group" }} />
+      <Stack.Screen options={{ title: "Scan QR" }} />
       <View style={styles.root}>
-        <Text style={styles.title}>Join by ID or QR</Text>
+        <Text style={styles.title}>Join group or add contact</Text>
         <Text style={styles.hint}>
-          Scan a group invite QR, paste a qchat://join/… payload, or type the group invite ID
-          (G…). Join requests need owner or admin approval.
+          Scan a group invite QR (qchat://join/…) or a profile QR (qchat://user/…). You can also
+          paste the payload or type a group invite ID (G…).
         </Text>
         <Pressable
           style={[styles.btnSecondary, busy && { opacity: 0.6 }]}
@@ -155,7 +211,7 @@ export default function JoinGroupScreen() {
           style={styles.input}
           value={raw}
           onChangeText={setRaw}
-          placeholder="Gxxxxxxxx or qchat://join/…"
+          placeholder="qchat://join/… or qchat://user/…"
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
@@ -169,7 +225,7 @@ export default function JoinGroupScreen() {
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.btnText}>Request to join</Text>
+            <Text style={styles.btnText}>Continue</Text>
           )}
         </Pressable>
       </View>

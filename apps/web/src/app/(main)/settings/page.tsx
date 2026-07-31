@@ -348,20 +348,22 @@ export default function SettingsPage() {
           <div className="menu-modal-section-title">{t("settings.installApp")}</div>
           <div className="menu-modal-hint">{t("settings.installAppHint")}</div>
           <div className="menu-modal-hint">{t("settings.installAppIos")}</div>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              try {
-                localStorage.removeItem("qchat.pwaInstallDismissed");
-              } catch {
-                /* ignore */
-              }
-              window.dispatchEvent(new Event("qchat:pwa-install-reshow"));
-            }}
-          >
-            {t("settings.installAppAction")}
-          </button>
+          <div className="menu-modal-panel">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                try {
+                  localStorage.removeItem("qchat.pwaInstallDismissed");
+                } catch {
+                  /* ignore */
+                }
+                window.dispatchEvent(new Event("qchat:pwa-install-reshow"));
+              }}
+            >
+              {t("settings.installAppAction")}
+            </button>
+          </div>
         </section>
       )}
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTrackVolume, VideoTrack } from "@livekit/react-native";
+import type { TrackReference } from "@livekit/components-react";
 import type { LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
 import {
   GroupCallInviteSheet,
@@ -26,6 +27,8 @@ import { radius, spacing, type ColorTokens } from "../theme";
 type CallApi = ReturnType<typeof useCall>;
 
 const MIC_BAR_COUNT = 5;
+/** Focus the local camera on the main stage (mirrors web LOCAL_FOCUS_ID). */
+const LOCAL_FOCUS_ID = "__local__";
 
 function formatCallClock(elapsedMs: number): string {
   const sec = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -138,6 +141,7 @@ export function CallOverlay({ call }: { call: CallApi }) {
     qualityDegraded,
     remoteVideoRef,
     localVideoRef,
+    peerVideoRefs,
     localAudioTrack,
     remoteAudioTrack,
     remotePeers,
@@ -155,8 +159,22 @@ export function CallOverlay({ call }: { call: CallApi }) {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteMembers, setInviteMembers] = useState<GroupCallInviteMember[]>([]);
+  /** Which participant fills the main stage in group video. */
+  const [focusedId, setFocusedId] = useState<string>(LOCAL_FOCUS_ID);
 
   const visible = Boolean(incoming || active);
+
+  const focusCandidates = useMemo(() => {
+    const ids = remotePeers.map((p) => p.identity);
+    ids.push(LOCAL_FOCUS_ID);
+    return ids;
+  }, [remotePeers]);
+
+  useEffect(() => {
+    if (!focusCandidates.includes(focusedId)) {
+      setFocusedId(remotePeers[0]?.identity || LOCAL_FOCUS_ID);
+    }
+  }, [focusCandidates, focusedId, remotePeers]);
 
   useEffect(() => {
     if (!inviteOpen || !active?.conversationId) return;
@@ -215,21 +233,46 @@ export function CallOverlay({ call }: { call: CallApi }) {
   const showGroupPeers =
     Boolean(active?.isGroup) && active?.status === "active" && !connecting;
 
+  const focusedPeer =
+    focusedId === LOCAL_FOCUS_ID
+      ? null
+      : remotePeers.find((p) => p.identity === focusedId) || null;
+  const stageVideoRef: TrackReference | null =
+    showVideo && isGroup
+      ? focusedId === LOCAL_FOCUS_ID
+        ? localVideoRef
+        : peerVideoRefs[focusedId] || remoteVideoRef
+      : showVideo
+        ? remoteVideoRef
+        : null;
+  const stageCameraOff = showVideo && isGroup
+    ? focusedId === LOCAL_FOCUS_ID
+      ? cameraOff
+      : Boolean(focusedPeer?.cameraOff)
+    : false;
+  const showLocalPip =
+    showVideo &&
+    localVideoRef &&
+    !cameraOff &&
+    !(isGroup && focusedId === LOCAL_FOCUS_ID);
+
   return (
     <Modal visible={visible} animationType="fade" presentationStyle="overFullScreen" statusBarTranslucent>
       <View style={styles.root}>
-        {showVideo && remoteVideoRef ? (
+        {showVideo && stageVideoRef && !stageCameraOff ? (
           <VideoTrack
             style={styles.remoteVideo}
-            trackRef={remoteVideoRef}
-            objectFit="cover"
+            trackRef={stageVideoRef}
+            objectFit={focusedPeer?.screenSharing ? "contain" : "cover"}
             zOrder={0}
+            mirror={isGroup && focusedId === LOCAL_FOCUS_ID}
           />
         ) : (
           <View style={styles.avatarStage}>
             <View style={styles.avatar}>
               <Text style={styles.avatarLetter}>
                 {(
+                  (isGroup && focusedPeer?.name) ||
                   incoming?.initiatorName ||
                   active?.peerName ||
                   (isGroup ? "G" : "?")
@@ -239,6 +282,11 @@ export function CallOverlay({ call }: { call: CallApi }) {
                   .toUpperCase()}
               </Text>
             </View>
+            {showVideo && stageCameraOff ? (
+              <Text style={styles.cameraOffHint}>
+                {focusedId === LOCAL_FOCUS_ID ? "Camera off" : "Camera off"}
+              </Text>
+            ) : null}
           </View>
         )}
 
@@ -258,6 +306,9 @@ export function CallOverlay({ call }: { call: CallApi }) {
               {active?.isGroup ? <Text style={styles.groupBadge}>Group</Text> : null}
               {active?.status === "ringing" ? (
                 <Text style={styles.name}>{active.peerName || "Calling…"}</Text>
+              ) : null}
+              {showVideo && isGroup && focusedPeer ? (
+                <Text style={styles.focusName}>{focusedPeer.name}</Text>
               ) : null}
               {active?.status === "active" && connectedAt != null && !connecting ? (
                 <CallDuration connectedAt={connectedAt} />
@@ -287,38 +338,97 @@ export function CallOverlay({ call }: { call: CallApi }) {
             contentContainerStyle={styles.peersRow}
             showsHorizontalScrollIndicator={false}
           >
-            {remotePeers.map((p) => (
-              <View key={p.identity} style={styles.peerCard}>
-                <View style={styles.peerAvatar}>
-                  <Text style={styles.peerLetter}>
-                    {(p.name || "?").trim().charAt(0).toUpperCase()}
+            {remotePeers.map((p) => {
+              const selected = focusedId === p.identity;
+              const tileRef = peerVideoRefs[p.identity];
+              // Don't attach the same track to stage + tile (RN VideoTrack is one surface).
+              const showTileVideo =
+                showVideo && tileRef && !p.cameraOff && focusedId !== p.identity;
+              return (
+                <Pressable
+                  key={p.identity}
+                  style={[styles.peerCard, selected && styles.peerCardFocused]}
+                  onPress={() => setFocusedId(p.identity)}
+                  accessibilityLabel={`Show ${p.name}`}
+                  accessibilityState={{ selected }}
+                >
+                  <View style={[styles.peerAvatar, selected && styles.peerAvatarFocused]}>
+                    {showTileVideo ? (
+                      <VideoTrack
+                        style={styles.peerTileVideo}
+                        trackRef={tileRef}
+                        objectFit="cover"
+                        zOrder={1}
+                      />
+                    ) : (
+                      <Text style={styles.peerLetter}>
+                        {(p.name || "?").trim().charAt(0).toUpperCase()}
+                      </Text>
+                    )}
+                    {p.micMuted ? (
+                      <View style={styles.peerMicBadge}>
+                        <Ionicons name="mic-off" size={10} color="#fff" />
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.peerName} numberOfLines={1}>
+                    {p.name}
                   </Text>
-                </View>
-                <Text style={styles.peerName} numberOfLines={1}>
-                  {p.name}
-                </Text>
-                {active?.isHost ? (
-                  <Pressable
-                    onPress={() =>
-                      kickFromCall(p.userId).catch((e) =>
-                        Alert.alert("Kick failed", e?.message || "Could not remove participant")
-                      )
-                    }
-                    hitSlop={6}
-                    style={styles.kickBtn}
-                    accessibilityLabel={`Remove ${p.name}`}
-                  >
-                    <Text style={styles.kickText}>Remove</Text>
-                  </Pressable>
+                  {active?.isHost ? (
+                    <Pressable
+                      onPress={() =>
+                        kickFromCall(p.userId).catch((e) =>
+                          Alert.alert("Kick failed", e?.message || "Could not remove participant")
+                        )
+                      }
+                      hitSlop={6}
+                      style={styles.kickBtn}
+                      accessibilityLabel={`Remove ${p.name}`}
+                    >
+                      <Text style={styles.kickText}>Remove</Text>
+                    </Pressable>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+            <Pressable
+              style={[
+                styles.peerCard,
+                focusedId === LOCAL_FOCUS_ID && styles.peerCardFocused,
+              ]}
+              onPress={() => setFocusedId(LOCAL_FOCUS_ID)}
+              accessibilityLabel="Show you"
+              accessibilityState={{ selected: focusedId === LOCAL_FOCUS_ID }}
+            >
+              <View
+                style={[
+                  styles.peerAvatar,
+                  styles.peerAvatarYou,
+                  focusedId === LOCAL_FOCUS_ID && styles.peerAvatarFocused,
+                ]}
+              >
+                {showVideo &&
+                localVideoRef &&
+                !cameraOff &&
+                focusedId !== LOCAL_FOCUS_ID ? (
+                  <VideoTrack
+                    style={styles.peerTileVideo}
+                    trackRef={localVideoRef}
+                    objectFit="cover"
+                    mirror
+                    zOrder={1}
+                  />
+                ) : (
+                  <Text style={styles.peerLetter}>Y</Text>
+                )}
+                {micMuted ? (
+                  <View style={styles.peerMicBadge}>
+                    <Ionicons name="mic-off" size={10} color="#fff" />
+                  </View>
                 ) : null}
               </View>
-            ))}
-            <View style={styles.peerCard}>
-              <View style={[styles.peerAvatar, styles.peerAvatarYou]}>
-                <Text style={styles.peerLetter}>Y</Text>
-              </View>
               <Text style={styles.peerName}>You</Text>
-            </View>
+            </Pressable>
           </ScrollView>
         ) : null}
 
@@ -333,14 +443,22 @@ export function CallOverlay({ call }: { call: CallApi }) {
         ) : null}
 
         {/* Local PiP above controls — kept out of topMeta so HUD text cannot cover it. */}
-        {showVideo && localVideoRef && !cameraOff ? (
-          <VideoTrack
-            style={styles.localVideo}
-            trackRef={localVideoRef}
-            objectFit="cover"
-            mirror
-            zOrder={1}
-          />
+        {showLocalPip ? (
+          <Pressable
+            style={styles.localVideoWrap}
+            onPress={() => {
+              if (isGroup) setFocusedId(LOCAL_FOCUS_ID);
+            }}
+            accessibilityLabel="Show your camera"
+          >
+            <VideoTrack
+              style={styles.localVideo}
+              trackRef={localVideoRef!}
+              objectFit="cover"
+              mirror
+              zOrder={2}
+            />
+          </Pressable>
         ) : null}
 
         <View style={[styles.actions, crowdedControls ? styles.actionsCrowded : null]}>
@@ -455,13 +573,19 @@ function makeStyles(c: ColorTokens) {
   remoteVideo: {
     ...StyleSheet.absoluteFillObject,
   },
-  localVideo: {
+  localVideoWrap: {
     position: "absolute" as const,
-    // Above control row — clear of top title/timer HUD.
     right: 16,
     bottom: 140,
     width: 110,
     height: 160,
+    borderRadius: 12,
+    overflow: "hidden" as const,
+    zIndex: 2,
+  },
+  localVideo: {
+    width: "100%" as const,
+    height: "100%" as const,
   },
   avatarStage: {
     ...StyleSheet.absoluteFillObject,
@@ -481,6 +605,12 @@ function makeStyles(c: ColorTokens) {
     fontSize: 44,
     fontWeight: "700" as const,
   },
+  cameraOffHint: {
+    marginTop: 12,
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
   topMeta: {
     paddingTop: 72,
     paddingHorizontal: spacing.xl,
@@ -497,6 +627,12 @@ function makeStyles(c: ColorTokens) {
     fontWeight: "700" as const,
     marginTop: 8,
     textAlign: "center" as const,
+  },
+  focusName: {
+    color: "rgba(255,255,255,0.92)",
+    fontSize: 15,
+    fontWeight: "600" as const,
+    marginTop: 6,
   },
   groupBadge: {
     marginTop: 8,
@@ -533,7 +669,7 @@ function makeStyles(c: ColorTokens) {
     color: "#fbbf24",
   },
   peersScroll: {
-    maxHeight: 140,
+    maxHeight: 150,
     marginBottom: 8,
   },
   peersRow: {
@@ -545,16 +681,39 @@ function makeStyles(c: ColorTokens) {
     width: 84,
     alignItems: "center" as const,
   },
+  peerCardFocused: {
+    opacity: 1,
+  },
   peerAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 64,
+    height: 64,
+    borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center" as const,
     justifyContent: "center" as const,
+    overflow: "hidden" as const,
+    borderWidth: 2,
+    borderColor: "transparent",
   },
   peerAvatarYou: {
     backgroundColor: c.accent,
+  },
+  peerAvatarFocused: {
+    borderColor: "#fff",
+  },
+  peerTileVideo: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  peerMicBadge: {
+    position: "absolute" as const,
+    right: 4,
+    bottom: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   peerLetter: {
     color: "#fff",

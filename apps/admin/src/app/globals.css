@@ -347,27 +347,42 @@ select:focus {
   opacity: 0.55;
   pointer-events: none;
 }
-.admin-nav-item.muted,
-.admin-role {
+.admin-nav-item.muted {
   color: var(--text-dim);
+}
+.admin-role {
+  margin: 8px 4px 4px;
+  padding: 10px 12px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  cursor: default;
+  user-select: none;
+  pointer-events: none;
+}
+.admin-role.is-loading {
+  color: var(--text-faint);
+  font-weight: 600;
+  font-size: 13px;
 }
 .admin-sidebar .spacer {
   flex: 1;
 }
 
-/* Form rows: label on the left, control on the right */
+/* Form rows: shared 2-column grid so all inputs share one left edge */
 .form-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 560px;
-}
-.form-row {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  column-gap: 10px;
-  row-gap: 4px;
+  column-gap: 12px;
+  row-gap: 10px;
+  max-width: 560px;
   align-items: center;
+}
+.form-row {
+  /* Children participate in .form-rows so the label column is shared. */
+  display: contents;
 }
 .form-row > label {
   margin: 0;
@@ -379,28 +394,42 @@ select:focus {
 }
 .form-row > .form-control,
 .form-row > .password-input,
+.form-row > .form-control-stack,
 .form-row > input,
 .form-row > select,
 .form-row > textarea {
   width: 100%;
+  min-width: 0;
+}
+.form-control-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.form-control-stack > .form-control,
+.form-control-stack > input,
+.form-control-stack > select,
+.form-control-stack > textarea {
+  width: 100%;
+  min-width: 0;
+}
+.form-row > .btn,
+.form-row > .toolbar {
+  grid-column: 2;
+  justify-self: start;
 }
 .form-row > span:empty,
 .form-row > span:not([class]) {
-  /* spacer cell for button rows — collapse unused label column */
+  /* spacer only — hide so the button sits in the control column */
   display: none;
 }
-.form-row:has(> span:empty),
-.form-row:has(> span:not([class]):empty) {
-  grid-template-columns: minmax(0, 1fr);
-}
 @media (max-width: 640px) {
-  .form-row {
+  .form-rows {
     grid-template-columns: 1fr;
-    column-gap: 0;
   }
-  .form-row > span:empty,
-  .form-row > span:not([class]) {
-    display: none;
+  .form-row > .btn,
+  .form-row > .toolbar {
+    grid-column: 1;
   }
 }
 

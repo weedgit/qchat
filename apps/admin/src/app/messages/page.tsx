@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import AdminShell from "@/components/AdminShell";
-import { api, asList } from "@/lib/api";
+import { api, asList, mediaAuthURL } from "@/lib/api";
 
 const PAGE_SIZE = 50;
 
@@ -55,7 +55,7 @@ function MediaCell({ m }: { m: InspectedMessage }) {
           {m.type === "image" ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={m.mediaUrl}
+              src={mediaAuthURL(m.mediaUrl) || m.mediaUrl}
               alt={m.content || "image"}
               style={{
                 maxWidth: 220,
@@ -66,7 +66,13 @@ function MediaCell({ m }: { m: InspectedMessage }) {
               }}
             />
           ) : null}
-          <a href={m.mediaUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, wordBreak: "break-all" }}>
+          <a
+            href={mediaAuthURL(m.mediaUrl) || m.mediaUrl}
+            target="_blank"
+            rel="noreferrer"
+            download
+            style={{ fontSize: 12, wordBreak: "break-all" }}
+          >
             {m.mediaUrl}
           </a>
         </div>
@@ -77,7 +83,7 @@ function MediaCell({ m }: { m: InspectedMessage }) {
 }
 
 export default function MessageInspectPage() {
-  const [userId, setUserId] = useState("");
+  const [user, setUser] = useState("");
   const [reason, setReason] = useState("");
   const [scope, setScope] = useState<"all" | "sent">("all");
   const [rows, setRows] = useState<InspectedMessage[] | null>(null);
@@ -85,12 +91,12 @@ export default function MessageInspectPage() {
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [inspectedUserId, setInspectedUserId] = useState("");
+  const [inspectedUser, setInspectedUser] = useState("");
   const [inspectedReason, setInspectedReason] = useState("");
   const [inspectedScope, setInspectedScope] = useState<"all" | "sent">("all");
 
   async function loadPage(
-    targetUserId: string,
+    targetUser: string,
     targetReason: string,
     targetScope: "all" | "sent",
     from: number
@@ -99,7 +105,7 @@ export default function MessageInspectPage() {
     setError(null);
     try {
       const qs = new URLSearchParams({
-        user_id: targetUserId,
+        user: targetUser,
         reason: targetReason,
         scope: targetScope,
         limit: String(PAGE_SIZE),
@@ -109,7 +115,7 @@ export default function MessageInspectPage() {
       setRows(asList(body, "messages").map(normalize));
       setTotal(Number(body?.total ?? 0));
       setOffset(from);
-      setInspectedUserId(targetUserId);
+      setInspectedUser(targetUser);
       setInspectedReason(targetReason);
       setInspectedScope(targetScope);
     } catch (e: any) {
@@ -122,15 +128,15 @@ export default function MessageInspectPage() {
 
   async function inspect(e: FormEvent) {
     e.preventDefault();
-    if (!userId.trim()) {
-      setError("A user ID is required.");
+    if (!user.trim()) {
+      setError("Username or phone number is required.");
       return;
     }
     if (reason.trim().length < 8) {
       setError("A meaningful reason (at least 8 characters) is required.");
       return;
     }
-    await loadPage(userId.trim(), reason.trim(), scope, 0);
+    await loadPage(user.trim(), reason.trim(), scope, 0);
   }
 
   const from = total === 0 || !rows ? 0 : offset + 1;
@@ -146,20 +152,21 @@ export default function MessageInspectPage() {
 
       <div className="notice">
         Message inspection is a privileged, audited action. Your identity, the
-        user ID, scope, and the reason you provide are permanently recorded in the
+        target user, scope, and the reason you provide are permanently recorded in the
         audit log for every page viewed. Recalled messages are shown flagged.
       </div>
 
       <div className="card" style={{ maxWidth: 720 }}>
         <form onSubmit={inspect} className="form-rows" style={{ maxWidth: "100%" }}>
           <div className="form-row">
-            <label htmlFor="msg-inspect-user">User ID</label>
+            <label htmlFor="msg-inspect-user">Username or phone</label>
             <input
               id="msg-inspect-user"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="e.g. 8f2c9a…"
+              value={user}
+              onChange={(e) => setUser(e.target.value)}
+              placeholder="e.g. alice or 13800138000"
               required
+              autoComplete="off"
             />
           </div>
           <div className="form-row">
@@ -175,21 +182,18 @@ export default function MessageInspectPage() {
           </div>
           <div className="form-row" style={{ alignItems: "start" }}>
             <label htmlFor="msg-inspect-reason">Reason</label>
-            <textarea
-              id="msg-inspect-reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Compliance ticket #1234 — reported harassment"
-              rows={3}
-              required
-            />
-          </div>
-          {error && (
-            <div className="form-row">
-              <span />
-              <div className="error-text">{error}</div>
+            <div className="form-control-stack">
+              <textarea
+                id="msg-inspect-reason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Compliance ticket #1234 — reported harassment"
+                rows={3}
+                required
+              />
+              {error ? <div className="error-text">{error}</div> : null}
             </div>
-          )}
+          </div>
           <div className="form-row">
             <span />
             <button className="btn" disabled={busy} style={{ alignSelf: "flex-start" }}>
@@ -260,7 +264,7 @@ export default function MessageInspectPage() {
                 disabled={busy || offset === 0}
                 onClick={() =>
                   loadPage(
-                    inspectedUserId,
+                    inspectedUser,
                     inspectedReason,
                     inspectedScope,
                     Math.max(0, offset - PAGE_SIZE)
@@ -274,7 +278,7 @@ export default function MessageInspectPage() {
                 type="button"
                 disabled={busy || to >= total}
                 onClick={() =>
-                  loadPage(inspectedUserId, inspectedReason, inspectedScope, offset + PAGE_SIZE)
+                  loadPage(inspectedUser, inspectedReason, inspectedScope, offset + PAGE_SIZE)
                 }
               >
                 Next

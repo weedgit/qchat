@@ -77,6 +77,8 @@ declare global {
     focusCallWindow?: () => Promise<{ ok: boolean }>;
     closeCallWindow?: () => Promise<{ ok: boolean }>;
     focusMainWindow?: () => Promise<{ ok: boolean }>;
+    /** Download a URL with the native Save As dialog (will-download). */
+    downloadURL?: (url: string) => Promise<{ ok: boolean; error?: string }>;
   }
 
   interface Window {

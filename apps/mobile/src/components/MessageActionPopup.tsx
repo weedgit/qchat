@@ -74,7 +74,7 @@ export function MessageActionPopup({
   const canCopy = !msg.recalled && Boolean((msg.content || "").trim() || msg.mediaUrl);
   const canForward = !msg.recalled && !msg.pending && !msg.failed;
   const canPin = canForward && canPinConversation;
-  const canEdit = Boolean(msg.mine && !msg.recalled && !msg.pending && !msg.failed && msg.type !== "voice");
+  const canEdit = Boolean(msg.mine && !msg.recalled && !msg.pending && !msg.failed && msg.type !== "voice" && msg.type !== "call");
   const canDelete = Boolean(
     !msg.recalled &&
       !msg.pending &&

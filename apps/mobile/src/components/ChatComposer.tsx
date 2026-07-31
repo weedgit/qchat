@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ActionSheetIOS,
-  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -26,21 +25,11 @@ import {
   useAudioRecorderState,
 } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { searchGifs, type GifItem } from "../lib/gifSearch";
+import { EmojiPickerSheet } from "./EmojiPickerSheet";
 import { isVideoAttachmentHint, isVideoMime, MESSAGE_MAX_CHARS, clipMessageText, messageCharCount } from "../lib/mediaLimits";
-import { STICKER_PACKS } from "../lib/stickerData";
 import { Message } from "../lib/types";
 import { useTheme, useThemedStyles } from "../context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../theme";
-
-const EMOJI_GRID = [
-  "😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘",
-  "😎", "🤔", "🙄", "😢", "😭", "😡", "👍", "👎",
-  "👏", "🙏", "🔥", "❤️", "💯", "🎉", "✨", "⭐",
-  "🤝", "💪", "🫡", "🥳", "😴", "🤯", "😅", "😇",
-];
-
-type PickerTab = "emoji" | "stickers" | "gifs";
 
 function messagePreview(m: Message): string {
   if (m.type === "image") return m.content || "Photo";
@@ -80,6 +69,8 @@ export type ChatComposerProps = {
   onSendRemoteImage?: (url: string, caption: string) => void;
   /** Throttled typing.start while the user types. */
   onTyping?: () => void;
+  /** Shown in the composer when a partner is typing (accent placeholder). */
+  typingPlaceholder?: string;
   /** When true, typing @ in a group opens member autocomplete. */
   mentionEnabled?: boolean;
   mentionMembers?: MentionMember[];
@@ -104,17 +95,13 @@ export function ChatComposer({
   onSendVoice,
   onSendRemoteImage,
   onTyping,
+  typingPlaceholder,
   mentionEnabled = false,
   mentionMembers = [],
   disabled = false,
   disabledReason,
 }: ChatComposerProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerTab, setPickerTab] = useState<PickerTab>("emoji");
-  const [stickerPackId, setStickerPackId] = useState(STICKER_PACKS[0]?.id ?? "smileys");
-  const [gifQuery, setGifQuery] = useState("");
-  const [gifs, setGifs] = useState<GifItem[]>([]);
-  const [gifsLoading, setGifsLoading] = useState(false);
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [voiceBusy, setVoiceBusy] = useState(false);
@@ -150,33 +137,6 @@ export function ChatComposer({
   useEffect(() => {
     if (!mentionEnabled) setMentionMenu(null);
   }, [mentionEnabled]);
-
-  useEffect(() => {
-    if (!pickerOpen || pickerTab !== "gifs") return;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      setGifsLoading(true);
-      searchGifs(gifQuery)
-        .then((list) => {
-          if (!cancelled) setGifs(list);
-        })
-        .catch(() => {
-          if (!cancelled) setGifs([]);
-        })
-        .finally(() => {
-          if (!cancelled) setGifsLoading(false);
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [pickerOpen, pickerTab, gifQuery]);
-
-  const activePack = useMemo(
-    () => STICKER_PACKS.find((p) => p.id === stickerPackId) ?? STICKER_PACKS[0],
-    [stickerPackId]
-  );
 
   const mentionSuggestions = useMemo((): MentionSuggestion[] => {
     if (!mentionMenu || !mentionEnabled) return [];
@@ -379,13 +339,6 @@ export function ChatComposer({
     setPickerOpen(false);
   }
 
-  const packLabels: Record<string, string> = {
-    smileys: "Smileys",
-    animals: "Animals",
-    gestures: "Gestures",
-    celebration: "Celebration",
-  };
-
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
       {disabled && disabledReason ? (
@@ -481,11 +434,12 @@ export function ChatComposer({
                 ? disabledReason || "Messaging disabled"
                 : editing
                   ? "Edit message"
-                  : mentionEnabled
-                    ? "Message · @ to mention"
-                    : "Message"
+                  : typingPlaceholder ||
+                    (mentionEnabled ? "Message · @ to mention" : "Message")
             }
-            placeholderTextColor="#8e8e93"
+            placeholderTextColor={
+              !disabled && !editing && typingPlaceholder ? colors.accent : "#8e8e93"
+            }
             multiline
             maxLength={MESSAGE_MAX_CHARS}
           />
@@ -592,130 +546,17 @@ export function ChatComposer({
         </Pressable>
       </Modal>
 
-      <Modal
+      <EmojiPickerSheet
         visible={pickerOpen && !disabled}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerOpen(false)}
-      >
-        <Pressable style={styles.emojiBg} onPress={() => setPickerOpen(false)}>
-          <Pressable style={styles.emojiSheet} onPress={() => {}}>
-            <View style={styles.pickerTabs}>
-              {(
-                [
-                  ["emoji", "Emoji"],
-                  ["stickers", "Stickers"],
-                  ["gifs", "GIFs"],
-                ] as const
-              ).map(([id, label]) => (
-                <Pressable
-                  key={id}
-                  style={[styles.pickerTab, pickerTab === id && styles.pickerTabActive]}
-                  onPress={() => setPickerTab(id)}
-                >
-                  <Text
-                    style={[
-                      styles.pickerTabText,
-                      pickerTab === id && styles.pickerTabTextActive,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {pickerTab === "emoji" ? (
-              <ScrollView contentContainerStyle={styles.emojiGrid}>
-                {EMOJI_GRID.map((e) => (
-                  <Pressable
-                    key={e}
-                    style={styles.emojiCell}
-                    onPress={() => {
-                      insertEmoji(e);
-                      setPickerOpen(false);
-                    }}
-                  >
-                    <Text style={styles.emojiGlyph}>{e}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            ) : null}
-
-            {pickerTab === "stickers" ? (
-              <View style={{ flex: 1 }}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.packRow}
-                  contentContainerStyle={{ gap: 8, paddingHorizontal: 4 }}
-                >
-                  {STICKER_PACKS.map((p) => (
-                    <Pressable
-                      key={p.id}
-                      style={[
-                        styles.packChip,
-                        stickerPackId === p.id && styles.packChipActive,
-                      ]}
-                      onPress={() => setStickerPackId(p.id)}
-                    >
-                      <Text style={styles.packChipText}>
-                        {packLabels[p.id] || p.id}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-                <ScrollView contentContainerStyle={styles.stickerGrid}>
-                  {(activePack?.stickers ?? []).map((s) => (
-                    <Pressable
-                      key={s.id}
-                      style={styles.stickerCell}
-                      onPress={() => sendRemote(s.url, "Sticker")}
-                    >
-                      <Image source={{ uri: s.url }} style={styles.stickerImg} />
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            ) : null}
-
-            {pickerTab === "gifs" ? (
-              <View style={{ flex: 1 }}>
-                <TextInput
-                  style={styles.gifSearch}
-                  value={gifQuery}
-                  onChangeText={setGifQuery}
-                  placeholder="Search GIFs"
-                  placeholderTextColor="#8e8e93"
-                  autoCorrect={false}
-                />
-                {gifsLoading ? (
-                  <ActivityIndicator color={colors.accent} style={{ marginTop: 24 }} />
-                ) : (
-                  <ScrollView contentContainerStyle={styles.gifGrid}>
-                    {gifs.map((g) => (
-                      <Pressable
-                        key={g.id}
-                        style={styles.gifCell}
-                        onPress={() => sendRemote(g.url, "GIF")}
-                      >
-                        <Image
-                          source={{ uri: g.previewUrl }}
-                          style={styles.gifImg}
-                          resizeMode="cover"
-                        />
-                      </Pressable>
-                    ))}
-                    {!gifs.length ? (
-                      <Text style={styles.gifEmpty}>No GIFs found</Text>
-                    ) : null}
-                  </ScrollView>
-                )}
-              </View>
-            ) : null}
-          </Pressable>
-        </Pressable>
-      </Modal>
+        onClose={() => setPickerOpen(false)}
+        onPickEmoji={(emoji) => {
+          insertEmoji(emoji);
+          setPickerOpen(false);
+        }}
+        onPickMedia={(item) => {
+          sendRemote(item.url, item.kind === "sticker" ? "Sticker" : "GIF");
+        }}
+      />
     </View>
   );
 }
@@ -875,96 +716,5 @@ function makeStyles(c: ColorTokens) {
       backgroundColor: "rgba(0,0,0,0.4)",
       justifyContent: "flex-end" as const,
     },
-    emojiSheet: {
-      backgroundColor: "#1c1c1e",
-      borderTopLeftRadius: 16,
-      borderTopRightRadius: 16,
-      paddingTop: 12,
-      paddingBottom: 28,
-      maxHeight: "58%" as const,
-    },
-    emojiTitle: {
-      color: "#fff",
-      fontWeight: "700" as const,
-      fontSize: 15,
-      paddingHorizontal: 16,
-      marginBottom: 8,
-    },
-    emojiGrid: {
-      flexDirection: "row" as const,
-      flexWrap: "wrap" as const,
-      paddingHorizontal: 10,
-    },
-    emojiCell: {
-      width: "12.5%" as const,
-      aspectRatio: 1,
-      alignItems: "center" as const,
-      justifyContent: "center" as const,
-    },
-    emojiGlyph: { fontSize: 26 },
-    pickerTabs: {
-      flexDirection: "row" as const,
-      gap: 8,
-      paddingHorizontal: 12,
-      marginBottom: 8,
-    },
-    pickerTab: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 999,
-      backgroundColor: "#2a2a2c",
-    },
-    pickerTabActive: { backgroundColor: c.accent },
-    pickerTabText: { color: "#9ca3af", fontWeight: "700" as const, fontSize: 13 },
-    pickerTabTextActive: { color: "#fff" },
-    packRow: { maxHeight: 44, marginBottom: 8 },
-    packChip: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 999,
-      backgroundColor: "#2a2a2c",
-    },
-    packChipActive: { backgroundColor: c.accent },
-    packChipText: { color: "#fff", fontWeight: "600" as const, fontSize: 12 },
-    stickerGrid: {
-      flexDirection: "row" as const,
-      flexWrap: "wrap" as const,
-      paddingHorizontal: 10,
-      paddingBottom: 12,
-    },
-    stickerCell: {
-      width: "25%" as const,
-      aspectRatio: 1,
-      alignItems: "center" as const,
-      justifyContent: "center" as const,
-      padding: 6,
-    },
-    stickerImg: { width: 56, height: 56 },
-    gifSearch: {
-      marginHorizontal: 12,
-      marginBottom: 8,
-      borderRadius: 10,
-      backgroundColor: "#2a2a2c",
-      color: "#fff",
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 15,
-    },
-    gifGrid: {
-      flexDirection: "row" as const,
-      flexWrap: "wrap" as const,
-      paddingHorizontal: 8,
-      paddingBottom: 12,
-      gap: 6,
-    },
-    gifCell: {
-      width: "48%" as const,
-      aspectRatio: 1.2,
-      borderRadius: 10,
-      overflow: "hidden" as const,
-      backgroundColor: "#2a2a2c",
-    },
-    gifImg: { width: "100%" as const, height: "100%" as const },
-    gifEmpty: { color: "#9ca3af", padding: 16, width: "100%" as const, textAlign: "center" as const },
   };
 }

@@ -539,6 +539,10 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.hub.PublishToUsers([]string{targetID}, ws.Event{Type: "friend.request", Payload: payload})
+	if status == "pending" {
+		fromName, _ := payload["from_name"].(string)
+		s.notifyFriendRequestPush(r.Context(), targetID, fromName, fromUser)
+	}
 	writeJSON(w, 201, resp)
 }
 

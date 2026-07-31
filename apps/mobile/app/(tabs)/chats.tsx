@@ -13,7 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Avatar } from "../../src/components/Avatar";
-import { useChat, type TypingUser } from "../../src/context/ChatContext";
+import { useChat } from "../../src/context/ChatContext";
 import { api, asList } from "../../src/lib/api";
 import {
   Conversation,
@@ -53,7 +53,7 @@ function formatTime(iso?: string): string {
 
 /** Mirror web ConversationRow last-message preview. */
 function previewText(c: Conversation): string {
-  if (c.lastMessageRecalled) return "Message recalled";
+  if (c.lastMessageRecalled) return "Message deleted";
   if (!c.lastMessage) return "No messages yet";
   const showSender = c.lastMessageMine || c.type !== "dm";
   if (showSender && c.lastMessageSender) {
@@ -61,13 +61,6 @@ function previewText(c: Conversation): string {
     return `${who}: ${c.lastMessage}`;
   }
   return c.lastMessage;
-}
-
-function formatTypingPreview(users: TypingUser[]): string {
-  if (users.length === 0) return "";
-  if (users.length === 1) return `${users[0].name} is typing…`;
-  if (users.length === 2) return `${users[0].name} and ${users[1].name} are typing…`;
-  return "Several people are typing…";
 }
 
 export default function ChatsScreen() {
@@ -83,7 +76,6 @@ export default function ChatsScreen() {
     markUnread,
     clearHistory,
     deleteConversation,
-    typingByConv,
     presenceByUser,
     connected,
     loadError,
@@ -386,7 +378,7 @@ export default function ChatsScreen() {
           <Pressable
             style={styles.joinBtn}
             onPress={() => router.push("/join-group")}
-            accessibilityLabel="Join group"
+            accessibilityLabel="Scan QR"
           >
             <Ionicons name="qr-code-outline" size={20} color={colors.accent} />
           </Pressable>
@@ -486,7 +478,6 @@ export default function ChatsScreen() {
           const mention = (item.mentionCount ?? 0) > 0;
           const selected = selectedIds.includes(item.id);
           const company = conversationCompanyLabel(item);
-          const typing = formatTypingPreview(typingByConv[item.id] ?? []);
           const online = peerIsOnline(item);
           return (
             <Pressable
@@ -542,13 +533,12 @@ export default function ChatsScreen() {
                   <Text
                     style={[
                       styles.preview,
-                      typing ? styles.previewTyping : null,
-                      !typing && item.lastMessageRecalled && styles.previewRecalled,
+                      item.lastMessageRecalled && styles.previewRecalled,
                       muted && styles.previewMuted,
                     ]}
                     numberOfLines={1}
                   >
-                    {typing || previewText(item)}
+                    {previewText(item)}
                   </Text>
                   {!selecting && item.unreadCount > 0 ? (
                     <View
@@ -735,7 +725,6 @@ function makeStyles(c: ColorTokens) {
     gap: spacing.sm,
   },
   preview: { flex: 1, fontSize: 13, color: c.textSecondary },
-  previewTyping: { color: c.accent, fontStyle: "italic" as const },
   previewRecalled: { fontStyle: "italic" as const },
   previewMuted: { color: c.textMuted },
   badge: {

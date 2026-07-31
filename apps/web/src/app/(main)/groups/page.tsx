@@ -9,6 +9,7 @@ import MenuModal from "@/components/MenuModal";
 import { api, asList, notifyConversationsChanged } from "@/lib/api";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
+import { parseUserPayload } from "@/lib/userQr";
 import { useLocale } from "@/lib/locale";
 import { useMe } from "@/lib/MeContext";
 import { AVATAR_ACCEPT, AVATAR_MAX_BYTES, isAvatarFile } from "@/lib/mediaLimits";
@@ -339,6 +340,45 @@ export default function GroupsPage() {
     };
   }, [createStep, manageView, friendQuery]);
 
+  async function requestAddContact(username: string) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await api<any>("/v1/friends/request", {
+        method: "POST",
+        body: JSON.stringify({ username, message: "Hi!" }),
+      });
+      const status = String(res?.status ?? "pending");
+      setJoinId("");
+      setScanning(false);
+      if (status === "accepted") {
+        setMsg(t("contacts.friendAdded"));
+      } else {
+        setMsg(t("contacts.requestSent"));
+      }
+      window.setTimeout(() => {
+        router.push(`/friends?q=${encodeURIComponent(username)}`);
+      }, 700);
+    } catch (err: any) {
+      setMsg(err?.message || t("contacts.requestSent"));
+      setScanning(false);
+      window.setTimeout(() => {
+        router.push(`/friends?q=${encodeURIComponent(username)}`);
+      }, 900);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleJoinOrContact(raw: string) {
+    const userName = parseUserPayload(raw);
+    if (userName) {
+      await requestAddContact(userName);
+      return;
+    }
+    await requestJoin(raw);
+  }
+
   async function requestJoin(publicIdRaw: string) {
     const parsed = parseGroupJoinPayload(publicIdRaw) ?? publicIdRaw.trim();
     if (!parsed) {
@@ -370,7 +410,7 @@ export default function GroupsPage() {
 
   async function joinGroup(e: FormEvent) {
     e.preventDefault();
-    await requestJoin(joinId);
+    await handleJoinOrContact(joinId);
   }
 
   async function openManage(id: string) {
@@ -893,9 +933,9 @@ export default function GroupsPage() {
               {scanning && (
                 <GroupQrScanner
                   onClose={() => setScanning(false)}
-                  onDetected={(publicIdScanned) => {
-                    setJoinId(publicIdScanned);
-                    void requestJoin(publicIdScanned);
+                  onDetected={(scanned) => {
+                    setJoinId(scanned);
+                    void handleJoinOrContact(scanned);
                   }}
                 />
               )}

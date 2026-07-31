@@ -24,6 +24,8 @@ const IPC = {
   FOCUS_CALL_WINDOW: "qchat:focus-call-window",
   CLOSE_CALL_WINDOW: "qchat:close-call-window",
   FOCUS_MAIN_WINDOW: "qchat:focus-main-window",
+  /** Download URL → will-download Save As dialog. */
+  DOWNLOAD_URL: "qchat:download-url",
 };
 
 module.exports = { IPC };

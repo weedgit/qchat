@@ -50,10 +50,12 @@ export async function ensureNotificationPermissions(): Promise<boolean> {
 }
 
 export type LocalMessageNotify = {
-  conversationId: string;
+  conversationId?: string;
   title: string;
   body: string;
   sound?: boolean;
+  /** Expo-router path when the banner is tapped (e.g. /contacts). */
+  path?: string;
 };
 
 export async function presentMessageNotification(opts: LocalMessageNotify): Promise<void> {
@@ -65,7 +67,10 @@ export async function presentMessageNotification(opts: LocalMessageNotify): Prom
       title: opts.title,
       body: opts.body || "New message",
       sound: opts.sound === false ? undefined : "default",
-      data: { conversationId: opts.conversationId },
+      data: {
+        conversationId: opts.conversationId ?? "",
+        path: opts.path ?? "",
+      },
       ...(Platform.OS === "android" ? { channelId: "messages" } : {}),
     },
     trigger: null,
@@ -75,10 +80,17 @@ export async function presentMessageNotification(opts: LocalMessageNotify): Prom
 /** Navigate when user taps a notification. */
 export function attachNotificationResponseListener(): () => void {
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-    const convId = String(response.notification.request.content.data?.conversationId ?? "");
-    if (!convId) return;
+    const data = response.notification.request.content.data ?? {};
+    const path = String(data.path ?? "").trim();
+    const convId = String(data.conversationId ?? "").trim();
     try {
-      router.push(`/chat/${convId}`);
+      if (path) {
+        router.push(path as any);
+        return;
+      }
+      if (convId) {
+        router.push(`/chat/${convId}`);
+      }
     } catch {
       /* router may not be ready */
     }

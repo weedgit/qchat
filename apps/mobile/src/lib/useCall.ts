@@ -44,6 +44,49 @@ function asVideoTrackRef(
   };
 }
 
+/** Prefer screen share over camera (matches web group stage). */
+function preferredVideoPublication(
+  participant: LocalParticipant | RemoteParticipant
+): TrackPublication | null {
+  const screen = participant.getTrackPublication(Track.Source.ScreenShare);
+  if (screen?.track && screen.kind === Track.Kind.Video) return screen;
+  const camera = participant.getTrackPublication(Track.Source.Camera);
+  if (camera?.track && camera.kind === Track.Kind.Video) return camera;
+  let fallback: TrackPublication | null = null;
+  participant.trackPublications.forEach((pub) => {
+    if (fallback || pub.kind !== Track.Kind.Video || !pub.track || pub.isMuted) return;
+    if (pub.source === Track.Source.ScreenShare) {
+      fallback = pub;
+      return;
+    }
+    fallback = pub;
+  });
+  return fallback;
+}
+
+function preferredVideoTrackRef(
+  participant: LocalParticipant | RemoteParticipant
+): TrackReference | null {
+  const pub = preferredVideoPublication(participant);
+  return pub ? asVideoTrackRef(participant, pub) : null;
+}
+
+function participantHasLiveVideo(participant: RemoteParticipant): boolean {
+  return Boolean(preferredVideoPublication(participant));
+}
+
+function isScreenSharing(participant: RemoteParticipant): boolean {
+  const screen = participant.getTrackPublication(Track.Source.ScreenShare);
+  if (screen?.track) return true;
+  let found = false;
+  participant.trackPublications.forEach((pub) => {
+    if (pub.kind === Track.Kind.Video && pub.source === Track.Source.ScreenShare && pub.track) {
+      found = true;
+    }
+  });
+  return found;
+}
+
 async function ensureCallPermissions(kind: CallKind) {
   if (Platform.OS === "android") {
     const perms = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
@@ -98,6 +141,8 @@ export type CallRemotePeer = {
   userId: string;
   micMuted: boolean;
   cameraOff: boolean;
+  /** True when this peer is publishing a screen-share track. */
+  screenSharing: boolean;
 };
 
 export type StartCallOpts = {
@@ -152,6 +197,8 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
   const [connectionQuality, setConnectionQuality] = useState<CallQualityLevel>("unknown");
   const [remoteVideoRef, setRemoteVideoRef] = useState<TrackReference | null>(null);
   const [localVideoRef, setLocalVideoRef] = useState<TrackReference | null>(null);
+  /** Per-identity remote video refs — needed so group adaptiveStream keeps all members live. */
+  const [peerVideoRefs, setPeerVideoRefs] = useState<Record<string, TrackReference>>({});
   const [localAudioTrack, setLocalAudioTrack] = useState<LocalAudioTrack | null>(null);
   const [remoteAudioTrack, setRemoteAudioTrack] = useState<RemoteAudioTrack | null>(null);
   /** LiveKit remote participants for group (N:N) kick / invite UX. */
@@ -176,9 +223,36 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     setConnectionQuality("unknown");
     setRemoteVideoRef(null);
     setLocalVideoRef(null);
+    setPeerVideoRefs({});
     setLocalAudioTrack(null);
     setRemoteAudioTrack(null);
     setRemotePeers([]);
+  }, []);
+
+  /** Rebuild peer video map + primary remoteVideoRef (1:1 / focus fallback). */
+  const syncPeerVideoRefs = useCallback(() => {
+    const room = roomRef.current;
+    if (!room) {
+      setPeerVideoRefs({});
+      setRemoteVideoRef(null);
+      return;
+    }
+    const next: Record<string, TrackReference> = {};
+    room.remoteParticipants.forEach((p) => {
+      const identity = String(p.identity || "");
+      if (!identity) return;
+      const ref = preferredVideoTrackRef(p);
+      if (ref) next[identity] = ref;
+    });
+    setPeerVideoRefs(next);
+    const identities = Object.keys(next);
+    setRemoteVideoRef((prev) => {
+      if (prev) {
+        const id = String(prev.participant?.identity ?? "");
+        if (id && next[id]) return next[id];
+      }
+      return identities.length ? next[identities[0]] : null;
+    });
   }, []);
 
   const syncRemotePeers = useCallback(() => {
@@ -192,19 +266,21 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
       const identity = String(p.identity || "");
       const userId = identity.split(":")[0] || identity;
       const micPub = p.getTrackPublication(Track.Source.Microphone);
-      const camPub = p.getTrackPublication(Track.Source.Camera);
       const hasMic = Boolean(micPub?.track);
-      const hasCam = Boolean(camPub?.track);
+      const hasScreen = isScreenSharing(p);
+      const hasLiveVideo = participantHasLiveVideo(p);
       next.push({
         identity,
         name: String(p.name || userId || "User"),
         userId,
         micMuted: !hasMic || Boolean(micPub?.isMuted),
-        cameraOff: !hasCam || Boolean(camPub?.isMuted),
+        cameraOff: !hasLiveVideo,
+        screenSharing: hasScreen,
       });
     });
     setRemotePeers(next);
-  }, []);
+    syncPeerVideoRefs();
+  }, [syncPeerVideoRefs]);
 
   const disconnectRoom = useCallback(async () => {
     connectGenRef.current += 1;
@@ -212,6 +288,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     roomRef.current = null;
     setRemoteVideoRef(null);
     setLocalVideoRef(null);
+    setPeerVideoRefs({});
     setLocalAudioTrack(null);
     setRemoteAudioTrack(null);
     setRemotePeers([]);
@@ -305,8 +382,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
             if (gen !== connectGenRef.current) return;
             hadRemoteRef.current = true;
             if (track.kind === Track.Kind.Video) {
-              const ref = asVideoTrackRef(participant, publication);
-              if (ref) setRemoteVideoRef(ref);
+              syncPeerVideoRefs();
             } else if (track.kind === Track.Kind.Audio) {
               setRemoteAudioTrack(track as RemoteAudioTrack);
             }
@@ -316,7 +392,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
         room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
           if (gen !== connectGenRef.current) return;
           if (track.kind === Track.Kind.Video) {
-            setRemoteVideoRef((prev) => (prev?.publication.track === track ? null : prev));
+            syncPeerVideoRefs();
           } else if (track.kind === Track.Kind.Audio) {
             setRemoteAudioTrack((prev) => (prev === track ? null : prev));
           }
@@ -456,9 +532,6 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
             p.trackPublications.forEach((pub) => {
               if (pub.track?.kind === Track.Kind.Audio) {
                 setRemoteAudioTrack(pub.track as RemoteAudioTrack);
-              } else if (pub.track?.kind === Track.Kind.Video) {
-                const ref = asVideoTrackRef(p, pub);
-                if (ref) setRemoteVideoRef(ref);
               }
             });
           });
@@ -495,7 +568,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
         await disconnectRoom();
       }
     },
-    [disconnectRoom, hangupServer, resetMediaUi, syncRemotePeers]
+    [disconnectRoom, hangupServer, resetMediaUi, syncPeerVideoRefs, syncRemotePeers]
   );
 
   useEffect(() => {
@@ -757,6 +830,7 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
     qualityDegraded: isDegradedQuality(connectionQuality),
     remoteVideoRef,
     localVideoRef,
+    peerVideoRefs,
     localAudioTrack,
     remoteAudioTrack,
     remotePeers,

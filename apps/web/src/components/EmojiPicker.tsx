@@ -590,9 +590,38 @@ export default function EmojiPicker({
                       e.preventDefault();
                       pickGif(g);
                     }}
+                    onMouseEnter={(e) => {
+                      const img = e.currentTarget.querySelector("img");
+                      if (img && g.animateUrl && g.animateUrl !== g.previewUrl) {
+                        img.src = g.animateUrl;
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      const img = e.currentTarget.querySelector("img");
+                      if (img && g.previewUrl) {
+                        img.src = g.previewUrl;
+                      }
+                    }}
+                    onFocus={(e) => {
+                      const img = e.currentTarget.querySelector("img");
+                      if (img && g.animateUrl && g.animateUrl !== g.previewUrl) {
+                        img.src = g.animateUrl;
+                      }
+                    }}
+                    onBlur={(e) => {
+                      const img = e.currentTarget.querySelector("img");
+                      if (img && g.previewUrl) {
+                        img.src = g.previewUrl;
+                      }
+                    }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={g.previewUrl} alt={g.title} loading="lazy" />
+                    <img
+                      src={g.previewUrl}
+                      alt={g.title}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </button>
                 ))}
               </div>
