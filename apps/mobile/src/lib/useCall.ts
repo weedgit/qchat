@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PermissionsAndroid, Platform } from "react-native";
 import Constants from "expo-constants";
+import { AudioModule } from "expo-audio";
+import { Camera } from "expo-camera";
 import {
   ConnectionQuality,
   ConnectionState,
@@ -43,10 +45,17 @@ function asVideoTrackRef(
 }
 
 async function ensureCallPermissions(kind: CallKind) {
-  if (Platform.OS !== "android") return;
-  const perms = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
-  if (kind === "video") perms.push(PermissionsAndroid.PERMISSIONS.CAMERA);
-  await PermissionsAndroid.requestMultiple(perms);
+  if (Platform.OS === "android") {
+    const perms = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+    if (kind === "video") perms.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+    await PermissionsAndroid.requestMultiple(perms);
+    return;
+  }
+  // iOS: prompt before LiveKit getUserMedia (same APIs as chat composer / QR).
+  await AudioModule.requestRecordingPermissionsAsync().catch(() => {});
+  if (kind === "video") {
+    await Camera.requestCameraPermissionsAsync().catch(() => {});
+  }
 }
 
 function isClosedPcError(e: unknown): boolean {
@@ -279,7 +288,12 @@ export function useCall(opts: { meId?: string; subscribe: SubscribeFn }) {
         }
         if (!stillCurrent()) return;
 
-        room = new Room({ adaptiveStream: true, dynacast: true });
+        // singlePeerConnection:false — avoids black video on RN with livekit-client ≥2.19.2
+        room = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+          singlePeerConnection: false,
+        });
         roomRef.current = room;
         hadRemoteRef.current = false;
         setReconnecting(false);

@@ -201,13 +201,22 @@ export function CallOverlay({ call }: { call: CallApi }) {
   const qualityText = qualityLabel(connectionQuality);
 
   const showVideo = active?.status === "active" && active.kind === "video" && !connecting;
+  // VU meters / quality HUD look like a debug panel over the camera — voice only.
   const showMeters =
-    active?.status === "active" && !connecting && !(active.isGroup && remotePeers.length > 0);
+    active?.status === "active" &&
+    !connecting &&
+    active.kind !== "video" &&
+    !(active.isGroup && remotePeers.length > 0);
+  const showQuality =
+    Boolean(qualityText) &&
+    active?.status === "active" &&
+    !connecting &&
+    active.kind !== "video";
   const showGroupPeers =
     Boolean(active?.isGroup) && active?.status === "active" && !connecting;
 
   return (
-    <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" statusBarTranslucent>
+    <Modal visible={visible} animationType="fade" presentationStyle="overFullScreen" statusBarTranslucent>
       <View style={styles.root}>
         {showVideo && remoteVideoRef ? (
           <VideoTrack
@@ -233,16 +242,6 @@ export function CallOverlay({ call }: { call: CallApi }) {
           </View>
         )}
 
-        {showVideo && localVideoRef && !cameraOff ? (
-          <VideoTrack
-            style={styles.localVideo}
-            trackRef={localVideoRef}
-            objectFit="cover"
-            mirror
-            zOrder={1}
-          />
-        ) : null}
-
         <View style={styles.topMeta} pointerEvents="box-none">
           {incoming ? (
             <>
@@ -266,7 +265,7 @@ export function CallOverlay({ call }: { call: CallApi }) {
               {connecting || reconnecting ? (
                 <ActivityIndicator color="#fff" style={{ marginTop: 8 }} />
               ) : null}
-              {qualityText && active?.status === "active" && !connecting ? (
+              {showQuality ? (
                 <Text
                   style={[
                     styles.qualityHint,
@@ -331,6 +330,17 @@ export function CallOverlay({ call }: { call: CallApi }) {
               label={active?.peerName?.trim() || "Them"}
             />
           </View>
+        ) : null}
+
+        {/* Local PiP above controls — kept out of topMeta so HUD text cannot cover it. */}
+        {showVideo && localVideoRef && !cameraOff ? (
+          <VideoTrack
+            style={styles.localVideo}
+            trackRef={localVideoRef}
+            objectFit="cover"
+            mirror
+            zOrder={1}
+          />
         ) : null}
 
         <View style={[styles.actions, crowdedControls ? styles.actionsCrowded : null]}>
@@ -447,13 +457,11 @@ function makeStyles(c: ColorTokens) {
   },
   localVideo: {
     position: "absolute" as const,
-    top: 56,
+    // Above control row — clear of top title/timer HUD.
     right: 16,
+    bottom: 140,
     width: 110,
     height: 160,
-    borderRadius: radius.md,
-    overflow: "hidden" as const,
-    backgroundColor: "#1a1d24",
   },
   avatarStage: {
     ...StyleSheet.absoluteFillObject,
