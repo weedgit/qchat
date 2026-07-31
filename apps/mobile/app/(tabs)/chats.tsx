@@ -22,6 +22,8 @@ import {
 } from "../../src/lib/types";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../../src/theme";
+import { useLocale } from "../../src/context/LocaleContext";
+import { intlLocale, type ResolvedLocale } from "@qchat/i18n";
 
 type SearchHit = {
   id: string;
@@ -36,19 +38,20 @@ type SearchUserHit = {
   displayName: string;
 };
 
-function formatTime(iso?: string): string {
+function formatTime(iso: string | undefined, locale: ResolvedLocale): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
+  const tag = intlLocale(locale);
   const now = new Date();
   const sameDay =
     d.getFullYear() === now.getFullYear() &&
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
   if (sameDay) {
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(tag, { hour: "2-digit", minute: "2-digit" });
   }
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  return d.toLocaleDateString(tag, { month: "short", day: "numeric" });
 }
 
 /** Mirror web ConversationRow last-message preview. */
@@ -67,6 +70,7 @@ export default function ChatsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { resolved } = useLocale();
   const styles = useThemedStyles(makeStyles);
   const {
     conversations,
@@ -442,7 +446,7 @@ export default function ChatsScreen() {
                       {hit.body || "(empty)"}
                     </Text>
                   </View>
-                  <Text style={styles.searchHitTime}>{formatTime(hit.createdAt)}</Text>
+                  <Text style={styles.searchHitTime}>{formatTime(hit.createdAt, resolved)}</Text>
                 </Pressable>
               );
             })
@@ -527,7 +531,7 @@ export default function ChatsScreen() {
                     {name}
                     {muted ? " · muted" : ""}
                   </Text>
-                  <Text style={styles.time}>{formatTime(item.lastMessageAt)}</Text>
+                  <Text style={styles.time}>{formatTime(item.lastMessageAt, resolved)}</Text>
                 </View>
                 <View style={styles.bottomLine}>
                   <Text

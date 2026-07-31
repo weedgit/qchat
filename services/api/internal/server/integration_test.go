@@ -140,17 +140,9 @@ func registerUser(t *testing.T, base, invite string) (token, refresh, userID, us
 	cid, code := captcha(t, base)
 	username = "u" + uuid.NewString()[:8]
 	phone := fmt.Sprintf("139%08d", time.Now().UnixNano()%100000000)
-	st, otpBody := postJSON(t, base+"/v1/auth/register/otp", "", map[string]any{
-		"phone": phone, "captcha_id": cid, "captcha": code,
-	})
-	if st != 200 {
-		t.Fatalf("register otp %s: %d %v", username, st, otpBody)
-	}
-	cid2, code2 := captcha(t, base)
 	regPayload := map[string]any{
 		"phone": phone, "password": "user12345", "username": username,
-		"captcha_id": cid2, "captcha": code2,
-		"sms_challenge_id": otpBody["challenge_id"], "sms_code": otpBody["dev_code"],
+		"captcha_id": cid, "captcha": code,
 		"device_type": "web", "device_name": "test", "device_id": "test-device-" + username,
 	}
 	if invite != "" {

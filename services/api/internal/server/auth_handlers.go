@@ -3,7 +3,6 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,14 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/qchat/qchat/services/api/internal/auth"
-	"github.com/qchat/qchat/services/api/internal/sms"
-)
-
-const (
-	otpCodeDigits = 6
-	// maxOTPAttempts caps guesses per challenge so a short numeric code cannot
-	// be brute-forced within its ten-minute lifetime.
-	maxOTPAttempts = 5
 )
 
 func (s *Server) handleCaptcha(w http.ResponseWriter, r *http.Request) {
@@ -48,101 +39,16 @@ func (s *Server) handleCaptcha(w http.ResponseWriter, r *http.Request) {
 }
 
 type registerReq struct {
-	Phone          string `json:"phone"`
-	Password       string `json:"password"`
-	Username       string `json:"username"`
-	InviteCode     string `json:"invite_code"`
-	CaptchaID      string `json:"captcha_id"`
-	Captcha        string `json:"captcha"`
-	SMSChallengeID string `json:"sms_challenge_id"`
-	SMSCode        string `json:"sms_code"`
-	DeviceType     string `json:"device_type"`
-	DeviceName     string `json:"device_name"`
-	DeviceID       string `json:"device_id"`
-	Platform       string `json:"platform"`
-}
-
-// handleRegisterOTP sends an SMS code required before registration (JD phone verification).
-func (s *Server) handleRegisterOTP(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Phone     string `json:"phone"`
-		CaptchaID string `json:"captcha_id"`
-		Captcha   string `json:"captcha"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeErr(w, 400, "invalid json")
-		return
-	}
-	if !auth.ValidatePhone(req.Phone) {
-		writeErr(w, 400, "phone must be 11 digits")
-		return
-	}
-	if !s.consumeCaptcha(r, req.CaptchaID, req.Captcha) {
-		writeErr(w, 400, "invalid captcha")
-		return
-	}
-	var exists bool
-	_ = s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE phone=$1)`, req.Phone).Scan(&exists)
-	if exists {
-		writeErrFields(w, 409, "conflict", "phone already registered", map[string]string{"phone": "already registered"})
-		return
-	}
-	code, err := auth.NewNumericCode(otpCodeDigits)
-	if err != nil {
-		writeErr(w, 500, "code generation failed")
-		return
-	}
-	id := uuid.New()
-	_, err = s.db.Exec(r.Context(), `
-		INSERT INTO register_otp_challenges(id, phone, invite_code, code_hash, expires_at)
-		VALUES ($1,$2,'',$3,$4)`,
-		id, req.Phone, auth.HashRefresh(strings.ToUpper(code)), time.Now().Add(10*time.Minute))
-	if err != nil {
-		writeErr(w, 500, "challenge failed")
-		return
-	}
-	body := sms.FormatPhoneCode(code)
-	if err := s.sms.SendOTP(r.Context(), req.Phone, code); err != nil {
-		log.Printf("register otp: sms delivery failed via %q: %v", s.cfg.SMSProvider, err)
-		_, _ = s.db.Exec(r.Context(), `DELETE FROM register_otp_challenges WHERE id=$1`, id)
-		writeErr(w, 502, "sms delivery failed")
-		return
-	}
-	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,$3)`,
-		req.Phone, body, smsOutboxProvider(s.cfg.SMSProvider, req.Phone))
-	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600}
-	if s.cfg.Env != "production" {
-		resp["dev_code"] = code
-	}
-	writeJSON(w, 200, resp)
-}
-
-func (s *Server) consumeRegisterOTP(r *http.Request, challengeID, phone, code string) bool {
-	code = strings.TrimSpace(code)
-	if code == "" || challengeID == "" {
-		return false
-	}
-	var phoneDB, hash string
-	var consumed bool
-	var attempts int
-	var expires time.Time
-	err := s.db.QueryRow(r.Context(), `
-		SELECT phone, code_hash, consumed, attempts, expires_at
-		FROM register_otp_challenges WHERE id=$1`, challengeID).
-		Scan(&phoneDB, &hash, &consumed, &attempts, &expires)
-	if err != nil || consumed || attempts >= maxOTPAttempts || time.Now().After(expires) {
-		return false
-	}
-	if phoneDB != phone {
-		return false
-	}
-	if hash != auth.HashRefresh(strings.ToUpper(code)) {
-		_, _ = s.db.Exec(r.Context(),
-			`UPDATE register_otp_challenges SET attempts=attempts+1 WHERE id=$1`, challengeID)
-		return false
-	}
-	_, _ = s.db.Exec(r.Context(), `UPDATE register_otp_challenges SET consumed=TRUE WHERE id=$1`, challengeID)
-	return true
+	Phone      string `json:"phone"`
+	Password   string `json:"password"`
+	Username   string `json:"username"`
+	InviteCode string `json:"invite_code"`
+	CaptchaID  string `json:"captcha_id"`
+	Captcha    string `json:"captcha"`
+	DeviceType string `json:"device_type"`
+	DeviceName string `json:"device_name"`
+	DeviceID   string `json:"device_id"`
+	Platform   string `json:"platform"`
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
@@ -165,10 +71,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.consumeCaptcha(r, req.CaptchaID, req.Captcha) {
 		writeErr(w, 400, "invalid captcha")
-		return
-	}
-	if !s.consumeRegisterOTP(r, req.SMSChallengeID, req.Phone, req.SMSCode) {
-		writeErr(w, 400, "invalid or missing SMS code")
 		return
 	}
 	entID := ""
@@ -817,99 +719,48 @@ func (s *Server) handleDisplayNameAvailable(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, 200, map[string]any{"display_name": name, "available": !taken})
 }
 
-func (s *Server) handlePhoneChangeRequest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handlePhoneChange(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	var req struct {
 		NewPhone string `json:"new_phone"`
+		Password string `json:"password"`
 	}
 	if err := decodeJSON(r, &req); err != nil || !auth.ValidatePhone(req.NewPhone) {
 		writeErrFields(w, 400, "invalid_phone", "phone must be 11 digits", map[string]string{"new_phone": "must be 11 digits"})
 		return
 	}
+	if strings.TrimSpace(req.Password) == "" {
+		writeErrCode(w, 400, "password_required", "password required")
+		return
+	}
+	var hash string
+	var currentPhone string
+	err := s.db.QueryRow(r.Context(), `
+		SELECT password_hash, phone FROM users WHERE id=$1`, c.UserID).Scan(&hash, &currentPhone)
+	if err != nil {
+		writeErr(w, 404, "user not found")
+		return
+	}
+	if !auth.CheckPassword(hash, req.Password) {
+		writeErrCode(w, 401, "invalid_password", "incorrect password")
+		return
+	}
+	if req.NewPhone == currentPhone {
+		writeJSON(w, 200, map[string]any{"ok": true, "phone": currentPhone})
+		return
+	}
 	var exists bool
 	_ = s.db.QueryRow(r.Context(), `
-		SELECT EXISTS(SELECT 1 FROM users WHERE enterprise_id=$1 AND phone=$2)`, c.EnterpriseID, req.NewPhone).Scan(&exists)
+		SELECT EXISTS(SELECT 1 FROM users WHERE phone=$1 AND id<>$2)`, req.NewPhone, c.UserID).Scan(&exists)
 	if exists {
 		writeErrFields(w, 409, "phone_taken", "phone already in use", map[string]string{"new_phone": "already in use"})
 		return
 	}
-	code, err := auth.NewNumericCode(otpCodeDigits)
-	if err != nil {
-		writeErrCode(w, 500, "code_failed", "could not generate verification code")
-		return
-	}
-	id := uuid.New()
-	_, err = s.db.Exec(r.Context(), `
-		INSERT INTO phone_change_challenges(id, user_id, enterprise_id, new_phone, code_hash, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6)`,
-		id, c.UserID, c.EnterpriseID, req.NewPhone, auth.HashRefresh(strings.ToUpper(code)), time.Now().Add(10*time.Minute))
-	if err != nil {
-		writeErrCode(w, 500, "challenge_failed", "could not create challenge")
-		return
-	}
-	body := sms.FormatPhoneCode(code)
-	if err := s.sms.SendOTP(r.Context(), req.NewPhone, code); err != nil {
-		log.Printf("phone change: sms delivery failed via %q: %v", s.cfg.SMSProvider, err)
-		_, _ = s.db.Exec(r.Context(), `DELETE FROM phone_change_challenges WHERE id=$1`, id)
-		writeErrCode(w, 502, "sms_failed", "could not deliver verification code")
-		return
-	}
-	_, _ = s.db.Exec(r.Context(), `INSERT INTO sms_outbox(phone, body, provider) VALUES ($1,$2,$3)`,
-		req.NewPhone, body, smsOutboxProvider(s.cfg.SMSProvider, req.NewPhone))
-	resp := map[string]any{"challenge_id": id.String(), "expires_in": 600}
-	if s.cfg.Env != "production" {
-		resp["dev_code"] = code
-	}
-	writeJSON(w, 200, resp)
-}
-
-func (s *Server) handlePhoneChangeConfirm(w http.ResponseWriter, r *http.Request) {
-	c := claimsFrom(r)
-	var req struct {
-		ChallengeID string `json:"challenge_id"`
-		Code        string `json:"code"`
-	}
-	if err := decodeJSON(r, &req); err != nil || req.ChallengeID == "" || req.Code == "" {
-		writeErrCode(w, 400, "invalid_request", "challenge_id and code required")
-		return
-	}
-	var newPhone, codeHash string
-	var used bool
-	var attempts int
-	var expires time.Time
-	err := s.db.QueryRow(r.Context(), `
-		SELECT new_phone, code_hash, used, attempts, expires_at
-		FROM phone_change_challenges
-		WHERE id=$1 AND user_id=$2`, req.ChallengeID, c.UserID).
-		Scan(&newPhone, &codeHash, &used, &attempts, &expires)
-	if err != nil || used || time.Now().After(expires) {
-		writeErrCode(w, 400, "invalid_challenge", "invalid or expired challenge")
-		return
-	}
-	if attempts >= maxOTPAttempts {
-		writeErrCode(w, 429, "too_many_attempts", "too many attempts")
-		return
-	}
-	if auth.HashRefresh(strings.ToUpper(req.Code)) != codeHash {
-		_, _ = s.db.Exec(r.Context(), `UPDATE phone_change_challenges SET attempts=attempts+1 WHERE id=$1`, req.ChallengeID)
-		writeErrCode(w, 400, "invalid_code", "invalid verification code")
-		return
-	}
-	tag, err := s.db.Exec(r.Context(), `
-		UPDATE users SET phone=$2 WHERE id=$1 AND enterprise_id=$3`, c.UserID, newPhone, c.EnterpriseID)
+	tag, err := s.db.Exec(r.Context(), `UPDATE users SET phone=$2 WHERE id=$1`, c.UserID, req.NewPhone)
 	if err != nil || tag.RowsAffected() == 0 {
 		writeErrCode(w, 409, "phone_taken", "phone already in use")
 		return
 	}
-	_, _ = s.db.Exec(r.Context(), `UPDATE phone_change_challenges SET used=TRUE WHERE id=$1`, req.ChallengeID)
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.phone_change", "user", c.UserID, "", clientIP(r), map[string]any{"new_phone": newPhone})
-	writeJSON(w, 200, map[string]any{"ok": true, "phone": newPhone})
-}
-
-// smsOutboxProvider records which gateway handled the number (router → router:aliyun|twilio).
-func smsOutboxProvider(configured, phone string) string {
-	if strings.EqualFold(strings.TrimSpace(configured), "router") {
-		return "router:" + sms.RouteLabel(phone)
-	}
-	return configured
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.phone_change", "user", c.UserID, "", clientIP(r), map[string]any{"new_phone": req.NewPhone})
+	writeJSON(w, 200, map[string]any{"ok": true, "phone": req.NewPhone})
 }

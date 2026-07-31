@@ -220,7 +220,7 @@ ss -ltnp | grep -E ':80|:443|:8080|:7880|:7443|:3478'
 Before shipping production:
 
 ```bash
-# Refuses weak JWT / SMS / LiveKit defaults when QCHAT_ENV=production
+# Refuses weak JWT / LiveKit defaults when QCHAT_ENV=production
 ./deploy/check-env.sh
 # or always fail on weak secrets:
 ./deploy/check-env.sh --strict

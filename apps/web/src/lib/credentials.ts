@@ -68,12 +68,12 @@ export function displayNameError(name: string): string | null {
 
 export function passwordError(password: string): string | null {
   if (!passwordRe.test(password)) {
-    return "Password must be at least 8 characters and contain only letters and digits";
+    return "login.errPassword";
   }
   return null;
 }
 
-/** Returns a user-facing error, or null when phone/password(/username) look valid. */
+/** Returns an i18n message key, or null when phone/password(/username) look valid. */
 export function validateLoginCredentials(opts: {
   phone: string;
   password: string;
@@ -81,15 +81,15 @@ export function validateLoginCredentials(opts: {
   requireUsername?: boolean;
 }): string | null {
   if (!isValidPhone(opts.phone)) {
-    return "Phone must be exactly 11 digits";
+    return "login.errPhone";
   }
   const pwErr = passwordError(opts.password);
   if (pwErr) return pwErr;
   if (opts.requireUsername) {
     const u = (opts.username ?? "").trim();
-    if (!u) return "Username is required";
+    if (!u) return "login.errUsernameRequired";
     if (!isValidUsername(u)) {
-      return "Username must be 2–32 letters, numbers, underscores, or emoji";
+      return "login.errUsernameInvalid";
     }
   }
   return null;

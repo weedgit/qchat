@@ -12,7 +12,7 @@ This document describes **how security is implemented in code and deployment**, 
 | **At rest (passwords)** | bcrypt hashes only — never recoverable or returned by APIs. |
 | **At rest (messages / media)** | Stored server-side so **enterprise admins can inspect** with reason + audit. **Not end-to-end encrypted.** |
 | **Calls** | LiveKit SFU issues short-lived join tokens; media is not E2EE. |
-| **Tokens / OTP / recovery** | Refresh tokens, SMS codes, and MFA recovery codes are stored as **SHA-256 hashes**. |
+| **Tokens / recovery** | Refresh tokens and MFA recovery codes are stored as **SHA-256 hashes**. |
 
 Explicit non-goal: end-to-end encryption (compliance inspection requires server-readable bodies).
 
@@ -25,10 +25,10 @@ Explicit non-goal: end-to-end encryption (compliance inspection requires server-
 ### Sign-in factors
 
 1. **Phone** (11-digit) + **password**
-2. **CAPTCHA** on login, register, and OTP request (`GET /v1/auth/captcha`)
-3. **SMS OTP** on self-service register (`POST /v1/auth/register/otp`, then register with `sms_challenge_id` / `sms_code`)
-4. **Company invite code** on register (revocable/rotatable by admin)
-5. **Admin MFA** (TOTP or recovery code) when the account has MFA active
+2. **CAPTCHA** on login and register (`GET /v1/auth/captcha`)
+3. **Company invite code** on register (revocable/rotatable by admin)
+4. **Admin MFA** (TOTP or recovery code) when the account has MFA active
+5. **Phone change** requires current password (`PUT /v1/me/phone`)
 
 ### Passwords
 
@@ -51,12 +51,11 @@ Explicit non-goal: end-to-end encryption (compliance inspection requires server-
 
 **Remember me:** if the client does not opt in, the API returns an empty `refresh_token` so the client cannot persist long-lived refresh (the session row may still exist with the configured TTL).
 
-### CAPTCHA and SMS
+### CAPTCHA
 
 - Captcha rows expire in ~5 minutes and are single-use (`consumeCaptcha`).
 - Non-production captcha responses may include `dev_answer`.
-- SMS codes: 6 digits, hashed, ~10 minute TTL, max **5 attempts**.
-- Provider `QCHAT_SMS_PROVIDER=dev` logs/returns `dev_code` locally — **refused when `QCHAT_ENV=production`**.
+- Phone number changes require the user’s **current password** (`PUT /v1/me/phone`), not SMS.
 
 ### Client credential storage
 
@@ -214,8 +213,7 @@ Dev VAPID defaults exist for local use only — rotate for production. Details: 
 On startup, when `QCHAT_ENV=production`, `Config.ValidateSecrets()` (`services/api/internal/config/config.go`) **exits** unless:
 
 1. `QCHAT_JWT_SECRET` is unique, not the default, and ≥ 32 characters  
-2. `QCHAT_SMS_PROVIDER` is a real gateway (`twilio` / `aliyun` / `router`) with credentials — not `dev`  
-3. LiveKit URL/key/secret are set and not the packaged defaults; secret ≥ 32 characters  
+2. LiveKit URL/key/secret are set and not the packaged defaults; secret ≥ 32 characters  
 
 Ops helpers:
 
@@ -261,7 +259,6 @@ Example env template: `deploy/qchat-api.env.example`.
 | `QCHAT_JWT_SECRET` | HS256 signing key for access tokens |
 | `QCHAT_ACCESS_TTL` / `QCHAT_REFRESH_TTL` | Token lifetimes |
 | `QCHAT_CORS_ORIGIN` | Browser/WebSocket origin policy |
-| `QCHAT_SMS_PROVIDER` / `QCHAT_SMS_*` | OTP gateway |
 | `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | Call token minting |
 | `QCHAT_OBJECT_STORAGE_*` / `QCHAT_BUCKET` / `QCHAT_DATA_DIR` | Blob storage |
 | `QCHAT_VAPID_*` | Web Push |
@@ -278,11 +275,10 @@ These are accepted or documented risks for current builds:
 
 1. **No E2EE** — messages and attachments are readable by the server and by authorized admins under audit.
 2. **CAPTCHA** may return a plaintext/dev challenge in non-production; replace with stronger CAPTCHA for internet-facing prod.
-3. **Dev SMS** must never ship in production (guarded by `ValidateSecrets`).
-4. **Default CORS `*`** and default VAPID keys are for local/dev only.
-5. **Chat attachment MIME** is less strict than avatar MIME allowlisting.
-6. **REST auth** rejects revoked sessions via JWT `sid` + revoke markers; it does not re-query `banned` on every request — bans rely on session kick at ban time.
-7. **TLS** is an ops responsibility (nginx/certs); the API process itself speaks HTTP.
+3. **Default CORS `*`** and default VAPID keys are for local/dev only.
+4. **Chat attachment MIME** is less strict than avatar MIME allowlisting.
+5. **REST auth** rejects revoked sessions via JWT `sid` + revoke markers; it does not re-query `banned` on every request — bans rely on session kick at ban time.
+6. **TLS** is an ops responsibility (nginx/certs); the API process itself speaks HTTP.
 
 ---
 

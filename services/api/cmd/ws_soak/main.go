@@ -250,20 +250,9 @@ func registerSoakUser(base, password, invite string, idx int) (soakUser, error) 
 	if err != nil {
 		return soakUser{}, err
 	}
-	otp, err := postJSON(base+"/v1/auth/register/otp", map[string]any{
-		"phone": phone, "captcha_id": cap1["captcha_id"], "captcha": captchaAnswer(cap1),
-	})
-	if err != nil {
-		return soakUser{}, fmt.Errorf("otp: %w", err)
-	}
-	cap2, err := getJSON(base + "/v1/auth/captcha")
-	if err != nil {
-		return soakUser{}, err
-	}
 	body, err := postJSON(base+"/v1/auth/register", map[string]any{
 		"phone": phone, "password": password, "username": username,
-		"captcha_id": cap2["captcha_id"], "captcha": captchaAnswer(cap2),
-		"sms_challenge_id": otp["challenge_id"], "sms_code": otp["dev_code"],
+		"captcha_id": cap1["captcha_id"], "captcha": captchaAnswer(cap1),
 		"invite_code": invite,
 		"device_type": "web", "device_name": "ws-soak", "device_id": "soak-" + username,
 		"remember_me": true,

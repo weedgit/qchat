@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import MenuModal from "@/components/MenuModal";
+import { PasswordInput } from "@/components/PasswordInput";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/MeContext";
 import { copyTextToClipboard } from "@/lib/clipboard";
@@ -99,8 +100,7 @@ export default function ProfilePage() {
   const [displayNameTaken, setDisplayNameTaken] = useState(false);
   const [usernameTaken, setUsernameTaken] = useState(false);
   const [newPhone, setNewPhone] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [challengeId, setChallengeId] = useState("");
+  const [phonePassword, setPhonePassword] = useState("");
   const [phoneHint, setPhoneHint] = useState<string | null>(null);
   const [phoneOpen, setPhoneOpen] = useState(false);
 
@@ -499,75 +499,44 @@ export default function ProfilePage() {
                 <input
                   placeholder={t("settings.newPhone")}
                   value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
+                  onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                  inputMode="numeric"
                 />
-                {!challengeId ? (
-                  <button
-                    className="btn"
-                    type="button"
-                    disabled={saving || newPhone.length !== 11}
-                    onClick={async () => {
-                      setSaving(true);
-                      setPhoneHint(null);
-                      try {
-                        const res = await api<any>("/v1/me/phone/request", {
-                          method: "POST",
-                          body: JSON.stringify({ new_phone: newPhone }),
-                        });
-                        setChallengeId(String(res?.challenge_id ?? ""));
-                        setPhoneHint(
-                          res?.dev_code
-                            ? t("settings.smsSentDev", { code: String(res.dev_code) })
-                            : t("settings.smsSent")
-                        );
-                      } catch (err: any) {
-                        setPhoneHint(err.message);
-                      } finally {
-                        setSaving(false);
-                      }
-                    }}
-                  >
-                    {t("settings.sendSms")}
-                  </button>
-                ) : (
-                  <>
-                    <input
-                      placeholder={t("settings.verifyCode")}
-                      value={phoneCode}
-                      onChange={(e) => setPhoneCode(e.target.value)}
-                    />
-                    <button
-                      className="btn"
-                      type="button"
-                      disabled={saving || !phoneCode}
-                      onClick={async () => {
-                        setSaving(true);
-                        setPhoneHint(null);
-                        try {
-                          const res = await api<any>("/v1/me/phone/confirm", {
-                            method: "POST",
-                            body: JSON.stringify({
-                              challenge_id: challengeId,
-                              code: phoneCode,
-                            }),
-                          });
-                          setMe({ ...me, phone: String(res?.phone ?? newPhone) });
-                          setChallengeId("");
-                          setPhoneCode("");
-                          setNewPhone("");
-                          setPhoneHint(t("settings.phoneUpdated"));
-                          setPhoneOpen(false);
-                        } catch (err: any) {
-                          setPhoneHint(err.message);
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
-                    >
-                      {t("settings.confirmPhone")}
-                    </button>
-                  </>
-                )}
+                <PasswordInput
+                  placeholder={t("settings.confirmPassword")}
+                  value={phonePassword}
+                  onChange={(e) => setPhonePassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={saving || newPhone.length !== 11 || !phonePassword}
+                  onClick={async () => {
+                    setSaving(true);
+                    setPhoneHint(null);
+                    try {
+                      const res = await api<any>("/v1/me/phone", {
+                        method: "PUT",
+                        body: JSON.stringify({
+                          new_phone: newPhone,
+                          password: phonePassword,
+                        }),
+                      });
+                      setMe({ ...me, phone: String(res?.phone ?? newPhone) });
+                      setPhonePassword("");
+                      setNewPhone("");
+                      setPhoneHint(t("settings.phoneUpdated"));
+                      setPhoneOpen(false);
+                    } catch (err: any) {
+                      setPhoneHint(err.message);
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                >
+                  {t("settings.confirmPhone")}
+                </button>
                 {phoneHint && <div className="muted">{phoneHint}</div>}
               </div>
             )}

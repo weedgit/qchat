@@ -12,7 +12,7 @@ Qchat is a secure enterprise messenger for small teams. Use it on **web**, **des
 ### What you need
 
 - A **company invite code** from your organization admin (for example `ACME2026`)
-- A valid **phone number** (11 digits) for login and SMS verification
+- A valid **phone number** (11 digits) for login
 - One of: a modern browser, Qchat Desktop, or the mobile app
 
 ### Create an account (Register)
@@ -21,7 +21,7 @@ Qchat is a secure enterprise messenger for small teams. Use it on **web**, **des
 2. Enter your **phone**, **username**, and **password** (at least 8 characters; digits, or letters and digits).
 3. Enter your **company invite code**.
 4. Complete the **captcha**.
-5. Tap **Send code**, enter the **SMS code**, then **Create account**.
+5. Tap **Create account**.
 
 ### Sign in
 
@@ -266,9 +266,9 @@ Remove old browser push subscriptions under **Notification devices** so stale ta
 
 ### Change phone number
 
-1. Open **Settings → Change phone number**.
-2. Enter the new 11-digit phone.
-3. **Send SMS code**, verify, and confirm.
+1. Open **Profile** (or Settings) and find **Change phone number**.
+2. Enter the new 11-digit phone and your **current password**.
+3. Confirm to update.
 
 ### Install as app (PWA)
 
@@ -360,7 +360,7 @@ Second enterprise invite: `BETA2026`.
 
 | Problem | What to try |
 |---|---|
-| Cannot register | Confirm invite code is active; complete captcha and SMS |
+| Cannot register | Confirm invite code is active; complete captcha |
 | Logged out unexpectedly | Another login of the same device type replaced this session |
 | No call audio/video | Check LiveKit URL reachability; firewall/TURN; use LAN IP not peer’s `localhost` |
 | No GIFs | Server needs `QCHAT_GIPHY_API_KEY` |

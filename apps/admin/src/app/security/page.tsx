@@ -491,7 +491,7 @@ export default function SecurityPage() {
         <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Login alerts</h2>
         <p className="muted">
           In-console notices when an administrator signs in from a new device or IP, or when
-          the IP allowlist blocks a login. These do not send email or SMS.
+          the IP allowlist blocks a login. These do not send email.
         </p>
         {alertsError ? <div className="error-text">{alertsError}</div> : null}
         {alerts.length === 0 && !alertsError ? (

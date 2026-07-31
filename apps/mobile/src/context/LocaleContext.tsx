@@ -1,5 +1,5 @@
 /**
- * App language preference (en / zh / system), stored on device.
+ * App language preference (en / zh), stored on device. Default: Chinese.
  */
 import React, {
   createContext,
@@ -9,12 +9,12 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { NativeModules, Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import {
+  DEFAULT_LOCALE,
   LOCALE_KEY,
-  isLocaleMode,
   localeModeLabel,
+  normalizeLocaleMode,
   resolveLocale,
   themeModeLabel as sharedThemeModeLabel,
   translate,
@@ -34,38 +34,23 @@ type LocaleContextValue = {
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
-function deviceLanguage(): string {
-  try {
-    if (Platform.OS === "ios") {
-      const settings = NativeModules.SettingsManager?.settings;
-      const langs = settings?.AppleLanguages;
-      if (Array.isArray(langs) && langs[0]) return String(langs[0]);
-      if (settings?.AppleLocale) return String(settings.AppleLocale);
-    }
-    const locale =
-      NativeModules.I18nManager?.localeIdentifier ||
-      NativeModules.I18nManager?.locale ||
-      "";
-    if (locale) return String(locale).replace("_", "-");
-  } catch {
-    /* ignore */
-  }
-  return "en";
-}
-
 async function loadStoredLocale(): Promise<LocaleMode> {
   try {
     const v = await SecureStore.getItemAsync(LOCALE_KEY);
-    if (isLocaleMode(v)) return v;
+    const next = normalizeLocaleMode(v);
+    // Persist migration away from legacy "system".
+    if (v !== next) {
+      await SecureStore.setItemAsync(LOCALE_KEY, next).catch(() => {});
+    }
+    return next;
   } catch {
     /* ignore */
   }
-  return "system";
+  return DEFAULT_LOCALE;
 }
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<LocaleMode>("system");
-  const systemLang = useMemo(() => deviceLanguage(), []);
+  const [locale, setLocaleState] = useState<LocaleMode>(DEFAULT_LOCALE);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,10 +67,7 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
     SecureStore.setItemAsync(LOCALE_KEY, mode).catch(() => {});
   }, []);
 
-  const resolved = useMemo(
-    () => resolveLocale(locale, systemLang),
-    [locale, systemLang]
-  );
+  const resolved = useMemo(() => resolveLocale(locale), [locale]);
 
   const value = useMemo<LocaleContextValue>(() => {
     const t = (key: MessageKey, vars?: Record<string, string | number>) =>

@@ -1,6 +1,6 @@
 /** Shared UI catalogs — English + Simplified Chinese. */
 
-export type LocaleMode = "en" | "zh" | "system";
+export type LocaleMode = "en" | "zh";
 export type ResolvedLocale = "en" | "zh";
 
 export type MessageKey = keyof typeof en;
@@ -29,7 +29,6 @@ const en = {
 
   "lang.en": "English",
   "lang.zh": "简体中文",
-  "lang.system": "System",
 
   "common.cancel": "Cancel",
   "common.save": "Save",
@@ -90,9 +89,8 @@ const en = {
   "settings.changePhone": "Change phone number",
   "settings.currentPhone": "Current",
   "settings.newPhone": "New 11-digit phone",
-  "settings.sendSms": "Send SMS code",
-  "settings.verifyCode": "Verification code",
-  "settings.confirmPhone": "Confirm phone change",
+  "settings.confirmPassword": "Current password",
+  "settings.confirmPhone": "Update phone number",
   "settings.about": "About",
   "settings.apiServer": "API server",
   "settings.signOutConfirmTitle": "Sign out",
@@ -114,8 +112,6 @@ const en = {
   "settings.originUnavailable": "Older registration (origin unavailable)",
   "settings.lastRegistered": "Last registered {time}",
   "settings.refreshDevices": "Refresh devices",
-  "settings.smsSentDev": "SMS sent (dev code: {code})",
-  "settings.smsSent": "SMS code sent. Enter it below.",
   "settings.phoneUpdated": "Phone updated.",
   "settings.logoutHint": "Clears the access token on this device.",
   "settings.loadPushDevicesError": "Could not load notification devices",
@@ -141,21 +137,45 @@ const en = {
 
   "login.title": "Sign in",
   "login.register": "Register",
+  "login.signInToApp": "Sign in to Rchat",
+  "login.createAccount": "Create your account",
+  "login.subtitleLogin": "Secure enterprise messaging",
   "login.phone": "Phone",
+  "login.phoneDigits": "Phone (11 digits)",
   "login.password": "Password",
+  "login.passwordPlaceholder": "at least 8 letters/digits",
   "login.username": "Username",
   "login.inviteCode": "Company invite code",
   "login.inviteHint": "Enter the invite from your organization admin (e.g. ACME2026).",
+  "login.inviteLaterHint": "From your organization admin. You can still switch companies later from chat.",
   "login.inviteRequired": "Company invite code is required",
-  "login.subtitleRegister": "Join your company with an invite code. SMS verification required.",
+  "login.subtitleRegister": "Join your company with an invite code.",
   "login.captcha": "Captcha",
-  "login.smsCode": "SMS code",
-  "login.sendCode": "Send code",
+  "login.captchaPlaceholder": "ENTER CODE",
+  "login.captchaRefresh": "Click to refresh captcha",
+  "login.captchaUnavailable": "Unavailable — click",
+  "login.captchaTimeout": "Captcha timed out — click image to retry",
+  "login.captchaError": "Captcha unavailable: {detail} (click to retry)",
   "login.submitLogin": "Sign in",
   "login.submitRegister": "Create account",
+  "login.pleaseWait": "Please wait…",
   "login.remember": "Remember me",
+  "login.rememberDays": "Remember me (60 days)",
   "login.switchToRegister": "Need an account? Register",
   "login.switchToLogin": "Have an account? Sign in",
+  "login.needAccount": "Need an account?",
+  "login.haveAccount": "Have an account?",
+  "login.openingChat": "Opening chat",
+  "login.starting": "Starting Rchat",
+  "login.errBanned": "Your account was banned. Contact an administrator.",
+  "login.errSignedOut": "Signed out — another device of this type signed in.",
+  "login.errPhone": "Phone must be exactly 11 digits",
+  "login.errPassword": "Password must be at least 8 characters and contain only letters and digits",
+  "login.errUsernameRequired": "Username is required",
+  "login.errUsernameInvalid": "Username must be 2–32 letters, numbers, underscores, or emoji",
+  "login.errNoToken": "No access_token in response",
+  "login.enterpriseMessaging": "Enterprise messaging",
+  "login.requestFailed": "Request failed",
 
   "me.title": "Me",
   "me.editProfile": "Edit Profile",
@@ -166,7 +186,7 @@ const en = {
   "me.displayNameTaken": "Display name already taken",
   "me.usernameTaken": "Username already taken",
   "me.phone": "Phone (login ID)",
-  "me.phoneHint": "Change phone with SMS verification below.",
+  "me.phoneHint": "Confirm with your current password to change phone.",
   "me.displayName": "Display name",
   "me.realName": "Real name",
   "me.age": "Age",
@@ -243,6 +263,8 @@ const en = {
   "groups.add": "Add",
   "groups.roleOwner": "Owner",
   "groups.roleAdmin": "Admin",
+  "groups.mute10m": "10m",
+  "groups.mute1h": "1h",
   "groups.roleMember": "Member",
   "groups.rolePending": "Pending",
   "groups.awaitingApproval": "Waiting for approval",
@@ -416,6 +438,8 @@ const en = {
   "chat.edited": "edited",
   "chat.select": "Select",
   "chat.deselect": "Deselect",
+  "chat.selectAll": "Select all",
+  "chat.deselectAll": "Deselect all",
   "chat.copy": "Copy",
   "chat.forward": "Forward",
   "chat.recall": "Delete",
@@ -544,6 +568,20 @@ const en = {
   "download.createAccount": "Create account",
   "download.backToLogin": "Back to sign in",
   "download.loadError": "Could not load download catalog. Try again later.",
+
+  "footer.contactUs": "Contact us",
+  "footer.lead": "Reach a desk by phone — we are happy to help with accounts, setup, and enterprise plans.",
+  "footer.hoursNote": "Mainland China numbers · click to dial on mobile",
+  "footer.roleSupport": "Customer support",
+  "footer.roleTech": "Technical support",
+  "footer.roleSales": "Enterprise sales",
+  "footer.roleAccounts": "Account help",
+  "footer.nameSupport": "Rchat Care",
+  "footer.nameTech": "Tech Desk",
+  "footer.nameSales": "Enterprise",
+  "footer.nameAccounts": "Account Help",
+  "footer.hoursWeekday": "Mon–Fri 09:00–18:00",
+  "footer.hoursAlways": "24 / 7 hotline",
 } as const;
 
 const zh: Record<MessageKey, string> = {
@@ -570,7 +608,6 @@ const zh: Record<MessageKey, string> = {
 
   "lang.en": "English",
   "lang.zh": "简体中文",
-  "lang.system": "跟随系统",
 
   "common.cancel": "取消",
   "common.save": "保存",
@@ -630,9 +667,8 @@ const zh: Record<MessageKey, string> = {
   "settings.changePhone": "更换手机号",
   "settings.currentPhone": "当前",
   "settings.newPhone": "新手机号（11 位）",
-  "settings.sendSms": "发送验证码",
-  "settings.verifyCode": "验证码",
-  "settings.confirmPhone": "确认更换",
+  "settings.confirmPassword": "当前密码",
+  "settings.confirmPhone": "更新手机号",
   "settings.about": "关于",
   "settings.apiServer": "API 服务器",
   "settings.signOutConfirmTitle": "退出登录",
@@ -653,8 +689,6 @@ const zh: Record<MessageKey, string> = {
   "settings.originUnavailable": "旧注册（来源不可用）",
   "settings.lastRegistered": "最近注册 {time}",
   "settings.refreshDevices": "刷新设备",
-  "settings.smsSentDev": "短信已发送（开发验证码：{code}）",
-  "settings.smsSent": "验证码已发送，请在下方输入。",
   "settings.phoneUpdated": "手机号已更新。",
   "settings.logoutHint": "将清除本机的访问令牌。",
   "settings.loadPushDevicesError": "无法加载通知设备",
@@ -680,21 +714,45 @@ const zh: Record<MessageKey, string> = {
 
   "login.title": "登录",
   "login.register": "注册",
+  "login.signInToApp": "登录 Rchat",
+  "login.createAccount": "创建账号",
+  "login.subtitleLogin": "安全的企业即时通讯",
   "login.phone": "手机号",
+  "login.phoneDigits": "手机号（11 位）",
   "login.password": "密码",
+  "login.passwordPlaceholder": "至少 8 位字母或数字",
   "login.username": "用户名",
   "login.inviteCode": "企业邀请码",
   "login.inviteHint": "请输入组织管理员提供的邀请码（例如 ACME2026）。",
+  "login.inviteLaterHint": "由组织管理员提供。之后仍可在聊天中切换企业。",
   "login.inviteRequired": "请填写企业邀请码",
-  "login.subtitleRegister": "使用企业邀请码加入公司内部聊天，需短信验证。",
+  "login.subtitleRegister": "使用企业邀请码加入公司内部聊天。",
   "login.captcha": "验证码",
-  "login.smsCode": "短信验证码",
-  "login.sendCode": "发送验证码",
+  "login.captchaPlaceholder": "输入验证码",
+  "login.captchaRefresh": "点击刷新验证码",
+  "login.captchaUnavailable": "不可用 — 点击重试",
+  "login.captchaTimeout": "验证码超时 — 点击图片重试",
+  "login.captchaError": "验证码不可用：{detail}（点击重试）",
   "login.submitLogin": "登录",
   "login.submitRegister": "创建账号",
+  "login.pleaseWait": "请稍候…",
   "login.remember": "记住我",
+  "login.rememberDays": "记住我（60 天）",
   "login.switchToRegister": "没有账号？去注册",
   "login.switchToLogin": "已有账号？去登录",
+  "login.needAccount": "没有账号？",
+  "login.haveAccount": "已有账号？",
+  "login.openingChat": "正在打开聊天",
+  "login.starting": "正在启动 Rchat",
+  "login.errBanned": "账号已被封禁，请联系管理员。",
+  "login.errSignedOut": "已退出 — 同类型设备在其他地方登录。",
+  "login.errPhone": "手机号必须为 11 位数字",
+  "login.errPassword": "密码至少 8 位，且只能包含字母和数字",
+  "login.errUsernameRequired": "请填写用户名",
+  "login.errUsernameInvalid": "用户名需为 2–32 个字母、数字、下划线或 emoji",
+  "login.errNoToken": "响应中缺少 access_token",
+  "login.enterpriseMessaging": "企业即时通讯",
+  "login.requestFailed": "请求失败",
 
   "me.title": "我",
   "me.editProfile": "编辑资料",
@@ -705,7 +763,7 @@ const zh: Record<MessageKey, string> = {
   "me.displayNameTaken": "显示名称已被占用",
   "me.usernameTaken": "用户名已被占用",
   "me.phone": "手机号（登录账号）",
-  "me.phoneHint": "请使用下方短信验证更换手机号。",
+  "me.phoneHint": "更换手机号需验证当前密码。",
   "me.displayName": "显示名称",
   "me.realName": "真实姓名",
   "me.age": "年龄",
@@ -782,6 +840,8 @@ const zh: Record<MessageKey, string> = {
   "groups.add": "添加",
   "groups.roleOwner": "群主",
   "groups.roleAdmin": "管理员",
+  "groups.mute10m": "10分钟",
+  "groups.mute1h": "1小时",
   "groups.roleMember": "成员",
   "groups.rolePending": "待审核",
   "groups.awaitingApproval": "等待审核",
@@ -954,6 +1014,8 @@ const zh: Record<MessageKey, string> = {
   "chat.edited": "已编辑",
   "chat.select": "选择",
   "chat.deselect": "取消选择",
+  "chat.selectAll": "全选",
+  "chat.deselectAll": "取消全选",
   "chat.copy": "复制",
   "chat.forward": "转发",
   "chat.recall": "删除",
@@ -1082,6 +1144,20 @@ const zh: Record<MessageKey, string> = {
   "download.createAccount": "注册账号",
   "download.backToLogin": "返回登录",
   "download.loadError": "无法加载下载列表，请稍后重试。",
+
+  "footer.contactUs": "联系我们",
+  "footer.lead": "如需账号、部署或企业方案协助，请直接拨打下方电话。",
+  "footer.hoursNote": "中国大陆号码 · 手机可点击拨号",
+  "footer.roleSupport": "客户支持",
+  "footer.roleTech": "技术支持",
+  "footer.roleSales": "企业销售",
+  "footer.roleAccounts": "账号协助",
+  "footer.nameSupport": "Rchat 客服",
+  "footer.nameTech": "技术台",
+  "footer.nameSales": "企业业务",
+  "footer.nameAccounts": "账号协助",
+  "footer.hoursWeekday": "工作日 09:00–18:00",
+  "footer.hoursAlways": "全天候热线",
 };
 
 export const catalogs: Record<ResolvedLocale, Record<MessageKey, string>> = {
@@ -1091,18 +1167,25 @@ export const catalogs: Record<ResolvedLocale, Record<MessageKey, string>> = {
 
 export const LOCALE_KEY = "qchat.locale";
 
-export function isLocaleMode(v: string | null | undefined): v is LocaleMode {
-  return v === "en" || v === "zh" || v === "system";
+export const DEFAULT_LOCALE: LocaleMode = "zh";
+
+/** Accept stored values; map legacy "system" to Chinese default. */
+export function normalizeLocaleMode(v: string | null | undefined): LocaleMode {
+  if (v === "en" || v === "zh") return v;
+  return DEFAULT_LOCALE;
 }
 
-export function resolveLocale(
-  mode: LocaleMode,
-  systemLang?: string | null
-): ResolvedLocale {
-  if (mode === "en" || mode === "zh") return mode;
-  const sys = (systemLang || "").toLowerCase();
-  if (sys.startsWith("zh")) return "zh";
-  return "en";
+export function isLocaleMode(v: string | null | undefined): v is LocaleMode {
+  return v === "en" || v === "zh";
+}
+
+export function resolveLocale(mode: LocaleMode): ResolvedLocale {
+  return mode === "en" ? "en" : "zh";
+}
+
+/** BCP-47 tag for `Date#toLocale*` (months, times). */
+export function intlLocale(locale: ResolvedLocale): string {
+  return locale === "zh" ? "zh-CN" : "en-US";
 }
 
 export function translate(
@@ -1120,7 +1203,6 @@ export function translate(
 }
 
 export function localeModeLabel(mode: LocaleMode, resolved: ResolvedLocale): string {
-  if (mode === "system") return catalogs[resolved]["lang.system"];
   if (mode === "zh") return catalogs[resolved]["lang.zh"];
   return catalogs[resolved]["lang.en"];
 }

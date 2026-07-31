@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import SiteFooter from "@/components/SiteFooter";
 import { useLocale } from "@/lib/locale";
 import {
   detectDownloadOs,
@@ -198,6 +199,13 @@ export default function DownloadPage() {
           <span>Rchat</span>
         </Link>
         <nav className="dl-top-nav">
+          <button
+            type="button"
+            className="dl-link-quiet dl-contact-nav"
+            onClick={() => scrollToId("contact")}
+          >
+            {t("footer.contactUs")}
+          </button>
           <Link href="/login" className="dl-link-quiet">
             {t("download.signIn")}
           </Link>
@@ -330,10 +338,7 @@ export default function DownloadPage() {
         </section>
       </main>
 
-      <footer className="dl-foot">
-        <span>© Rchat</span>
-        <Link href="/login">{t("download.backToLogin")}</Link>
-      </footer>
+      <SiteFooter variant="full" showLoginLink />
     </div>
   );
 }

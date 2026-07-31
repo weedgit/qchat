@@ -95,30 +95,6 @@ else
   ok "QCHAT_JWT_SECRET length ${#QCHAT_JWT_SECRET}"
 fi
 
-# --- SMS ---
-SMS="$(echo "${QCHAT_SMS_PROVIDER:-dev}" | tr '[:upper:]' '[:lower:]')"
-if [[ -z "$SMS" || "$SMS" == "dev" ]]; then
-  issue "QCHAT_SMS_PROVIDER=$SMS only logs codes locally; set twilio, aliyun, or router in production"
-elif [[ "$SMS" != "twilio" && "$SMS" != "aliyun" && "$SMS" != "router" ]]; then
-  issue "QCHAT_SMS_PROVIDER=$SMS is unknown; use twilio, aliyun, or router"
-else
-  ok "QCHAT_SMS_PROVIDER=$SMS"
-  if [[ "$SMS" == "twilio" || "$SMS" == "router" ]]; then
-    if [[ -z "${QCHAT_SMS_TWILIO_ACCOUNT_SID:-}" || -z "${QCHAT_SMS_TWILIO_AUTH_TOKEN:-}" || -z "${QCHAT_SMS_TWILIO_FROM:-}" ]]; then
-      issue "Twilio SMS requires QCHAT_SMS_TWILIO_ACCOUNT_SID, QCHAT_SMS_TWILIO_AUTH_TOKEN, QCHAT_SMS_TWILIO_FROM"
-    else
-      ok "Twilio SMS credentials present"
-    fi
-  fi
-  if [[ "$SMS" == "aliyun" || "$SMS" == "router" ]]; then
-    if [[ -z "${QCHAT_SMS_ALIYUN_ACCESS_KEY_ID:-}" || -z "${QCHAT_SMS_ALIYUN_ACCESS_KEY_SECRET:-}" || -z "${QCHAT_SMS_ALIYUN_SIGN_NAME:-}" || -z "${QCHAT_SMS_ALIYUN_TEMPLATE_CODE:-}" ]]; then
-      issue "Aliyun SMS requires QCHAT_SMS_ALIYUN_ACCESS_KEY_ID, QCHAT_SMS_ALIYUN_ACCESS_KEY_SECRET, QCHAT_SMS_ALIYUN_SIGN_NAME, QCHAT_SMS_ALIYUN_TEMPLATE_CODE"
-    else
-      ok "Aliyun SMS credentials present"
-    fi
-  fi
-fi
-
 # --- LiveKit ---
 LK_KEY="${LIVEKIT_API_KEY:-}"
 LK_SECRET="${LIVEKIT_API_SECRET:-}"

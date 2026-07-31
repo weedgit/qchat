@@ -14,7 +14,6 @@ import (
 	"github.com/qchat/qchat/services/api/internal/auth"
 	"github.com/qchat/qchat/services/api/internal/blobstore"
 	"github.com/qchat/qchat/services/api/internal/config"
-	"github.com/qchat/qchat/services/api/internal/sms"
 	"github.com/qchat/qchat/services/api/internal/ws"
 	"github.com/redis/go-redis/v9"
 )
@@ -23,7 +22,6 @@ type Server struct {
 	cfg        config.Config
 	db         *pgxpool.Pool
 	hub        *ws.Hub
-	sms        sms.Sender
 	blobs      blobstore.Store
 	mux        *http.ServeMux
 	upgrader   websocket.Upgrader
@@ -46,7 +44,6 @@ func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
 		cfg:        cfg,
 		db:         db,
 		hub:        hub,
-		sms:        sms.NewFromConfig(cfg),
 		blobs:      blobs,
 		mux:        http.NewServeMux(),
 		limitAPI:   newIPLimiter(apiRatePerSec, apiBurst),
@@ -88,7 +85,6 @@ func (s *Server) routes() {
 
 	// Auth
 	s.mux.HandleFunc("GET /v1/auth/captcha", s.handleCaptcha)
-	s.mux.HandleFunc("POST /v1/auth/register/otp", s.handleRegisterOTP)
 	s.mux.HandleFunc("POST /v1/auth/register", s.handleRegister)
 	s.mux.HandleFunc("POST /v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /v1/auth/refresh", s.handleRefresh)
@@ -107,8 +103,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v1/me/notify_props", s.auth(s.handleNotifyPrefs))
 	s.mux.HandleFunc("GET /v1/usernames/available", s.auth(s.handleUsernameAvailable))
 	s.mux.HandleFunc("GET /v1/display-names/available", s.auth(s.handleDisplayNameAvailable))
-	s.mux.HandleFunc("POST /v1/me/phone/request", s.auth(s.handlePhoneChangeRequest))
-	s.mux.HandleFunc("POST /v1/me/phone/confirm", s.auth(s.handlePhoneChangeConfirm))
+	s.mux.HandleFunc("PUT /v1/me/phone", s.auth(s.handlePhoneChange))
 	s.mux.HandleFunc("POST /v1/enterprises/join", s.auth(s.handleJoinEnterprise))
 
 	// Friends

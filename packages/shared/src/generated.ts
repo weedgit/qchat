@@ -306,7 +306,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/me/phone/request": {
+    "/v1/me/phone": {
         parameters: {
             query?: never;
             header?: never;
@@ -314,43 +314,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
-        /** Request phone change SMS code */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Challenge created */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/me/phone/confirm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Confirm phone change */
-        post: {
+        /** Change phone number (requires current password) */
+        put: {
             parameters: {
                 query?: never;
                 header?: never;
@@ -368,6 +333,7 @@ export interface paths {
                 };
             };
         };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2119,40 +2085,6 @@ export interface paths {
                     id: string;
                     sessionId: string;
                 };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description OK */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/auth/register/otp": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Request registration SMS OTP */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
                 cookie?: never;
             };
             requestBody?: never;

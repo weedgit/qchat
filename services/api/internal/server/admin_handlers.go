@@ -324,7 +324,7 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"groups": out, "total": total, "limit": limit, "offset": offset})
 }
 
-// handleAdminCreateUser provisions a member without self-service SMS (CreateUser / assisted registration).
+// handleAdminCreateUser provisions a member without self-service registration (CreateUser / assisted registration).
 // Platform owners may issue enterprise_admin accounts into a target enterprise via enterprise_id.
 // Enterprise admins / platform owners may also issue compliance, support, and read_only console roles.
 func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {

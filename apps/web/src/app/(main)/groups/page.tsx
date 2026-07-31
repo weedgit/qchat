@@ -69,7 +69,7 @@ const EDIT_GROUP_ICONS = {
 
 export default function GroupsPage() {
   const router = useRouter();
-  const { t } = useLocale();
+  const { t, resolved } = useLocale();
   const { me } = useMe();
   const [groups, setGroups] = useState<Conversation[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -1344,7 +1344,11 @@ export default function GroupsPage() {
                   </div>
                   <div className="members-row-center">
                     <span className={`members-role-pill is-${m.role}`}>
-                      {m.role}
+                      {m.role === "owner"
+                        ? t("groups.roleOwner")
+                        : m.role === "admin"
+                          ? t("groups.roleAdmin")
+                          : m.role}
                     </span>
                   </div>
                   <div className="members-row-right">
@@ -1522,7 +1526,7 @@ export default function GroupsPage() {
                 const statusOnline = Boolean(m.online);
                 const statusText = statusOnline
                   ? t("presence.online")
-                  : formatLastSeen(m.last_active_at, t);
+                  : formatLastSeen(m.last_active_at, t, resolved);
                 return (
                   <div className="members-row" key={m.user_id}>
                     <Avatar name={m.display_name} url={m.avatar_url} size={42} />
@@ -1537,7 +1541,7 @@ export default function GroupsPage() {
                     <div className="members-row-center">
                       {(m.role === "owner" || m.role === "admin") && (
                         <span className={`members-role-pill is-${m.role}`}>
-                          {m.role}
+                          {m.role === "owner" ? t("groups.roleOwner") : t("groups.roleAdmin")}
                         </span>
                       )}
                     </div>

@@ -14,7 +14,7 @@ import {
 import { Redirect, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, api, takeSessionRevokedReason } from "../src/lib/api";
-import { isValidPhone, validateLoginCredentials } from "../src/lib/credentials";
+import { validateLoginCredentials } from "../src/lib/credentials";
 import { getAuthDevice, useAuth } from "../src/context/AuthContext";
 import { useLocale } from "../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
@@ -33,11 +33,7 @@ export default function LoginScreen() {
   const [captchaCode, setCaptchaCode] = useState("");
   const [captchaId, setCaptchaId] = useState("");
   const [captchaImage, setCaptchaImage] = useState("");
-  const [smsCode, setSmsCode] = useState("");
-  const [smsChallengeId, setSmsChallengeId] = useState("");
-  const [smsHint, setSmsHint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [smsBusy, setSmsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadCaptcha = useCallback(async () => {
@@ -46,9 +42,9 @@ export default function LoginScreen() {
       setCaptchaId(String(data?.captcha_id ?? data?.id ?? ""));
       setCaptchaImage(String(data?.image ?? "").trim());
     } catch (e: any) {
-      setError(e.message || "Captcha unavailable");
+      setError(e.message || t("login.captchaUnavailable"));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     loadCaptcha();
@@ -60,53 +56,16 @@ export default function LoginScreen() {
       const reason = await takeSessionRevokedReason();
       if (cancelled || !reason) return;
       setError(
-        reason === "banned"
-          ? "Your account was banned. Contact an administrator."
-          : "Signed out — another device of this type signed in."
+        reason === "banned" ? t("login.errBanned") : t("login.errSignedOut")
       );
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   if (ready && signedIn) {
     return <Redirect href="/(tabs)/chats" />;
-  }
-
-  async function sendRegisterOTP() {
-    setSmsBusy(true);
-    setError(null);
-    setSmsHint(null);
-    try {
-      if (!isValidPhone(phone)) {
-        setError("Phone must be exactly 11 digits");
-        return;
-      }
-      const data = await api<any>("/v1/auth/register/otp", {
-        method: "POST",
-        body: JSON.stringify({
-          phone,
-          captcha_id: captchaId,
-          captcha: captchaCode,
-        }),
-      });
-      setSmsChallengeId(String(data?.challenge_id ?? ""));
-      if (data?.dev_code) {
-        setSmsHint(`Dev SMS code: ${data.dev_code}`);
-        setSmsCode(String(data.dev_code));
-      } else {
-        setSmsHint("SMS code sent");
-      }
-      setCaptchaCode("");
-      await loadCaptcha();
-    } catch (e: any) {
-      setError(formatErr(e));
-      setCaptchaCode("");
-      loadCaptcha();
-    } finally {
-      setSmsBusy(false);
-    }
   }
 
   async function onSubmit() {
@@ -120,7 +79,7 @@ export default function LoginScreen() {
         requireUsername: mode === "register",
       });
       if (early) {
-        setError(early);
+        setError(t(early as any));
         return;
       }
       if (mode === "register" && !inviteCode.trim()) {
@@ -141,8 +100,6 @@ export default function LoginScreen() {
       if (mode === "register") {
         payload.username = username.trim();
         payload.invite_code = inviteCode.trim().toUpperCase();
-        payload.sms_challenge_id = smsChallengeId;
-        payload.sms_code = smsCode;
       } else {
         payload.remember_me = true;
       }
@@ -151,7 +108,7 @@ export default function LoginScreen() {
         body: JSON.stringify(payload),
       });
       const token = data?.access_token ?? data?.token;
-      if (!token) throw new Error("No access_token in response");
+      if (!token) throw new Error(t("login.errNoToken"));
       await signIn(String(token), String(data?.refresh_token ?? ""));
       router.replace("/(tabs)/chats");
     } catch (e: any) {
@@ -168,7 +125,7 @@ export default function LoginScreen() {
       <View style={styles.hero}>
         <SafeAreaView edges={["top"]}>
           <Text style={styles.brand}>{t("app.name")}</Text>
-          <Text style={styles.heroSub}>Enterprise messaging</Text>
+          <Text style={styles.heroSub}>{t("login.enterpriseMessaging")}</Text>
         </SafeAreaView>
       </View>
       <KeyboardAvoidingView
@@ -250,10 +207,6 @@ export default function LoginScreen() {
               returnKeyType="go"
               blurOnSubmit
               onSubmitEditing={() => {
-                if (mode === "register") {
-                  if (!smsBusy) sendRegisterOTP();
-                  return;
-                }
                 if (!busy) onSubmit();
               }}
             />
@@ -265,32 +218,6 @@ export default function LoginScreen() {
               )}
             </View>
           </View>
-
-          {mode === "register" && (
-            <>
-              <Pressable style={styles.secondaryBtn} onPress={sendRegisterOTP} disabled={smsBusy}>
-                {smsBusy ? (
-                  <ActivityIndicator color={colors.accent} />
-                ) : (
-                  <Text style={styles.secondaryBtnText}>{t("login.sendCode")}</Text>
-                )}
-              </Pressable>
-              {smsHint ? <Text style={styles.hint}>{smsHint}</Text> : null}
-              <Field
-                label={t("login.smsCode")}
-                value={smsCode}
-                onChangeText={setSmsCode}
-                keyboardType="number-pad"
-                returnKeyType="go"
-                blurOnSubmit
-                onSubmitEditing={() => {
-                  if (!busy) onSubmit();
-                }}
-                styles={styles}
-                colors={colors}
-              />
-            </>
-          )}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -390,15 +317,6 @@ function makeStyles(c: ColorTokens) {
       marginTop: spacing.md,
     },
     primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 16 },
-    secondaryBtn: {
-      borderWidth: 1,
-      borderColor: c.accent,
-      borderRadius: radius.md,
-      paddingVertical: 12,
-      alignItems: "center" as const,
-      marginBottom: spacing.sm,
-    },
-    secondaryBtnText: { color: c.accent, fontWeight: "600" as const },
     hint: { color: c.textSecondary, marginBottom: spacing.sm },
     error: { color: c.danger, marginTop: spacing.sm },
   };

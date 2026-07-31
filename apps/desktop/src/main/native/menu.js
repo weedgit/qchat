@@ -15,7 +15,7 @@ const {
 /**
  * Apply language preference in the loaded web client (localStorage qchat.locale).
  * @param {() => Electron.BrowserWindow | null} getMainWindow
- * @param {"en"|"zh"|"system"} mode
+ * @param {"en"|"zh"} mode
  */
 function setWebLocale(getMainWindow, mode) {
   const win = getMainWindow();
@@ -127,10 +127,6 @@ function buildAppMenu(opts) {
             {
               label: "简体中文",
               click: () => setWebLocale(getMainWindow, "zh"),
-            },
-            {
-              label: "System",
-              click: () => setWebLocale(getMainWindow, "system"),
             },
           ],
         },

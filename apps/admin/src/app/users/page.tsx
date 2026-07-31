@@ -275,7 +275,7 @@ export default function UsersPage() {
     <AdminShell>
       <h1>Users</h1>
       <div className="page-sub">
-        Registered accounts and assisted provisioning (no SMS OTP required).
+        Registered accounts and assisted provisioning.
       </div>
 
       <div className="toolbar">

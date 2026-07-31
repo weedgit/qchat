@@ -10,9 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import {
+  DEFAULT_LOCALE,
   LOCALE_KEY,
-  isLocaleMode,
   localeModeLabel,
+  normalizeLocaleMode,
   resolveLocale,
   themeModeLabel as sharedThemeModeLabel,
   translate,
@@ -32,15 +33,9 @@ type LocaleContextValue = {
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
-function systemLanguage(): string {
-  if (typeof navigator === "undefined") return "en";
-  return navigator.language || "en";
-}
-
 function getStoredLocale(): LocaleMode {
-  if (typeof window === "undefined") return "system";
-  const v = localStorage.getItem(LOCALE_KEY);
-  return isLocaleMode(v) ? v : "system";
+  if (typeof window === "undefined") return DEFAULT_LOCALE;
+  return normalizeLocaleMode(localStorage.getItem(LOCALE_KEY));
 }
 
 function applyDocumentLang(resolved: ResolvedLocale) {
@@ -49,25 +44,25 @@ function applyDocumentLang(resolved: ResolvedLocale) {
 }
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<LocaleMode>("system");
-  const [systemLang, setSystemLang] = useState(systemLanguage);
+  const [locale, setLocaleState] = useState<LocaleMode>(DEFAULT_LOCALE);
 
   useEffect(() => {
     const stored = getStoredLocale();
+    // Persist migration away from legacy "system".
+    if (localStorage.getItem(LOCALE_KEY) !== stored) {
+      localStorage.setItem(LOCALE_KEY, stored);
+    }
     setLocaleState(stored);
-    applyDocumentLang(resolveLocale(stored, systemLanguage()));
+    applyDocumentLang(resolveLocale(stored));
 
-    const onLang = () => setSystemLang(systemLanguage());
     const syncFromStorage = () => {
       const next = getStoredLocale();
       setLocaleState(next);
-      applyDocumentLang(resolveLocale(next, systemLanguage()));
+      applyDocumentLang(resolveLocale(next));
     };
-    window.addEventListener("languagechange", onLang);
     window.addEventListener("storage", syncFromStorage);
     window.addEventListener("qchat-locale-change", syncFromStorage);
     return () => {
-      window.removeEventListener("languagechange", onLang);
       window.removeEventListener("storage", syncFromStorage);
       window.removeEventListener("qchat-locale-change", syncFromStorage);
     };
@@ -76,14 +71,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback((mode: LocaleMode) => {
     localStorage.setItem(LOCALE_KEY, mode);
     setLocaleState(mode);
-    applyDocumentLang(resolveLocale(mode, systemLanguage()));
+    applyDocumentLang(resolveLocale(mode));
     window.dispatchEvent(new Event("qchat-locale-change"));
   }, []);
 
-  const resolved = useMemo(
-    () => resolveLocale(locale, systemLang),
-    [locale, systemLang]
-  );
+  const resolved = useMemo(() => resolveLocale(locale), [locale]);
 
   useEffect(() => {
     applyDocumentLang(resolved);

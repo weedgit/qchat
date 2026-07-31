@@ -91,8 +91,7 @@ export default function SettingsScreen() {
   const [sessionsBusy, setSessionsBusy] = useState(false);
   const [phone, setPhone] = useState("");
   const [newPhone, setNewPhone] = useState("");
-  const [phoneCode, setPhoneCode] = useState("");
-  const [challengeId, setChallengeId] = useState("");
+  const [phonePassword, setPhonePassword] = useState("");
   const [phoneHint, setPhoneHint] = useState<string | null>(null);
 
   const loadSessions = useCallback(async () => {
@@ -198,45 +197,22 @@ export default function SettingsScreen() {
     );
   }
 
-  async function requestPhoneChange() {
-    if (newPhone.length !== 11) return;
+  async function updatePhone() {
+    if (newPhone.length !== 11 || !phonePassword) return;
     setSaving(true);
     setPhoneHint(null);
     try {
-      const res = await api<any>("/v1/me/phone/request", {
-        method: "POST",
-        body: JSON.stringify({ new_phone: newPhone }),
-      });
-      setChallengeId(String(res?.challenge_id ?? ""));
-      setPhoneHint(
-        res?.dev_code
-          ? `SMS sent (dev code: ${res.dev_code})`
-          : "SMS code sent. Enter it below."
-      );
-    } catch (e: any) {
-      setPhoneHint(e?.message || "Could not send SMS");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function confirmPhoneChange() {
-    if (!phoneCode) return;
-    setSaving(true);
-    setPhoneHint(null);
-    try {
-      const res = await api<any>("/v1/me/phone/confirm", {
-        method: "POST",
-        body: JSON.stringify({ challenge_id: challengeId, code: phoneCode }),
+      const res = await api<any>("/v1/me/phone", {
+        method: "PUT",
+        body: JSON.stringify({ new_phone: newPhone, password: phonePassword }),
       });
       setPhone(String(res?.phone ?? newPhone));
-      setChallengeId("");
-      setPhoneCode("");
+      setPhonePassword("");
       setNewPhone("");
-      setPhoneHint("Phone updated.");
+      setPhoneHint(t("settings.phoneUpdated"));
       await refreshMe();
     } catch (e: any) {
-      setPhoneHint(e?.message || "Could not confirm phone");
+      setPhoneHint(e?.message || "Could not update phone");
     } finally {
       setSaving(false);
     }
@@ -292,7 +268,7 @@ export default function SettingsScreen() {
         <DropdownSelect
           label={t("appearance.language")}
           value={locale}
-          options={(["en", "zh", "system"] as LocaleMode[]).map((mode) => ({
+          options={(["en", "zh"] as LocaleMode[]).map((mode) => ({
             value: mode,
             label: labelLocale(mode),
           }))}
@@ -396,42 +372,38 @@ export default function SettingsScreen() {
         <Text style={styles.cardHint}>
           {t("settings.currentPhone")}: {phone || "—"}
         </Text>
+        <Text style={styles.cardHint}>{t("me.phoneHint")}</Text>
         <Field
           label={t("settings.newPhone")}
           value={newPhone}
-          onChangeText={setNewPhone}
+          onChangeText={(v) => setNewPhone(v.replace(/\D/g, "").slice(0, 11))}
           keyboardType="phone-pad"
           maxLength={11}
           styles={styles}
           colors={colors}
         />
-        {!challengeId ? (
-          <Pressable
-            style={[styles.primaryBtn, newPhone.length !== 11 && styles.btnDisabled]}
-            onPress={requestPhoneChange}
-            disabled={saving || newPhone.length !== 11}
-          >
-            <Text style={styles.primaryBtnText}>{t("settings.sendSms")}</Text>
-          </Pressable>
-        ) : (
-          <>
-            <Field
-              label={t("settings.verifyCode")}
-              value={phoneCode}
-              onChangeText={setPhoneCode}
-              keyboardType="number-pad"
-              styles={styles}
-              colors={colors}
-            />
-            <Pressable
-              style={[styles.primaryBtn, !phoneCode && styles.btnDisabled]}
-              onPress={confirmPhoneChange}
-              disabled={saving || !phoneCode}
-            >
-              <Text style={styles.primaryBtnText}>{t("settings.confirmPhone")}</Text>
-            </Pressable>
-          </>
-        )}
+        <Field
+          label={t("settings.confirmPassword")}
+          value={phonePassword}
+          onChangeText={setPhonePassword}
+          secureTextEntry
+          styles={styles}
+          colors={colors}
+        />
+        <Pressable
+          style={[
+            styles.primaryBtn,
+            (newPhone.length !== 11 || !phonePassword) && styles.btnDisabled,
+          ]}
+          onPress={updatePhone}
+          disabled={saving || newPhone.length !== 11 || !phonePassword}
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryBtnText}>{t("settings.confirmPhone")}</Text>
+          )}
+        </Pressable>
         {phoneHint ? <Text style={styles.hint}>{phoneHint}</Text> : null}
       </View>
 

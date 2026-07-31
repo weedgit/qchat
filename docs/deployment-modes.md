@@ -36,7 +36,7 @@ docker compose up -d
 # Optional: fail the deploy if LiveKit/coturn are unhealthy
 ./deploy/redeploy.sh --require-media
 
-# Preflight only (production fails on weak JWT / SMS / LiveKit defaults)
+# Preflight only (production fails on weak JWT / LiveKit defaults)
 ./deploy/check-env.sh
 ```
 

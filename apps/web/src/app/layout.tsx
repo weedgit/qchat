@@ -33,7 +33,7 @@ export const viewport: Viewport = {
 
 const themeBoot = `(function(){try{var t=localStorage.getItem('qchat.theme')||'dark';var r=t==='system'?(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;document.documentElement.setAttribute('data-theme',r);document.documentElement.style.colorScheme=r;}catch(e){}})();`;
 
-const localeBoot = `(function(){try{var l=localStorage.getItem('qchat.locale')||'system';var r=l;if(l==='system'){var n=(navigator.language||'en').toLowerCase();r=n.indexOf('zh')===0?'zh':'en';}document.documentElement.lang=r==='zh'?'zh-CN':'en';}catch(e){}})();`;
+const localeBoot = `(function(){try{var l=localStorage.getItem('qchat.locale')||'zh';var r=(l==='en')?'en':'zh';document.documentElement.lang=r==='zh'?'zh-CN':'en';}catch(e){}})();`;
 
 export default function RootLayout({
   children,
@@ -41,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBoot }} />
         <script dangerouslySetInnerHTML={{ __html: localeBoot }} />

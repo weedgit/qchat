@@ -1403,6 +1403,21 @@ export default function ChatScreen() {
     );
   }, []);
 
+  const selectableIds = useMemo(
+    () => list.filter((m) => !m.pending && !m.failed).map((m) => m.id),
+    [list]
+  );
+  const allSelectableSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selectedIds.includes(id));
+
+  const toggleSelectAll = useCallback(() => {
+    if (allSelectableSelected) {
+      setSelectedIds([]);
+      return;
+    }
+    setSelectedIds(selectableIds);
+  }, [allSelectableSelected, selectableIds]);
+
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const onPressMessage = useCallback(
@@ -1619,6 +1634,19 @@ export default function ChatScreen() {
             <Ionicons name="close" size={24} color="#fff" />
           </Pressable>
           <Text style={styles.actionCount}>{selectedIds.length}</Text>
+          <Pressable
+            style={styles.actionBtn}
+            onPress={toggleSelectAll}
+            hitSlop={8}
+            disabled={selectableIds.length === 0}
+            accessibilityLabel={allSelectableSelected ? "Deselect all" : "Select all"}
+          >
+            <Ionicons
+              name={allSelectableSelected ? "checkbox" : "checkbox-outline"}
+              size={22}
+              color={selectableIds.length === 0 ? "rgba(255,255,255,0.35)" : "#fff"}
+            />
+          </Pressable>
           <View style={styles.actionSpacer} />
           {canCopySelected ? (
             <Pressable

@@ -75,21 +75,11 @@ import {
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
 import ShellConnectionBanner from "@/components/ShellConnectionBanner";
+import { formatConversationTime } from "@/lib/datetime";
 
 /** Chat errors go to the console only — never surface as UI banners. */
 function logChatError(...args: unknown[]) {
   console.error("[qchat]", ...args);
-}
-
-function fmtTime(iso?: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  return sameDay
-    ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 function ConversationRow({
@@ -123,7 +113,7 @@ function ConversationRow({
   onDropHover?: (hover: boolean) => void;
   onFilesDrop?: (files: File[]) => void;
 }) {
-  const { t } = useLocale();
+  const { t, resolved } = useLocale();
   const isDM = conv.type === "dm";
   const isGroup = conv.type === "social_group" || conv.type === "group";
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -241,7 +231,7 @@ function ConversationRow({
             {conversationDisplayName(conv)}
             {conv.muted ? <span className="mute-mark" title={t("chat.muted")}> · {t("chat.muted")}</span> : null}
           </span>
-          <span className="conv-time">{fmtTime(conv.lastMessageAt)}</span>
+          <span className="conv-time">{formatConversationTime(conv.lastMessageAt, resolved)}</span>
         </div>
         <div className="conv-bottom">
           <span className="conv-preview">
@@ -515,7 +505,7 @@ function Bubble({
   onOpenImage?: (src: string) => void;
   ctxOpen: boolean;
 }) {
-  const { t } = useLocale();
+  const { t, resolved } = useLocale();
   const [receiptOpen, setReceiptOpen] = useState(false);
   const canReact = !!onReact && !selectMode && !msg.recalled && !msg.pending && !msg.failed && !ctxOpen;
   // Recommend the message's top reaction if it has one, otherwise the default quick emoji.
@@ -565,7 +555,7 @@ function Bubble({
             <span className="call-msg">
               {localizeChatLabel(msg.content, t, { type: "call" }) || t("chat.call")}
             </span>
-            <span className="meta">{fmtTime(msg.createdAt)}</span>
+            <span className="meta">{formatConversationTime(msg.createdAt, resolved)}</span>
           </div>
         </div>
         {msg.mine && (
@@ -592,7 +582,7 @@ function Bubble({
       {msg.editedAt && !msg.recalled && (
         <span className="edited-mark">{t("chat.edited")} </span>
       )}
-      {fmtTime(msg.createdAt)}
+      {formatConversationTime(msg.createdAt, resolved)}
       {receiptMark(msg)}
       {canCancelUpload && (
         <button
@@ -1012,7 +1002,7 @@ export default function ChatPageInner() {
       chat.conversations.find((c) => c.id === conversationId)?.avatarUrl,
   });
   const { theme, setTheme } = useTheme();
-  const { locale, setLocale, t, labelLocale, labelTheme } = useLocale();
+  const { locale, setLocale, t, labelLocale, labelTheme, resolved } = useLocale();
   const [myStatus, setMyStatus] = useState<"online" | "away" | "dnd" | "offline">("online");
   const { noteManualStatusChange } = useDesktopIdleStatus(myStatus, setMyStatus);
   const { openConversation } = chat;
@@ -1401,6 +1391,13 @@ export default function ChatPageInner() {
     );
   const recallableSelected = selectedMessages.filter((m) => canRecallMsg(m));
   const forwardableSelected = selectedMessages.filter((m) => !m.recalled);
+  const selectableMessages = useMemo(
+    () => activeMessages.filter((m) => !m.pending && !m.failed),
+    [activeMessages]
+  );
+  const allSelectableSelected =
+    selectableMessages.length > 0 &&
+    selectableMessages.every((m) => selectedIds.has(m.id));
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -1413,6 +1410,15 @@ export default function ChatPageInner() {
 
   function clearSelection() {
     setSelectedIds(new Set());
+  }
+
+  function selectAllMessages() {
+    setSelectedIds(new Set(selectableMessages.map((m) => m.id)));
+  }
+
+  function toggleSelectAll() {
+    if (allSelectableSelected) clearSelection();
+    else selectAllMessages();
   }
 
   async function copySelected() {
@@ -3035,7 +3041,6 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item"
                 onClick={() => {
-                  setMainMenuOpen(false);
                   const order = ["dark", "light", "system"] as const;
                   const i = order.indexOf(theme);
                   setTheme(order[(i + 1) % order.length]);
@@ -3047,8 +3052,7 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item"
                 onClick={() => {
-                  setMainMenuOpen(false);
-                  const order = ["en", "zh", "system"] as const;
+                  const order = ["en", "zh"] as const;
                   const i = order.indexOf(locale);
                   setLocale(order[(i + 1) % order.length]);
                 }}
@@ -3059,7 +3063,6 @@ export default function ChatPageInner() {
               <button
                 className="ctx-item"
                 onClick={() => {
-                  setMainMenuOpen(false);
                   const order = ["online", "away", "dnd", "offline"] as const;
                   const i = order.indexOf(myStatus);
                   const next = order[(i + 1) % order.length];
@@ -3129,7 +3132,7 @@ export default function ChatPageInner() {
                       }}
                     >
                       <div className="search-hit-body">{m.body}</div>
-                      <div className="muted" style={{ fontSize: 11 }}>{fmtTime(m.createdAt)}</div>
+                      <div className="muted" style={{ fontSize: 11 }}>{formatConversationTime(m.createdAt, resolved)}</div>
                     </button>
                   ))}
                 </div>
@@ -3355,6 +3358,17 @@ export default function ChatPageInner() {
                 <button
                   className="btn-ghost"
                   style={{ borderRadius: 8, padding: "6px 10px" }}
+                  onClick={toggleSelectAll}
+                  disabled={selectableMessages.length === 0}
+                  title={
+                    allSelectableSelected ? t("chat.deselectAll") : t("chat.selectAll")
+                  }
+                >
+                  {allSelectableSelected ? t("chat.deselectAll") : t("chat.selectAll")}
+                </button>
+                <button
+                  className="btn-ghost"
+                  style={{ borderRadius: 8, padding: "6px 10px" }}
                   onClick={copySelected}
                 >
                   {t("chat.copy")}
@@ -3471,7 +3485,7 @@ export default function ChatPageInner() {
                               : undefined;
                             const online = p?.online ?? active.peerOnline;
                             if (online) return t("presence.online");
-                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt, t);
+                            return formatLastSeen(p?.lastActiveAt || active.peerLastActiveAt, t, resolved);
                           })()
                         : `${active.type.replace("_", " ")}${isGroup ? ` · ${chat.myRole}` : ""}`}
                     </div>
@@ -3552,7 +3566,7 @@ export default function ChatPageInner() {
                     }}
                   >
                     <div className="search-hit-body">{m.body}</div>
-                    <div className="muted" style={{ fontSize: 11 }}>{fmtTime(m.createdAt)}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>{formatConversationTime(m.createdAt, resolved)}</div>
                   </button>
                 ))}
                 {!chatSearch.loading && chatSearch.messages.length === 0 && (
@@ -4078,7 +4092,7 @@ export default function ChatPageInner() {
                     {memberProfile.online
                       ? ` · ${t("presence.online")}`
                       : memberProfile.last_active_at
-                        ? ` · ${formatLastSeen(memberProfile.last_active_at, t)}`
+                        ? ` · ${formatLastSeen(memberProfile.last_active_at, t, resolved)}`
                         : ""}
                   </div>
                   {memberProfile.role ? (
@@ -4087,7 +4101,9 @@ export default function ChatPageInner() {
                       <div className="kv-value">
                         {(memberProfile.role === "owner" || memberProfile.role === "admin") ? (
                           <span className={`members-role-pill is-${memberProfile.role}`}>
-                            {memberProfile.role}
+                            {memberProfile.role === "owner"
+                              ? t("groups.roleOwner")
+                              : t("groups.roleAdmin")}
                           </span>
                         ) : (
                           memberProfile.role
@@ -4182,7 +4198,7 @@ export default function ChatPageInner() {
                     {dmPeerProfile.online
                       ? ` · ${t("presence.online")}`
                       : dmPeerProfile.last_active_at
-                        ? ` · ${formatLastSeen(dmPeerProfile.last_active_at, t)}`
+                        ? ` · ${formatLastSeen(dmPeerProfile.last_active_at, t, resolved)}`
                         : ""}
                   </div>
                   {(active.friendNote || (active.friendTags && active.friendTags.length > 0)) && (
@@ -4276,7 +4292,7 @@ export default function ChatPageInner() {
           <div className="kv kv-inline">
             <div className="k">{t("details.lastActivity")}</div>
             <div className="kv-value">
-              {active.lastMessageAt ? fmtTime(active.lastMessageAt) : "\u2014"}
+              {active.lastMessageAt ? formatConversationTime(active.lastMessageAt, resolved) : "\u2014"}
             </div>
           </div>
           {isGroup && groupDetails && (
@@ -4419,7 +4435,7 @@ export default function ChatPageInner() {
                   const statusOnline = Boolean(presence?.online ?? m.online);
                   const statusText = statusOnline
                     ? t("presence.online")
-                    : formatLastSeen(presence?.lastActiveAt || m.last_active_at, t);
+                    : formatLastSeen(presence?.lastActiveAt || m.last_active_at, t, resolved);
                   return (
                     <div key={m.user_id} className="details-member-block">
                       <div
@@ -4452,7 +4468,7 @@ export default function ChatPageInner() {
                         </div>
                         {(m.role === "owner" || m.role === "admin") && (
                           <span className={`members-role-pill is-${m.role}`}>
-                            {m.role}
+                            {m.role === "owner" ? t("groups.roleOwner") : t("groups.roleAdmin")}
                           </span>
                         )}
                       </div>
@@ -4470,7 +4486,7 @@ export default function ChatPageInner() {
                               toggleMemberMute(m.user_id, "10m", activeMute).catch(() => { })
                             }
                           >
-                            10m
+                            {t("groups.mute10m")}
                           </button>
                           <button
                             type="button"
@@ -4480,7 +4496,7 @@ export default function ChatPageInner() {
                               toggleMemberMute(m.user_id, "1h", activeMute).catch(() => { })
                             }
                           >
-                            1h
+                            {t("groups.mute1h")}
                           </button>
                           <button
                             type="button"
@@ -4594,11 +4610,21 @@ export default function ChatPageInner() {
           <button
             className="ctx-item"
             onClick={() => {
-              clearSelection();
+              toggleSelectAll();
               setCtxMenu(null);
             }}
           >
             <MenuIcon d={ICONS.select} />
+            {allSelectableSelected ? t("chat.deselectAll") : t("chat.selectAll")}
+          </button>
+          <button
+            className="ctx-item"
+            onClick={() => {
+              clearSelection();
+              setCtxMenu(null);
+            }}
+          >
+            <MenuIcon d={ICONS.close} />
             {t("ctx.clearSelection")}
           </button>
           {recallableSelected.length > 0 && (
@@ -5232,7 +5258,7 @@ function ForwardPicker({
   onCancel: () => void;
   onSend: (conversationIds: string[]) => Promise<void>;
 }) {
-  const { t } = useLocale();
+  const { t, resolved } = useLocale();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);

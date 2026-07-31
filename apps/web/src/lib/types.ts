@@ -1,4 +1,5 @@
-import type { MessageKey } from "@qchat/i18n";
+import type { MessageKey, ResolvedLocale } from "@qchat/i18n";
+import { formatShortDate } from "./datetime";
 import { newUUID } from "./uuid";
 
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
@@ -272,7 +273,11 @@ export function mediaURL(path?: string | null): string | undefined {
 }
 
 /** last-online label for offline peers. */
-export function formatLastSeen(iso: string | undefined, t: Translate): string {
+export function formatLastSeen(
+  iso: string | undefined,
+  t: Translate,
+  locale: ResolvedLocale = "en"
+): string {
   if (!iso) return t("presence.offline");
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return t("presence.offline");
@@ -281,6 +286,6 @@ export function formatLastSeen(iso: string | undefined, t: Translate): string {
   if (diff < 3_600_000) return t("presence.lastSeenMinutes", { n: Math.floor(diff / 60_000) });
   if (diff < 86_400_000) return t("presence.lastSeenHours", { n: Math.floor(diff / 3_600_000) });
   return t("presence.lastSeenDate", {
-    date: d.toLocaleDateString([], { month: "short", day: "numeric" }),
+    date: formatShortDate(d, locale),
   });
 }

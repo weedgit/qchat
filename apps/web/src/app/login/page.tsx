@@ -3,10 +3,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { MessageKey } from "@qchat/i18n";
 import LoadingSplash from "@/components/LoadingSplash";
 import { PasswordInput } from "@/components/PasswordInput";
+import SiteFooter from "@/components/SiteFooter";
 import { ApiError, api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
-import { isValidPhone, validateLoginCredentials } from "@/lib/credentials";
+import { validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
 import { isElectronShell } from "@/lib/downloads";
 import { useLocale } from "@/lib/locale";
@@ -27,10 +29,6 @@ export default function LoginPage() {
   const [captchaCode, setCaptchaCode] = useState("");
   const [captcha, setCaptcha] = useState<CaptchaState | null>(null);
   const [captchaStatus, setCaptchaStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [smsCode, setSmsCode] = useState("");
-  const [smsChallengeId, setSmsChallengeId] = useState("");
-  const [smsHint, setSmsHint] = useState<string | null>(null);
-  const [smsBusy, setSmsBusy] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,9 +56,7 @@ export default function LoginPage() {
         if (reason) {
           sessionStorage.removeItem("qchat.session_revoked");
           setError(
-            reason === "banned"
-              ? "Your account was banned. Contact an administrator."
-              : "Signed out — another device of this type signed in."
+            reason === "banned" ? t("login.errBanned") : t("login.errSignedOut")
           );
         }
       } catch {
@@ -71,7 +67,7 @@ export default function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, t]);
 
   const loadCaptcha = useCallback(async () => {
     setCaptcha(null);
@@ -82,23 +78,22 @@ export default function LoginPage() {
 
       const withTimeout = <T,>(p: Promise<T>, ms: number, label: string) =>
         new Promise<T>((resolve, reject) => {
-          const t = window.setTimeout(
+          const timer = window.setTimeout(
             () => reject(Object.assign(new Error(label), { name: "AbortError" })),
             ms
           );
           p.then(
             (v) => {
-              window.clearTimeout(t);
+              window.clearTimeout(timer);
               resolve(v);
             },
             (e) => {
-              window.clearTimeout(t);
+              window.clearTimeout(timer);
               reject(e);
             }
           );
         });
 
-      // Desktop IPC can hang on a bad API URL — bound it, then fall back to same-origin fetch.
       if (typeof window !== "undefined" && window.qchatDesktop?.fetchCaptcha) {
         try {
           data = await withTimeout(
@@ -131,7 +126,6 @@ export default function LoginPage() {
       }
       setCaptcha({ id, image });
       setCaptchaStatus("ready");
-      // Local/dev API returns the answer — auto-fill so register isn't blocked.
       const answer = String(data?.dev_answer ?? "").trim();
       if (answer) setCaptchaCode(answer);
       setError(null);
@@ -140,56 +134,16 @@ export default function LoginPage() {
       setCaptchaStatus("error");
       const msg =
         e?.name === "AbortError"
-          ? "Captcha timed out — click image to retry"
-          : `Captcha unavailable: ${e.message || "network error"} (click to retry)`;
+          ? t("login.captchaTimeout")
+          : t("login.captchaError", { detail: e.message || "network error" });
       setError(msg);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (checkingSession) return;
     loadCaptcha();
   }, [loadCaptcha, checkingSession]);
-
-  async function sendRegisterOTP() {
-    setSmsBusy(true);
-    setError(null);
-    setSmsHint(null);
-    try {
-      if (!isValidPhone(phone)) {
-        setError("Phone must be exactly 11 digits");
-        return;
-      }
-      const data = await api<any>("/v1/auth/register/otp", {
-        method: "POST",
-        body: JSON.stringify({
-          phone,
-          captcha_id: captcha?.id ?? "",
-          captcha: captchaCode,
-        }),
-      });
-      setSmsChallengeId(String(data?.challenge_id ?? ""));
-      if (data?.dev_code) {
-        setSmsHint(`Dev SMS code: ${data.dev_code}`);
-        setSmsCode(String(data.dev_code));
-      } else {
-        setSmsHint("SMS code sent. Enter it below.");
-      }
-      setCaptchaCode("");
-      await loadCaptcha();
-    } catch (e: any) {
-      if (e instanceof ApiError && e.fields) {
-        const parts = Object.entries(e.fields).map(([k, v]) => `${k}: ${v}`);
-        setError(parts.length ? parts.join("; ") : e.message);
-      } else {
-        setError(e.message);
-      }
-      setCaptchaCode("");
-      loadCaptcha();
-    } finally {
-      setSmsBusy(false);
-    }
-  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -203,11 +157,11 @@ export default function LoginPage() {
         requireUsername: mode === "register",
       });
       if (early) {
-        setError(early);
+        setError(t(early as MessageKey));
         return;
       }
       if (mode === "register" && !inviteCode.trim()) {
-        setError("Company invite code is required");
+        setError(t("login.inviteRequired"));
         return;
       }
       const device = await getAuthDevice();
@@ -224,8 +178,6 @@ export default function LoginPage() {
       if (mode === "register") {
         payload.username = username.trim();
         payload.invite_code = inviteCode.trim().toUpperCase();
-        payload.sms_challenge_id = smsChallengeId;
-        payload.sms_code = smsCode;
       } else {
         payload.remember_me = remember;
       }
@@ -234,7 +186,7 @@ export default function LoginPage() {
         body: JSON.stringify(payload),
       });
       const token = data?.access_token ?? data?.token;
-      if (!token) throw new Error("No access_token in response");
+      if (!token) throw new Error(t("login.errNoToken"));
       setTokens(String(token), String(data?.refresh_token ?? ""), mode === "register" ? true : remember);
       setEnteringApp(true);
       router.replace("/");
@@ -253,7 +205,11 @@ export default function LoginPage() {
   }
 
   if (checkingSession || enteringApp) {
-    return <LoadingSplash label={enteringApp ? "Opening chat" : "Starting Rchat"} />;
+    return (
+      <LoadingSplash
+        label={enteringApp ? t("login.openingChat") : t("login.starting")}
+      />
+    );
   }
 
   return (
@@ -266,19 +222,18 @@ export default function LoginPage() {
           {t("download.nav")}
         </Link>
       )}
+      <div className="auth-wrap-main">
       <form className="auth-card" onSubmit={onSubmit}>
         <div className="auth-logo">R</div>
         <div className="auth-title">
-          {mode === "login" ? "Sign in to Rchat" : "Create your account"}
+          {mode === "login" ? t("login.signInToApp") : t("login.createAccount")}
         </div>
         <div className="auth-sub">
-          {mode === "login"
-            ? "Secure enterprise messaging"
-            : "Join your company with an invite code. SMS verification required."}
+          {mode === "login" ? t("login.subtitleLogin") : t("login.subtitleRegister")}
         </div>
 
         <div className="field">
-          <label>Phone (11 digits)</label>
+          <label>{t("login.phoneDigits")}</label>
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
@@ -291,7 +246,7 @@ export default function LoginPage() {
 
         {mode === "register" && (
           <div className="field">
-            <label>Username</label>
+            <label>{t("login.username")}</label>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -303,7 +258,7 @@ export default function LoginPage() {
 
         {mode === "register" && (
           <div className="field">
-            <label>Company invite code</label>
+            <label>{t("login.inviteCode")}</label>
             <input
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
@@ -312,35 +267,29 @@ export default function LoginPage() {
               required
             />
             <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-              From your organization admin. You can still switch companies later from chat.
+              {t("login.inviteLaterHint")}
             </div>
           </div>
         )}
         <div className="field">
-          <label>Password</label>
+          <label>{t("login.password")}</label>
           <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="at least 8 letters/digits"
+            placeholder={t("login.passwordPlaceholder")}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             required
           />
         </div>
 
         <div className="field">
-          <label>Captcha</label>
+          <label>{t("login.captcha")}</label>
           <div className="captcha-row">
             <input
               className="captcha-input"
               value={captchaCode}
               onChange={(e) => setCaptchaCode(e.target.value.toUpperCase())}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                if (mode !== "register") return;
-                e.preventDefault();
-                if (!smsBusy && phone && captchaCode) sendRegisterOTP();
-              }}
-              placeholder="ENTER CODE"
+              placeholder={t("login.captchaPlaceholder")}
               autoComplete="off"
               autoCapitalize="characters"
               spellCheck={false}
@@ -348,8 +297,8 @@ export default function LoginPage() {
             />
             <div
               className={`captcha-image-wrap ${captchaStatus === "error" ? "error" : ""}`}
-              aria-label="Captcha image"
-              title="Click to refresh captcha"
+              aria-label={t("login.captcha")}
+              title={t("login.captchaRefresh")}
               role="button"
               tabIndex={0}
               onClick={() => {
@@ -364,39 +313,15 @@ export default function LoginPage() {
             >
               {captchaStatus === "loading" && <span className="captcha-image-fallback">…</span>}
               {captchaStatus === "error" && (
-                <span className="captcha-image-fallback">Unavailable — click</span>
+                <span className="captcha-image-fallback">{t("login.captchaUnavailable")}</span>
               )}
               {captchaStatus === "ready" && captcha?.image ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img className="captcha-image" src={captcha.image} alt="Captcha" draggable={false} />
+                <img className="captcha-image" src={captcha.image} alt={t("login.captcha")} draggable={false} />
               ) : null}
             </div>
           </div>
         </div>
-
-        {mode === "register" && (
-          <div className="field">
-            <label>SMS verification</label>
-            <div className="captcha-row">
-              <input
-                value={smsCode}
-                onChange={(e) => setSmsCode(e.target.value)}
-                placeholder="SMS code"
-                required
-              />
-              <button
-                type="button"
-                className="btn-ghost"
-                style={{ padding: "8px 12px", borderRadius: 8, whiteSpace: "nowrap" }}
-                disabled={smsBusy || !phone || !captchaCode}
-                onClick={sendRegisterOTP}
-              >
-                {smsBusy ? "Sending…" : "Send SMS"}
-              </button>
-            </div>
-            {smsHint && <div className="auth-sub" style={{ marginTop: 6 }}>{smsHint}</div>}
-          </div>
-        )}
 
         <div className="remember-row">
           {mode === "login" ? (
@@ -406,7 +331,7 @@ export default function LoginPage() {
                 checked={remember}
                 onChange={(e) => setRemember(e.target.checked)}
               />
-              Remember me (60 days)
+              {t("login.rememberDays")}
             </label>
           ) : (
             <span />
@@ -418,21 +343,24 @@ export default function LoginPage() {
             onClick={() => {
               setMode(mode === "login" ? "register" : "login");
               setError(null);
-              setSmsCode(mode === "login" ? "12345" : "");
-              setSmsChallengeId("");
-              setSmsHint(mode === "login" ? "Test SMS code: 12345" : null);
             }}
           >
-            {mode === "login" ? "Need an account?" : "Have an account?"}
+            {mode === "login" ? t("login.needAccount") : t("login.haveAccount")}
           </button>
         </div>
 
         {error && <div className="error-text">{error}</div>}
 
         <button className="btn" type="submit" disabled={busy}>
-          {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Register"}
+          {busy
+            ? t("login.pleaseWait")
+            : mode === "login"
+              ? t("login.submitLogin")
+              : t("login.register")}
         </button>
       </form>
+      </div>
+      <SiteFooter variant="compact" />
     </div>
   );
 }

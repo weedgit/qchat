@@ -1,9 +1,12 @@
 export {
   catalogs,
+  DEFAULT_LOCALE,
   LOCALE_KEY,
   isLocaleMode,
+  normalizeLocaleMode,
   localeModeLabel,
   resolveLocale,
+  intlLocale,
   themeModeLabel,
   translate,
   type LocaleMode,

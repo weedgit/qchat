@@ -8,8 +8,8 @@ Run through this list on a staging host after `QCHAT_ENV=production` and a rotat
 
 | Check | Expected | Status |
 |---|---|---|
-| CAPTCHA required on login/register/OTP | 400 without valid captcha | |
-| SMS OTP required on self-service register | 400 without `sms_challenge_id` / `sms_code` | |
+| CAPTCHA required on login/register | 400 without valid captcha | |
+| Phone change requires current password | 401 without correct password | |
 | Invite revoked blocks register | 400 invalid invite | |
 | Weak password rejected | 400 from `ValidatePassword` | |
 | Same-type device session kick | new desktop/phone/web replaces prior same type; old client gets `session.revoked` + 401 | Done |
@@ -54,7 +54,6 @@ Run through this list on a staging host after `QCHAT_ENV=production` and a rotat
 ## Known accepted risks (MVP)
 
 - Captcha returns plaintext challenge in JSON (replace with image CAPTCHA for production).
-- Dev SMS returns `dev_code` when `QCHAT_SMS_PROVIDER=dev` — disable in production.
 - CORS allows any `http://localhost:*` Origin for local web/admin.
 
 ## Fixes applied from this review pass

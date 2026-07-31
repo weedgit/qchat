@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { MessageKey } from "@qchat/i18n";
+import type { LocaleMode, MessageKey, ResolvedLocale } from "@qchat/i18n";
+import { intlLocale } from "@qchat/i18n";
 import MenuModal from "@/components/MenuModal";
 import { api, clearToken, apiBaseUrl } from "@/lib/api";
 import {
@@ -18,11 +19,14 @@ import {
 } from "@/lib/webPush";
 import { useLocale } from "@/lib/locale";
 import { useTheme, type ThemeMode } from "@/lib/theme";
-import type { LocaleMode } from "@qchat/i18n";
 
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
-function formatSessionActive(iso: string | undefined, t: Translate): string {
+function formatSessionActive(
+  iso: string | undefined,
+  t: Translate,
+  locale: ResolvedLocale
+): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
@@ -31,7 +35,7 @@ function formatSessionActive(iso: string | undefined, t: Translate): string {
   if (sec < 3600) return t("time.minutesAgo", { n: Math.floor(sec / 60) });
   if (sec < 86400) return t("time.hoursAgo", { n: Math.floor(sec / 3600) });
   if (sec < 86400 * 7) return t("time.daysAgo", { n: Math.floor(sec / 86400) });
-  return d.toLocaleString();
+  return d.toLocaleString(intlLocale(locale));
 }
 
 function deviceTypeLabel(deviceType: string, t: Translate): string {
@@ -43,7 +47,7 @@ function deviceTypeLabel(deviceType: string, t: Translate): string {
 export default function SettingsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const { locale, setLocale, t, labelLocale, labelTheme } = useLocale();
+  const { locale, setLocale, t, labelLocale, labelTheme, resolved } = useLocale();
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [ready, setReady] = useState(false);
@@ -202,7 +206,7 @@ export default function SettingsPage() {
               value={locale}
               onChange={(e) => setLocale(e.target.value as LocaleMode)}
             >
-              {(["en", "zh", "system"] as LocaleMode[]).map((mode) => (
+              {(["en", "zh"] as LocaleMode[]).map((mode) => (
                 <option key={mode} value={mode}>
                   {labelLocale(mode)}
                 </option>
@@ -317,12 +321,12 @@ export default function SettingsPage() {
                   </div>
                   <div className="menu-modal-list-sub">
                     {t("settings.lastActiveAt", {
-                      time: formatSessionActive(s.last_active_at || s.created_at, t),
+                      time: formatSessionActive(s.last_active_at || s.created_at, t, resolved),
                     })}
                     {" · "}
                     {t("settings.signedIn", {
                       time: s.created_at
-                        ? new Date(s.created_at).toLocaleString()
+                        ? new Date(s.created_at).toLocaleString(intlLocale(resolved))
                         : "—",
                     })}
                   </div>
@@ -393,7 +397,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="menu-modal-list-sub">
                     {t("settings.lastRegistered", {
-                      time: new Date(device.last_seen_at).toLocaleString(),
+                      time: new Date(device.last_seen_at).toLocaleString(intlLocale(resolved)),
                     })}
                   </div>
                 </div>
