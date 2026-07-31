@@ -24,6 +24,7 @@ import GroupQr from "@/components/GroupQr";
 import GroupQrScanner from "@/components/GroupQrScanner";
 import UserQr from "@/components/UserQr";
 import EmojiPicker, { type PickerMedia } from "@/components/EmojiPicker";
+import ImageLightbox from "@/components/ImageLightbox";
 import { AnimatedEmojiOnlyBody } from "@/components/AnimatedEmoji";
 import MessageBody, { formatComposerMentions } from "@/components/MessageBody";
 import { api, asList, ApiError, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
@@ -448,6 +449,7 @@ const ICONS = {
   markUnread: "M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z M17.5 6.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z",
   block: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M4.9 4.9l14.2 14.2",
   clearHistory: "M4 20h16 M8 20V9l-2.5-3h13L16 9v11 M10 12v5 M14 12v5 M12 3v3",
+  download: "M12 3v12 M8 11l4 4 4-4 M5 21h14",
   phone: "M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z",
   video:
     "M23 7l-7 5 7 5V7z M3 5h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z",
@@ -490,6 +492,7 @@ function Bubble({
   onRetry,
   onCancelUpload,
   onReplyPreviewClick,
+  onOpenImage,
   ctxOpen,
 }: {
   msg: Message;
@@ -509,6 +512,7 @@ function Bubble({
   onRetry?: () => void;
   onCancelUpload?: () => void;
   onReplyPreviewClick?: (replyToId: string) => void;
+  onOpenImage?: (src: string) => void;
   ctxOpen: boolean;
 }) {
   const { t } = useLocale();
@@ -742,20 +746,26 @@ function Bubble({
                     : msg.mediaUrl
                 )}
                 alt={localizeChatLabel(msg.content, t, { type: "image" })}
-                className="media-image-savable"
-                title={t("ctx.saveImage")}
+                className="media-image-clickable"
+                draggable={false}
                 onContextMenu={(e) => {
                   // Same Telegram message menu as text — not a native image menu.
                   onContextMenu?.(e);
                 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (selectMode || msg.pending || msg.failed || !msg.mediaUrl) return;
+                  const src = mediaAuthURL(
+                    bareStickerOrGif
+                      ? maybeAnimateStickerUrl(msg.mediaUrl)
+                      : msg.mediaUrl
+                  );
+                  if (src) onOpenImage?.(src);
+                }}
                 onDoubleClick={(e) => {
+                  // Prevent browser default Save As / selection on double-click.
                   e.preventDefault();
                   e.stopPropagation();
-                  if (msg.pending || msg.failed || !msg.mediaUrl) return;
-                  void saveMediaToDisk(msg.mediaUrl).catch((err: any) => {
-                    console.error("[rchat] save media failed:", err?.message || err);
-                    window.alert(err?.message || "Could not save file");
-                  });
                 }}
               />
               {msg.content && !isDefaultImageCaption(msg.content) && (
@@ -1069,6 +1079,7 @@ export default function ChatPageInner() {
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   /** File drag over the open chat history pane. */
   const [chatDropActive, setChatDropActive] = useState(false);
+  const [imageLightboxSrc, setImageLightboxSrc] = useState<string | null>(null);
   const chatDropDepthRef = useRef(0);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
@@ -3655,6 +3666,7 @@ export default function ChatPageInner() {
                             onContextMenu={(e) => openCtxMenu(e, m)}
                             ctxOpen={!!ctxMenu && ctxMenu.msgId === m.id}
                             onReplyPreviewClick={(replyToId) => jumpToPinnedId(replyToId)}
+                            onOpenImage={(src) => setImageLightboxSrc(src)}
                             onReact={
                               chat.activeId
                                 ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
@@ -3697,6 +3709,7 @@ export default function ChatPageInner() {
                             onContextMenu={(e) => openCtxMenu(e, m)}
                             ctxOpen={!!ctxMenu && ctxMenu.msgId === m.id}
                             onReplyPreviewClick={(replyToId) => jumpToPinnedId(replyToId)}
+                            onOpenImage={(src) => setImageLightboxSrc(src)}
                             onReact={
                               chat.activeId
                                 ? (emoji) => chat.reactMessage(m.id, chat.activeId!, emoji).catch(() => { })
@@ -4692,6 +4705,25 @@ export default function ChatPageInner() {
               <MenuIcon d={ICONS.copy} />
               {t("ctx.copy")}
             </button>
+            {!ctxMsg.recalled &&
+              !ctxMsg.failed &&
+              ctxMsg.type === "image" &&
+              ctxMsg.mediaUrl && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  const url = ctxMsg.mediaUrl!;
+                  setCtxMenu(null);
+                  void saveMediaToDisk(url).catch((err: any) => {
+                    console.error("[rchat] save media failed:", err?.message || err);
+                    window.alert(err?.message || "Could not save file");
+                  });
+                }}
+              >
+                <MenuIcon d={ICONS.download} />
+                {t("ctx.saveImage")}
+              </button>
+            )}
             {!ctxMsg.recalled && !ctxMsg.failed && ctxMsg.type !== "call" && (
               <button
                 className="ctx-item"
@@ -5124,6 +5156,12 @@ export default function ChatPageInner() {
             : undefined
         }
       />
+      {imageLightboxSrc ? (
+        <ImageLightbox
+          src={imageLightboxSrc}
+          onClose={() => setImageLightboxSrc(null)}
+        />
+      ) : null}
       {groupCallInvite && active && isGroup && (
         <GroupCallInviteModal
           title={

@@ -2360,10 +2360,45 @@ input.search-input:not([type="checkbox"]):not([type="radio"]) {
   max-height: 320px;
   object-fit: cover;
 }
-.media-image img.media-image-savable {
-  cursor: zoom-in;
+.media-image img.media-image-clickable {
+  cursor: inherit;
   user-select: none;
   -webkit-user-drag: none;
+}
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.88);
+  animation: ui-fade-in 0.15s ease-out;
+}
+.image-lightbox-img {
+  max-width: min(96vw, 1400px);
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 4px;
+  user-select: none;
+  -webkit-user-drag: none;
+  cursor: default;
+}
+.image-lightbox-close {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 18px;
+}
+.image-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.22);
 }
 .media-video {
   position: relative;
