@@ -66,4 +66,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 | Server failure | Off-site copy + encrypted dumps + MinIO archive |
 | Operator visibility | Admin → Backup (`GET /v1/admin/backup/status`) |
 
+Requirement review: [`backup-recovery-review.md`](./backup-recovery-review.md).  
+Admin UI: [`admin-guide.md`](./admin-guide.md) → Backup & recovery.
+
 Record the latest drill report path in your ops runbook (recommend quarterly; cron example includes it).

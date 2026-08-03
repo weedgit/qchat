@@ -316,6 +316,9 @@ Configure API and LiveKit URLs via `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_LIVEKI
 
 Open the admin console (dev: `http://localhost:3001`). Access depends on your role.
 
+**Full operator guide:** [`admin-guide.md`](./admin-guide.md)  
+**Backup / DR review:** [`backup-recovery-review.md`](./backup-recovery-review.md) · runbook [`RESTORE_DRILL.md`](./RESTORE_DRILL.md)
+
 ### Roles (overview)
 
 | Role | Scope |
@@ -326,7 +329,7 @@ Open the admin console (dev: `http://localhost:3001`). Access depends on your ro
 | **Support** | Assisted user operations |
 | **Read only** | View without mutating |
 
-Exact capabilities: see [`qchat-permission-matrix.md`](./qchat-permission-matrix.md).
+Exact capabilities: see [`admin-guide.md`](./admin-guide.md) and [`qchat-permission-matrix.md`](./qchat-permission-matrix.md).
 
 ### Console areas
 
@@ -335,10 +338,11 @@ Exact capabilities: see [`qchat-permission-matrix.md`](./qchat-permission-matrix
 | **Overview** | High-level status |
 | **Users** | Search, create, ban, reset password (reason required), view/revoke sessions |
 | **Groups** | Manage tenant groups |
-| **Enterprises** | Activate / revoke / rotate invite codes; retention days |
+| **Enterprises** | Activate / revoke / rotate invite codes; retention days; create company + admin |
 | **Audit log** | Immutable record of admin actions |
 | **Message inspect** | View message history **only with a mandatory reason** (audited) |
 | **Security** | Admin MFA (TOTP + recovery), IP allowlist, login alerts |
+| **Backup** | Backup age, encryption, off-site flag, latest restore drill |
 
 ---
 
