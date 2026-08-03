@@ -27,10 +27,9 @@ import EmojiPicker, { type PickerMedia } from "@/components/EmojiPicker";
 import ImageLightbox from "@/components/ImageLightbox";
 import { AnimatedEmojiOnlyBody } from "@/components/AnimatedEmoji";
 import MessageBody, { formatComposerMentions } from "@/components/MessageBody";
-import { api, asList, ApiError, clearToken, mediaAuthURL, setTokens, getRefreshToken } from "@/lib/api";
+import { api, asList, ApiError, clearToken, mediaAuthURL } from "@/lib/api";
 import { saveMediaToDisk } from "@/lib/saveMedia";
 import { countIncomingPending, notifyFriendRequest } from "@/lib/friendNotify";
-import { getAuthDevice } from "@/lib/device";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { parseGroupJoinPayload } from "@/lib/groupQr";
 import { parseUserPayload } from "@/lib/userQr";
@@ -1015,11 +1014,6 @@ export default function ChatPageInner() {
   const [menuScanNotice, setMenuScanNotice] = useState<string | null>(null);
   const [menuShowQrOpen, setMenuShowQrOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [joinCompanyOpen, setJoinCompanyOpen] = useState(false);
-  const [joinInvite, setJoinInvite] = useState("");
-  const [joinBusy, setJoinBusy] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
-  const [joinNotice, setJoinNotice] = useState<string | null>(null);
   /** Narrow: list ↔ chat (Telegram-style), same on web and desktop. */
   const narrowLayout = useMediaQuery("(max-width: 768px)");
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
@@ -1836,44 +1830,6 @@ export default function ChatPageInner() {
       window.removeEventListener("keydown", onKey);
     };
   }, [mainMenuOpen, composeOpen]);
-
-  async function joinCompany() {
-    const code = joinInvite.trim();
-    if (!code || joinBusy) return;
-    setJoinBusy(true);
-    setJoinError(null);
-    setJoinNotice(null);
-    try {
-      const device = await getAuthDevice();
-      const body = await api<any>("/v1/enterprises/join", {
-        method: "POST",
-        body: JSON.stringify({
-          invite_code: code,
-          device_type: device.deviceType,
-          device_name: device.deviceName,
-          device_id: device.deviceId,
-          platform: device.platform,
-        }),
-      });
-      if (body?.access_token) {
-        setTokens(String(body.access_token), String(body.refresh_token || getRefreshToken() || ""), true);
-      }
-      const name = String(body?.name || "company");
-      setJoinNotice(
-        body?.already_member ? `Already in ${name}` : `Joined ${name}`
-      );
-      setJoinInvite("");
-      await chat.reload();
-      window.setTimeout(() => {
-        setJoinCompanyOpen(false);
-        setJoinNotice(null);
-      }, 900);
-    } catch (e: any) {
-      setJoinError(e?.message || "Could not join");
-    } finally {
-      setJoinBusy(false);
-    }
-  }
 
   function copyMenuField(field: "username" | "phone", value: string) {
     const text = value.trim();
@@ -3021,19 +2977,6 @@ export default function ChatPageInner() {
                 <MenuIcon d={ICONS.users} />
                 {t("menu.groups")}
               </Link>
-              <button
-                type="button"
-                className="ctx-item"
-                onClick={() => {
-                  setMainMenuOpen(false);
-                  setJoinError(null);
-                  setJoinNotice(null);
-                  setJoinCompanyOpen(true);
-                }}
-              >
-                <MenuIcon d={ICONS.building} />
-                {t("menu.joinCompany")}
-              </button>
               <Link className="ctx-item" href="/settings" onClick={() => setMainMenuOpen(false)}>
                 <MenuIcon d={ICONS.settings} />
                 {t("menu.settings")}
@@ -3246,19 +3189,6 @@ export default function ChatPageInner() {
         </button>
         {composeOpen && (
           <div className="popup-menu compose-menu" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className="ctx-item"
-              onClick={() => {
-                setComposeOpen(false);
-                setJoinError(null);
-                setJoinNotice(null);
-                setJoinCompanyOpen(true);
-              }}
-            >
-              <MenuIcon d={ICONS.building} />
-              {t("menu.joinCompany")}
-            </button>
             <Link
               className="ctx-item"
               href="/groups"
@@ -4971,67 +4901,6 @@ export default function ChatPageInner() {
               {t("chat.close")}
             </button>
           </div>
-        </div>
-      )}
-
-      {joinCompanyOpen && (
-        <div
-          className="forward-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("menu.joinCompany")}
-          onClick={() => {
-            if (!joinBusy) {
-              setJoinCompanyOpen(false);
-              setJoinError(null);
-              setJoinNotice(null);
-            }
-          }}
-        >
-          <form
-            className="forward-modal-card"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => {
-              e.preventDefault();
-              joinCompany().catch(() => {});
-            }}
-          >
-            <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>{t("menu.joinCompany")}</h3>
-            <p className="muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
-              {t("join.hint")}
-            </p>
-            <div className="field" style={{ marginBottom: 12 }}>
-              <label htmlFor="join-invite">{t("join.inviteCode")}</label>
-              <input
-                id="join-invite"
-                value={joinInvite}
-                onChange={(e) => setJoinInvite(e.target.value.toUpperCase())}
-                placeholder="ACME2026"
-                autoFocus
-                autoComplete="off"
-                disabled={joinBusy}
-              />
-            </div>
-            {joinError && <div className="error-text">{joinError}</div>}
-            {joinNotice && <div className="muted" style={{ marginBottom: 8 }}>{joinNotice}</div>}
-            <div className="forward-modal-actions">
-              <button
-                className="btn-ghost"
-                type="button"
-                disabled={joinBusy}
-                onClick={() => {
-                  setJoinCompanyOpen(false);
-                  setJoinError(null);
-                  setJoinNotice(null);
-                }}
-              >
-                {t("common.cancel")}
-              </button>
-              <button className="btn" type="submit" disabled={joinBusy || !joinInvite.trim()}>
-                {joinBusy ? t("join.joining") : t("join.submit")}
-              </button>
-            </div>
-          </form>
         </div>
       )}
 

@@ -112,10 +112,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if entID != "" {
-		if err := s.addUserToEnterpriseDefaultChat(r.Context(), entID, uid.String()); err != nil {
-			writeErr(w, 500, "join chat failed")
-			return
-		}
 		s.audit(r.Context(), uid.String(), entID, "enterprise.join", "enterprise", entID, "", ip, map[string]any{
 			"invite_code": invite, "at": "register",
 		})
@@ -212,10 +208,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	s.audit(r.Context(), uid, entID, "user.login", "user", uid, "", ip, map[string]any{
 		"device": dtype, "device_id": deviceID,
 	})
-	// Self-heal: older enterprises may predate default company chat.
-	if entID != "" {
-		_ = s.addUserToEnterpriseDefaultChat(r.Context(), entID, uid)
-	}
 	writeJSON(w, 200, tok)
 }
 

@@ -780,8 +780,9 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	// Join-by-ID is intentionally global (requirements: find a group by group ID).
 	// Friendship and enterprise matching are not required; owners/admins still approve.
-	// Company default chats stay hidden. Cross-enterprise member *invites* remain
-	// tenant-scoped in canInviteUserToGroup / handleAddGroupMembers.
+	// Legacy company default chats (if any remain) stay hidden from join-by-ID.
+	// Cross-enterprise member *invites* remain tenant-scoped in canInviteUserToGroup /
+	// handleAddGroupMembers.
 	var convID, owner string
 	var isDefault bool
 	err := s.db.QueryRow(r.Context(), `

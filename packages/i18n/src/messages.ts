@@ -61,7 +61,6 @@ const en = {
   "menu.language": "Language",
   "menu.scanQR": "Scan QR",
   "menu.showQR": "Show QR",
-  "menu.joinCompany": "Join a company",
   "menu.newGroup": "Group",
   "menu.newPrivateChat": "Add Contact",
 
@@ -539,10 +538,6 @@ const en = {
   "details.unmuteConversation": "Unmute conversation",
   "details.muteConversation": "Mute conversation",
 
-  "join.hint": "Enter the invite code from your organization admin.",
-  "join.inviteCode": "Invite code",
-  "join.joining": "Joining…",
-  "join.submit": "Join",
   "chat.noConversationsYet": "No conversations yet. Add a friend or create a group.",
 
   "download.nav": "Download",
@@ -626,7 +621,6 @@ const zh: Record<MessageKey, string> = {
   "menu.language": "语言",
   "menu.scanQR": "扫描二维码",
   "menu.showQR": "我的二维码",
-  "menu.joinCompany": "加入企业",
   "menu.newGroup": "群组",
   "menu.newPrivateChat": "添加联系人",
 
@@ -1101,10 +1095,6 @@ const zh: Record<MessageKey, string> = {
   "details.unmuteConversation": "取消免打扰",
   "details.muteConversation": "设为免打扰",
 
-  "join.hint": "请输入组织管理员提供的邀请码。",
-  "join.inviteCode": "邀请码",
-  "join.joining": "加入中…",
-  "join.submit": "加入",
   "chat.noConversationsYet": "还没有会话。添加好友或创建群组。",
 
   "download.nav": "下载",

@@ -887,13 +887,6 @@ paths:
       responses:
         "200":
           description: OK
-  /v1/enterprises/join:
-    post:
-      security: [{ bearerAuth: [] }]
-      summary: Join enterprise with invite code
-      responses:
-        "200":
-          description: OK
   /v1/groups/{id}/leave:
     post:
       security: [{ bearerAuth: [] }]

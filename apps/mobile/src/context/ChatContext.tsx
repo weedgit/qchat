@@ -9,8 +9,7 @@ import React, {
 } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { router } from "expo-router";
-import { api, asList, ensureAccessToken, getToken, setTokens, uploadMedia, wsUrl } from "../lib/api";
-import { getAuthDevice } from "../lib/device";
+import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "../lib/api";
 import { notificationPort } from "../lib/notifyPort";
 import { loadLocalNotifyProps, getNotifyProps, shouldNotify, saveLocalNotifyProps, normalizeNotifyProps } from "../lib/notifyProps";
 import {
@@ -95,7 +94,6 @@ type ChatContextValue = {
   leaveGroup: (conversationId: string) => Promise<void>;
   blockUser: (friendshipOrPeerId: string) => Promise<void>;
   unblockUser: (friendshipOrPeerId: string) => Promise<void>;
-  joinCompany: (inviteCode: string) => Promise<{ name?: string; alreadyMember?: boolean }>;
   /** Fan-out for non-chat WS events (e.g. call.*). Mirror web subscribeEvents. */
   subscribeEvents: (handler: (type: string, payload: any) => void) => () => void;
 };
@@ -103,7 +101,7 @@ type ChatContextValue = {
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const { signedIn, user, forceLocalSignOut, refreshMe } = useAuth();
+  const { signedIn, user, forceLocalSignOut } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [hasMoreByConv, setHasMoreByConv] = useState<Record<string, boolean>>({});
@@ -1851,29 +1849,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     await loadFriends();
   }, [loadFriends]);
 
-  const joinCompany = useCallback(
-    async (inviteCode: string) => {
-      const device = await getAuthDevice();
-      const body = await api<any>("/v1/enterprises/join", {
-        method: "POST",
-        body: JSON.stringify({
-          invite_code: inviteCode.trim(),
-          ...device,
-        }),
-      });
-      if (body?.access_token) {
-        await setTokens(String(body.access_token), String(body.refresh_token ?? ""));
-      }
-      await refreshMe().catch(() => {});
-      await loadConversations();
-      return {
-        name: String(body?.name ?? body?.enterprise_name ?? "") || undefined,
-        alreadyMember: Boolean(body?.already_member),
-      };
-    },
-    [loadConversations, refreshMe]
-  );
-
   const leaveGroup = useCallback(async (conversationId: string) => {
     await api(`/v1/groups/${conversationId}/leave`, { method: "POST" });
     setConversations((prev) => prev.filter((c) => c.id !== conversationId));
@@ -1946,7 +1921,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       leaveGroup,
       blockUser,
       unblockUser,
-      joinCompany,
       subscribeEvents,
     }),
     [
@@ -1987,7 +1961,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       leaveGroup,
       blockUser,
       unblockUser,
-      joinCompany,
       subscribeEvents,
     ]
   );

@@ -104,7 +104,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/usernames/available", s.auth(s.handleUsernameAvailable))
 	s.mux.HandleFunc("GET /v1/display-names/available", s.auth(s.handleDisplayNameAvailable))
 	s.mux.HandleFunc("PUT /v1/me/phone", s.auth(s.handlePhoneChange))
-	s.mux.HandleFunc("POST /v1/enterprises/join", s.auth(s.handleJoinEnterprise))
 
 	// Friends
 	s.mux.HandleFunc("GET /v1/friends", s.auth(s.handleListFriends))

@@ -187,10 +187,6 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	adminUserID := uid.String()
-	if _, err := s.ensureEnterpriseDefaultChat(r.Context(), id.String(), adminUserID); err != nil {
-		writeErrCode(w, 500, "default_chat_failed", "default chat failed")
-		return
-	}
 	s.audit(r.Context(), c.UserID, id.String(), "enterprise.create", "enterprise", id.String(), "", clientIP(r), map[string]any{
 		"admin_user_id": adminUserID,
 	})
@@ -424,7 +420,6 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 409, "phone or username already exists")
 		return
 	}
-	_ = s.addUserToEnterpriseDefaultChat(r.Context(), entID, uid.String())
 	s.audit(r.Context(), c.UserID, entID, "user.create", "user", uid.String(), "assisted registration", ip, map[string]any{"role": role})
 	writeJSON(w, 201, map[string]any{
 		"id": uid.String(), "phone": req.Phone, "username": req.Username, "display_name": display,

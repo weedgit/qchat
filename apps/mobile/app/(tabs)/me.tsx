@@ -18,7 +18,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "../../src/components/Avatar";
 import { UserQr } from "../../src/components/UserQr";
 import { useAuth } from "../../src/context/AuthContext";
-import { useChat } from "../../src/context/ChatContext";
 import { useLocale } from "../../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { api, uploadMedia } from "../../src/lib/api";
@@ -69,7 +68,6 @@ function mapProfile(u: any): Profile {
 
 export default function MeScreen() {
   const { user, refreshMe, setMyStatus } = useAuth();
-  const { joinCompany } = useChat();
   const { colors } = useTheme();
   const { t } = useLocale();
   const styles = useThemedStyles(makeStyles);
@@ -79,9 +77,6 @@ export default function MeScreen() {
   const [saved, setSaved] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [usernameTaken, setUsernameTaken] = useState(false);
-  const [inviteCode, setInviteCode] = useState("");
-  const [joinBusy, setJoinBusy] = useState(false);
-  const [joinHint, setJoinHint] = useState<string | null>(null);
   const initialUsernameRef = useRef("");
 
   const load = useCallback(async () => {
@@ -267,30 +262,6 @@ export default function MeScreen() {
     );
   }
 
-  async function onJoinCompany() {
-    const code = inviteCode.trim();
-    if (!code) {
-      setJoinHint("Enter an invite code");
-      return;
-    }
-    setJoinBusy(true);
-    setJoinHint(null);
-    try {
-      const res = await joinCompany(code);
-      setInviteCode("");
-      if (res.alreadyMember) {
-        setJoinHint(res.name ? `Already in ${res.name}` : "Already a member");
-      } else {
-        setJoinHint(res.name ? `Joined ${res.name}` : "Joined company");
-      }
-      await load();
-    } catch (e: any) {
-      setJoinHint(e?.message || "Could not join company");
-    } finally {
-      setJoinBusy(false);
-    }
-  }
-
   const visibilityLabel =
     me?.profile_visibility === "public" ? "Public" : "Friends only";
   const friendLabel =
@@ -425,31 +396,6 @@ export default function MeScreen() {
           <ActivityIndicator color={colors.accent} />
         </View>
       )}
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Join company</Text>
-        <Text style={styles.cardHint}>Enter an invite code from your organization.</Text>
-        <Field
-          label="Invite code"
-          value={inviteCode}
-          onChangeText={setInviteCode}
-          autoCapitalize="characters"
-          styles={styles}
-          colors={colors}
-        />
-        <Pressable
-          style={[styles.primaryBtn, (!inviteCode.trim() || joinBusy) && styles.btnDisabled]}
-          onPress={onJoinCompany}
-          disabled={joinBusy || !inviteCode.trim()}
-        >
-          {joinBusy ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.primaryBtnText}>Join</Text>
-          )}
-        </Pressable>
-        {joinHint ? <Text style={styles.hint}>{joinHint}</Text> : null}
-      </View>
 
       {me?.username ? (
         <View style={styles.card}>
