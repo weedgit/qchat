@@ -11,8 +11,10 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
+import { formatApiError } from "@qchat/i18n";
 import { Avatar } from "../../src/components/Avatar";
 import { useChat } from "../../src/context/ChatContext";
+import { useLocale } from "../../src/context/LocaleContext";
 import { api, asList } from "../../src/lib/api";
 import { Friend } from "../../src/lib/types";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
@@ -31,6 +33,7 @@ function friendName(f: Friend): string {
 export default function ContactsScreen() {
   const { openDM, friends, loadFriends, presenceByUser, unblockUser, subscribeEvents } =
     useChat();
+  const { t } = useLocale();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,10 +47,10 @@ export default function ContactsScreen() {
     try {
       await loadFriends();
       setError(null);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(formatApiError(e, t, "api.err.loadFailed"));
     }
-  }, [loadFriends]);
+  }, [loadFriends, t]);
 
   useEffect(() => {
     load();
@@ -118,7 +121,7 @@ export default function ContactsScreen() {
       if (!q) throw new Error("Enter a username or phone number");
       const look = await api<any>(`/v1/users/lookup?q=${encodeURIComponent(q)}`);
       const users = asList(look, "users");
-      if (users.length === 0) throw new Error("User not found");
+      if (users.length === 0) throw new Error(t("api.err.userNotFound"));
       const u = users[0];
       await api("/v1/friends/request", {
         method: "POST",
@@ -127,9 +130,9 @@ export default function ContactsScreen() {
       setAddOpen(false);
       setPhoneOrUser("");
       await load();
-      Alert.alert("Sent", "Friend request sent");
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
+      Alert.alert(t("common.saved"), t("contacts.requestSent"));
+    } catch (e: unknown) {
+      Alert.alert(t("common.error"), formatApiError(e, t));
     } finally {
       setBusy(false);
     }
@@ -139,8 +142,8 @@ export default function ContactsScreen() {
     try {
       await api(`/v1/friends/${f.friendshipId}/accept`, { method: "POST" });
       await load();
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
+    } catch (e: unknown) {
+      Alert.alert(t("common.error"), formatApiError(e, t));
     }
   }
 
@@ -148,8 +151,8 @@ export default function ContactsScreen() {
     try {
       await api(`/v1/friends/${f.friendshipId}/reject`, { method: "POST" });
       await load();
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
+    } catch (e: unknown) {
+      Alert.alert(t("common.error"), formatApiError(e, t));
     }
   }
 
@@ -157,8 +160,8 @@ export default function ContactsScreen() {
     try {
       const id = await openDM(f.userId);
       router.push(`/chat/${id}`);
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
+    } catch (e: unknown) {
+      Alert.alert(t("common.error"), formatApiError(e, t));
     }
   }
 
@@ -167,8 +170,8 @@ export default function ContactsScreen() {
     try {
       await unblockUser(f.friendshipId || f.userId);
       await load();
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
+    } catch (e: unknown) {
+      Alert.alert(t("common.error"), formatApiError(e, t));
     } finally {
       setBusy(false);
     }

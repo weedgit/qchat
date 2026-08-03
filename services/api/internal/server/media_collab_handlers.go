@@ -117,11 +117,11 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "file too large")
 		return
 	}
-	// Users without a company store under personal/{userID}/...
-	scope := c.EnterpriseID
-	if scope == "" {
-		scope = filepath.Join("personal", c.UserID)
+	if c.EnterpriseID == "" {
+		writeErrCode(w, 403, "no_enterprise", "enterprise required")
+		return
 	}
+	scope := c.EnterpriseID
 	key := filepath.ToSlash(filepath.Join(scope, kind, uuid.NewString()+extFor(ct, hdr.Filename)))
 
 	// Buffer through a temp file so we know the exact size for S3 PutObject and
@@ -151,17 +151,13 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := uuid.New()
-	var ent any
-	if c.EnterpriseID != "" {
-		ent = c.EnterpriseID
-	}
 	// scanned defaults to FALSE (see migration 001): no malware scanner runs yet,
 	// so uploads must not claim to have been scanned. A future scan pipeline
 	// flips this flag once it actually inspects the object.
 	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO media_objects(id, enterprise_id, uploader_id, kind, content_type, size_bytes, storage_key, checksum)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		id, ent, c.UserID, kind, ct, written, key, hex.EncodeToString(hash.Sum(nil)))
+		id, c.EnterpriseID, c.UserID, kind, ct, written, key, hex.EncodeToString(hash.Sum(nil)))
 	if err != nil {
 		_ = s.blobStore().Delete(r.Context(), key)
 		writeErr(w, 500, "db failed")
@@ -243,17 +239,13 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, rc)
 }
 
-// canAccessMediaObject allows enterprise peers, the personal uploader, or any
-// conversation member who already received the object in a message (so DM
-// receivers can view/save personal/{sender}/… media).
+// canAccessMediaObject allows same-enterprise peers, or any conversation member
+// who already received the object in a message (so DM receivers can view/save media).
 func (s *Server) canAccessMediaObject(ctx context.Context, userID, enterpriseID, rel string) bool {
 	if rel == "" {
 		return false
 	}
 	if enterpriseID != "" && strings.HasPrefix(rel, enterpriseID+"/") {
-		return true
-	}
-	if strings.HasPrefix(rel, "personal/"+userID+"/") {
 		return true
 	}
 	mediaPath := "/v1/media/files/" + rel
@@ -400,6 +392,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=$1
 			WHERE m.enterprise_id=$2 AND m.conversation_id=$3 AND m.recalled=FALSE
 			  AND m.body ILIKE $4 AND m.created_at >= cm.history_visible_from
+			  AND (m.type <> 'system' OR cm.role IN ('owner','admin'))
 			ORDER BY m.created_at DESC LIMIT 50`, c.UserID, c.EnterpriseID, convID, like)
 		if mrows != nil {
 			defer mrows.Close()
@@ -416,6 +409,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			FROM messages m
 			JOIN conversation_members cm ON cm.conversation_id=m.conversation_id AND cm.user_id=$1
 			WHERE m.enterprise_id=$2 AND m.recalled=FALSE AND m.body ILIKE $3 AND m.created_at >= cm.history_visible_from
+			  AND (m.type <> 'system' OR cm.role IN ('owner','admin'))
 			ORDER BY m.created_at DESC LIMIT 30`, c.UserID, c.EnterpriseID, like)
 		if mrows != nil {
 			defer mrows.Close()

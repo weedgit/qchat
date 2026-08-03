@@ -11,9 +11,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { formatApiError } from "@qchat/i18n";
 import { Redirect, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ApiError, api, takeSessionRevokedReason } from "../src/lib/api";
+import { api, takeSessionRevokedReason } from "../src/lib/api";
 import { validateLoginCredentials } from "../src/lib/credentials";
 import { getAuthDevice, useAuth } from "../src/context/AuthContext";
 import { useLocale } from "../src/context/LocaleContext";
@@ -41,8 +42,8 @@ export default function LoginScreen() {
       const data = await api<any>("/v1/auth/captcha");
       setCaptchaId(String(data?.captcha_id ?? data?.id ?? ""));
       setCaptchaImage(String(data?.image ?? "").trim());
-    } catch (e: any) {
-      setError(e.message || t("login.captchaUnavailable"));
+    } catch (e: unknown) {
+      setError(formatApiError(e, t, "login.captchaUnavailable"));
     }
   }, [t]);
 
@@ -111,8 +112,10 @@ export default function LoginScreen() {
       if (!token) throw new Error(t("login.errNoToken"));
       await signIn(String(token), String(data?.refresh_token ?? ""));
       router.replace("/(tabs)/chats");
-    } catch (e: any) {
-      setError(formatErr(e));
+    } catch (e: unknown) {
+      setError(
+        formatApiError(e, t, mode === "register" ? "login.errGeneric" : "login.requestFailed")
+      );
       setCaptchaCode("");
       loadCaptcha();
     } finally {
@@ -261,14 +264,6 @@ function Field({
   );
 }
 
-function formatErr(e: any): string {
-  if (e instanceof ApiError && e.fields) {
-    const parts = Object.entries(e.fields).map(([k, v]) => `${k}: ${v}`);
-    return parts.length ? parts.join("; ") : e.message;
-  }
-  return e?.message || "Request failed";
-}
-
 function makeStyles(c: ColorTokens) {
   return {
     root: { flex: 1, backgroundColor: c.headerBlue },
@@ -318,6 +313,16 @@ function makeStyles(c: ColorTokens) {
     },
     primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 16 },
     hint: { color: c.textSecondary, marginBottom: spacing.sm },
-    error: { color: c.danger, marginTop: spacing.sm },
+    error: {
+      color: c.danger,
+      marginTop: spacing.sm,
+      marginBottom: spacing.sm,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      backgroundColor: "rgba(220, 50, 50, 0.12)",
+      overflow: "hidden" as const,
+      fontWeight: "500" as const,
+    },
   };
 }

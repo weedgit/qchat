@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LocaleMode, MessageKey, ResolvedLocale } from "@qchat/i18n";
-import { intlLocale } from "@qchat/i18n";
+import { formatApiError, intlLocale } from "@qchat/i18n";
 import MenuModal from "@/components/MenuModal";
 import { api, clearToken, apiBaseUrl } from "@/lib/api";
 import {
@@ -82,8 +82,8 @@ export default function SettingsPage() {
     try {
       setPushDevices(await listPushDevices());
       setPushDeviceError(null);
-    } catch (e: any) {
-      setPushDeviceError(e.message || t("settings.loadPushDevicesError"));
+    } catch (e: unknown) {
+      setPushDeviceError(formatApiError(e, t, "settings.loadPushDevicesError"));
     }
   }
 
@@ -123,8 +123,8 @@ export default function SettingsPage() {
         return;
       }
       await loadLoginSessions();
-    } catch (e: any) {
-      setError(e.message || t("settings.revokeSessionError"));
+    } catch (e: unknown) {
+      setError(formatApiError(e, t, "settings.revokeSessionError"));
     } finally {
       setSessionsBusy(false);
     }
@@ -136,8 +136,8 @@ export default function SettingsPage() {
     try {
       await removePushDevice(device);
       setPushDevices((prev) => prev.filter((item) => item.id !== device.id));
-    } catch (e: any) {
-      setPushDeviceError(e.message || t("settings.removePushDeviceError"));
+    } catch (e: unknown) {
+      setPushDeviceError(formatApiError(e, t, "settings.removePushDeviceError"));
     } finally {
       setPushDevicesBusy(false);
     }
@@ -151,8 +151,8 @@ export default function SettingsPage() {
         await api("/v1/me");
         if (cancelled) return;
         setReady(true);
-      } catch (e: any) {
-        if (!cancelled) setError(e.message);
+      } catch (e: unknown) {
+        if (!cancelled) setError(formatApiError(e, t, "api.err.loadFailed"));
       }
       if (cancelled) return;
       loadPushDevices();
@@ -269,8 +269,8 @@ export default function SettingsPage() {
                   });
                   saveLocalNotifyProps(notify);
                   setNotifySaved(true);
-                } catch (err: any) {
-                  setError(err.message);
+                } catch (err: unknown) {
+                  setError(formatApiError(err, t));
                 } finally {
                   setSaving(false);
                 }

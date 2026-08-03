@@ -18,7 +18,7 @@
 ## Reliability
 
 - [x] Postgres + Redis + NATS + MinIO in docker-compose
-- [x] `deploy/backup.sh` / `deploy/restore.sh`
+- [x] `deploy/backup.sh` / `deploy/restore.sh` (Postgres + MinIO + uploads, AES encrypt, off-site)
 - [x] `deploy/retention.sql` for 90-day purge
 - [x] API retention loop + `POST /v1/admin/retention/run` + `PATCH /v1/admin/enterprises/{id}` (`retention_days`)
 - [x] `deploy/smoke_test.sh` for auth/messaging path
@@ -27,7 +27,8 @@
   - Hot-path hardening: async Redis WS publish, batched push prefs, skip push when WS-online, bounded push/presence workers, larger send buffers, `qchat_ws_send_drops_total` + `qchat_message_publish_duration_seconds`
   - Multi-API-node fan-out still needs Redis (`QCHAT_REDIS_URL`); single-node works in-process without it
   - Multi-user / dual-API soak: `make soak-multi` or `./deploy/soak.sh --multi [--base2 http://127.0.0.1:8081]`
-- [x] Restore drill (RPO ≤ 24h, RTO ≤ 4h) — `deploy/restore_drill.sh`, `deploy/cron-backup.example`, `docs/RESTORE_DRILL.md`
+- [x] Restore drill (RPO ≤ 24h, RTO ≤ 4h) — isolated `qchat_drill`, `deploy/cron-backup.example`, `docs/RESTORE_DRILL.md`
+- [x] Admin backup/DR status — `/backup` + `GET /v1/admin/backup/status`
 
 ## Observability
 

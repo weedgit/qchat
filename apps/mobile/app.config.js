@@ -53,6 +53,7 @@ module.exports = {
     "expo-secure-store",
     "expo-font",
     ...(isDevelopment ? ["expo-dev-client"] : []),
+    "./plugins/withGetui.js",
     [
       "expo-notifications",
       {
@@ -120,6 +121,16 @@ module.exports = {
     // host when Metro does not inline EXPO_PUBLIC_* (common with local Gradle).
     apiUrl: (process.env.EXPO_PUBLIC_API_URL || "").trim().replace(/\/$/, ""),
     livekitUrl: (process.env.EXPO_PUBLIC_LIVEKIT_URL || "").trim().replace(/\/$/, ""),
+    // 个推 — China mainland manufacturer push (set via env for release builds).
+    getui: {
+      appId: (process.env.EXPO_PUBLIC_GETUI_APP_ID || process.env.GETUI_APP_ID || "").trim(),
+      appKey: (process.env.EXPO_PUBLIC_GETUI_APP_KEY || process.env.GETUI_APP_KEY || "").trim(),
+      appSecret: (
+        process.env.EXPO_PUBLIC_GETUI_APP_SECRET ||
+        process.env.GETUI_APP_SECRET ||
+        ""
+      ).trim(),
+    },
     eas: {
       // Run `npx eas-cli init` in apps/mobile and set EAS_PROJECT_ID or paste id here.
       projectId: process.env.EAS_PROJECT_ID || undefined,

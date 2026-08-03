@@ -2,8 +2,9 @@
  * Notification port for mobile messaging.
  *
  * - Foreground / in-process banners: local OS notifications (WS-driven).
- * - Remote push: Expo Push tokens registered with the API (FCM/APNs via Expo).
- *   OEM vendor SDKs (Huawei/Xiaomi/OPPO/vivo) remain deferred on the server.
+ * - Remote push (China mainland): 个推 Getui CID → API → OEM channels
+ *   (Huawei / Xiaomi / OPPO / vivo / Honor when enabled in Getui console).
+ * - Fallback: Expo Push (FCM/APNs) when Getui native module is unavailable.
  */
 
 import {
@@ -12,7 +13,7 @@ import {
   presentMessageNotification,
   type LocalMessageNotify,
 } from "./localNotify";
-import { registerExpoRemotePush, unregisterExpoRemotePush } from "./remotePush";
+import { registerRemotePush, unregisterRemotePush } from "./remotePush";
 
 export type MessageNotifyPayload = LocalMessageNotify;
 
@@ -23,9 +24,9 @@ export type NotificationPort = {
   ensureLocalPermission: () => Promise<boolean>;
   /** Navigate when the user taps a local notification. */
   attachTapListener: () => () => void;
-  /** Register Expo push token with the API. */
+  /** Register Getui/Expo push token with the API. */
   registerRemote: () => Promise<{ enabled: boolean; reason: string }>;
-  /** Unregister the last Expo push token from the API. */
+  /** Unregister the last remote push token from the API. */
   unregisterRemote: () => Promise<void>;
 };
 
@@ -33,8 +34,8 @@ const localBackend: NotificationPort = {
   presentForegroundMessage: presentMessageNotification,
   ensureLocalPermission: ensureNotificationPermissions,
   attachTapListener: attachNotificationResponseListener,
-  registerRemote: registerExpoRemotePush,
-  unregisterRemote: unregisterExpoRemotePush,
+  registerRemote: registerRemotePush,
+  unregisterRemote: unregisterRemotePush,
 };
 
 /** Active notification implementation. */

@@ -3,14 +3,15 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { MessageKey } from "@qchat/i18n";
+import { formatApiError } from "@qchat/i18n";
 import LoadingSplash from "@/components/LoadingSplash";
 import { PasswordInput } from "@/components/PasswordInput";
-import { ApiError, api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
+import { api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
 import { validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
 import { isElectronShell } from "@/lib/downloads";
 import { useLocale } from "@/lib/locale";
+import type { MessageKey } from "@qchat/i18n";
 
 interface CaptchaState {
   id: string;
@@ -127,14 +128,16 @@ export default function LoginPage() {
       setCaptchaStatus("ready");
       const answer = String(data?.dev_answer ?? "").trim();
       if (answer) setCaptchaCode(answer);
-      setError(null);
+      // Do not clear auth/register errors here — reload runs after failed submit.
     } catch (e: any) {
       setCaptcha(null);
       setCaptchaStatus("error");
       const msg =
         e?.name === "AbortError"
           ? t("login.captchaTimeout")
-          : t("login.captchaError", { detail: e.message || "network error" });
+          : t("login.captchaError", {
+              detail: formatApiError(e, t, "api.err.network"),
+            });
       setError(msg);
     }
   }, [t]);
@@ -189,15 +192,10 @@ export default function LoginPage() {
       setTokens(String(token), String(data?.refresh_token ?? ""), mode === "register" ? true : remember);
       setEnteringApp(true);
       router.replace("/");
-    } catch (e: any) {
-      if (e instanceof ApiError && e.fields) {
-        const parts = Object.entries(e.fields).map(([k, v]) => `${k}: ${v}`);
-        setError(parts.length ? parts.join("; ") : e.message);
-      } else {
-        setError(e.message);
-      }
+    } catch (e: unknown) {
+      setError(formatApiError(e, t, mode === "register" ? "login.errGeneric" : "login.requestFailed"));
       setCaptchaCode("");
-      loadCaptcha();
+      void loadCaptcha();
     } finally {
       setBusy(false);
     }
@@ -347,7 +345,11 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {error && <div className="error-text">{error}</div>}
+        {error && (
+          <div className="error-text auth-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <button className="btn" type="submit" disabled={busy}>
           {busy

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
@@ -71,66 +70,40 @@ func (s *Server) handleListFriends(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUserLookup(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
+	if c.EnterpriseID == "" {
+		writeErrCode(w, 403, "no_enterprise", "enterprise required")
+		return
+	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		writeErrCode(w, 400, "invalid_request", "q required")
 		return
 	}
-	// Case-insensitive prefix/contains on username + display_name; exact id;
-	// phone via digit-normalized exact or prefix (≥3 digits).
-	// Enterprise callers see same-tenant users and personal accounts (null enterprise).
-	// Personal callers may match anyone (friendship/invite already span that boundary).
+	// Same-tenant only (username / display_name / id / phone).
 	like := "%" + escapeLike(q) + "%"
 	prefix := escapeLike(q) + "%"
 	phoneQ, phoneOK := phoneLookupQuery(q)
 	phonePrefix := phoneQ + "%"
-	var rows pgx.Rows
-	var err error
-	if c.EnterpriseID == "" {
-		rows, err = s.db.Query(r.Context(), `
-			SELECT id::text, username, display_name, avatar_url, friend_privacy
-			FROM users
-			WHERE banned=FALSE
-			  AND (
-			    id::text = $1
-			    OR username ILIKE $2 ESCAPE '\'
-			    OR username ILIKE $3 ESCAPE '\'
-			    OR display_name ILIKE $3 ESCAPE '\'
-			    OR ($4 AND phone = $5)
-			    OR ($4 AND length($5) >= 3 AND phone LIKE $6)
-			  )
-			ORDER BY
-			  CASE WHEN $4 AND phone = $5 THEN 0
-			       WHEN lower(username) = lower($1) THEN 1
-			       WHEN username ILIKE $2 ESCAPE '\' THEN 2
-			       ELSE 3 END,
-			  username
-			LIMIT 20`, q, prefix, like, phoneOK, phoneQ, phonePrefix)
-	} else {
-		rows, err = s.db.Query(r.Context(), `
-			SELECT id::text, username, display_name, avatar_url, friend_privacy
-			FROM users
-			WHERE banned=FALSE
-			  AND (
-			    enterprise_id IS NOT DISTINCT FROM $1
-			    OR enterprise_id IS NULL
-			  )
-			  AND (
-			    id::text = $2
-			    OR username ILIKE $3 ESCAPE '\'
-			    OR username ILIKE $4 ESCAPE '\'
-			    OR display_name ILIKE $4 ESCAPE '\'
-			    OR ($5 AND phone = $6)
-			    OR ($5 AND length($6) >= 3 AND phone LIKE $7)
-			  )
-			ORDER BY
-			  CASE WHEN $5 AND phone = $6 THEN 0
-			       WHEN lower(username) = lower($2) THEN 1
-			       WHEN username ILIKE $3 ESCAPE '\' THEN 2
-			       ELSE 3 END,
-			  username
-			LIMIT 20`, entArg(c.EnterpriseID), q, prefix, like, phoneOK, phoneQ, phonePrefix)
-	}
+	rows, err := s.db.Query(r.Context(), `
+		SELECT id::text, username, display_name, avatar_url, friend_privacy
+		FROM users
+		WHERE banned=FALSE
+		  AND enterprise_id IS NOT DISTINCT FROM $1
+		  AND (
+		    id::text = $2
+		    OR username ILIKE $3 ESCAPE '\'
+		    OR username ILIKE $4 ESCAPE '\'
+		    OR display_name ILIKE $4 ESCAPE '\'
+		    OR ($5 AND phone = $6)
+		    OR ($5 AND length($6) >= 3 AND phone LIKE $7)
+		  )
+		ORDER BY
+		  CASE WHEN $5 AND phone = $6 THEN 0
+		       WHEN lower(username) = lower($2) THEN 1
+		       WHEN username ILIKE $3 ESCAPE '\' THEN 2
+		       ELSE 3 END,
+		  username
+		LIMIT 20`, entArg(c.EnterpriseID), q, prefix, like, phoneOK, phoneQ, phonePrefix)
 	if err != nil {
 		writeErrCode(w, 500, "query_failed", "query failed")
 		return
@@ -200,10 +173,7 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 		       banned, last_active_at
 		FROM users
 		WHERE id=$1 AND banned=FALSE
-		  AND (
-		    enterprise_id IS NOT DISTINCT FROM $2
-		    OR $2::text IS NULL
-		  )`, targetID, entArg(c.EnterpriseID)).
+		  AND enterprise_id IS NOT DISTINCT FROM $2`, targetID, entArg(c.EnterpriseID)).
 		Scan(&username, &display, &realName, &age, &region, &sig, &avatar, &vis, &fp, &banned, &lastActive)
 	if err != nil || banned {
 		writeErrCode(w, 404, "not_found", "user not found")
@@ -270,31 +240,21 @@ func (s *Server) friendshipBlocked(r *http.Request, a, b, ent string) bool {
 }
 
 // canInviteUserToGroup allows group invites without friendship.
-// Target must exist, not be banned, not be blocked either way, and be in scope:
-// same enterprise, or a personal account (null enterprise) when the inviter is
-// enterprise-scoped (personal↔enterprise friendships already exist in product).
+// Target must exist, not be banned, not be blocked either way, and share the same enterprise.
 func (s *Server) canInviteUserToGroup(r *http.Request, inviterID, targetID, enterpriseID string) bool {
-	if targetID == "" || targetID == inviterID {
+	if targetID == "" || targetID == inviterID || strings.TrimSpace(enterpriseID) == "" {
 		return false
 	}
 	if s.friendshipBlocked(r, inviterID, targetID, enterpriseID) {
 		return false
 	}
 	var ok bool
-	if enterpriseID == "" {
-		_ = s.db.QueryRow(r.Context(), `
-			SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND banned=FALSE)`, targetID).Scan(&ok)
-	} else {
-		_ = s.db.QueryRow(r.Context(), `
-			SELECT EXISTS(
-				SELECT 1 FROM users
-				WHERE id=$1 AND banned=FALSE
-				  AND (
-				    enterprise_id IS NOT DISTINCT FROM $2
-				    OR enterprise_id IS NULL
-				  )
-			)`, targetID, entArg(enterpriseID)).Scan(&ok)
-	}
+	_ = s.db.QueryRow(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM users
+			WHERE id=$1 AND banned=FALSE
+			  AND enterprise_id IS NOT DISTINCT FROM $2
+		)`, targetID, entArg(enterpriseID)).Scan(&ok)
 	return ok
 }
 
@@ -360,37 +320,26 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ent := entArg(c.EnterpriseID)
+	if c.EnterpriseID == "" {
+		writeErrCode(w, 403, "no_enterprise", "enterprise required")
+		return
+	}
 	var targetID, privacy string
 	var err error
-	if c.EnterpriseID == "" {
-		// Personal accounts may add anyone found by exact id/username.
-		if req.UserID != "" {
-			err = s.db.QueryRow(r.Context(), `
-				SELECT id::text, friend_privacy FROM users
-				WHERE banned=FALSE AND id=$1`, req.UserID).Scan(&targetID, &privacy)
-		} else if req.Username != "" {
-			err = s.db.QueryRow(r.Context(), `
-				SELECT id::text, friend_privacy FROM users
-				WHERE banned=FALSE AND username=$1`, req.Username).Scan(&targetID, &privacy)
-		} else {
-			writeErrCode(w, 400, "invalid_request", "username or user_id required")
-			return
-		}
-	} else if req.UserID != "" || req.Username != "" {
-		// Match /v1/users/lookup: same-tenant users and personal accounts (NULL enterprise).
-		// Use id::text / explicit uuid cast so Add cannot 404 after a successful lookup.
+	if req.UserID != "" || req.Username != "" {
+		// Same-tenant only.
 		if req.UserID != "" {
 			err = s.db.QueryRow(r.Context(), `
 				SELECT id::text, friend_privacy FROM users
 				WHERE banned=FALSE AND id::text = $2
-				  AND (enterprise_id IS NOT DISTINCT FROM $1::uuid OR enterprise_id IS NULL)`,
+				  AND enterprise_id IS NOT DISTINCT FROM $1::uuid`,
 				c.EnterpriseID, strings.TrimSpace(req.UserID)).Scan(&targetID, &privacy)
 		}
 		if (err != nil || targetID == "") && req.Username != "" {
 			err = s.db.QueryRow(r.Context(), `
 				SELECT id::text, friend_privacy FROM users
 				WHERE banned=FALSE AND lower(username) = lower($2)
-				  AND (enterprise_id IS NOT DISTINCT FROM $1::uuid OR enterprise_id IS NULL)`,
+				  AND enterprise_id IS NOT DISTINCT FROM $1::uuid`,
 				c.EnterpriseID, strings.TrimSpace(req.Username)).Scan(&targetID, &privacy)
 		}
 	} else {
@@ -610,21 +559,12 @@ func (s *Server) handleFriendBlock(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		peerID = id
 		var exists bool
-		if c.EnterpriseID == "" {
-			_ = s.db.QueryRow(r.Context(), `
-				SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND banned=FALSE)`, peerID).Scan(&exists)
-		} else {
-			// Match friend/lookup scope: same company or personal accounts.
-			_ = s.db.QueryRow(r.Context(), `
-				SELECT EXISTS(
-					SELECT 1 FROM users
-					WHERE id=$1 AND banned=FALSE
-					  AND (
-					    enterprise_id IS NOT DISTINCT FROM $2::uuid
-					    OR enterprise_id IS NULL
-					  )
-				)`, peerID, c.EnterpriseID).Scan(&exists)
-		}
+		_ = s.db.QueryRow(r.Context(), `
+			SELECT EXISTS(
+				SELECT 1 FROM users
+				WHERE id=$1 AND banned=FALSE
+				  AND enterprise_id IS NOT DISTINCT FROM $2::uuid
+			)`, peerID, c.EnterpriseID).Scan(&exists)
 		if !exists {
 			writeErrCode(w, 404, "not_found", "not found")
 			return

@@ -73,18 +73,19 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid captcha")
 		return
 	}
-	entID := ""
-	entName := ""
 	invite := strings.ToUpper(strings.TrimSpace(req.InviteCode))
-	if invite != "" {
-		var active bool
-		err := s.db.QueryRow(r.Context(), `
-			SELECT id::text, invite_active, name FROM enterprises WHERE invite_code=$1`, invite).
-			Scan(&entID, &active, &entName)
-		if err != nil || !active {
-			writeErrCode(w, 400, "invalid_invite", "invalid invite code")
-			return
-		}
+	if invite == "" {
+		writeErrCode(w, 400, "invite_required", "invite code required")
+		return
+	}
+	var entID, entName string
+	var active bool
+	err := s.db.QueryRow(r.Context(), `
+		SELECT id::text, invite_active, name FROM enterprises WHERE invite_code=$1`, invite).
+		Scan(&entID, &active, &entName)
+	if err != nil || !active {
+		writeErrCode(w, 400, "invalid_invite", "invalid invite code")
+		return
 	}
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
@@ -95,7 +96,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 	_, err = s.db.Exec(r.Context(), `
 		INSERT INTO users(id, enterprise_id, phone, password_hash, username, display_name, register_ip, register_region)
-		VALUES ($1,NULLIF($2,'')::uuid,$3,$4,$5,$5,$6,$7)`,
+		VALUES ($1,$2::uuid,$3,$4,$5,$5,$6,$7)`,
 		uid, entID, req.Phone, hash, req.Username, ip, guessRegion(ip))
 	if err != nil {
 		var phoneTaken, userTaken bool
@@ -111,11 +112,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErrFields(w, 409, "conflict", "phone or username already exists", fields)
 		return
 	}
-	if entID != "" {
-		s.audit(r.Context(), uid.String(), entID, "enterprise.join", "enterprise", entID, "", ip, map[string]any{
-			"invite_code": invite, "at": "register",
-		})
-	}
+	s.audit(r.Context(), uid.String(), entID, "enterprise.join", "enterprise", entID, "", ip, map[string]any{
+		"invite_code": invite, "at": "register",
+	})
 	s.audit(r.Context(), uid.String(), entID, "user.register", "user", uid.String(), "", ip, nil)
 	deviceID := ensureDeviceID(req.DeviceID)
 	dtype := normalizeDevice(req.DeviceType)
@@ -125,10 +124,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "session failed")
 		return
 	}
-	if entID != "" {
-		tok["enterprise_id"] = entID
-		tok["name"] = entName
-	}
+	tok["enterprise_id"] = entID
+	tok["name"] = entName
 	writeJSON(w, 201, tok)
 }
 
@@ -180,6 +177,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	entID := ""
 	if entNull != nil {
 		entID = *entNull
+	}
+	if entID == "" {
+		writeErrCode(w, 403, "no_enterprise", "enterprise required")
+		return
 	}
 	if banned {
 		writeErr(w, 403, "account banned")

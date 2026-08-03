@@ -301,9 +301,7 @@ export default function MeScreen() {
           </Text>
           {enterpriseLabel ? (
             <Text style={styles.enterprise}>{enterpriseLabel}</Text>
-          ) : (
-            <Text style={styles.idLine}>Personal account</Text>
-          )}
+          ) : null}
           <Text style={styles.idLine}>ID: {me?.id || "—"}</Text>
         </View>
       </View>

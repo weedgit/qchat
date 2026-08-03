@@ -621,7 +621,7 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := adminListRange(r)
 
-	// Membership-scoped inspect (not message.enterprise_id): after personal↔enterprise
+	// Membership-scoped inspect (not message.enterprise_id alone).
 	// group joins, senders stamp their own tenant on rows — filtering by message
 	// enterprise_id drops cross-tenant history the user actually saw.
 	memberConvSQL := `m.conversation_id IN (

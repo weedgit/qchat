@@ -21,16 +21,24 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		SELECT conv.id::text, conv.type, COALESCE(conv.title, ''), COALESCE(conv.avatar_url, ''),
 		       COALESCE(conv.public_id, ''), cm.role, cm.last_read_seq, cm.favorite, cm.muted,
 		       COALESCE((SELECT body FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
-		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1), ''),
+		                 AND m.created_at >= cm.history_visible_from
+		                 AND (m.type <> 'system' OR cm.role IN ('owner','admin'))
+		                 ORDER BY m.seq DESC LIMIT 1), ''),
 		       COALESCE((SELECT m.sender_id::text FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
-		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1), ''),
+		                 AND m.created_at >= cm.history_visible_from
+		                 AND (m.type <> 'system' OR cm.role IN ('owner','admin'))
+		                 ORDER BY m.seq DESC LIMIT 1), ''),
 		       COALESCE((SELECT u.display_name FROM messages m JOIN users u ON u.id=m.sender_id
 		                 WHERE m.conversation_id=conv.id AND m.recalled=FALSE
-		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1), ''),
-		       COALESCE((SELECT COUNT(*)::bigint FROM messages m WHERE m.conversation_id=conv.id AND m.seq > cm.last_read_seq
-		                 AND m.recalled=FALSE AND m.sender_id<>$1 AND m.created_at >= cm.history_visible_from), 0),
+		                 AND m.created_at >= cm.history_visible_from
+		                 AND (m.type <> 'system' OR cm.role IN ('owner','admin'))
+		                 ORDER BY m.seq DESC LIMIT 1), ''),
 		       COALESCE((SELECT COUNT(*)::bigint FROM messages m WHERE m.conversation_id=conv.id AND m.seq > cm.last_read_seq
 		                 AND m.recalled=FALSE AND m.sender_id<>$1 AND m.created_at >= cm.history_visible_from
+		                 AND (m.type <> 'system' OR cm.role IN ('owner','admin'))), 0),
+		       COALESCE((SELECT COUNT(*)::bigint FROM messages m WHERE m.conversation_id=conv.id AND m.seq > cm.last_read_seq
+		                 AND m.recalled=FALSE AND m.sender_id<>$1 AND m.created_at >= cm.history_visible_from
+		                 AND (m.type <> 'system' OR cm.role IN ('owner','admin'))
 		                 AND (m.mention_all OR $1 = ANY(m.mentions))), 0),
 		       COALESCE((SELECT u.id::text FROM conversation_members om
 		                 JOIN users u ON u.id=om.user_id
@@ -49,7 +57,9 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 		                 WHERE om.conversation_id=conv.id AND om.user_id<>$1
 		                 ORDER BY om.joined_at LIMIT 1),
 		       (SELECT m.created_at FROM messages m WHERE m.conversation_id=conv.id AND m.recalled=FALSE
-		                 AND m.created_at >= cm.history_visible_from ORDER BY m.seq DESC LIMIT 1),
+		                 AND m.created_at >= cm.history_visible_from
+		                 AND (m.type <> 'system' OR cm.role IN ('owner','admin'))
+		                 ORDER BY m.seq DESC LIMIT 1),
 		       conv.pinned_message_id::text,
 		       COALESCE(
 		         NULLIF((SELECT body FROM messages pm WHERE pm.id=conv.pinned_message_id AND pm.recalled=FALSE), ''),
@@ -148,7 +158,7 @@ func (s *Server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	for _, item := range out {
 		convIDs = append(convIDs, fmt.Sprint(item["id"]))
 	}
-	pinsByConv := s.loadPinsForConversations(r.Context(), convIDs)
+	pinsByConv := s.loadPinsForConversations(r.Context(), convIDs, c.UserID)
 	for _, item := range out {
 		id := fmt.Sprint(item["id"])
 		pins := pinsByConv[id]
@@ -453,8 +463,9 @@ func (s *Server) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request)
 	})
 	// Notify removed user so their client drops the conversation.
 	s.hub.PublishToUsers([]string{targetID}, ws.Event{Type: "group.member_removed", Payload: payload})
-	// Owners/admins see the removal; ordinary members stay silent (requirements-en).
+	// Owners/admins see the removal; ordinary members stay silent (requirements-en §8).
 	s.hub.PublishToUsers(s.adminIDs(r, convID), ws.Event{Type: "group.member_removed", Payload: payload})
+	s.insertAdminMemberNotice(r, convID, c.UserID, targetID, "member_removed")
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -498,6 +509,7 @@ func (s *Server) handleLeaveGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.PublishToUsers([]string{c.UserID}, ws.Event{Type: "group.member_removed", Payload: payload})
 	s.hub.PublishToUsers(s.adminIDs(r, convID), ws.Event{Type: "group.member_removed", Payload: payload})
+	s.insertAdminMemberNotice(r, convID, c.UserID, c.UserID, "member_left")
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -628,9 +640,7 @@ func (s *Server) handlePatchGroup(w http.ResponseWriter, r *http.Request) {
 		writeErrCode(w, 403, "forbidden", "only owners and admins can edit group")
 		return
 	}
-	// Membership (isGroupAdmin) is the authz gate. Do not require JWT enterprise_id to
-	// equal conversations.enterprise_id — personal groups use NULL and would 404 after
-	// the owner joins a company, so forbid_member_friend_add could not be toggled.
+	// Membership (isGroupAdmin) is the authz gate for group settings.
 	var typ string
 	err := s.db.QueryRow(r.Context(), `
 		SELECT type FROM conversations WHERE id=$1`, convID).Scan(&typ)
@@ -1014,11 +1024,12 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 		         ELSE m.body
 		       END,
 		       m.media_url, m.reply_to_id::text, m.mention_all, m.recalled, m.created_at,
-		       u.display_name, m.edited_at,
+		       u.display_name, COALESCE(u.avatar_url, ''), m.edited_at,
 		       COALESCE((SELECT array_agg(x::text) FROM unnest(m.mentions) AS x), '{}')
 		FROM messages m JOIN users u ON u.id=m.sender_id
 		WHERE m.conversation_id=$1 AND m.created_at >= $2
 		  AND ($3 OR m.recalled=FALSE)
+		  AND ($4 OR m.type <> 'system')
 		  AND ($6::bigint = 0 OR m.seq < $6)
 		ORDER BY m.seq DESC LIMIT $5`, convID, histFrom, showRecalled, isAdmin, fetch, beforeSeq)
 	if err != nil {
@@ -1028,14 +1039,14 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var id, sid, cmid, typ, body, media, reply, dname string
+		var id, sid, cmid, typ, body, media, reply, dname, savatar string
 		var seq int64
 		var mentionAll, recalled bool
 		var created time.Time
 		var editedAt *time.Time
 		var replyPtr *string
 		var mentions []string
-		_ = rows.Scan(&id, &sid, &cmid, &seq, &typ, &body, &media, &replyPtr, &mentionAll, &recalled, &created, &dname, &editedAt, &mentions)
+		_ = rows.Scan(&id, &sid, &cmid, &seq, &typ, &body, &media, &replyPtr, &mentionAll, &recalled, &created, &dname, &savatar, &editedAt, &mentions)
 		if replyPtr != nil {
 			reply = *replyPtr
 		}
@@ -1047,7 +1058,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 			"body": body, "media_url": media, "reply_to_id": reply, "mention_all": mentionAll,
 			"mentions": mentions,
 			"recalled": recalled, "created_at": created, "sender_name": dname,
-			"conversation_id": convID,
+			"sender_avatar": savatar, "conversation_id": convID,
 		}
 		if editedAt != nil {
 			item["edited_at"] = editedAt.UTC()
@@ -1291,8 +1302,7 @@ func (s *Server) handleReact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := s.memberRole(r, convID, c.UserID)
-	// Membership is enough — personal groups have NULL enterprise_id and must
-	// still accept reactions from members (including enterprise accounts).
+	// Membership is enough to react.
 	if role == "" || role == "pending" {
 		writeErrCode(w, 403, "forbidden", "forbidden")
 		return
@@ -1705,4 +1715,62 @@ func (s *Server) adminIDs(r *http.Request, convID string) []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// insertAdminMemberNotice persists a system notice for leave/kick and publishes
+// message.new only to owners/admins (requirements-en §8). Ordinary members never
+// receive the event or see the row in history.
+func (s *Server) insertAdminMemberNotice(r *http.Request, convID, actorID, targetID, kind string) {
+	userName := s.userDisplayName(r, targetID)
+	byName := s.userDisplayName(r, actorID)
+	if strings.TrimSpace(userName) == "" {
+		_ = s.db.QueryRow(r.Context(), `SELECT username FROM users WHERE id=$1`, targetID).Scan(&userName)
+	}
+	if strings.TrimSpace(byName) == "" {
+		_ = s.db.QueryRow(r.Context(), `SELECT username FROM users WHERE id=$1`, actorID).Scan(&byName)
+	}
+	if strings.TrimSpace(userName) == "" {
+		userName = "User"
+	}
+	if strings.TrimSpace(byName) == "" {
+		byName = "User"
+	}
+	bodyObj := map[string]any{
+		"kind":      kind,
+		"user_id":   targetID,
+		"user_name": userName,
+		"by_id":     actorID,
+		"by_name":   byName,
+	}
+	bodyBytes, err := json.Marshal(bodyObj)
+	if err != nil {
+		return
+	}
+	msgID := uuid.New()
+	clientMsgID := fmt.Sprintf("system:%s:%s:%s", kind, targetID, msgID.String())
+	var outID string
+	var seq int64
+	var created time.Time
+	err = s.db.QueryRow(r.Context(), `
+		INSERT INTO messages(id, conversation_id, enterprise_id, sender_id, client_msg_id, type, body)
+		SELECT $1, c.id, c.enterprise_id, $2, $3, 'system', $4
+		FROM conversations c WHERE c.id=$5
+		RETURNING id::text, seq, created_at`,
+		msgID, actorID, clientMsgID, string(bodyBytes), convID,
+	).Scan(&outID, &seq, &created)
+	if err != nil {
+		log.Printf("admin member notice insert: %v", err)
+		return
+	}
+	payload := map[string]any{
+		"id": outID, "conversation_id": convID, "sender_id": actorID,
+		"client_msg_id": clientMsgID, "seq": seq, "type": "system",
+		"body": string(bodyBytes), "media_url": "", "created_at": created.UTC(),
+		"sender_name": byName, "mentions": []string{}, "mention_all": false,
+	}
+	admins := s.adminIDs(r, convID)
+	if len(admins) == 0 {
+		return
+	}
+	s.hub.PublishToUsers(admins, ws.Event{Type: "message.new", Payload: payload})
 }

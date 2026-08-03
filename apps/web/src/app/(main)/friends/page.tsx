@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatApiError } from "@qchat/i18n";
 import Avatar from "@/components/Avatar";
 import MenuModal from "@/components/MenuModal";
 import { api, asList, ApiError } from "@/lib/api";
@@ -34,10 +35,10 @@ export default function FriendsPage() {
       const body = await api<any>("/v1/friends");
       setFriends(asList(body, "friends").map(normalizeFriend));
       setLoadError(null);
-    } catch (e: any) {
-      setLoadError(e.message);
+    } catch (e: unknown) {
+      setLoadError(formatApiError(e, t, "api.err.loadFailed"));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -136,7 +137,7 @@ export default function FriendsPage() {
           })
         );
       } else {
-        setAddMsg(e.message);
+        setAddMsg(formatApiError(e, t));
       }
     } finally {
       setBusy(false);
@@ -154,8 +155,8 @@ export default function FriendsPage() {
       if (convID) {
         router.push(`/?c=${encodeURIComponent(convID)}`);
       }
-    } catch (e: any) {
-      setAddMsg(e.message);
+    } catch (e: unknown) {
+      setAddMsg(formatApiError(e, t));
     } finally {
       setBusy(false);
     }
@@ -167,8 +168,8 @@ export default function FriendsPage() {
     try {
       await api(`/v1/friends/${f.friendshipId}/reject`, { method: "POST" });
       await load();
-    } catch (e: any) {
-      setAddMsg(e.message);
+    } catch (e: unknown) {
+      setAddMsg(formatApiError(e, t));
     } finally {
       setBusy(false);
     }
@@ -180,8 +181,8 @@ export default function FriendsPage() {
     try {
       await api(`/v1/friends/${f.friendshipId}/unblock`, { method: "POST" });
       load();
-    } catch (e: any) {
-      setAddMsg(e.message);
+    } catch (e: unknown) {
+      setAddMsg(formatApiError(e, t));
     } finally {
       setBusy(false);
     }

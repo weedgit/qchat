@@ -316,6 +316,16 @@ select:focus {
   font-size: 13px;
 }
 
+.auth-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  line-height: 1.4;
+  font-weight: 500;
+}
+
 .muted {
   color: var(--text-dim);
 }

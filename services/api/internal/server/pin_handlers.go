@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/qchat/qchat/services/api/internal/ws"
@@ -46,14 +47,18 @@ func canManagePins(convType, role string) bool {
 	return true
 }
 
-// listPinnedMessages returns pins ordered by message seq ascending (top→bottom in chat).
-func (s *Server) listPinnedMessages(ctx context.Context, convID string) []map[string]any {
+// listPinnedMessages returns pins the viewer is allowed to see (requirements-en §9:
+// new members cannot view message history from before they joined — including pins).
+func (s *Server) listPinnedMessages(ctx context.Context, convID, viewerID string) []map[string]any {
 	rows, err := s.db.Query(ctx, `
 		SELECT m.id::text, m.type, m.body, m.seq
 		FROM conversation_pins cp
 		JOIN messages m ON m.id=cp.message_id
+		JOIN conversation_members cm
+		  ON cm.conversation_id=cp.conversation_id AND cm.user_id=$2
 		WHERE cp.conversation_id=$1 AND m.recalled=FALSE
-		ORDER BY m.seq ASC`, convID)
+		  AND m.created_at >= cm.history_visible_from
+		ORDER BY m.seq ASC`, convID, viewerID)
 	if err != nil {
 		return []map[string]any{}
 	}
@@ -73,7 +78,7 @@ func (s *Server) listPinnedMessages(ctx context.Context, convID string) []map[st
 	return out
 }
 
-func (s *Server) loadPinsForConversations(ctx context.Context, convIDs []string) map[string][]map[string]any {
+func (s *Server) loadPinsForConversations(ctx context.Context, convIDs []string, viewerID string) map[string][]map[string]any {
 	out := map[string][]map[string]any{}
 	if len(convIDs) == 0 {
 		return out
@@ -82,8 +87,11 @@ func (s *Server) loadPinsForConversations(ctx context.Context, convIDs []string)
 		SELECT cp.conversation_id::text, m.id::text, m.type, m.body, m.seq
 		FROM conversation_pins cp
 		JOIN messages m ON m.id=cp.message_id
+		JOIN conversation_members cm
+		  ON cm.conversation_id=cp.conversation_id AND cm.user_id=$2
 		WHERE cp.conversation_id = ANY($1::uuid[]) AND m.recalled=FALSE
-		ORDER BY m.seq ASC`, convIDs)
+		  AND m.created_at >= cm.history_visible_from
+		ORDER BY m.seq ASC`, convIDs, viewerID)
 	if err != nil {
 		return out
 	}
@@ -97,6 +105,37 @@ func (s *Server) loadPinsForConversations(ctx context.Context, convIDs []string)
 		out[convID] = append(out[convID], pinItem(id, typ, body, seq))
 	}
 	return out
+}
+
+func (s *Server) publishPinsToMembers(r *http.Request, convID, eventType, msgID, typ, preview string, seq int64) {
+	for _, uid := range s.memberIDs(r, convID) {
+		pins := s.listPinnedMessages(r.Context(), convID, uid)
+		payload := map[string]any{
+			"conversation_id": convID,
+			"pinned_messages": pins,
+		}
+		if eventType == "message.pinned" {
+			payload["message_id"] = msgID
+			payload["body"] = preview
+			payload["type"] = typ
+			payload["seq"] = seq
+			// Only include pin details when this viewer can see the message.
+			visible := false
+			for _, p := range pins {
+				if fmt.Sprint(p["id"]) == msgID {
+					visible = true
+					break
+				}
+			}
+			if !visible {
+				// Still refresh their pin set (without advertising the pre-join pin body).
+				delete(payload, "body")
+			}
+		} else if msgID != "" {
+			payload["message_id"] = msgID
+		}
+		s.hub.PublishToUsers([]string{uid}, ws.Event{Type: eventType, Payload: payload})
+	}
 }
 
 // handlePinMessage POST /posts/{post_id}/pin.
@@ -133,23 +172,13 @@ func (s *Server) handlePinMessage(w http.ResponseWriter, r *http.Request) {
 	// Keep legacy single-pin column pointing at the newest pin for older clients.
 	_, _ = s.db.Exec(r.Context(), `UPDATE conversations SET pinned_message_id=$2 WHERE id=$1`, convID, msgID)
 
-	pins := s.listPinnedMessages(r.Context(), convID)
+	pins := s.listPinnedMessages(r.Context(), convID, c.UserID)
 	preview := pinnedPreview(typ, body)
 	s.audit(r.Context(), c.UserID, c.EnterpriseID, "message.pin", "message", msgID, "", clientIP(r), map[string]any{
 		"conversation_id":   convID,
 		"conversation_type": convType,
 	})
-	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
-		Type: "message.pinned",
-		Payload: map[string]any{
-			"conversation_id": convID,
-			"message_id":      msgID,
-			"body":            preview,
-			"type":            typ,
-			"seq":             seq,
-			"pinned_messages": pins,
-		},
-	})
+	s.publishPinsToMembers(r, convID, "message.pinned", msgID, typ, preview, seq)
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "conversation_id": convID, "message_id": msgID,
 		"body": preview, "type": typ, "pinned_messages": pins,
@@ -194,18 +223,7 @@ func (s *Server) handleUnpinMessage(w http.ResponseWriter, r *http.Request) {
 		_, _ = s.db.Exec(r.Context(), `UPDATE conversations SET pinned_message_id=NULL WHERE id=$1`, convID)
 	}
 
-	pins := s.listPinnedMessages(r.Context(), convID)
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "message.unpin", "message", msgID, "", clientIP(r), map[string]any{
-		"conversation_id":   convID,
-		"conversation_type": convType,
-	})
-	s.hub.PublishToUsers(s.memberIDs(r, convID), ws.Event{
-		Type: "message.unpinned",
-		Payload: map[string]any{
-			"conversation_id": convID,
-			"message_id":      msgID,
-			"pinned_messages": pins,
-		},
-	})
+	pins := s.listPinnedMessages(r.Context(), convID, c.UserID)
+	s.publishPinsToMembers(r, convID, "message.unpinned", msgID, "", "", 0)
 	writeJSON(w, 200, map[string]any{"ok": true, "pinned_messages": pins})
 }

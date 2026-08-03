@@ -1,9 +1,21 @@
-# Daily Postgres + uploads backup (RPO ≤ 24h).
-# Install: sudo cp deploy/cron-backup.example /etc/cron.d/qchat-backup
-# Adjust user/path for your host.
+# Daily Postgres + MinIO + uploads backup (RPO ≤ 24h).
+# Install:
+#   sudo cp deploy/cron-backup.example /etc/cron.d/qchat-backup
+#   sudo chmod 644 /etc/cron.d/qchat-backup
+# Optional quarterly drill (1st of quarter at 03:30 UTC):
+#   uncomment the drill line below.
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
+# Off-site directory on another disk/NFS (strongly recommended for server failure).
+# Environment for cron — adjust paths for your host.
+QCHAT_BACKUP_OFFSITE=/var/backups/qchat-offsite
+QCHAT_BACKUP_INCLUDE_SECRETS=1
+QCHAT_BACKUP_KEEP_DAYS=14
+
 # 02:15 UTC daily
 15 2 * * * root cd /root/qchat && /root/qchat/deploy/backup.sh >> /var/log/qchat-backup.log 2>&1
+
+# Quarterly isolated restore drill (1 Jan/Apr/Jul/Oct 03:30 UTC)
+30 3 1 1,4,7,10 * root cd /root/qchat && /root/qchat/deploy/restore_drill.sh >> /var/log/qchat-backup-drill.log 2>&1

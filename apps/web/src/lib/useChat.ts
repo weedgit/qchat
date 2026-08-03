@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatApiErrorLocale, formatSystemNotice } from "@qchat/i18n";
 import { api, asList, clearToken, ensureAccessToken, formatSendError, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
 import { useMe } from "./MeContext";
 import { isQchatDesktop } from "./device";
@@ -290,9 +291,9 @@ export function useChat() {
       });
       setLoadError(null);
       return list;
-    } catch (e: any) {
-      console.error("[qchat] load conversations failed:", e?.message || e);
-      setLoadError(e.message);
+    } catch (e: unknown) {
+      console.error("[qchat] load conversations failed:", e);
+      setLoadError(formatApiErrorLocale(e, undefined, "api.err.loadFailed"));
       return [] as Conversation[];
     }
   }, []);
@@ -313,9 +314,9 @@ export function useChat() {
       if (isShellFocused() && activeIdRef.current === convId) {
         await markConversationReadRef.current(convId);
       }
-    } catch (e: any) {
-      console.error("[qchat] load messages failed:", e?.message || e);
-      setLoadError(e.message);
+    } catch (e: unknown) {
+      console.error("[qchat] load messages failed:", e);
+      setLoadError(formatApiErrorLocale(e, undefined, "api.err.loadFailed"));
     }
   }, []);
 
@@ -788,6 +789,7 @@ export function useChat() {
     const msg = normalizeMessage(payload, meRef.current?.id);
     if (!msg.conversationId) return;
     if (!msg.content && !msg.mediaUrl && !msg.clientMsgId) return;
+    const isSystem = msg.type === "system";
 
     if (msg.senderId) clearTypingUser(msg.conversationId, msg.senderId);
 
@@ -842,16 +844,18 @@ export function useChat() {
           c.id === msg.conversationId
             ? {
                 ...c,
-                lastMessage: msg.content || c.lastMessage,
+                lastMessage: isSystem
+                  ? formatSystemNotice(msg.content)
+                  : msg.content || c.lastMessage,
                 lastMessageAt: msg.createdAt,
                 lastMessageSender: msg.mine
                   ? meRef.current?.nickname || meRef.current?.username
                   : msg.senderName,
                 lastMessageMine: Boolean(msg.mine),
                 unreadCount:
-                  viewingHere || msg.mine ? c.unreadCount : c.unreadCount + 1,
+                  viewingHere || msg.mine || isSystem ? c.unreadCount : c.unreadCount + 1,
                 mentionCount:
-                  viewingHere || msg.mine
+                  viewingHere || msg.mine || isSystem
                     ? c.mentionCount ?? 0
                     : (() => {
                         const isMention =
@@ -865,7 +869,7 @@ export function useChat() {
         );
       });
 
-      if (msg.mine || !msg.id) return;
+      if (isSystem || msg.mine || !msg.id) return;
 
       // Delivered only means the client got the event — never implies read.
       api(`/v1/messages/${msg.id}/delivered`, { method: "POST" }).catch(() => {});

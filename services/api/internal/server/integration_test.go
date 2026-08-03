@@ -137,16 +137,17 @@ func getJSON(t *testing.T, url, token string) (int, map[string]any) {
 
 func registerUser(t *testing.T, base, invite string) (token, refresh, userID, username string) {
 	t.Helper()
+	if invite == "" {
+		t.Fatal("registerUser requires enterprise invite code")
+	}
 	cid, code := captcha(t, base)
 	username = "u" + uuid.NewString()[:8]
 	phone := fmt.Sprintf("139%08d", time.Now().UnixNano()%100000000)
 	regPayload := map[string]any{
 		"phone": phone, "password": "user12345", "username": username,
+		"invite_code": invite,
 		"captcha_id": cid, "captcha": code,
 		"device_type": "web", "device_name": "test", "device_id": "test-device-" + username,
-	}
-	if invite != "" {
-		regPayload["invite_code"] = invite
 	}
 	status, body := postJSON(t, base+"/v1/auth/register", "", regPayload)
 	if status != 201 {
@@ -155,10 +156,8 @@ func registerUser(t *testing.T, base, invite string) (token, refresh, userID, us
 	token = fmt.Sprint(body["access_token"])
 	refresh = fmt.Sprint(body["refresh_token"])
 	userID = fmt.Sprint(body["user_id"])
-	if invite != "" {
-		if body["enterprise_id"] == nil || fmt.Sprint(body["enterprise_id"]) == "" {
-			t.Fatalf("register %s: expected enterprise_id from invite, got %v", username, body)
-		}
+	if body["enterprise_id"] == nil || fmt.Sprint(body["enterprise_id"]) == "" {
+		t.Fatalf("register %s: expected enterprise_id from invite, got %v", username, body)
 	}
 	return token, refresh, userID, username
 }
@@ -476,17 +475,16 @@ func TestGroupInviteNonFriend(t *testing.T) {
 	}
 }
 
-func TestUserLookupPrefixAndPersonal(t *testing.T) {
+func TestUserLookupSameTenantOnly(t *testing.T) {
 	ts, cleanup := testServer(t)
 	defer cleanup()
 	base := ts.URL
 
 	entTok, _, _, _ := registerUser(t, base, "ACME2026")
-	// Personal account (no invite / no enterprise).
-	_, _, _, personalName := registerUser(t, base, "")
+	peerTok, _, _, peerName := registerUser(t, base, "ACME2026")
+	_ = peerTok
 
-	// Prefix search from enterprise account should find the personal user.
-	prefix := personalName
+	prefix := peerName
 	if len(prefix) > 3 {
 		prefix = prefix[:3]
 	}
@@ -498,13 +496,13 @@ func TestUserLookupPrefixAndPersonal(t *testing.T) {
 	found := false
 	for _, item := range users {
 		m, _ := item.(map[string]any)
-		if fmt.Sprint(m["username"]) == personalName {
+		if fmt.Sprint(m["username"]) == peerName {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("prefix %q should find personal user %s: %v", prefix, personalName, look)
+		t.Fatalf("prefix %q should find same-tenant user %s: %v", prefix, peerName, look)
 	}
 
 	// Cross-enterprise still blocked for other-tenant members.
@@ -521,4 +519,116 @@ func TestUserLookupPrefixAndPersonal(t *testing.T) {
 		}
 	}
 	_ = otherTok
+}
+
+func TestGroupLeaveNoticeAndPreJoinHistory(t *testing.T) {
+	ts, cleanup := testServer(t)
+	defer cleanup()
+	base := ts.URL
+
+	ownerTok, _, _, _ := registerUser(t, base, "ACME2026")
+	memberTok, _, memberID, memberName := registerUser(t, base, "ACME2026")
+	otherTok, _, otherID, otherName := registerUser(t, base, "ACME2026")
+	lateTok, _, lateID, _ := registerUser(t, base, "ACME2026")
+
+	for _, tok := range []string{memberTok, otherTok, lateTok} {
+		req, _ := http.NewRequest(http.MethodPatch, base+"/v1/me", bytes.NewReader([]byte(`{"friend_privacy":"open"}`)))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		req.Header.Set("Content-Type", "application/json")
+		res, _ := http.DefaultClient.Do(req)
+		res.Body.Close()
+	}
+
+	st, _ := postJSON(t, base+"/v1/friends/request", ownerTok, map[string]any{"username": memberName})
+	if st != 201 {
+		t.Fatalf("friend member: %d", st)
+	}
+	st, _ = postJSON(t, base+"/v1/friends/request", ownerTok, map[string]any{"username": otherName})
+	if st != 201 {
+		t.Fatalf("friend other: %d", st)
+	}
+
+	st, g := postJSON(t, base+"/v1/groups", ownerTok, map[string]any{
+		"title": "Leave Hist Group", "member_ids": []string{memberID, otherID},
+	})
+	if st != 201 {
+		t.Fatalf("group: %d %v", st, g)
+	}
+	gid := fmt.Sprint(g["id"])
+
+	st, msg := postJSON(t, base+"/v1/conversations/"+gid+"/messages", ownerTok, map[string]any{
+		"type": "text", "body": "before-join", "client_msg_id": "hist-1",
+	})
+	if st != 201 {
+		t.Fatalf("send: %d %v", st, msg)
+	}
+	mid := fmt.Sprint(msg["id"])
+
+	st, _ = postJSON(t, base+"/v1/messages/"+mid+"/pin", ownerTok, map[string]any{})
+	if st != 200 {
+		t.Fatalf("pin: %d", st)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+
+	st, add := postJSON(t, base+"/v1/groups/"+gid+"/members", ownerTok, map[string]any{
+		"member_ids": []string{lateID},
+	})
+	if st != 200 && st != 201 {
+		t.Fatalf("add late: %d %v", st, add)
+	}
+
+	_, lateMsgs := getJSON(t, base+"/v1/conversations/"+gid+"/messages", lateTok)
+	llist, _ := lateMsgs["messages"].([]any)
+	for _, item := range llist {
+		m := item.(map[string]any)
+		if fmt.Sprint(m["id"]) == mid || fmt.Sprint(m["body"]) == "before-join" {
+			t.Fatalf("late joiner saw pre-join message: %v", m)
+		}
+	}
+
+	_, lateConvs := getJSON(t, base+"/v1/conversations", lateTok)
+	crows, _ := lateConvs["conversations"].([]any)
+	foundLate := false
+	for _, item := range crows {
+		c, _ := item.(map[string]any)
+		if fmt.Sprint(c["id"]) != gid {
+			continue
+		}
+		foundLate = true
+		pins, _ := c["pinned_messages"].([]any)
+		if len(pins) != 0 {
+			t.Fatalf("late joiner should not see pre-join pins: %v", pins)
+		}
+	}
+	if !foundLate {
+		t.Fatalf("late joiner missing group in conversations: %v", lateConvs)
+	}
+
+	st, _ = postJSON(t, base+"/v1/groups/"+gid+"/leave", memberTok, map[string]any{})
+	if st != 200 {
+		t.Fatalf("leave: %d", st)
+	}
+
+	_, ownerMsgs := getJSON(t, base+"/v1/conversations/"+gid+"/messages", ownerTok)
+	olist, _ := ownerMsgs["messages"].([]any)
+	ownerSeesNotice := false
+	for _, item := range olist {
+		m := item.(map[string]any)
+		if fmt.Sprint(m["type"]) == "system" && strings.Contains(fmt.Sprint(m["body"]), "member_left") {
+			ownerSeesNotice = true
+		}
+	}
+	if !ownerSeesNotice {
+		t.Fatalf("owner should see leave system notice: %v", olist)
+	}
+
+	_, otherMsgs := getJSON(t, base+"/v1/conversations/"+gid+"/messages", otherTok)
+	mlist, _ := otherMsgs["messages"].([]any)
+	for _, item := range mlist {
+		m := item.(map[string]any)
+		if fmt.Sprint(m["type"]) == "system" {
+			t.Fatalf("ordinary member should not see leave notice: %v", m)
+		}
+	}
 }

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatApiError } from "@qchat/i18n";
 import Avatar from "@/components/Avatar";
 import MenuModal from "@/components/MenuModal";
 import { PasswordInput } from "@/components/PasswordInput";
@@ -129,8 +130,8 @@ export default function ProfilePage() {
       setMe({ ...me, avatar_url: url });
       patchMe({ avatarUrl: url });
       void refreshMe();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(formatApiError(err, t));
     } finally {
       setSaving(false);
     }
@@ -159,8 +160,8 @@ export default function ProfilePage() {
       initialUsernameRef.current = String(u?.username ?? "").trim();
       setDisplayNameTaken(false);
       setUsernameTaken(false);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(formatApiError(e, t, "api.err.loadFailed"));
     }
   }
 
@@ -273,8 +274,8 @@ export default function ProfilePage() {
       });
       void refreshMe();
       router.push("/");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(formatApiError(err, t));
       setSaving(false);
     }
   }
@@ -339,7 +340,7 @@ export default function ProfilePage() {
               ? me.enterprise_name
                 ? `${t("account.enterprise")} · ${me.enterprise_name}`
                 : t("account.enterprise")
-              : t("account.personal")}
+              : t("account.enterprise")}
           </div>
         ) : null}
         <input

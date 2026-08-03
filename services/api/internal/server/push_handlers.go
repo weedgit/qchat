@@ -24,6 +24,10 @@ func (s *Server) pushCfg() push.Config {
 		APNsBundleID:       s.cfg.APNsBundleID,
 		APNsKeyPath:        s.cfg.APNsKeyPath,
 		APNsProduction:     s.cfg.APNsProduction,
+		GetuiEnabledFlag:   s.cfg.GetuiEnabled,
+		GetuiAppID:         s.cfg.GetuiAppID,
+		GetuiAppKey:        s.cfg.GetuiAppKey,
+		GetuiMasterSecret:  s.cfg.GetuiMasterSecret,
 	}
 }
 
@@ -61,7 +65,7 @@ func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
 		req.Platform = "web"
 	}
 	switch req.Platform {
-	case "web", "ios", "android", "huawei", "xiaomi", "oppo", "vivo":
+	case "web", "ios", "android", "getui", "huawei", "xiaomi", "oppo", "vivo", "honor", "meizu":
 	default:
 		writeErr(w, 400, "unsupported platform")
 		return
@@ -87,12 +91,17 @@ func (s *Server) handlePushRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "register failed")
 		return
 	}
-	writeJSON(w, 200, map[string]any{
+	cfg := s.pushCfg()
+	out := map[string]any{
 		"ok":       true,
-		"adapters": s.pushCfg().EnabledAdapters(),
-		// OEM platforms may be registered but are not delivered until adapters ship.
-		"oem_deferred": []string{"huawei", "xiaomi", "oppo", "vivo"},
-	})
+		"adapters": cfg.EnabledAdapters(),
+	}
+	if !cfg.GetuiEnabled() {
+		out["oem_deferred"] = []string{"huawei", "xiaomi", "oppo", "vivo", "honor", "meizu"}
+	} else {
+		out["oem_via"] = "getui"
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) handlePushDevices(w http.ResponseWriter, r *http.Request) {

@@ -182,7 +182,7 @@ Nginx `limit_req` zones for auth / API / WS (`deploy/nginx-qchat.conf`).
 
 - Multipart memory ~32 MB; body limited with `io.LimitReader`
 - Objects stored in MinIO/S3 when configured, else `QCHAT_DATA_DIR/uploads`
-- Object keys must start with `{enterprise_id}/` or `personal/{user_id}/`
+- Object keys must start with `{enterprise_id}/`
 - Nginx `client_max_body_size 210m`
 - `media_objects.scanned` exists but **no malware scanner** is wired yet
 
@@ -247,7 +247,9 @@ Example env template: `deploy/qchat-api.env.example`.
 - Default retention **90 days**, configurable per enterprise (`retention_days`)
 - API retention loop + `POST /v1/admin/retention/run`
 - SQL helper: `deploy/retention.sql`
-- Backup / restore: `deploy/backup.sh`, `deploy/restore.sh`, drill notes in [`RESTORE_DRILL.md`](./RESTORE_DRILL.md)
+- Backup / restore: `deploy/backup.sh`, `deploy/restore.sh`, `deploy/restore_drill.sh`,
+  encryption via `deploy/backup-init-passphrase.sh`, off-site via `QCHAT_BACKUP_OFFSITE`,
+  admin status `GET /v1/admin/backup/status`, drill notes in [`RESTORE_DRILL.md`](./RESTORE_DRILL.md)
 
 ---
 

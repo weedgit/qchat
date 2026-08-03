@@ -183,7 +183,7 @@ function ConversationRow({
         {isGroup ? (
           <div
             className={`conv-company${conv.enterpriseName ? " is-enterprise" : ""}`}
-            title={conv.enterpriseName || t("chat.personalSocial")}
+            title={conv.enterpriseName || t("account.enterprise")}
           >
             <svg
               className="conv-company-icon"
@@ -202,7 +202,7 @@ function ConversationRow({
               <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
               <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
-            <span>{conv.enterpriseName || t("chat.personalSocial")}</span>
+            <span>{conv.enterpriseName || t("account.enterprise")}</span>
           </div>
         ) : null}
         <div className="conv-top">
@@ -517,13 +517,38 @@ function Bubble({
     !!onCancelUpload;
 
  // Align with caller (Calls history): mine = I placed the call → right.
+  if (msg.type === "system") {
+    let label = msg.content || "";
+    try {
+      const parsed = JSON.parse(msg.content || "") as {
+        kind?: string;
+        user_name?: string;
+        by_name?: string;
+      };
+      if (parsed.kind === "member_left") {
+        label = t("chat.memberLeft", { user: parsed.user_name || t("chat.user") });
+      } else if (parsed.kind === "member_removed") {
+        label = t("chat.memberRemoved", {
+          user: parsed.user_name || t("chat.user"),
+          by: parsed.by_name || t("chat.user"),
+        });
+      }
+    } catch {
+      /* plain body */
+    }
+    return (
+      <div className="msg-row system-row">
+        <div className="system-msg">{label}</div>
+      </div>
+    );
+  }
   if (msg.type === "call") {
     const avatarName = msg.mine
       ? myName || msg.senderName || "You"
-      : msg.senderName || peerName || "User";
+      : msg.senderName || (isGroup ? "User" : peerName) || "User";
     const avatarUrl = msg.mine
       ? myAvatar || msg.senderAvatar
-      : msg.senderAvatar || peerAvatar;
+      : msg.senderAvatar || (isGroup ? undefined : peerAvatar);
     return (
       <div
         className={`msg-row call-row ${msg.mine ? "mine" : ""} ${selectMode ? "select-mode" : ""} ${selected ? "selected" : ""}`}
@@ -615,10 +640,10 @@ function Bubble({
   );
   const avatarName = msg.mine
     ? myName || msg.senderName || "You"
-    : msg.senderName || peerName || "User";
+    : msg.senderName || (isGroup ? "User" : peerName) || "User";
   const avatarUrl = msg.mine
     ? myAvatar || msg.senderAvatar
-    : msg.senderAvatar || peerAvatar;
+    : msg.senderAvatar || (isGroup ? undefined : peerAvatar);
 
   const bareStickerOrGif =
     msg.type === "image" &&
@@ -2954,7 +2979,7 @@ export default function ChatPageInner() {
                         </span>
                       </>
                     ) : (
-                      t("account.personal")
+                      t("account.enterprise")
                     )}
                   </div>
                 </div>
@@ -3604,7 +3629,7 @@ export default function ChatPageInner() {
                             replyPreview={previewFor(m)}
                             selectMode={selectMode}
                             selected={selectedIds.has(m.id)}
-                            selectable={!m.pending && !m.failed}
+                            selectable={!m.pending && !m.failed && m.type !== "system"}
                             pinned
                             onToggleSelect={() => toggleSelect(m.id)}
                             onContextMenu={(e) => openCtxMenu(e, m)}
@@ -3647,7 +3672,7 @@ export default function ChatPageInner() {
                             replyPreview={previewFor(m)}
                             selectMode={selectMode}
                             selected={selectedIds.has(m.id)}
-                            selectable={!m.pending && !m.failed}
+                            selectable={!m.pending && !m.failed && m.type !== "system"}
                             pinned={pinnedIdSet.has(m.id)}
                             onToggleSelect={() => toggleSelect(m.id)}
                             onContextMenu={(e) => openCtxMenu(e, m)}

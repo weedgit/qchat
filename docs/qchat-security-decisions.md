@@ -23,7 +23,7 @@ Working defaults until the client signs a formal change order. Documented so eng
 | Attachments | Images jpg/png/gif/webp ≤ 20 MB; docs ≤ 50 MB; video ≤ 200 MB; voice ≤ 60 s |
 | Latency SLO | p95 < 1s for online same-region delivery under contracted load |
 | Concurrency | ≥ 1,000 concurrent WebSocket connections in MVP acceptance |
-| Backup | Daily encrypted DB + object storage snapshots; RPO ≤ 24h, RTO ≤ 4h (MVP) |
+| Backup | Daily encrypted Postgres + MinIO + uploads; optional secrets; off-site rsync; RPO ≤ 24h, RTO ≤ 4h (MVP) |
 | Push | Web push first; APNs/FCM/OEM adapters defined before mobile |
 | Calls | LiveKit + TURN in Phase 6; not in Messenger MVP |
 

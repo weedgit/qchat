@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+
+	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
 // handleConversationPrefs favoriteChannel / muteChannel
@@ -119,12 +121,24 @@ func (s *Server) handleDeleteConversation(w http.ResponseWriter, r *http.Request
 		writeErrCode(w, 403, "forbidden", "owner cannot delete; transfer ownership first")
 		return
 	}
+	leftGroup := (typ == "social_group" || typ == "group") && role != "owner"
 	_, err = s.db.Exec(r.Context(), `
 		DELETE FROM conversation_members
 		WHERE conversation_id=$1 AND user_id=$2`, convID, c.UserID)
 	if err != nil {
 		writeErrCode(w, 500, "delete_failed", "delete failed")
 		return
+	}
+	if leftGroup {
+		payload := map[string]any{
+			"conversation_id": convID,
+			"removed_user_id": c.UserID,
+			"removed_by":      c.UserID,
+			"left":            true,
+		}
+		s.hub.PublishToUsers([]string{c.UserID}, ws.Event{Type: "group.member_removed", Payload: payload})
+		s.hub.PublishToUsers(s.adminIDs(r, convID), ws.Event{Type: "group.member_removed", Payload: payload})
+		s.insertAdminMemberNotice(r, convID, c.UserID, c.UserID, "member_left")
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "id": convID})
 }

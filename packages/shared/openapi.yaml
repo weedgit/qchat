@@ -84,6 +84,7 @@ components:
         conversation_id: { type: string, format: uuid }
         sender_id: { type: string, format: uuid }
         sender_name: { type: string }
+        sender_avatar: { type: string }
         client_msg_id: { type: string }
         seq: { type: integer }
         type: { type: string }
@@ -112,8 +113,8 @@ paths:
     post:
       summary: Register
       description: |
-        Creates an account. Optional `invite_code` joins the matching enterprise
-        and default company chat in the same request.
+        Creates an enterprise account. `invite_code` is required and must match
+        an active enterprise invite.
       responses:
         "201":
           description: Tokens

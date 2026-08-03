@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ResizeMode, Video } from "expo-av";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { formatSystemNotice } from "@qchat/i18n";
 import { Avatar } from "../../src/components/Avatar";
 import { ChatComposer, type MentionMember } from "../../src/components/ChatComposer";
 import {
@@ -349,6 +350,14 @@ const ChatMessageRow = memo(function ChatMessageRow({
 }: ChatMessageRowProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  if (item.type === "system") {
+    const label = formatSystemNotice(item.content || "");
+    return (
+      <View style={styles.systemRow}>
+        <Text style={styles.systemText}>{label}</Text>
+      </View>
+    );
+  }
   if (item.recalled) {
     const label = item.mine
       ? "You recalled a message"

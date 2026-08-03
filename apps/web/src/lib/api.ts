@@ -3,6 +3,8 @@
  * - NEXT_PUBLIC_API_URL set (including "") → use it; empty means same-origin (nginx HTTPS/HTTP).
  * - unset + browser → host:8080 (LAN next-dev without nginx).
  */
+import { apiErrorMessageKey, formatApiErrorLocale } from "@qchat/i18n";
+
 export function apiBaseUrl(): string {
   if (typeof process.env.NEXT_PUBLIC_API_URL === "string") {
     const fromEnv = process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
@@ -123,19 +125,20 @@ export class ApiError extends Error {
 /** Friendly copy for failed sends/uploads shown on the message bubble. */
 export function formatSendError(err: unknown, fallback = "Failed to send"): string {
   if (err instanceof ApiError) {
-    if (err.status === 413) return "File too large";
-    if (err.status === 401) return "Session expired — sign in again";
-    if (err.status === 0) return err.message || "Network error";
-    if (err.message && !/^upload failed \(\d+\)$/i.test(err.message)) return err.message;
-    if (err.status === 400) return "File not allowed";
-    if (err.status >= 500) return "Server error — try again";
-    return `Failed to send (${err.status})`;
+    if (err.status === 413) return formatApiErrorLocale(err, undefined, "api.err.fileTooLarge");
+    if (err.status === 401) return formatApiErrorLocale(err, undefined, "api.err.unauthorized");
+    if (err.status === 0) return formatApiErrorLocale(err, undefined, "api.err.network");
+    if (err.status === 400 && /not allowed|file/i.test(err.message)) {
+      return formatApiErrorLocale(err, undefined, "api.err.fileNotAllowed");
+    }
+    if (err.status !== undefined && err.status >= 500) {
+      return formatApiErrorLocale(err, undefined, "api.err.server");
+    }
+    const key = apiErrorMessageKey(err, "api.err.sendFailed");
+    if (key !== "common.error") return formatApiErrorLocale(err, undefined, key);
   }
-  if (err && typeof err === "object" && "message" in err) {
-    const m = String((err as { message?: string }).message || "").trim();
-    if (m) return m;
-  }
-  return fallback;
+  if (fallback === "Upload failed") return formatApiErrorLocale(err, undefined, "api.err.uploadFailed");
+  return formatApiErrorLocale(err, undefined, "api.err.sendFailed");
 }
 
 let refreshPromise: Promise<boolean> | null = null;

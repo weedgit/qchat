@@ -132,4 +132,4 @@ npm run check:release
 npm run eas:build:preview   # requires eas-cli login + project
 ```
 
-Remote push uses Expo tokens via `src/lib/remotePush.ts` → `POST /v1/push/register`. See **[docs/push.md](../../docs/push.md)**. OEM vendor channels remain deferred.
+Remote push (China mainland) uses **个推 Getui** CID via `src/lib/remotePush.ts` → `POST /v1/push/register` (`platform: getui`). OEM channels are configured in the Getui console. Expo Push is a fallback when the native module is absent. See **[docs/push.md](../../docs/push.md)**.

@@ -38,7 +38,7 @@ type Config struct {
 	VAPIDPublic  string
 	VAPIDPrivate string
 	VAPIDSubject string
-	// Mobile push — Expo first (covers FCM/APNs for Expo apps); native FCM/APNs optional.
+	// Mobile push — Getui is primary for China mainland; Expo/FCM/APNs optional fallback.
 	ExpoPushEnabled    string
 	ExpoAccessToken    string
 	FCMProjectID       string
@@ -48,9 +48,15 @@ type Config struct {
 	APNsBundleID       string
 	APNsKeyPath        string
 	APNsProduction     string
+	GetuiEnabled       string
+	GetuiAppID         string
+	GetuiAppKey        string
+	GetuiMasterSecret  string
 	// GiphyAPIKey powers composer GIF search via GET /v1/gifs. Empty disables
 	// the feature with a clear API error (Tenor third-party API is shut down).
 	GiphyAPIKey string
+	// BackupDir is where deploy/backup.sh writes status.json (admin DR status).
+	BackupDir string
 }
 
 func Load() Config {
@@ -83,7 +89,12 @@ func Load() Config {
 		APNsBundleID:           strings.TrimSpace(getenv("QCHAT_APNS_BUNDLE_ID", "")),
 		APNsKeyPath:            strings.TrimSpace(getenv("QCHAT_APNS_KEY_PATH", "")),
 		APNsProduction:         getenv("QCHAT_APNS_PRODUCTION", "1"),
+		GetuiEnabled:           strings.TrimSpace(getenv("QCHAT_GETUI_ENABLED", "")),
+		GetuiAppID:             strings.TrimSpace(getenv("QCHAT_GETUI_APP_ID", "")),
+		GetuiAppKey:            strings.TrimSpace(getenv("QCHAT_GETUI_APP_KEY", "")),
+		GetuiMasterSecret:      strings.TrimSpace(getenv("QCHAT_GETUI_MASTER_SECRET", "")),
 		GiphyAPIKey:            strings.TrimSpace(getenv("QCHAT_GIPHY_API_KEY", "")),
+		BackupDir:              resolveBackupDir(),
 	}
 }
 
@@ -112,6 +123,25 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// resolveBackupDir locates deploy/backup.sh output (status.json / latest/).
+func resolveBackupDir() string {
+	if v := strings.TrimSpace(os.Getenv("QCHAT_BACKUP_DIR")); v != "" {
+		return v
+	}
+	candidates := []string{
+		"backups",
+		filepath.Join("..", "..", "backups"),
+		filepath.Join("..", "backups"),
+		"/root/qchat/backups",
+	}
+	for _, c := range candidates {
+		if st, err := os.Stat(c); err == nil && st.IsDir() {
+			return c
+		}
+	}
+	return "backups"
 }
 
 // resolveDataDir picks the local upload root (…/uploads). Prefer an existing

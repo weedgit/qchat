@@ -32,6 +32,7 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
+    "react-native-getui": "^1.1.56",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-url-polyfill": "^4.0.0",
@@ -46,6 +47,7 @@
     "typescript": "~5.9.2"
   },
   "scripts": {
+    "GetuiConfigure": "node node_modules/react-native-getui/GetuiConfiguration.js",
     "start": "expo start --dev-client",
     "start:go": "expo start",
     "android": "expo run:android",

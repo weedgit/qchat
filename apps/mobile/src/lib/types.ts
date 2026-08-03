@@ -263,10 +263,8 @@ export function normalizeFriend(raw: any): Friend {
 
 /** Company chip for conversation list / details. */
 export function conversationCompanyLabel(c: Conversation): string | undefined {
-  if (c.enterpriseName) return c.enterpriseName;
-  if (c.isEnterpriseDefault) return "Company";
-  if (c.type === "social_group" || c.type === "group") return "Personal social";
-  return undefined;
+  const name = (c.enterpriseName || "").trim();
+  return name || undefined;
 }
 
 /** Last-online label for offline peers. */

@@ -13,7 +13,7 @@ type Config struct {
 	VAPIDPrivate string
 	Subject      string // mailto: or https:
 
-	// Expo Push (recommended path for Expo/React Native apps — FCM/APNs under the hood).
+	// Expo Push (optional fallback; FCM/APNs under the hood — weak in China mainland).
 	ExpoPushEnabled string
 	ExpoAccessToken string
 
@@ -27,6 +27,12 @@ type Config struct {
 	APNsBundleID   string
 	APNsKeyPath    string
 	APNsProduction string // "1"/"true" = production; otherwise sandbox
+
+	// Getui 个推 — primary China-mainland push (OEM channels via Getui console).
+	GetuiEnabledFlag  string
+	GetuiAppID        string
+	GetuiAppKey       string
+	GetuiMasterSecret string
 }
 
 type Subscription struct {

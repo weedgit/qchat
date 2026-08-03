@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { formatApiError } from "@qchat/i18n";
 import { api } from "@/lib/api";
 import { useLocale } from "@/lib/locale";
 
@@ -88,7 +89,7 @@ export default function FriendNoteEditor({
       setOpen(false);
       onSaved({ note: nextNote, tags: nextTags });
     } catch (err: any) {
-      setError(err?.message || t("common.error"));
+      setError(formatApiError(err, t));
     } finally {
       setBusy(false);
     }

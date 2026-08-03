@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { router } from "expo-router";
+import { formatApiErrorLocale, formatSystemNotice } from "@qchat/i18n";
 import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "../lib/api";
 import { notificationPort } from "../lib/notifyPort";
 import { loadLocalNotifyProps, getNotifyProps, shouldNotify, saveLocalNotifyProps, normalizeNotifyProps } from "../lib/notifyProps";
@@ -239,8 +240,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
       setLoadError(null);
       return list;
-    } catch (e: any) {
-      setLoadError(e.message);
+    } catch (e: unknown) {
+      setLoadError(formatApiErrorLocale(e, undefined, "api.err.loadFailed"));
       return [] as Conversation[];
     }
   }, []);
@@ -303,8 +304,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           )
         );
       }
-    } catch (e: any) {
-      setLoadError(e.message);
+    } catch (e: unknown) {
+      setLoadError(formatApiErrorLocale(e, undefined, "api.err.loadFailed"));
     }
   }, []);
 
@@ -812,6 +813,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const msg = normalizeMessage(payload, meRef.current?.id);
       if (!msg.conversationId) return;
       if (!msg.content && !msg.mediaUrl && !msg.clientMsgId) return;
+      const isSystem = msg.type === "system";
 
       setMessages((prev) => {
         const list = prev[msg.conversationId] ?? [];
@@ -863,7 +865,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                   ...c,
                   lastMessage: msg.recalled
                     ? "Message recalled"
-                    : msg.content || c.lastMessage,
+                    : isSystem
+                      ? formatSystemNotice(msg.content)
+                      : msg.content || c.lastMessage,
                   lastMessageAt: msg.createdAt,
                   lastMessageSender: msg.mine
                     ? meRef.current?.nickname || meRef.current?.username
@@ -871,11 +875,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                   lastMessageMine: Boolean(msg.mine),
                   lastMessageRecalled: Boolean(msg.recalled),
                   unreadCount:
-                    c.id === activeIdRef.current || msg.mine
+                    c.id === activeIdRef.current || msg.mine || isSystem
                       ? c.unreadCount
                       : c.unreadCount + 1,
                   mentionCount:
-                    c.id === activeIdRef.current || msg.mine
+                    c.id === activeIdRef.current || msg.mine || isSystem
                       ? c.mentionCount ?? 0
                       : (() => {
                           const isMention =

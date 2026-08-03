@@ -13,7 +13,7 @@ func TestLocalPutOpenDelete(t *testing.T) {
 	dir := t.TempDir()
 	store := NewLocal(dir)
 	ctx := context.Background()
-	key := "personal/u1/file/hello.txt"
+  key := "acme/u1/file/hello.txt"
 	body := []byte("hello qchat")
 	if err := store.Put(ctx, key, bytes.NewReader(body), int64(len(body)), "text/plain"); err != nil {
 		t.Fatal(err)

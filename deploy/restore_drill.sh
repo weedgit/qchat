@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Timed backup → restore drill to verify RPO ≤ 24h / RTO ≤ 4h targets.
+# Timed backup → isolated restore drill (does NOT overwrite production DB).
+# Targets: RPO ≤ 24h / RTO ≤ 4h
 # Usage: ./deploy/restore_drill.sh
-# Optional: QCHAT_DRILL_KEEP=1 to leave the drill backup directory in place.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REPORT_DIR="${QCHAT_DRILL_REPORT_DIR:-$ROOT/backups/drills}"
+# shellcheck source=/dev/null
+source "$ROOT/deploy/backup-lib.sh"
+
+REPORT_DIR="${QCHAT_DRILL_REPORT_DIR:-$(backup_root)/drills}"
 mkdir -p "$REPORT_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 REPORT="$REPORT_DIR/drill-$STAMP.md"
+DRILL_DB="${QCHAT_DRILL_DB:-qchat_drill}"
 
 log() { printf '%s\n' "$*" | tee -a "$REPORT"; }
 
@@ -15,6 +19,7 @@ log() { printf '%s\n' "$*" | tee -a "$REPORT"; }
 log "# Qchat restore drill — $STAMP"
 log ""
 log "Targets: RPO ≤ 24h, RTO ≤ 4h"
+log "Mode: isolated database \`$DRILL_DB\` (production \`qchat\` untouched)"
 log ""
 
 START_TOTAL="$(date +%s)"
@@ -22,9 +27,12 @@ START_TOTAL="$(date +%s)"
 log "## 1. Backup"
 T0="$(date +%s)"
 bash "$ROOT/deploy/backup.sh" | tee -a "$REPORT"
-# Latest backup dir
-BACKUP_DIR="$(ls -1dt "${QCHAT_BACKUP_DIR:-$ROOT/backups}"/2* 2>/dev/null | head -1 || true)"
-if [[ -z "$BACKUP_DIR" || ! -f "$BACKUP_DIR/qchat.dump" ]]; then
+BACKUP_DIR="$(readlink -f "$(backup_root)/latest" 2>/dev/null || true)"
+if [[ -z "$BACKUP_DIR" || (! -f "$BACKUP_DIR/qchat.dump" && ! -f "$BACKUP_DIR/qchat.dump.enc") ]]; then
+  # Fallback: newest stamp dir
+  BACKUP_DIR="$(ls -1dt "$(backup_root)"/2* 2>/dev/null | head -1 || true)"
+fi
+if [[ -z "$BACKUP_DIR" || (! -f "$BACKUP_DIR/qchat.dump" && ! -f "$BACKUP_DIR/qchat.dump.enc") ]]; then
   log "FAIL: no backup dump found"
   exit 1
 fi
@@ -35,23 +43,43 @@ log "Backup path: \`$BACKUP_DIR\`"
 log "Backup duration: ${BACKUP_SECS}s"
 log ""
 
-log "## 2. Restore"
+log "## 2. Isolated restore"
 T2="$(date +%s)"
-bash "$ROOT/deploy/restore.sh" "$BACKUP_DIR" | tee -a "$REPORT"
+QCHAT_RESTORE_DB="$DRILL_DB" \
+  QCHAT_RESTORE_MINIO=1 \
+  QCHAT_RESTORE_UPLOADS=1 \
+  bash "$ROOT/deploy/restore.sh" "$BACKUP_DIR" | tee -a "$REPORT"
 T3="$(date +%s)"
 RESTORE_SECS=$((T3 - T2))
 log ""
 log "Restore duration: ${RESTORE_SECS}s"
 log ""
 
-log "## 3. Health check"
-if curl -fsS --retry 5 --retry-delay 1 --retry-connrefused \
-  http://127.0.0.1:8080/healthz >/dev/null; then
-  log "healthz: OK"
-  HEALTH=OK
-else
-  log "healthz: FAIL (is the API running?)"
+log "## 3. Verify drill DB"
+ROW_USERS="$(compose exec -T postgres \
+  psql -U qchat -d "$DRILL_DB" -Atc "SELECT count(*) FROM users;" 2>/dev/null | tr -d '[:space:]' || echo fail)"
+log "users count in $DRILL_DB: $ROW_USERS"
+if [[ "$ROW_USERS" == "fail" || -z "$ROW_USERS" ]]; then
   HEALTH=FAIL
+  log "health: FAIL (could not query drill DB)"
+else
+  HEALTH=OK
+  log "health: OK"
+fi
+
+log "## 4. Drop drill database"
+compose exec -T postgres \
+  psql -U qchat -d postgres -v ON_ERROR_STOP=1 \
+  -c "DROP DATABASE IF EXISTS ${DRILL_DB};" | tee -a "$REPORT" || true
+
+# Optional API check (production still running; not part of isolated restore)
+log ""
+log "## 5. Production API health (unchanged by drill)"
+if curl -fsS --retry 3 --retry-delay 1 --retry-connrefused \
+  http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+  log "production healthz: OK"
+else
+  log "production healthz: unavailable (noted; drill DB path still valid)"
 fi
 
 END_TOTAL="$(date +%s)"
@@ -66,13 +94,22 @@ log "|---|---|"
 log "| Backup seconds | $BACKUP_SECS |"
 log "| Restore seconds | $RESTORE_SECS |"
 log "| Total wall seconds (RTO sample) | $TOTAL (~${RTO_HOURS}h) |"
-log "| Health | $HEALTH |"
-log "| RPO target | ≤ 24h (schedule backups at least daily — see cron example) |"
+log "| Drill DB health | $HEALTH |"
+log "| RPO target | ≤ 24h (daily cron) |"
 log "| RTO target | ≤ 4h |"
 log ""
 
+# Refresh status.json so admin UI sees the drill
+if [[ -f "$(backup_root)/latest/manifest.json" ]]; then
+  LATEST="$(basename "$(readlink -f "$(backup_root)/latest")")"
+  # shellcheck disable=SC1091
+  ENCRYPTED=false
+  grep -q '"encrypted": true' "$(backup_root)/latest/manifest.json" 2>/dev/null && ENCRYPTED=true
+  write_status_json "$(backup_root)" "$LATEST" "$(backup_root)/$LATEST" "$ENCRYPTED" 0 || true
+fi
+
 if [[ "$HEALTH" != "OK" ]]; then
-  log "**DRILL FAILED** — API health check failed after restore."
+  log "**DRILL FAILED** — isolated restore verification failed."
   exit 1
 fi
 if awk -v s="$TOTAL" 'BEGIN { exit !(s > 4*3600) }'; then
@@ -80,11 +117,6 @@ if awk -v s="$TOTAL" 'BEGIN { exit !(s > 4*3600) }'; then
   exit 2
 fi
 
-log "**DRILL OK** — restore completed within RTO budget."
+log "**DRILL OK** — isolated restore completed within RTO budget."
 echo ""
 echo "Report written to $REPORT"
-
-if [[ "${QCHAT_DRILL_KEEP:-0}" != "1" ]]; then
-  # Keep the timed backup used for the drill; only prune empty placeholder dirs if any.
-  true
-fi

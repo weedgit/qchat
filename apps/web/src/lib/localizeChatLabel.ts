@@ -1,4 +1,5 @@
 import type { MessageKey } from "@qchat/i18n";
+import { formatSystemNotice } from "@qchat/i18n";
 
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
@@ -34,6 +35,10 @@ export function localizeChatLabel(
     if (type === "file") return t("chat.file");
     if (type === "call") return t("chat.call");
     return "";
+  }
+
+  if (raw.startsWith("{") && (raw.includes("member_left") || raw.includes("member_removed"))) {
+    return formatSystemNotice(raw);
   }
 
   const voiceTimed = raw.match(/^Voice message \((.+)\)$/i);

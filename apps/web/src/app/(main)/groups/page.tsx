@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatApiError } from "@qchat/i18n";
 import Avatar from "@/components/Avatar";
 import GroupQr from "@/components/GroupQr";
 import GroupQrScanner, { isGroupQrCameraSupported } from "@/components/GroupQrScanner";
@@ -133,8 +134,8 @@ export default function GroupsPage() {
   }, []);
 
   useEffect(() => {
-    load().catch((e) => setMsg(e.message));
-  }, [load]);
+    load().catch((e) => setMsg(formatApiError(e, t, "api.err.loadFailed")));
+  }, [load, t]);
 
   useEffect(() => {
     const onChanged = () => {
@@ -200,7 +201,7 @@ export default function GroupsPage() {
       if (!url) throw new Error(t("groups.avatarUploadFailed"));
       setAvatarUrl(url);
     } catch (err: any) {
-      setMsg(err?.message || t("groups.avatarUploadFailed"));
+      setMsg(formatApiError(err, t, "groups.avatarUploadFailed"));
     } finally {
       setAvatarBusy(false);
     }
@@ -271,7 +272,7 @@ export default function GroupsPage() {
         router.push(`/?c=${encodeURIComponent(id)}`);
       }
     } catch (err: any) {
-      setMsg(err.message);
+      setMsg(formatApiError(err, t));
     } finally {
       setBusy(false);
     }
@@ -360,7 +361,7 @@ export default function GroupsPage() {
         router.push(`/friends?q=${encodeURIComponent(username)}`);
       }, 700);
     } catch (err: any) {
-      setMsg(err?.message || t("contacts.requestSent"));
+      setMsg(formatApiError(err, t));
       setScanning(false);
       window.setTimeout(() => {
         router.push(`/friends?q=${encodeURIComponent(username)}`);
@@ -402,7 +403,7 @@ export default function GroupsPage() {
       setScanning(false);
       await load().catch(() => {});
     } catch (err: any) {
-      setMsg(err.message);
+      setMsg(formatApiError(err, t));
     } finally {
       setBusy(false);
     }
@@ -451,7 +452,7 @@ export default function GroupsPage() {
       );
       setPending(asList(pend, "pending"));
     } catch (err: any) {
-      setMsg(err.message);
+      setMsg(formatApiError(err, t));
       setMembers([]);
       setPending([]);
     } finally {
@@ -491,7 +492,7 @@ export default function GroupsPage() {
       setManageDesc("");
       setManageAvatarUrl(undefined);
     } catch (err: any) {
-      setMsg(err.message);
+      setMsg(formatApiError(err, t));
     } finally {
       setBusy(false);
     }
@@ -525,7 +526,7 @@ export default function GroupsPage() {
       notifyConversationsChanged();
       closeManage();
     } catch (err: any) {
-      setMsg(err.message);
+      setMsg(formatApiError(err, t));
     } finally {
       setBusy(false);
     }
@@ -550,7 +551,7 @@ export default function GroupsPage() {
       setMembers((prev) => prev.filter((m) => m.user_id !== userId));
       notifyConversationsChanged();
     } catch (err: any) {
-      setMsg(err.message);
+      setMsg(formatApiError(err, t));
     } finally {
       setBusy(false);
     }
@@ -570,7 +571,7 @@ export default function GroupsPage() {
         prev.map((m) => (m.user_id === userId ? { ...m, role: "member" } : m))
       );
     } catch (err: any) {
-      setMsg(err.message);
+      setMsg(formatApiError(err, t));
     } finally {
       setBusy(false);
     }
@@ -606,7 +607,7 @@ export default function GroupsPage() {
       );
       notifyConversationsChanged();
     } catch (err: any) {
-      setMsg(err?.message || t("groups.avatarUploadFailed"));
+      setMsg(formatApiError(err, t, "groups.avatarUploadFailed"));
     } finally {
       setAvatarBusy(false);
     }
@@ -683,7 +684,7 @@ export default function GroupsPage() {
         prev.map((m) => (m.user_id === userId ? { ...m, role: next } : m))
       );
     } catch (err: any) {
-      setMsg(err.message);
+      setMsg(formatApiError(err, t));
     } finally {
       setBusy(false);
     }
@@ -962,7 +963,7 @@ export default function GroupsPage() {
                 <div className="menu-modal-list-main">
                   <div
                     className={`groups-list-company${g.enterpriseName ? " is-enterprise" : ""}`}
-                    title={g.enterpriseName || t("chat.personalSocial")}
+                    title={g.enterpriseName || t("account.enterprise")}
                   >
                     <svg
                       className="groups-list-company-icon"
@@ -981,7 +982,7 @@ export default function GroupsPage() {
                       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                     </svg>
-                    <span>{g.enterpriseName || t("chat.personalSocial")}</span>
+                    <span>{g.enterpriseName || t("account.enterprise")}</span>
                   </div>
                   <div className="menu-modal-list-title">{g.title}</div>
                   <div className="menu-modal-list-sub">
@@ -1473,7 +1474,7 @@ export default function GroupsPage() {
                     setAdminQuery("");
                     setManageView("admins");
                   } catch (err: any) {
-                    setMsg(err.message);
+                    setMsg(formatApiError(err, t));
                   } finally {
                     setBusy(false);
                   }
@@ -1716,7 +1717,7 @@ export default function GroupsPage() {
                     setManageView("members");
                     notifyConversationsChanged();
                   } catch (err: any) {
-                    setMsg(err.message);
+                    setMsg(formatApiError(err, t));
                   } finally {
                     setBusy(false);
                   }
