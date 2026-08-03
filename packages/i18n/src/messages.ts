@@ -568,20 +568,6 @@ const en = {
   "download.createAccount": "Create account",
   "download.backToLogin": "Back to sign in",
   "download.loadError": "Could not load download catalog. Try again later.",
-
-  "footer.contactUs": "Contact us",
-  "footer.lead": "Reach a desk by phone — we are happy to help with accounts, setup, and enterprise plans.",
-  "footer.hoursNote": "Mainland China numbers · click to dial on mobile",
-  "footer.roleSupport": "Customer support",
-  "footer.roleTech": "Technical support",
-  "footer.roleSales": "Enterprise sales",
-  "footer.roleAccounts": "Account help",
-  "footer.nameSupport": "Rchat Care",
-  "footer.nameTech": "Tech Desk",
-  "footer.nameSales": "Enterprise",
-  "footer.nameAccounts": "Account Help",
-  "footer.hoursWeekday": "Mon–Fri 09:00–18:00",
-  "footer.hoursAlways": "24 / 7 hotline",
 } as const;
 
 const zh: Record<MessageKey, string> = {
@@ -1144,20 +1130,6 @@ const zh: Record<MessageKey, string> = {
   "download.createAccount": "注册账号",
   "download.backToLogin": "返回登录",
   "download.loadError": "无法加载下载列表，请稍后重试。",
-
-  "footer.contactUs": "联系我们",
-  "footer.lead": "如需账号、部署或企业方案协助，请直接拨打下方电话。",
-  "footer.hoursNote": "中国大陆号码 · 手机可点击拨号",
-  "footer.roleSupport": "客户支持",
-  "footer.roleTech": "技术支持",
-  "footer.roleSales": "企业销售",
-  "footer.roleAccounts": "账号协助",
-  "footer.nameSupport": "Rchat 客服",
-  "footer.nameTech": "技术台",
-  "footer.nameSales": "企业业务",
-  "footer.nameAccounts": "账号协助",
-  "footer.hoursWeekday": "工作日 09:00–18:00",
-  "footer.hoursAlways": "全天候热线",
 };
 
 export const catalogs: Record<ResolvedLocale, Record<MessageKey, string>> = {

@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import type { MessageKey } from "@qchat/i18n";
 import LoadingSplash from "@/components/LoadingSplash";
 import { PasswordInput } from "@/components/PasswordInput";
-import SiteFooter from "@/components/SiteFooter";
 import { ApiError, api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
 import { validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
@@ -222,7 +221,6 @@ export default function LoginPage() {
           {t("download.nav")}
         </Link>
       )}
-      <div className="auth-wrap-main">
       <form className="auth-card" onSubmit={onSubmit}>
         <div className="auth-logo">R</div>
         <div className="auth-title">
@@ -359,8 +357,6 @@ export default function LoginPage() {
               : t("login.register")}
         </button>
       </form>
-      </div>
-      <SiteFooter variant="compact" />
     </div>
   );
 }
