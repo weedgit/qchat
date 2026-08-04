@@ -257,20 +257,11 @@ func (s *Server) canAccessMediaObject(ctx context.Context, userID, enterpriseID,
 				return true
 			}
 		}
-		if enterpriseID != "" {
-			var linked bool
-			if err := s.db.QueryRow(ctx, `
-				SELECT EXISTS (
-					SELECT 1 FROM messages m
-					WHERE m.enterprise_id = $1::uuid
-					  AND m.media_url <> ''
-					  AND (
-					    split_part(m.media_url, '?', 1) = $2
-					    OR split_part(m.media_url, '?', 1) LIKE '%/' || $3
-					  )
-				)`, enterpriseID, mediaPath, rel).Scan(&linked); err == nil && linked {
-				return true
-			}
+		if s.mediaLinkedInMessages(ctx, mediaPath, rel, "") {
+			return true
+		}
+		if enterpriseID != "" && s.mediaLinkedInMessages(ctx, mediaPath, rel, enterpriseID) {
+			return true
 		}
 	}
 	if enterpriseID != "" && strings.HasPrefix(rel, enterpriseID+"/") {
@@ -289,6 +280,34 @@ func (s *Server) canAccessMediaObject(ctx context.Context, userID, enterpriseID,
 			    OR split_part(m.media_url, '?', 1) LIKE '%/' || $3
 			  )
 		)`, userID, mediaPath, rel).Scan(&ok)
+	return err == nil && ok
+}
+
+func (s *Server) mediaLinkedInMessages(ctx context.Context, mediaPath, rel, enterpriseID string) bool {
+	var ok bool
+	var err error
+	if enterpriseID != "" {
+		err = s.db.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM messages m
+				WHERE m.enterprise_id = $1::uuid
+				  AND m.media_url <> ''
+				  AND (
+				    split_part(m.media_url, '?', 1) = $2
+				    OR split_part(m.media_url, '?', 1) LIKE '%/' || $3
+				  )
+			)`, enterpriseID, mediaPath, rel).Scan(&ok)
+	} else {
+		err = s.db.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM messages m
+				WHERE m.media_url <> ''
+				  AND (
+				    split_part(m.media_url, '?', 1) = $1
+				    OR split_part(m.media_url, '?', 1) LIKE '%/' || $2
+				  )
+			)`, mediaPath, rel).Scan(&ok)
+	}
 	return err == nil && ok
 }
 

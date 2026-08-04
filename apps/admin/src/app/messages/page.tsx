@@ -4,7 +4,7 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useState } from "react"
 import AdminShell from "@/components/AdminShell";
 import Pagination from "@/components/Pagination";
 import { AdminTime } from "@/components/AdminTime";
-import { api, asList, fetchAdminMediaBlob, mediaAuthURL } from "@/lib/api";
+import { api, asList, mediaAuthURL } from "@/lib/api";
 import { formatAdminError } from "@/lib/errors";
 import { useLocale } from "@/lib/locale";
 import { useToast } from "@/components/Toast";
@@ -85,49 +85,15 @@ function isVideoFileHint(mediaUrl: string, content: string): boolean {
   return /\.(mp4|webm|mov|m4v|ogv)(\?|$|#)/i.test(hint);
 }
 
-function useAdminMediaBlob(mediaUrl: string) {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!mediaUrl) {
-      setBlobUrl(null);
-      setLoading(false);
-      setFailed(false);
-      return;
-    }
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setLoading(true);
-    setFailed(false);
-    setBlobUrl(null);
-    void fetchAdminMediaBlob(mediaUrl)
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setBlobUrl(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [mediaUrl]);
-
-  return { blobUrl, loading, failed };
-}
-
 function MediaCell({ m, recalledLabel }: { m: InspectedMessage; recalledLabel: string }) {
   const { t } = useLocale();
+  const [mediaFailed, setMediaFailed] = useState(false);
   const hasMedia = Boolean(m.mediaUrl);
-  const { blobUrl, loading, failed } = useAdminMediaBlob(hasMedia ? m.mediaUrl : "");
-  const downloadUrl = mediaAuthURL(m.mediaUrl) || blobUrl || "";
+  const authUrl = mediaAuthURL(m.mediaUrl);
+
+  useEffect(() => {
+    setMediaFailed(false);
+  }, [m.id, m.mediaUrl]);
 
   if (m.recalled && !m.content && !hasMedia) {
     return <span className="muted">{recalledLabel}</span>;
@@ -137,11 +103,18 @@ function MediaCell({ m, recalledLabel }: { m: InspectedMessage; recalledLabel: s
     m.content &&
     !(hasMedia && (m.type === "voice" || m.type === "file" || m.type === "image"));
 
-  if (hasMedia && loading) {
-    return <span className="muted">{t("admin.common.loading")}</span>;
+  if (hasMedia && !authUrl) {
+    return (
+      <div className="inspect-media-cell">
+        {showStandaloneText ? (
+          <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+        ) : null}
+        <span className="muted">{t("admin.messages.mediaUnavailable")}</span>
+      </div>
+    );
   }
 
-  if (hasMedia && failed) {
+  if (hasMedia && mediaFailed) {
     return (
       <div className="inspect-media-cell">
         {showStandaloneText ? (
@@ -157,42 +130,45 @@ function MediaCell({ m, recalledLabel }: { m: InspectedMessage; recalledLabel: s
       {showStandaloneText ? (
         <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
       ) : null}
-      {hasMedia && blobUrl && m.type === "voice" ? (
+      {hasMedia && authUrl && m.type === "voice" ? (
         <div className="inspect-media-voice">
           <audio
             className="inspect-media-audio"
             controls
             preload="metadata"
-            src={blobUrl}
+            src={authUrl}
+            onError={() => setMediaFailed(true)}
           />
           {m.content ? <div className="muted inspect-media-label">{m.content}</div> : null}
         </div>
       ) : null}
-      {hasMedia && blobUrl && m.type === "image" ? (
+      {hasMedia && authUrl && m.type === "image" ? (
         <div className="inspect-media-image">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={blobUrl}
+            src={authUrl}
             alt={m.content || "image"}
             className="inspect-media-img"
+            onError={() => setMediaFailed(true)}
           />
           {m.content ? <div className="inspect-media-label">{m.content}</div> : null}
         </div>
       ) : null}
-      {hasMedia && m.type === "file" ? (
-        isVideoFileHint(m.mediaUrl, m.content) && blobUrl ? (
+      {hasMedia && authUrl && m.type === "file" ? (
+        isVideoFileHint(m.mediaUrl, m.content) ? (
           <div className="inspect-media-video">
             <video
               className="inspect-media-video-el"
               controls
               preload="metadata"
               playsInline
-              src={blobUrl}
+              src={authUrl}
+              onError={() => setMediaFailed(true)}
             />
             {m.content ? (
               <a
                 className="inspect-media-file"
-                href={downloadUrl}
+                href={authUrl}
                 target="_blank"
                 rel="noreferrer"
                 download
@@ -204,7 +180,7 @@ function MediaCell({ m, recalledLabel }: { m: InspectedMessage; recalledLabel: s
         ) : (
           <a
             className="inspect-media-file"
-            href={downloadUrl}
+            href={authUrl}
             target="_blank"
             rel="noreferrer"
             download
@@ -214,13 +190,13 @@ function MediaCell({ m, recalledLabel }: { m: InspectedMessage; recalledLabel: s
         )
       ) : null}
       {hasMedia &&
-      blobUrl &&
+      authUrl &&
       m.type !== "voice" &&
       m.type !== "image" &&
       m.type !== "file" ? (
         <a
           className="inspect-media-file"
-          href={downloadUrl}
+          href={authUrl}
           target="_blank"
           rel="noreferrer"
           download
