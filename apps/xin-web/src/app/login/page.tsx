@@ -11,7 +11,7 @@ import { validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
 import { isElectronShell } from "@/lib/downloads";
 import { useLocale } from "@/lib/locale";
-import { APP_LOGO_LETTER, SIBLING_APP } from "@/lib/brand";
+import { APP_LOGO_LETTER, APP_NAME, SIBLING_APP } from "@/lib/brand";
 
 interface CaptchaState {
   id: string;
@@ -210,7 +210,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth-wrap">
+    <div className="auth-wrap auth-xin-split">
+      <aside className="auth-xin-hero" aria-hidden>
+        <div className="auth-xin-hero-mark">{APP_LOGO_LETTER}</div>
+        <p className="auth-xin-hero-title">{APP_NAME}</p>
+        <p className="auth-xin-hero-sub">{t("login.enterpriseMessaging")}</p>
+      </aside>
+      <div className="auth-xin-panel">
       {showDownload && (
         <Link href="/download" className="auth-download-link" aria-label={t("download.nav")}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -219,8 +225,8 @@ export default function LoginPage() {
           {t("download.nav")}
         </Link>
       )}
-      <form className="auth-card" onSubmit={onSubmit}>
-        <div className="auth-logo">{APP_LOGO_LETTER}</div>
+      <form className="auth-card auth-xin-card" onSubmit={onSubmit}>
+        <div className="auth-logo auth-xin-card-logo">{APP_LOGO_LETTER}</div>
         <div className="auth-title">
           {mode === "login" ? t("login.signInToApp") : t("login.createAccount")}
         </div>
@@ -367,6 +373,7 @@ export default function LoginPage() {
           </p>
         ) : null}
       </form>
+      </div>
     </div>
   );
 }

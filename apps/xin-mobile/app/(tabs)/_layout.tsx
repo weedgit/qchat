@@ -34,23 +34,25 @@ export default function TabsLayout() {
       screenOptions={{
         headerStyle: {
           backgroundColor: colors.headerBlue,
-          borderBottomWidth: 0,
+          borderBottomWidth: 3,
+          borderBottomColor: colors.accent,
           elevation: 0,
           shadowOpacity: 0,
         },
+        headerTitleStyle: { fontWeight: "800", letterSpacing: -0.5 },
         headerTintColor: "#fff",
-        headerTitleStyle: { fontWeight: "700" },
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           backgroundColor: colors.surface,
-          borderTopWidth: 0,
+          borderTopWidth: 3,
+          borderTopColor: colors.accent,
           height: tabBarHeight,
           paddingTop: spacing.sm,
           paddingBottom: Platform.OS === "ios" ? spacing.md : spacing.sm,
           ...Platform.select({
             ios: {
-              shadowColor: "#1e1b4b",
+              shadowColor: "#064e3b",
               shadowOffset: { width: 0, height: -4 },
               shadowOpacity: 0.08,
               shadowRadius: 12,

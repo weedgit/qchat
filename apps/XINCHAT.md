@@ -10,10 +10,10 @@ XinChat is a second branded client for the same Qchat/Rchat backend API.
 
 ## Layout (Xin skin)
 
-- **Web:** `src/app/xin-layout.css` — card panels, labeled nav rail, rounded bubbles/composer
-- **Mobile:** pill tab bar, filled icons when active, login hero with **X** mark
+Distinct from Rchat (Telegram-style flat blue): **plum/fuchsia** palette, **DM Sans** typography, labeled nav rail with **XinChat** wordmark, floating card panels, squircle avatars, square violet FAB, split login hero, gradient message bubbles.
 
-Rchat keeps the flat Telegram-style layout under `apps/web`.
+- **Web:** `src/app/xin-layout.css` + `globals.css` tokens under `data-app="xinchat"`
+- **Mobile:** pill tab bar with accent border, fuchsia-violet `src/theme.ts`
 
 
 Violet **X** icons are generated from `scripts/generate-xinchat-icons.py` (web, mobile, desktop).

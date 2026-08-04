@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { MessageKey } from "@qchat/i18n";
 import { api, clearToken, getToken, restoreDesktopSession } from "@/lib/api";
-import { APP_LOGO_LETTER } from "@/lib/brand";
+import { APP_LOGO_LETTER, APP_NAME } from "@/lib/brand";
 import { useLocale } from "@/lib/locale";
 import { unregisterWebPush } from "@/lib/webPush";
 
@@ -66,7 +66,10 @@ export default function AppShell({
     >
       {rail && (
         <nav className="nav-rail xin-nav-rail" aria-label="Main">
-          <div className="xin-nav-brand" aria-hidden>{APP_LOGO_LETTER}</div>
+          <div className="xin-nav-brand-wrap">
+            <div className="xin-nav-brand" aria-hidden>{APP_LOGO_LETTER}</div>
+            <span className="xin-nav-wordmark">{APP_NAME}</span>
+          </div>
           {NAV.map((item) => {
             const active =
               item.href === "/"

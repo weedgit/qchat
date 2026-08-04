@@ -26,7 +26,7 @@ async function ensureAndroidChannel() {
     name: "Messages",
     importance: Notifications.AndroidImportance.HIGH,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: "#7c3aed",
+    lightColor: "#059669",
     sound: "default",
   });
   channelReady = true;

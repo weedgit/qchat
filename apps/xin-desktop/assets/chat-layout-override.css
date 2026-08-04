@@ -1,43 +1,40 @@
 /**
- * Desktop chat layout override.
- * Injected via insertCSS so the Electron shell matches the current web UI
- * (Telegram-like adaptive chat + shared design tokens / menu modals).
- *
- * Keep this file in sync with apps/web/src/app/globals.css chat + theme rules.
+ * Desktop chat layout override (XinChat).
+ * Injected via insertCSS — tokens match apps/xin-web/src/app/globals.css.
  */
 
-/* —— Design tokens (match web) —— */
+/* —— Design tokens (XinChat emerald green) —— */
 :root,
 [data-theme="dark"] {
-  --bg: #0e1621 !important;
-  --bg-panel: #17212b !important;
-  --bg-panel-2: #242f3d !important;
-  --bg-hover: #202b36 !important;
-  --bg-active: #2b5278 !important;
-  --accent: #2aabee !important;
-  --accent-hover: #229ed9 !important;
-  --btn: #3390ec !important;
-  --btn-hover: #2a7fd4 !important;
-  --text: #f5f5f5 !important;
-  --text-dim: #708499 !important;
-  --text-faint: #6a7989 !important;
-  --border: #0d1520 !important;
+  --bg: #050f0c !important;
+  --bg-panel: #0f1f1a !important;
+  --bg-panel-2: #152a24 !important;
+  --bg-hover: #1a352e !important;
+  --bg-active: #065f46 !important;
+  --accent: #34d399 !important;
+  --accent-hover: #2dd4bf !important;
+  --btn: #059669 !important;
+  --btn-hover: #047857 !important;
+  --text: #ecfdf5 !important;
+  --text-dim: #a7f3d0 !important;
+  --text-faint: #6ee7b7 !important;
+  --border: #1e3a32 !important;
 }
 
 [data-theme="light"] {
-  --bg: #e8eef3 !important;
+  --bg: #f0fdf4 !important;
   --bg-panel: #ffffff !important;
-  --bg-panel-2: #f4f7fa !important;
-  --bg-hover: #eef3f8 !important;
-  --bg-active: #d6ebfa !important;
-  --accent: #3390ec !important;
-  --accent-hover: #2a7fd4 !important;
-  --btn: #3390ec !important;
-  --btn-hover: #2a7fd4 !important;
-  --text: #1a2332 !important;
-  --text-dim: #6b7c8f !important;
-  --text-faint: #9aabbc !important;
-  --border: #d5dee8 !important;
+  --bg-panel-2: #f7fef9 !important;
+  --bg-hover: #dcfce7 !important;
+  --bg-active: #bbf7d0 !important;
+  --accent: #059669 !important;
+  --accent-hover: #047857 !important;
+  --btn: #059669 !important;
+  --btn-hover: #047857 !important;
+  --text: #064e3b !important;
+  --text-dim: #047857 !important;
+  --text-faint: #6b9080 !important;
+  --border: #bbf7d0 !important;
 }
 
 .btn {

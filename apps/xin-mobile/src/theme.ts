@@ -1,4 +1,4 @@
-/** XinChat mobile theme — violet palette (distinct from Rchat blue). */
+/** XinChat mobile theme — emerald green (distinct from Rchat blue). */
 export type ThemeMode = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
@@ -21,39 +21,39 @@ export type ColorTokens = {
 };
 
 export const lightColors: ColorTokens = {
-  accent: "#7c3aed",
-  accentDark: "#6d28d9",
-  headerBlue: "#6d28d9",
-  bg: "#f5f3ff",
+  accent: "#059669",
+  accentDark: "#047857",
+  headerBlue: "#047857",
+  bg: "#f0fdf4",
   surface: "#ffffff",
-  text: "#1e1b4b",
-  textSecondary: "#6b7280",
-  textMuted: "#9ca3af",
-  border: "#e4e0f5",
+  text: "#064e3b",
+  textSecondary: "#047857",
+  textMuted: "#6b9080",
+  border: "#bbf7d0",
   unread: "#ef4444",
   online: "#22c55e",
-  bubbleMine: "#7c3aed",
+  bubbleMine: "#059669",
   bubblePeer: "#ffffff",
   danger: "#dc2626",
-  inputBg: "#f3f4f6",
+  inputBg: "#ecfdf5",
 };
 
 export const darkColors: ColorTokens = {
-  accent: "#a78bfa",
-  accentDark: "#8b5cf6",
-  headerBlue: "#1c1630",
-  bg: "#14101f",
-  surface: "#1c1630",
-  text: "#f5f3ff",
-  textSecondary: "#a5b4c8",
-  textMuted: "#7c8699",
-  border: "#2a2444",
-  unread: "#ef4444",
-  online: "#22c55e",
-  bubbleMine: "#6d28d9",
-  bubblePeer: "#252040",
-  danger: "#f87171",
-  inputBg: "#252040",
+  accent: "#34d399",
+  accentDark: "#2dd4bf",
+  headerBlue: "#0f2922",
+  bg: "#050f0c",
+  surface: "#0f1f1a",
+  text: "#ecfdf5",
+  textSecondary: "#a7f3d0",
+  textMuted: "#6ee7b7",
+  border: "#1e3a32",
+  unread: "#fb7185",
+  online: "#4ade80",
+  bubbleMine: "#047857",
+  bubblePeer: "#152a24",
+  danger: "#fb7185",
+  inputBg: "#152a24",
 };
 
 export const colors = lightColors;
@@ -68,9 +68,9 @@ export const spacing = {
 };
 
 export const radius = {
-  sm: 10,
-  md: 14,
-  lg: 18,
+  sm: 12,
+  md: 16,
+  lg: 22,
   pill: 999,
 };
 

@@ -1,58 +1,94 @@
 /**
- * XinChat layout skin — card panels, labeled nav rail, softer bubbles.
- * Scoped to [data-app="xinchat"] (set on <html> in layout.tsx).
+ * XinChat layout skin — deliberately unlike Rchat (Telegram-style flat blue).
+ * Scoped to [data-app="xinchat"] on <html>.
  */
 
+[data-app="xinchat"] body {
+  font-family:
+    "DM Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
 [data-app="xinchat"] .shell {
-  background: var(--bg);
+  background:
+    radial-gradient(ellipse 120% 80% at 0% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 55%),
+    radial-gradient(ellipse 90% 60% at 100% 100%, color-mix(in srgb, #059669 12%, transparent), transparent 50%),
+    var(--bg);
   gap: 0;
 }
 
-/* —— Nav rail: brand + icon + short label —— */
+/* —— Nav rail: labeled + wordmark (Rchat = icon-only 64px) —— */
 [data-app="xinchat"] .nav-rail.xin-nav-rail {
-  width: 80px;
-  padding: 12px 8px 14px;
-  gap: 4px;
-  border-right: none;
+  width: 92px;
+  padding: 14px 10px 16px;
+  gap: 6px;
+  border-right: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
   background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent) 14%, var(--bg-panel)) 0%,
-    var(--bg-panel) 55%
+    165deg,
+    color-mix(in srgb, var(--accent) 16%, var(--bg-panel)) 0%,
+    var(--bg-panel) 40%,
+    #081812 100%
   );
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+}
+
+[data-app="xinchat"] .xin-nav-brand-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  width: 100%;
 }
 
 [data-app="xinchat"] .xin-nav-brand {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 10px;
-  border-radius: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 26px;
+  font-weight: 800;
   color: #fff;
-  background: linear-gradient(145deg, var(--accent), #4c1d95);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent);
+  background: linear-gradient(145deg, #34d399, #059669 55%, #065f46);
+  box-shadow: 0 8px 24px var(--xin-glow);
   flex-shrink: 0;
+}
+
+[data-app="xinchat"] .xin-nav-wordmark {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  line-height: 1.1;
 }
 
 [data-app="xinchat"] .xin-nav-rail .nav-item {
   width: 100%;
-  min-height: 54px;
+  min-height: 56px;
   height: auto;
-  padding: 6px 4px;
-  border-radius: 14px;
+  padding: 8px 6px;
+  border-radius: 16px;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   font-size: 10px;
   line-height: 1.1;
-  font-weight: 500;
+  font-weight: 600;
+  border: 1px solid transparent;
 }
 
 [data-app="xinchat"] .xin-nav-rail .nav-icon {
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
+  filter: saturate(1.1);
 }
 
 [data-app="xinchat"] .xin-nav-rail .nav-label {
@@ -63,133 +99,421 @@
   color: var(--text-faint);
 }
 
+[data-app="xinchat"] .xin-nav-rail .nav-item:hover {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover));
+  border-color: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
 [data-app="xinchat"] .xin-nav-rail .nav-item:hover .nav-label {
   color: var(--text-dim);
 }
 
 [data-app="xinchat"] .xin-nav-rail .nav-item.active {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 35%, #065f46), #047857);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  box-shadow: 0 4px 16px var(--xin-glow);
 }
 
 [data-app="xinchat"] .xin-nav-rail .nav-item.active .nav-label {
-  color: var(--accent);
-  font-weight: 600;
+  color: #fff;
 }
 
-/* —— Floating list + chat cards —— */
+/* —— Sidebar: brand header + card list (Rchat = flat panel + round menu) —— */
+[data-app="xinchat"] .sidebar {
+  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  border-right-color: color-mix(in srgb, var(--accent) 12%, var(--border));
+}
+
+[data-app="xinchat"] .sidebar-header {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  grid-template-rows: auto auto;
+  gap: 10px 8px;
+  align-items: center;
+  padding: 14px 14px 12px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 12%, var(--bg-panel)),
+    var(--bg-panel) 70%
+  );
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+
+[data-app="xinchat"] .sidebar-header::before {
+  content: "XinChat";
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  background: linear-gradient(90deg, #a7f3d0, #34d399 40%, #6ee7b7);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-app="xinchat"] .sidebar-header .icon-btn {
+  grid-row: 1;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel-2));
+  color: var(--accent);
+}
+
+[data-app="xinchat"] .sidebar-header .icon-btn:hover,
+[data-app="xinchat"] .sidebar-header .icon-btn.active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: #fff;
+}
+
+[data-app="xinchat"] .sidebar-header .search-wrap {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+[data-app="xinchat"] .search-wrap input.search-input:not([type="checkbox"]):not([type="radio"]) {
+  background: var(--bg-panel-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 14px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+[data-app="xinchat"] .search-wrap input.search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--xin-glow);
+}
+
+/* —— Floating cards on desktop —— */
 @media (min-width: 769px) {
   [data-app="xinchat"] .sidebar {
-    margin: 10px 0 10px 6px;
-    border-radius: 20px;
-    border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+    margin: 12px 0 12px 8px;
+    border-radius: 22px;
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.35),
+      0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
     overflow: hidden;
   }
 
   [data-app="xinchat"] .chat-pane {
-    margin: 10px 10px 10px 4px;
-    border-radius: 20px;
-    border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--border));
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+    margin: 12px 12px 12px 6px;
+    border-radius: 22px;
+    border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
     overflow: hidden;
   }
 
   [data-app="xinchat"] .shell[data-sidebar-collapsed="true"] > .chat-pane {
-    margin-left: 10px;
+    margin-left: 12px;
   }
+}
+
+[data-app="xinchat"] .chat-pane {
+  background:
+    radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 45%),
+    radial-gradient(circle at 90% 90%, color-mix(in srgb, #059669 8%, transparent), transparent 40%),
+    var(--bg-chat);
 }
 
 [data-app="xinchat"] .chat-header {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--accent) 10%, var(--bg-panel)),
-    var(--bg-panel) 45%
+    color-mix(in srgb, var(--accent) 14%, var(--bg-panel)),
+    var(--bg-panel) 50%
   );
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 12%, var(--border));
-}
-
-[data-app="xinchat"] .sidebar-header {
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 10%, var(--border));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
 }
 
 /* —— Conversation list —— */
 [data-app="xinchat"] .conv-item {
-  margin: 2px 8px;
-  border-radius: 14px;
+  margin: 3px 10px;
+  border-radius: 16px;
   border: 1px solid transparent;
+  padding-left: 12px;
 }
 
 [data-app="xinchat"] .conv-item:hover {
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-hover));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover));
 }
 
 [data-app="xinchat"] .conv-item.active {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
-/* —— Message bubbles —— */
+[data-app="xinchat"] .avatar:not(.is-group),
+[data-app="xinchat"] .avatar:not(.is-group) img {
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+[data-app="xinchat"] .avatar.is-group,
+[data-app="xinchat"] .avatar.is-group img {
+  border-radius: 12px;
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* —— FAB: rounded square (Rchat = blue circle) —— */
+[data-app="xinchat"] .fab {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #34d399, #059669);
+  box-shadow: 0 8px 28px var(--xin-glow);
+}
+
+[data-app="xinchat"] .fab:hover {
+  background: linear-gradient(145deg, #a7f3d0, #059669);
+  filter: none;
+}
+
+/* —— Message bubbles (readability first — no neon glow) —— */
 [data-app="xinchat"] .bubble {
   border-radius: 18px;
+  color: var(--bubble-in-text);
 }
 
 [data-app="xinchat"] .msg-row.mine .bubble {
-  border-bottom-right-radius: 8px;
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 22%, transparent);
+  background: var(--bubble-out);
+  color: var(--bubble-out-text);
+  border-bottom-right-radius: 6px;
+  box-shadow: none;
+  border: 1px solid color-mix(in srgb, #fff 12%, var(--bubble-out));
 }
 
 [data-app="xinchat"] .msg-row:not(.mine) .bubble {
-  border-bottom-left-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: var(--bubble-in);
+  color: var(--bubble-in-text);
+  border-bottom-left-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, #fff 8%);
+  box-shadow: none;
+}
+
+[data-app="xinchat"] .bubble .sender {
+  color: color-mix(in srgb, var(--accent) 70%, #fff);
+}
+
+[data-app="xinchat"] .msg-row.mine .bubble .sender {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+[data-app="xinchat"] .msg-row:not(.mine) .bubble .sender {
+  color: #a7f3d0;
+}
+
+[data-app="xinchat"] .msg-row.mine .bubble .meta,
+[data-app="xinchat"] .msg-row.mine .bubble .receipt-tick {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+[data-app="xinchat"] .msg-row.mine .bubble .receipt-tick.read {
+  color: #d1fae5;
+}
+
+[data-app="xinchat"] .msg-row:not(.mine) .bubble .meta {
+  color: rgba(245, 243, 255, 0.62);
+}
+
+[data-app="xinchat"] .msg-row.mine .bubble .mention {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+[data-app="xinchat"] .msg-row:not(.mine) .bubble .mention {
+  color: #d1fae5;
+  background: rgba(5, 150, 105, 0.35);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+[data-theme="light"][data-app="xinchat"] .msg-row:not(.mine) .bubble .mention {
+  color: #047857;
+  background: rgba(5, 150, 105, 0.12);
+}
+
+[data-app="xinchat"] .msg-row.mine .bubble .md-link,
+[data-app="xinchat"] .msg-row.mine .bubble a {
+  color: #d1fae5;
+}
+
+[data-app="xinchat"] .msg-row:not(.mine) .bubble .md-link,
+[data-app="xinchat"] .msg-row:not(.mine) .bubble a {
+  color: #6ee7b7;
+}
+
+[data-theme="light"][data-app="xinchat"] .msg-row.mine .bubble {
+  background: #059669;
+  color: #fff;
+}
+
+[data-theme="light"][data-app="xinchat"] .msg-row:not(.mine) .bubble {
+  background: #fff;
+  color: var(--bubble-in-text);
+  border-color: var(--border);
 }
 
 /* —— Composer —— */
 [data-app="xinchat"] .composer {
-  padding: 8px 14px 14px;
+  padding: 10px 16px 16px;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg-panel) 80%, transparent));
 }
 
 [data-app="xinchat"] .composer-box {
-  border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+  background: var(--bg-panel);
 }
 
 [data-app="xinchat"] .send-btn:not(.danger) {
-  background: var(--accent);
+  background: linear-gradient(145deg, var(--accent), var(--btn));
   color: #fff;
+  border-radius: 14px;
 }
 
 [data-app="xinchat"] .send-btn:not(.danger):hover {
-  background: var(--accent-hover);
+  background: linear-gradient(145deg, #a7f3d0, var(--btn-hover));
 }
 
-/* —— Primary buttons in chat chrome —— */
-[data-app="xinchat"] .btn-primary {
+[data-app="xinchat"] .btn-primary,
+[data-app="xinchat"] .btn:not(.btn-ghost):not(.danger) {
   background: linear-gradient(145deg, var(--accent), var(--btn));
   border: none;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 4px 16px var(--xin-glow);
 }
 
 [data-app="xinchat"] .popup-menu,
 [data-app="xinchat"] .main-menu {
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+/* —— Login: split hero (Rchat = centered card on flat bg) —— */
+[data-app="xinchat"] .auth-wrap.auth-xin-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 100vh;
+  padding: 0;
+  background: var(--bg);
+}
+
+@media (min-width: 900px) {
+  [data-app="xinchat"] .auth-wrap.auth-xin-split {
+    grid-template-columns: minmax(280px, 42%) 1fr;
+  }
+}
+
+[data-app="xinchat"] .auth-xin-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+  background:
+    radial-gradient(ellipse 80% 60% at 30% 20%, rgba(52, 211, 153, 0.35), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 80% 80%, rgba(5, 150, 105, 0.4), transparent 50%),
+    linear-gradient(160deg, #0a2e1f 0%, #050f0c 45%, #081812 100%);
+  border-right: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+[data-app="xinchat"] .auth-xin-hero-mark {
+  width: 96px;
+  height: 96px;
+  border-radius: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+  font-weight: 800;
+  color: #fff;
+  background: linear-gradient(145deg, #a7f3d0, #059669);
+  box-shadow: 0 20px 50px rgba(52, 211, 153, 0.35);
+  margin-bottom: 20px;
+}
+
+[data-app="xinchat"] .auth-xin-hero-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: #ecfdf5;
+  margin: 0;
+}
+
+[data-app="xinchat"] .auth-xin-hero-sub {
+  margin-top: 10px;
+  color: #a7f3d0;
+  font-size: 1rem;
+  text-align: center;
+  max-width: 280px;
+}
+
+[data-app="xinchat"] .auth-xin-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  position: relative;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent),
+    var(--bg);
+}
+
+[data-app="xinchat"] .auth-card.auth-xin-card {
+  width: min(400px, 100%);
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+[data-app="xinchat"] .auth-xin-card .auth-logo.auth-xin-card-logo {
+  width: 56px;
+  height: 56px;
+  font-size: 26px;
   border-radius: 16px;
-  border-color: color-mix(in srgb, var(--accent) 15%, var(--border));
+  background: linear-gradient(145deg, #34d399, #059669);
+}
+
+@media (max-width: 899px) {
+  [data-app="xinchat"] .auth-xin-hero {
+    padding: 32px 24px 28px;
+    border-right: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  }
+
+  [data-app="xinchat"] .auth-xin-hero-mark {
+    width: 64px;
+    height: 64px;
+    font-size: 32px;
+    margin-bottom: 12px;
+  }
+
+  [data-app="xinchat"] .auth-xin-hero-title {
+    font-size: 1.75rem;
+  }
+
+  [data-app="xinchat"] .auth-xin-card .auth-logo.auth-xin-card-logo {
+    display: none;
+  }
 }
 
 [data-theme="light"][data-app="xinchat"] .sidebar,
 [data-theme="light"][data-app="xinchat"] .chat-pane {
-  box-shadow: 0 8px 28px rgba(30, 27, 75, 0.08);
+  box-shadow: 0 12px 36px rgba(5, 150, 105, 0.12);
 }
 
 [data-app="xinchat"] .dl-btn-primary {
   background: linear-gradient(145deg, var(--accent), var(--btn));
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent);
+  box-shadow: 0 6px 20px var(--xin-glow);
 }
 
 [data-app="xinchat"] .dl-brand img {
-  border-radius: 10px;
+  border-radius: 14px;
 }
 
 @media (max-width: 768px) {
@@ -199,5 +523,14 @@
     border-radius: 0;
     border: none;
     box-shadow: none;
+  }
+
+  [data-app="xinchat"] .nav-rail.xin-nav-rail {
+    width: 72px;
+    padding: 10px 6px;
+  }
+
+  [data-app="xinchat"] .xin-nav-wordmark {
+    font-size: 9px;
   }
 }

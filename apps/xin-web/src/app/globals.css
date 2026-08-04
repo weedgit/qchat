@@ -1,52 +1,58 @@
 :root,
 [data-theme="dark"] {
-  /* XinChat — violet night palette (distinct from Rchat Telegram-blue). */
-  --bg: #14101f;
-  --bg-chat: #14101f;
-  --bg-panel: #1c1630;
-  --bg-panel-2: #252040;
-  --bg-hover: #2a2444;
-  --bg-active: #4c1d95;
-  --accent: #8b5cf6;
-  --accent-hover: #7c3aed;
-  --btn: #6d28d9;
-  --btn-hover: #5b21b6;
-  --text: #f5f3ff;
-  --text-dim: #a5b4c8;
-  --text-faint: #7c8699;
-  --bubble-in: #1e1a32;
-  --bubble-out: #5b21b6;
-  --danger: #f87171;
+  /* XinChat — emerald green (distinct from Rchat Telegram blue). */
+  --bg: #050f0c;
+  --bg-chat: #081812;
+  --bg-panel: #0f1f1a;
+  --bg-panel-2: #152a24;
+  --bg-hover: #1a352e;
+  --bg-active: #065f46;
+  --accent: #34d399;
+  --accent-hover: #2dd4bf;
+  --btn: #059669;
+  --btn-hover: #047857;
+  --text: #ecfdf5;
+  --text-dim: #a7f3d0;
+  --text-faint: #6ee7b7;
+  --bubble-in: #152a24;
+  --bubble-out: #047857;
+  --bubble-in-text: #ecfdf5;
+  --bubble-out-text: #ffffff;
+  --danger: #fb7185;
   --ok: #4ade80;
-  --border: #0f0b1a;
-  --radius: 14px;
-  --scrollbar: #3f3a5c;
-  --drop-accent: #c4b5fd;
+  --border: #1e3a32;
+  --radius: 16px;
+  --scrollbar: #065f46;
+  --drop-accent: #6ee7b7;
+  --xin-glow: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 /* Light theme tokens. */
 [data-theme="light"] {
-  --bg: #f3f0ff;
-  --bg-chat: #f3f0ff;
+  --bg: #f0fdf4;
+  --bg-chat: #ecfdf5;
   --bg-panel: #ffffff;
-  --bg-panel-2: #faf8ff;
-  --bg-hover: #ede9fe;
-  --bg-active: #ddd6fe;
-  --accent: #7c3aed;
-  --accent-hover: #6d28d9;
-  --btn: #7c3aed;
-  --btn-hover: #6d28d9;
-  --text: #1e1b4b;
-  --text-dim: #6b7280;
-  --text-faint: #9ca3af;
+  --bg-panel-2: #f7fef9;
+  --bg-hover: #dcfce7;
+  --bg-active: #bbf7d0;
+  --accent: #059669;
+  --accent-hover: #047857;
+  --btn: #059669;
+  --btn-hover: #047857;
+  --text: #064e3b;
+  --text-dim: #047857;
+  --text-faint: #6b9080;
   --bubble-in: #ffffff;
-  --bubble-out: #ddd6fe;
-  --danger: #dc2626;
+  --bubble-out: #059669;
+  --bubble-in-text: #064e3b;
+  --bubble-out-text: #ffffff;
+  --danger: #e11d48;
   --ok: #16a34a;
-  --border: #e4e0f5;
-  --radius: 14px;
-  --scrollbar: #c4b5fd;
-  --drop-accent: #8b5cf6;
+  --border: #bbf7d0;
+  --radius: 16px;
+  --scrollbar: #34d399;
+  --drop-accent: #059669;
+  --xin-glow: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 * {
@@ -375,7 +381,7 @@ select:focus {
   font-weight: 700;
   letter-spacing: -0.04em;
   color: #fff;
-  background: linear-gradient(145deg, var(--accent), #4c1d95);
+  background: linear-gradient(145deg, var(--accent), #065f46);
   box-shadow:
     0 12px 32px color-mix(in srgb, var(--accent) 35%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
@@ -5315,8 +5321,8 @@ button.members-row {
   text-transform: lowercase;
 }
 .members-role-pill.is-owner {
-  color: #c9a0ff;
-  background: color-mix(in srgb, #8b5cf6 28%, transparent);
+  color: #6ee7b7;
+  background: color-mix(in srgb, #059669 28%, transparent);
 }
 .members-role-pill.is-admin {
   color: #7ddea5;

@@ -31,7 +31,7 @@ module.exports = {
   splash: {
     image: "./assets/icon.png",
     resizeMode: "contain",
-    backgroundColor: "#5b21b6",
+    backgroundColor: "#047857",
   },
   ios: {
     supportsTablet: true,
@@ -40,7 +40,7 @@ module.exports = {
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#5b21b6",
+      backgroundColor: "#047857",
       foregroundImage: "./assets/adaptive-icon.png",
     },
     package: "com.xinchat.mobile",
@@ -57,7 +57,7 @@ module.exports = {
       "expo-notifications",
       {
         icon: "./assets/icon.png",
-        color: "#5b21b6",
+        color: "#059669",
         defaultChannel: "messages",
         sounds: [],
       },

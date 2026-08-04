@@ -2152,9 +2152,9 @@ function makeStyles(c: ColorTokens) {
   mineText: { color: "#fff" },
   peerText: { color: c.text },
   mentionMine: { fontWeight: "700" as const, textDecorationLine: "underline" as const },
-  mentionPeer: { fontWeight: "700" as const, color: c.accent },
-  linkMine: { color: "#dbeafe", textDecorationLine: "underline" as const },
-  linkPeer: { color: c.accent, textDecorationLine: "underline" as const },
+  mentionPeer: { fontWeight: "700" as const, color: "#6ee7b7" },
+  linkMine: { color: "#d1fae5", textDecorationLine: "underline" as const },
+  linkPeer: { color: "#34d399", textDecorationLine: "underline" as const },
   codeMine: {
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     backgroundColor: "rgba(0,0,0,0.2)",
