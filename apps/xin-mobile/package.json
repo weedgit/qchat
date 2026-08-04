@@ -49,6 +49,7 @@
   },
   "scripts": {
     "GetuiConfigure": "node node_modules/react-native-getui/GetuiConfiguration.js",
+    "GetuiConfigure": "node node_modules/react-native-getui/GetuiConfiguration.js",
     "start": "expo start --dev-client",
     "start:go": "expo start",
     "android": "expo run:android",
