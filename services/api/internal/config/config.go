@@ -57,6 +57,8 @@ type Config struct {
 	GiphyAPIKey string
 	// BackupDir is where deploy/backup.sh writes status.json (admin DR status).
 	BackupDir string
+	// RepoRoot is the monorepo root (deploy/backup.sh lives here).
+	RepoRoot string
 }
 
 func Load() Config {
@@ -95,6 +97,7 @@ func Load() Config {
 		GetuiMasterSecret:      strings.TrimSpace(getenv("QCHAT_GETUI_MASTER_SECRET", "")),
 		GiphyAPIKey:            strings.TrimSpace(getenv("QCHAT_GIPHY_API_KEY", "")),
 		BackupDir:              resolveBackupDir(),
+		RepoRoot:               resolveRepoRoot(),
 	}
 }
 
@@ -142,6 +145,31 @@ func resolveBackupDir() string {
 		}
 	}
 	return "backups"
+}
+
+// resolveRepoRoot finds the qchat monorepo root for deploy scripts.
+func resolveRepoRoot() string {
+	if v := strings.TrimSpace(os.Getenv("QCHAT_REPO_ROOT")); v != "" {
+		return v
+	}
+	backupDir := resolveBackupDir()
+	if backupDir != "" && backupDir != "backups" {
+		parent := filepath.Dir(backupDir)
+		if st, err := os.Stat(filepath.Join(parent, "deploy", "backup.sh")); err == nil && !st.IsDir() {
+			return parent
+		}
+	}
+	candidates := []string{".", "..", "../..", "/root/qchat"}
+	for _, c := range candidates {
+		if st, err := os.Stat(filepath.Join(c, "deploy", "backup.sh")); err == nil && !st.IsDir() {
+			abs, err := filepath.Abs(c)
+			if err == nil {
+				return abs
+			}
+			return c
+		}
+	}
+	return "."
 }
 
 // resolveDataDir picks the local upload root (…/uploads). Prefer an existing

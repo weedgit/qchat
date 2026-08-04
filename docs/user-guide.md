@@ -342,7 +342,7 @@ Exact capabilities: see [`admin-guide.md`](./admin-guide.md) and [`qchat-permiss
 | **Audit log** | Immutable record of admin actions |
 | **Message inspect** | View message history **only with a mandatory reason** (audited) |
 | **Security** | Admin MFA (TOTP + recovery), IP allowlist, login alerts |
-| **Backup** | Backup age, encryption, off-site flag, latest restore drill |
+| **Backup** | Platform owner: schedule, manual backup, drill/production restore |
 
 ---
 

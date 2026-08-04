@@ -8,16 +8,13 @@ func TestRolePermissionMatrix(t *testing.T) {
 		perm string
 		ok   bool
 	}{
-		{roleCompliance, permMessagesInspect, true},
-		{roleCompliance, permUsersBan, false},
-		{roleSupport, permUsersResetPassword, true},
-		{roleSupport, permMessagesInspect, false},
-		{roleReadOnly, permAdminRead, true},
-		{roleReadOnly, permUsersCreateMember, false},
+		{roleEnterpriseAdmin, permMessagesInspect, true},
 		{roleEnterpriseAdmin, permUsersBan, true},
 		{roleEnterpriseAdmin, permIssueEnterpriseAdmin, false},
-		{rolePlatformOwner, permIssueEnterpriseAdmin, true},
+		{rolePlatformAdmin, permIssueEnterpriseAdmin, true},
 		{roleMember, permAdminRead, false},
+		{"platform_owner", permIssueEnterpriseAdmin, true},
+		{"compliance", permAdminRead, false},
 	}
 	for _, tc := range cases {
 		got := roleHasPerm(tc.role, tc.perm)
@@ -25,7 +22,10 @@ func TestRolePermissionMatrix(t *testing.T) {
 			t.Fatalf("%s %s: got %v want %v", tc.role, tc.perm, got, tc.ok)
 		}
 	}
-	if !isAdminRole(roleCompliance) || isAdminRole(roleMember) {
+	if !isAdminRole(roleEnterpriseAdmin) || isAdminRole(roleMember) {
 		t.Fatal("isAdminRole mismatch")
+	}
+	if !isPlatformAdminRole("platform_owner") {
+		t.Fatal("legacy platform_owner should count as platform admin")
 	}
 }

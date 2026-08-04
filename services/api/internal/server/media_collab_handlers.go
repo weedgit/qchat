@@ -446,7 +446,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
-	if c.Role != "enterprise_admin" && c.Role != "platform_owner" {
+	if c.Role != roleEnterpriseAdmin && !isPlatformAdminRole(c.Role) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -477,7 +477,7 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateBot(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
-	if c.Role != "enterprise_admin" && c.Role != "platform_owner" {
+	if c.Role != roleEnterpriseAdmin && !isPlatformAdminRole(c.Role) {
 		writeErr(w, 403, "forbidden")
 		return
 	}

@@ -2,13 +2,16 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AdminShell from "@/components/AdminShell";
+import Pagination from "@/components/Pagination";
 import { PasswordInput } from "@/components/PasswordInput";
 import { api, asList } from "@/lib/api";
 import { displayNameError } from "@/lib/credentials";
+import { formatAdminError } from "@/lib/errors";
+import { translateRole, translateUserStatus } from "@/lib/labels";
+import { useLocale } from "@/lib/locale";
 import { can } from "@/lib/rbac";
 
-const PAGE_SIZE = 50;
-const REASON_MIN = 8;
+import { PAGE_SIZE } from "@/lib/pagination";const REASON_MIN = 8;
 
 interface AdminUser {
   id: string;
@@ -70,6 +73,7 @@ function formatDate(value: string): string {
 }
 
 export default function UsersPage() {
+  const { t } = useLocale();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -86,7 +90,6 @@ export default function UsersPage() {
   const [createBusy, setCreateBusy] = useState(false);
   const [createMsg, setCreateMsg] = useState<string | null>(null);
 
-  // Privileged actions target one user at a time; both are audited and need a reason.
   const [target, setTarget] = useState<AdminUser | null>(null);
   const [reason, setReason] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -111,15 +114,14 @@ export default function UsersPage() {
       setTotal(Number(body?.total ?? 0));
       setError(null);
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load(query, offset);
-    // Reloads are driven explicitly by search and paging, not by keystrokes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, offset]);
 
@@ -147,7 +149,7 @@ export default function UsersPage() {
     } catch (err: any) {
       if (request !== sessionsRequestRef.current) return;
       setSessions([]);
-      setSessionsError(err.message);
+      setSessionsError(formatAdminError(err, t, "admin.err.loadFailed"));
     } finally {
       if (request === sessionsRequestRef.current) setSessionsLoading(false);
     }
@@ -168,7 +170,7 @@ export default function UsersPage() {
     const dn = (displayName || username).trim();
     const dnErr = displayNameError(dn);
     if (dnErr) {
-      setCreateMsg(dnErr);
+      setCreateMsg(t(dnErr));
       return;
     }
     setCreateBusy(true);
@@ -184,7 +186,7 @@ export default function UsersPage() {
           role,
         }),
       });
-      setCreateMsg("User created.");
+      setCreateMsg(t("admin.users.created"));
       setPhone("");
       setUsername("");
       setDisplayName("");
@@ -193,7 +195,7 @@ export default function UsersPage() {
       setCreateOpen(false);
       await load(query, offset);
     } catch (err: any) {
-      setCreateMsg(err.message);
+      setCreateMsg(formatAdminError(err, t, "admin.err.generic"));
     } finally {
       setCreateBusy(false);
     }
@@ -201,7 +203,7 @@ export default function UsersPage() {
 
   async function runAction(fn: () => Promise<void>, done: string) {
     if (reason.trim().length < REASON_MIN) {
-      setActionErr(`A reason of at least ${REASON_MIN} characters is required.`);
+      setActionErr(t("admin.err.reasonRequired"));
       return;
     }
     setActionBusy(true);
@@ -212,7 +214,7 @@ export default function UsersPage() {
       setActionMsg(done);
       await load(query, offset);
     } catch (err: any) {
-      setActionErr(err.message);
+      setActionErr(formatAdminError(err, t, "admin.err.generic"));
     } finally {
       setActionBusy(false);
     }
@@ -229,16 +231,14 @@ export default function UsersPage() {
         });
         setTarget({ ...target, banned, status: banned ? "banned" : "active" });
       },
-      banned
-        ? "User blocked. All sessions were signed out."
-        : "User unblocked. They can sign in again."
+      banned ? t("admin.users.blocked") : t("admin.users.unblocked")
     );
   }
 
   function resetPassword() {
     if (!target) return;
     if (!newPassword) {
-      setActionErr("A temporary password is required.");
+      setActionErr(t("admin.err.tempPasswordRequired"));
       return;
     }
     runAction(async () => {
@@ -247,11 +247,12 @@ export default function UsersPage() {
         body: JSON.stringify({ password: newPassword, reason: reason.trim() }),
       });
       setNewPassword("");
-    }, "Password reset. All sessions were signed out; share the temporary password securely.");
+    }, t("admin.users.passwordReset"));
   }
 
   function revokeSession(session: AdminSession) {
     if (!target) return;
+    const name = session.platform || session.deviceType || "session";
     runAction(async () => {
       await api(
         `/v1/admin/users/${encodeURIComponent(target.id)}/sessions/${encodeURIComponent(session.id)}/revoke`,
@@ -261,36 +262,32 @@ export default function UsersPage() {
         }
       );
       setSessions((current) => current.filter((item) => item.id !== session.id));
-    }, `Signed out ${session.platform || session.deviceType || "session"}.`);
+    }, t("admin.users.sessionSignedOut", { name }));
   }
 
-  const from = total === 0 ? 0 : offset + 1;
-  const to = Math.min(offset + users.length, total);
-  const canCreate = can(meRole, "createMember") || can(meRole, "createConsoleRole");
+  const canCreate = can(meRole, "createMember") || can(meRole, "issueEnterpriseAdmin");
   const canBan = can(meRole, "ban");
   const canReset = can(meRole, "resetPassword");
   const canRevoke = can(meRole, "revokeSession");
 
   return (
     <AdminShell>
-      <h1>Users</h1>
-      <div className="page-sub">
-        Registered accounts and assisted provisioning.
-      </div>
+      <h1>{t("admin.nav.users")}</h1>
+      <div className="page-sub">{t("admin.users.subtitle")}</div>
 
-      <div className="toolbar">
+      <div className="toolbar toolbar-full">
         <input
-          placeholder="Search by phone, username or display name"
+          placeholder={t("admin.users.searchPlaceholder")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && search()}
         />
         <button className="btn" onClick={search}>
-          Search
+          {t("admin.common.search")}
         </button>
         {canCreate ? (
           <button className="btn" type="button" onClick={() => setCreateOpen((v) => !v)}>
-            {createOpen ? "Close form" : "Create user"}
+            {createOpen ? t("admin.users.closeForm") : t("admin.users.createUser")}
           </button>
         ) : null}
       </div>
@@ -298,43 +295,43 @@ export default function UsersPage() {
       {createOpen && canCreate && (
         <form className="card" onSubmit={onCreate} style={{ marginBottom: 16, padding: 16 }}>
           <div className="page-sub" style={{ marginBottom: 12 }}>
-            Assisted registration — admin creates a member allowlist-style without self-service OTP.
+            {t("admin.users.createBlurb")}
           </div>
           <div className="form-rows" style={{ marginTop: 4 }}>
             <div className="form-row">
-              <label htmlFor="admin-create-phone">Phone</label>
+              <label htmlFor="admin-create-phone">{t("admin.common.phone")}</label>
               <input
                 id="admin-create-phone"
-                placeholder="11 digits"
+                placeholder={t("admin.common.phonePlaceholder")}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 required
               />
             </div>
             <div className="form-row">
-              <label htmlFor="admin-create-username">Username</label>
+              <label htmlFor="admin-create-username">{t("admin.common.username")}</label>
               <input
                 id="admin-create-username"
-                placeholder="Username"
+                placeholder={t("admin.common.username")}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
               />
             </div>
             <div className="form-row">
-              <label htmlFor="admin-create-display">Display name</label>
+              <label htmlFor="admin-create-display">{t("admin.common.displayName")}</label>
               <input
                 id="admin-create-display"
-                placeholder="Display name"
+                placeholder={t("admin.common.displayName")}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
               />
             </div>
             <div className="form-row">
-              <label htmlFor="admin-create-password">Temp password</label>
+              <label htmlFor="admin-create-password">{t("admin.common.tempPassword")}</label>
               <PasswordInput
                 id="admin-create-password"
-                placeholder="Temporary password"
+                placeholder={t("admin.common.tempPassword")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -342,29 +339,24 @@ export default function UsersPage() {
               />
             </div>
             <div className="form-row">
-              <label htmlFor="admin-create-role">Role</label>
+              <label htmlFor="admin-create-role">{t("admin.common.role")}</label>
               <select
                 id="admin-create-role"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
               >
-                {can(meRole, "createMember") ? <option value="member">member</option> : null}
-                {can(meRole, "createConsoleRole") ? (
-                  <>
-                    <option value="compliance">compliance</option>
-                    <option value="support">support</option>
-                    <option value="read_only">read_only</option>
-                  </>
-                ) : null}
+                <option value="member">{translateRole(t, "member")}</option>
                 {can(meRole, "issueEnterpriseAdmin") ? (
-                  <option value="enterprise_admin">enterprise_admin (this enterprise)</option>
+                  <option value="enterprise_admin">
+                    {translateRole(t, "enterprise_admin")}
+                  </option>
                 ) : null}
               </select>
             </div>
             <div className="form-row">
               <span />
               <button className="btn" type="submit" disabled={createBusy}>
-                {createBusy ? "Creating…" : "Provision"}
+                {createBusy ? t("admin.common.creating") : t("admin.users.provision")}
               </button>
             </div>
           </div>
@@ -379,21 +371,16 @@ export default function UsersPage() {
               {target.nickname} <span className="muted">@{target.username}</span>
             </strong>
             <button className="btn" type="button" onClick={() => setTarget(null)}>
-              Close
+              {t("admin.common.close")}
             </button>
           </div>
-          <div className="notice" style={{ marginTop: 12 }}>
-            Blocking an account, resetting a password and remotely signing out a
-            session are audited actions. Your identity, the target account and
-            the reason below are recorded permanently. Existing passwords can
-            never be viewed, only replaced.
-          </div>
+          <div className="notice" style={{ marginTop: 12 }}>{t("admin.users.actionsBlurb")}</div>
           <div className="field" style={{ marginTop: 12 }}>
-            <label>Reason (required, recorded in audit log)</label>
+            <label>{t("admin.common.reasonAudited")}</label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Compliance ticket #1234 — account takeover reported"
+              placeholder={t("admin.common.reasonPlaceholder")}
               rows={2}
             />
           </div>
@@ -405,13 +392,13 @@ export default function UsersPage() {
                 disabled={actionBusy}
                 onClick={toggleBan}
               >
-                {target.banned ? "Unblock sign-in" : "Block sign-in"}
+                {target.banned ? t("admin.users.unblockSignIn") : t("admin.users.blockSignIn")}
               </button>
             ) : null}
             {canReset ? (
               <>
                 <PasswordInput
-                  placeholder="New temporary password"
+                  placeholder={t("admin.users.newTempPassword")}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   autoComplete="new-password"
@@ -422,7 +409,7 @@ export default function UsersPage() {
                   disabled={actionBusy}
                   onClick={resetPassword}
                 >
-                  Reset password
+                  {t("admin.users.resetPassword")}
                 </button>
               </>
             ) : null}
@@ -431,54 +418,54 @@ export default function UsersPage() {
           {actionMsg && <div className="notice" style={{ marginTop: 8 }}>{actionMsg}</div>}
           <div style={{ marginTop: 20 }}>
             <div className="toolbar" style={{ justifyContent: "space-between" }}>
-              <strong>Active sessions</strong>
+              <strong>{t("admin.users.activeSessions")}</strong>
               <button
                 className="btn"
                 type="button"
                 disabled={sessionsLoading}
                 onClick={() => loadSessions(target.id)}
               >
-                {sessionsLoading ? "Refreshing…" : "Refresh"}
+                {sessionsLoading ? t("admin.common.refreshing") : t("admin.common.refresh")}
               </button>
             </div>
             {sessionsError && (
               <div className="error-text" style={{ marginTop: 8 }}>
-                Failed to load sessions: {sessionsError}
+                {t("admin.users.sessionsLoadFailed", { error: sessionsError })}
               </div>
             )}
             <div style={{ overflowX: "auto", marginTop: 8 }}>
               <table className="data">
                 <thead>
                   <tr>
-                    <th>Device</th>
-                    <th>Platform</th>
-                    <th>IP / Location</th>
-                    <th>Last active</th>
-                    <th>Expires</th>
-                    <th>Action</th>
+                    <th>{t("admin.common.device")}</th>
+                    <th>{t("admin.common.platform")}</th>
+                    <th>{t("admin.common.ipLocation")}</th>
+                    <th>{t("admin.common.lastActive")}</th>
+                    <th>{t("admin.common.expires")}</th>
+                    <th>{t("admin.common.action")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sessionsLoading && sessions.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="muted">Loading sessions…</td>
+                      <td colSpan={6} className="muted">{t("admin.users.loadingSessions")}</td>
                     </tr>
                   )}
                   {!sessionsLoading && !sessionsError && sessions.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="muted">No active sessions.</td>
+                      <td colSpan={6} className="muted">{t("admin.users.noSessions")}</td>
                     </tr>
                   )}
                   {sessions.map((session) => (
                     <tr key={session.id}>
                       <td>
-                        {session.deviceName || session.deviceType || "Unknown device"}
+                        {session.deviceName ||
+                          session.deviceType ||
+                          t("admin.common.unknownDevice")}
                       </td>
                       <td>{session.platform || "—"}</td>
                       <td>
-                        <div style={{ fontFamily: "monospace", fontSize: 12 }}>
-                          {session.ip}
-                        </div>
+                        <div style={{ fontFamily: "monospace", fontSize: 12 }}>{session.ip}</div>
                         <div className="muted">{session.location}</div>
                       </td>
                       <td className="muted">{formatDate(session.lastActiveAt)}</td>
@@ -491,7 +478,7 @@ export default function UsersPage() {
                             disabled={actionBusy}
                             onClick={() => revokeSession(session)}
                           >
-                            Sign out
+                            {t("admin.common.signOut")}
                           </button>
                         ) : (
                           <span className="muted">—</span>
@@ -506,31 +493,35 @@ export default function UsersPage() {
         </div>
       )}
 
-      {error && <div className="notice">Failed to load users: {error}</div>}
+      {error && (
+        <div className="notice">
+          {t("admin.common.loadFailed", { target: t("admin.users.loadFailed"), error })}
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="data">
           <thead>
             <tr>
-              <th>Phone</th>
-              <th>Nickname</th>
-              <th>Username</th>
-              <th>Status</th>
-              <th>Register IP</th>
-              <th>Region</th>
-              <th>Created</th>
-              <th>Actions</th>
+              <th>{t("admin.common.phone")}</th>
+              <th>{t("admin.common.nickname")}</th>
+              <th>{t("admin.common.username")}</th>
+              <th>{t("admin.common.status")}</th>
+              <th>{t("admin.common.registerIp")}</th>
+              <th>{t("admin.common.region")}</th>
+              <th>{t("admin.common.created")}</th>
+              <th>{t("admin.common.actions")}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={8} className="muted">Loading…</td>
+                <td colSpan={8} className="muted">{t("admin.common.loading")}</td>
               </tr>
             )}
             {!loading && users.length === 0 && (
               <tr>
-                <td colSpan={8} className="muted">No users found.</td>
+                <td colSpan={8} className="muted">{t("admin.users.noUsersFound")}</td>
               </tr>
             )}
             {users.map((u) => (
@@ -540,7 +531,7 @@ export default function UsersPage() {
                 <td className="muted">@{u.username}</td>
                 <td>
                   <span className={`pill ${u.status === "active" ? "ok" : "danger"}`}>
-                    {u.status}
+                    {translateUserStatus(t, u.status)}
                   </span>
                 </td>
                 <td style={{ fontFamily: "monospace", fontSize: 12 }}>{u.registerIp}</td>
@@ -548,7 +539,7 @@ export default function UsersPage() {
                 <td className="muted">{u.createdAt}</td>
                 <td>
                   <button className="btn" type="button" onClick={() => openActions(u)}>
-                    Manage
+                    {t("admin.common.manage")}
                   </button>
                 </td>
               </tr>
@@ -557,29 +548,15 @@ export default function UsersPage() {
         </table>
       </div>
 
-      <div className="toolbar" style={{ justifyContent: "space-between", marginTop: 12 }}>
-        <span className="muted">
-          {total === 0 ? "No users" : `Showing ${from}–${to} of ${total}`}
-        </span>
-        <span style={{ display: "flex", gap: 8 }}>
-          <button
-            className="btn"
-            type="button"
-            disabled={loading || offset === 0}
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-          >
-            Previous
-          </button>
-          <button
-            className="btn"
-            type="button"
-            disabled={loading || to >= total}
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-          >
-            Next
-          </button>
-        </span>
-      </div>
+      <Pagination
+        total={total}
+        offset={offset}
+        pageSize={PAGE_SIZE}
+        visibleCount={users.length}
+        loading={loading}
+        onPageChange={setOffset}
+        emptyLabel={t("admin.users.noUsers")}
+      />
     </AdminShell>
   );
 }

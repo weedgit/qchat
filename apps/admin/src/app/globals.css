@@ -362,10 +362,91 @@ select:focus {
   user-select: none;
   pointer-events: none;
 }
+.admin-locale {
+  margin: 8px 4px 4px;
+  padding: 0 8px 8px;
+}
+.admin-locale select {
+  cursor: pointer;
+}
 .admin-role.is-loading {
   color: var(--text-faint);
   font-weight: 600;
   font-size: 13px;
+}
+.admin-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 8px 4px;
+  padding: 10px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+  transition: background 0.15s;
+}
+.admin-profile:hover {
+  background: var(--bg-hover);
+}
+.admin-profile.active {
+  background: var(--bg-active);
+}
+.admin-profile-avatar {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+}
+.admin-profile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.admin-profile-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-profile-role {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-dl {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.profile-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+.profile-row dt {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.profile-row dd {
+  margin: 0;
+  font-size: 14px;
+  word-break: break-word;
 }
 .admin-sidebar .spacer {
   flex: 1;
@@ -461,6 +542,27 @@ select:focus {
   margin-bottom: 16px;
   max-width: 720px;
 }
+.toolbar.toolbar-full {
+  max-width: none;
+  width: 100%;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+.toolbar.toolbar-full > input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.toolbar.toolbar-full > .btn {
+  flex: none;
+  white-space: nowrap;
+}
+.toolbar.toolbar-full > select {
+  flex: none;
+  width: auto;
+  min-width: 180px;
+  max-width: 280px;
+}
 
 table.data {
   width: 100%;
@@ -538,4 +640,78 @@ table.data tr:hover td {
   border-radius: var(--radius);
   font-size: 13px;
   margin-bottom: 16px;
+}
+
+.range-pills {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg-panel-2);
+}
+.range-pill {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.range-pill:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.range-pill.active {
+  background: var(--accent);
+  color: #fff;
+}
+.range-pill.active:hover {
+  background: var(--accent-hover);
+  color: #fff;
+}
+
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+.pagination-summary {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.pagination-page {
+  font-size: 13px;
+  color: var(--text-dim);
+  min-width: 88px;
+  text-align: center;
+  white-space: nowrap;
+}
+.pagination-btn {
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--bg-panel-2);
+  color: var(--text);
+  border: 1px solid var(--border, #2f3d4a);
+  transition: background 0.15s, opacity 0.15s;
+}
+.pagination-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.pagination-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }

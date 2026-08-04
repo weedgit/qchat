@@ -86,14 +86,39 @@ func (s *Server) handleAdminEnterprises(w http.ResponseWriter, r *http.Request) 
 	if c == nil {
 		return
 	}
-	q := `SELECT id::text, name, invite_code, invite_active, retention_days, created_at FROM enterprises`
+
+	where := "TRUE"
 	args := []any{}
-	if c.Role != "platform_owner" {
-		q += ` WHERE id=$1`
+	if !isPlatformAdminRole(c.Role) {
 		args = append(args, c.EnterpriseID)
+		where = fmt.Sprintf("id = $%d", len(args))
 	}
-	q += ` ORDER BY created_at DESC`
-	rows, err := s.db.Query(r.Context(), q, args...)
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		args = append(args, "%"+escapeLike(q)+"%")
+		n := len(args)
+		where += fmt.Sprintf(
+			` AND (name ILIKE $%d ESCAPE '\' OR invite_code ILIKE $%d ESCAPE '\')`,
+			n, n)
+	}
+
+	var total int
+	if err := s.db.QueryRow(r.Context(), `SELECT COUNT(*) FROM enterprises WHERE `+where, args...).Scan(&total); err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+
+	limit, offset := adminListRange(r)
+	listArgs := append(append([]any{}, args...), limit, offset)
+	nLimit := len(listArgs) - 1
+	nOffset := len(listArgs)
+	listQ := fmt.Sprintf(`
+		SELECT id::text, name, invite_code, invite_active, retention_days, created_at
+		FROM enterprises
+		WHERE %s
+		ORDER BY created_at DESC
+		LIMIT $%d OFFSET $%d`, where, nLimit, nOffset)
+
+	rows, err := s.db.Query(r.Context(), listQ, listArgs...)
 	if err != nil {
 		writeErr(w, 500, "query failed")
 		return
@@ -111,12 +136,12 @@ func (s *Server) handleAdminEnterprises(w http.ResponseWriter, r *http.Request) 
 	if out == nil {
 		out = []map[string]any{}
 	}
-	writeJSON(w, 200, map[string]any{"enterprises": out})
+	writeJSON(w, 200, map[string]any{"enterprises": out, "total": total, "limit": limit, "offset": offset})
 }
 
 func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
-	if c.Role != "platform_owner" {
+	if !isPlatformAdminRole(c.Role) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -320,9 +345,8 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"groups": out, "total": total, "limit": limit, "offset": offset})
 }
 
-// handleAdminCreateUser provisions a member without self-service registration (CreateUser / assisted registration).
-// Platform owners may issue enterprise_admin accounts into a target enterprise via enterprise_id.
-// Enterprise admins / platform owners may also issue compliance, support, and read_only console roles.
+// handleAdminCreateUser provisions a member without self-service registration.
+// Platform admins may issue enterprise_admin accounts into a target enterprise via enterprise_id.
 func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	var req struct {
@@ -362,19 +386,15 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		if s.requirePerm(w, r, permIssueEnterpriseAdmin) == nil {
 			return
 		}
-	case roleCompliance, roleSupport, roleReadOnly:
-		if s.requirePerm(w, r, permUsersCreateSubrole) == nil {
-			return
-		}
 	default:
-		writeErr(w, 400, "role must be member, enterprise_admin, compliance, support, or read_only")
+		writeErr(w, 400, "role must be member or enterprise_admin")
 		return
 	}
 
 	entID := c.EnterpriseID
 	if req.EnterpriseID != "" {
-		if c.Role != rolePlatformOwner {
-			writeErrCode(w, 403, "forbidden", "only platform owner can target another enterprise")
+		if !isPlatformAdminRole(c.Role) {
+			writeErrCode(w, 403, "forbidden", "only platform admin can target another enterprise")
 			return
 		}
 		entID = strings.TrimSpace(req.EnterpriseID)
@@ -569,8 +589,8 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 
 	entID := c.EnterpriseID
 	if rawEnt := strings.TrimSpace(r.URL.Query().Get("enterprise_id")); rawEnt != "" {
-		if c.Role != "platform_owner" {
-			writeErrCode(w, 403, "forbidden", "only platform owner can set enterprise_id")
+		if !isPlatformAdminRole(c.Role) {
+			writeErrCode(w, 403, "forbidden", "only platform admin can set enterprise_id")
 			return
 		}
 		if _, err := uuid.Parse(rawEnt); err != nil {
@@ -738,10 +758,45 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
-	rows, err := s.db.Query(r.Context(), `
-		SELECT id::text, actor_id::text, action, target_type, target_id, reason, ip, created_at
-		FROM audit_logs WHERE enterprise_id=$1 OR $2='platform_owner'
-		ORDER BY created_at DESC LIMIT 200`, c.EnterpriseID, c.Role)
+
+	args := []any{normalizeRole(c.Role), c.EnterpriseID}
+	where := `($1 = 'platform_admin' OR a.enterprise_id = $2::uuid)`
+
+	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
+		args = append(args, "%"+escapeLike(q)+"%")
+		n := len(args)
+		where += fmt.Sprintf(
+			` AND (a.action ILIKE $%d ESCAPE '\' OR a.target_id ILIKE $%d ESCAPE '\' OR a.reason ILIKE $%d ESCAPE '\' OR COALESCE(u.username,'') ILIKE $%d ESCAPE '\' OR COALESCE(u.phone,'') ILIKE $%d ESCAPE '\' OR COALESCE(u.display_name,'') ILIKE $%d ESCAPE '\')`,
+			n, n, n, n, n, n)
+	}
+	if action := strings.TrimSpace(r.URL.Query().Get("action")); action != "" {
+		args = append(args, action)
+		where += fmt.Sprintf(` AND a.action = $%d`, len(args))
+	}
+
+	var total int
+	if err := s.db.QueryRow(r.Context(), `
+		SELECT COUNT(*)
+		FROM audit_logs a
+		LEFT JOIN users u ON u.id = a.actor_id
+		WHERE `+where, args...).Scan(&total); err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+
+	limit, offset := adminListRange(r)
+	listArgs := append(append([]any{}, args...), limit, offset)
+	nLimit := len(listArgs) - 1
+	nOffset := len(listArgs)
+	rows, err := s.db.Query(r.Context(), fmt.Sprintf(`
+		SELECT a.id::text,
+		       COALESCE(NULLIF(u.display_name,''), NULLIF(u.username,''), NULLIF(u.phone,''), a.actor_id::text, ''),
+		       a.action, a.target_type, a.target_id, a.reason, a.ip, a.created_at
+		FROM audit_logs a
+		LEFT JOIN users u ON u.id = a.actor_id
+		WHERE %s
+		ORDER BY a.created_at DESC
+		LIMIT $%d OFFSET $%d`, where, nLimit, nOffset), listArgs...)
 	if err != nil {
 		writeErr(w, 500, "query failed")
 		return
@@ -752,10 +807,32 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 		var id, actor, action, tt, tid, reason, ip string
 		var created any
 		_ = rows.Scan(&id, &actor, &action, &tt, &tid, &reason, &ip, &created)
-		out = append(out, map[string]any{"id": id, "actor_id": actor, "action": action, "target_type": tt, "target_id": tid, "reason": reason, "ip": ip, "created_at": created})
+		out = append(out, map[string]any{
+			"id": id, "actor": actor, "action": action,
+			"target_type": tt, "target_id": tid, "target": tid,
+			"reason": reason, "ip": ip, "created_at": created,
+		})
 	}
 	if out == nil {
 		out = []map[string]any{}
 	}
-	writeJSON(w, 200, map[string]any{"audits": out})
+
+	actionRows, err := s.db.Query(r.Context(), `
+		SELECT DISTINCT action FROM audit_logs a
+		WHERE ($1 = 'platform_admin' OR a.enterprise_id = $2::uuid)
+		ORDER BY action`, normalizeRole(c.Role), c.EnterpriseID)
+	actions := []string{}
+	if err == nil {
+		for actionRows.Next() {
+			var act string
+			if actionRows.Scan(&act) == nil && act != "" {
+				actions = append(actions, act)
+			}
+		}
+		actionRows.Close()
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"audits": out, "total": total, "limit": limit, "offset": offset, "actions": actions,
+	})
 }

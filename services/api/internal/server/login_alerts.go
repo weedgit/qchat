@@ -58,7 +58,7 @@ func (s *Server) handleAdminLoginAlerts(w http.ResponseWriter, r *http.Request) 
 		FROM audit_logs a
 		LEFT JOIN users u ON u.id = a.actor_id
 		WHERE a.action IN ('admin.login_new_device', 'admin.login_new_ip', 'user.login_denied_ip')
-		  AND (a.enterprise_id=$1 OR $2='platform_owner')
+		  AND (a.enterprise_id=$1 OR $2='platform_admin')
 		ORDER BY a.created_at DESC
 		LIMIT 50`, c.EnterpriseID, c.Role)
 	if err != nil {

@@ -2,10 +2,12 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/AdminShell";
+import Pagination from "@/components/Pagination";
 import { api, asList } from "@/lib/api";
+import { formatAdminError } from "@/lib/errors";
+import { useLocale } from "@/lib/locale";
 
-const PAGE_SIZE = 50;
-
+import { PAGE_SIZE } from "@/lib/pagination";
 interface AdminGroup {
   id: string;
   publicId: string;
@@ -29,6 +31,7 @@ function normalize(raw: any): AdminGroup {
 }
 
 export default function GroupsPage() {
+  const { t } = useLocale();
   const [rows, setRows] = useState<AdminGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -49,17 +52,16 @@ export default function GroupsPage() {
       setTotal(Number(body?.total ?? 0));
       setError(null);
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
       setRows([]);
       setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load(query, offset);
-    // Reloads are driven by search submit and paging, not keystrokes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, offset]);
 
@@ -69,54 +71,48 @@ export default function GroupsPage() {
     void load(query, 0);
   }
 
-  const page = Math.floor(offset / PAGE_SIZE) + 1;
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
   return (
     <AdminShell>
-      <h1>Groups</h1>
-      <div className="page-sub">
-        Social groups in this enterprise — title, public ID, owner, and active member count.
-      </div>
+      <h1>{t("admin.nav.groups")}</h1>
+      <div className="page-sub">{t("admin.groups.subtitle")}</div>
 
-      <form className="toolbar" onSubmit={onSearch} style={{ marginBottom: 16 }}>
+      <form className="toolbar toolbar-full" onSubmit={onSearch} style={{ marginBottom: 16 }}>
         <input
-          placeholder="Search title or public ID"
+          placeholder={t("admin.groups.searchPlaceholder")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ minWidth: 240 }}
         />
-        <button type="submit" disabled={loading}>
-          Search
+        <button className="btn" type="submit" disabled={loading}>
+          {t("admin.common.search")}
         </button>
       </form>
 
-      {error && <div className="notice">Failed to load groups: {error}</div>}
+      {error && (
+        <div className="notice">
+          {t("admin.common.loadFailed", { target: t("admin.groups.loadFailed"), error })}
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="data">
           <thead>
             <tr>
-              <th>Title</th>
-              <th>Public ID</th>
-              <th>Owner</th>
-              <th>Members</th>
-              <th>Created</th>
+              <th>{t("admin.common.title")}</th>
+              <th>{t("admin.common.publicId")}</th>
+              <th>{t("admin.common.owner")}</th>
+              <th>{t("admin.common.members")}</th>
+              <th>{t("admin.common.created")}</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={5} className="muted">
-                  Loading…
-                </td>
+                <td colSpan={5} className="muted">{t("admin.common.loading")}</td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
-                  No groups found.
-                </td>
+                <td colSpan={5} className="muted">{t("admin.groups.noGroupsFound")}</td>
               </tr>
             )}
             {rows.map((g) => (
@@ -144,25 +140,15 @@ export default function GroupsPage() {
         </table>
       </div>
 
-      <div className="toolbar" style={{ marginTop: 12, gap: 8 }}>
-        <span className="muted">
-          {total} group{total === 1 ? "" : "s"} · page {page} / {pages}
-        </span>
-        <button
-          type="button"
-          disabled={loading || offset <= 0}
-          onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-        >
-          Previous
-        </button>
-        <button
-          type="button"
-          disabled={loading || offset + PAGE_SIZE >= total}
-          onClick={() => setOffset(offset + PAGE_SIZE)}
-        >
-          Next
-        </button>
-      </div>
+      <Pagination
+        total={total}
+        offset={offset}
+        pageSize={PAGE_SIZE}
+        visibleCount={rows.length}
+        loading={loading}
+        onPageChange={setOffset}
+        emptyLabel={t("admin.groups.noGroupsFound")}
+      />
     </AdminShell>
   );
 }

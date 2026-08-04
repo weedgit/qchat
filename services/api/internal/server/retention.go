@@ -64,7 +64,7 @@ func (s *Server) handleAdminPatchEnterprise(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	entID := r.PathValue("id")
-	if c.Role != "platform_owner" && entID != c.EnterpriseID {
+	if !isPlatformAdminRole(c.Role) && entID != c.EnterpriseID {
 		writeErr(w, 403, "forbidden")
 		return
 	}

@@ -1,4 +1,4 @@
-/** Client-side credential checks mirroring services/api/internal/auth/password.go */
+import type { MessageKey } from "@qchat/i18n";
 
 const phoneRe = /^\d{11}$/;
 const passwordRe = /^[A-Za-z0-9]{8,}$/;
@@ -38,27 +38,30 @@ export function isValidDisplayName(name: string): boolean {
   return true;
 }
 
-export function displayNameError(name: string): string | null {
+export function displayNameError(name: string): MessageKey | null {
   if (!isValidDisplayName(name)) {
-    return "Display name must be 2–64 letters, digits, spaces, underscores, or emoji (no special symbols)";
+    return "admin.err.displayNameRule";
   }
   return null;
 }
 
-export function passwordError(password: string): string | null {
+export function passwordError(password: string): MessageKey | null {
   if (!passwordRe.test(password)) {
-    return "Password must be at least 8 characters and contain only letters and digits";
+    return "admin.err.passwordRule";
   }
   return null;
 }
 
-/** Returns a user-facing error, or null when phone/password look valid. */
+/** Returns a message key, or null when phone/password look valid. */
 export function validateLoginCredentials(opts: {
   phone: string;
   password: string;
-}): string | null {
+}): MessageKey | null {
   if (!isValidPhone(opts.phone)) {
-    return "Phone must be exactly 11 digits";
+    return "admin.err.phone11";
   }
-  return passwordError(opts.password);
+  if (!passwordRe.test(opts.password)) {
+    return "admin.err.passwordRule";
+  }
+  return null;
 }

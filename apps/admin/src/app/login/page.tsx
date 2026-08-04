@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { PasswordInput } from "@/components/PasswordInput";
 import { ApiError, api, setToken } from "@/lib/api";
 import { validateLoginCredentials } from "@/lib/credentials";
+import { formatAdminError } from "@/lib/errors";
+import LanguageSelect from "@/components/LanguageSelect";
+import { useLocale } from "@/lib/locale";
 
 interface CaptchaState {
   id: string;
@@ -13,6 +16,7 @@ interface CaptchaState {
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const { t } = useLocale();
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
@@ -33,10 +37,10 @@ export default function AdminLoginPage() {
         throw new Error("empty captcha image");
       }
       setCaptcha({ id, image });
-    } catch (e: any) {
-      setError(`Captcha unavailable: ${e.message}`);
+    } catch (e) {
+      setError(formatAdminError(e, t, "admin.err.captchaUnavailable"));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     loadCaptcha();
@@ -49,7 +53,7 @@ export default function AdminLoginPage() {
     try {
       const early = validateLoginCredentials({ phone, password });
       if (early) {
-        setError(early);
+        setError(t(early));
         return;
       }
       const payload: Record<string, unknown> = {
@@ -70,22 +74,21 @@ export default function AdminLoginPage() {
         body: JSON.stringify(payload),
       });
       const token = data?.access_token ?? data?.token;
-      if (!token) throw new Error("No access_token in response");
+      if (!token) throw new Error("no access_token");
       setToken(String(token), remember);
       router.replace("/");
-    } catch (e: any) {
-      const code =
-        e instanceof ApiError ? String((e.body as any)?.code ?? "") : "";
+    } catch (e) {
+      const code = e instanceof ApiError ? String((e.body as { code?: string })?.code ?? "") : "";
       if (code === "mfa_required") {
         setMfaRequired(true);
-        setError("Enter an authenticator code or a one-time recovery code.");
+        setError(t("admin.err.mfaRequired"));
       } else if (code === "mfa_invalid") {
         setMfaRequired(true);
-        setError("Invalid MFA or recovery code. Try again.");
+        setError(t("admin.err.mfaInvalid"));
       } else if (code === "ip_not_allowed") {
-        setError("Sign-in is not allowed from this IP address.");
+        setError(t("admin.err.ipNotAllowed"));
       } else {
-        setError(e.message);
+        setError(formatAdminError(e, t, "admin.err.generic"));
       }
       setCaptchaCode("");
       setMfaCode("");
@@ -99,11 +102,15 @@ export default function AdminLoginPage() {
     <div className="auth-wrap">
       <form className="auth-card" onSubmit={onSubmit}>
         <div className="auth-logo">R</div>
-        <div className="auth-title">Rchat Admin Console</div>
-        <div className="auth-sub">Enterprise / platform administration</div>
+        <div className="auth-title">{t("admin.login.title")}</div>
+        <div className="auth-sub">{t("admin.login.subtitle")}</div>
+
+        <div className="field" style={{ marginBottom: 12 }}>
+          <LanguageSelect id="login-lang" />
+        </div>
 
         <div className="field">
-          <label>Phone</label>
+          <label>{t("admin.login.phone")}</label>
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
@@ -113,7 +120,7 @@ export default function AdminLoginPage() {
           />
         </div>
         <div className="field">
-          <label>Password</label>
+          <label>{t("admin.login.password")}</label>
           <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -123,25 +130,25 @@ export default function AdminLoginPage() {
         </div>
         {mfaRequired ? (
           <div className="field">
-            <label>Authenticator or recovery code</label>
+            <label>{t("admin.login.mfa")}</label>
             <input
               value={mfaCode}
               onChange={(e) => setMfaCode(e.target.value.toUpperCase().slice(0, 16))}
               required
               autoComplete="one-time-code"
-              placeholder="6-digit or XXXX-XXXX"
+              placeholder={t("admin.login.mfaPlaceholder")}
               autoFocus
             />
           </div>
         ) : null}
         <div className="field">
-          <label>Captcha</label>
+          <label>{t("admin.login.captcha")}</label>
           <div className="captcha-row">
             <input
               value={captchaCode}
               onChange={(e) => setCaptchaCode(e.target.value)}
               required
-              placeholder="Enter captcha"
+              placeholder={t("admin.login.captchaPlaceholder")}
               autoComplete="off"
             />
             <div className="captcha-image-wrap" aria-label="Captcha image">
@@ -160,11 +167,11 @@ export default function AdminLoginPage() {
             checked={remember}
             onChange={(e) => setRemember(e.target.checked)}
           />
-          Remember me
+          {t("admin.login.remember")}
         </label>
         {error && <div className="error-text">{error}</div>}
         <button className="btn" type="submit" disabled={busy}>
-          {busy ? "…" : "Sign in"}
+          {busy ? t("admin.login.submitting") : t("admin.login.submit")}
         </button>
       </form>
     </div>

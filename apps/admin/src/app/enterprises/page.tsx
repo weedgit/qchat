@@ -2,10 +2,15 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/AdminShell";
+import Pagination from "@/components/Pagination";
 import { PasswordInput } from "@/components/PasswordInput";
 import { api, asList } from "@/lib/api";
+import { formatAdminError } from "@/lib/errors";
+import { translateInviteStatus } from "@/lib/labels";
+import { useLocale } from "@/lib/locale";
 import { can } from "@/lib/rbac";
 
+import { PAGE_SIZE } from "@/lib/pagination";
 interface Enterprise {
   id: string;
   name: string;
@@ -27,7 +32,11 @@ function normalize(raw: any): Enterprise {
 }
 
 export default function EnterprisesPage() {
+  const { t } = useLocale();
   const [rows, setRows] = useState<Enterprise[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -46,43 +55,65 @@ export default function EnterprisesPage() {
   const [issueUsername, setIssueUsername] = useState("");
   const [issuePassword, setIssuePassword] = useState("");
 
-  const isPlatformOwner = meRole === "platform_owner";
+  const isPlatformAdmin = meRole === "platform_admin" || meRole === "platform_owner";
   const canInvite = can(meRole, "manageInvite");
   const canRetention = can(meRole, "writeEnterprise");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (q: string, off: number) => {
     setLoading(true);
     try {
-      const body = await api<any>("/v1/admin/enterprises");
+      const qs = new URLSearchParams({
+        limit: String(PAGE_SIZE),
+        offset: String(off),
+      });
+      if (q.trim()) qs.set("q", q.trim());
+      const body = await api<any>(`/v1/admin/enterprises?${qs.toString()}`);
       const list = asList(body, "enterprises").map(normalize);
       setRows(list);
+      setTotal(Number(body?.total ?? list.length));
       const drafts: Record<string, string> = {};
       for (const e of list) drafts[e.id] = String(e.retentionDays);
-      setRetentionDraft(drafts);
+      setRetentionDraft((prev) => ({ ...prev, ...drafts }));
       setError(null);
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
+      setRows([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
-    load();
+    load(query, offset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, offset]);
+
+  useEffect(() => {
     api<any>("/v1/me")
       .then((me) => setMeRole(String(me?.role ?? "")))
       .catch(() => setMeRole(""));
-  }, [load]);
+  }, []);
+
+  function onSearch(e: FormEvent) {
+    e.preventDefault();
+    setOffset(0);
+    void load(query, 0);
+  }
+
+  function reload() {
+    return load(query, offset);
+  }
 
   async function rotateInvite() {
     setBusy("rotate");
     setNotice(null);
     try {
       const body = await api<any>("/v1/admin/invite/rotate", { method: "POST", body: "{}" });
-      setNotice(`Invite rotated to ${body?.invite_code}`);
-      await load();
+      setNotice(t("admin.enterprises.inviteRotated", { code: body?.invite_code }));
+      await reload();
     } catch (e: any) {
-      setNotice(e.message);
+      setNotice(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(null);
     }
@@ -96,10 +127,12 @@ export default function EnterprisesPage() {
         method: "POST",
         body: "{}",
       });
-      setNotice(active ? "Invite activated." : "Invite revoked.");
-      await load();
+      setNotice(
+        active ? t("admin.enterprises.inviteActivated") : t("admin.enterprises.inviteRevoked")
+      );
+      await reload();
     } catch (e: any) {
-      setNotice(e.message);
+      setNotice(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(null);
     }
@@ -114,10 +147,10 @@ export default function EnterprisesPage() {
         method: "PATCH",
         body: JSON.stringify({ retention_days: days }),
       });
-      setNotice(`Retention set to ${days} days.`);
-      await load();
+      setNotice(t("admin.enterprises.retentionSet", { days }));
+      await reload();
     } catch (e: any) {
-      setNotice(e.message);
+      setNotice(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(null);
     }
@@ -128,9 +161,9 @@ export default function EnterprisesPage() {
     setNotice(null);
     try {
       const body = await api<any>("/v1/admin/retention/run", { method: "POST", body: "{}" });
-      setNotice(`Retention job deleted ${body?.deleted ?? 0} messages.`);
+      setNotice(t("admin.enterprises.retentionDeleted", { count: body?.deleted ?? 0 }));
     } catch (e: any) {
-      setNotice(e.message);
+      setNotice(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(null);
     }
@@ -152,16 +185,20 @@ export default function EnterprisesPage() {
         }),
       });
       setNotice(
-        `Created ${createName.trim()} · invite ${body?.invite_code} · admin @${body?.admin_username}`
+        t("admin.enterprises.created", {
+          name: createName.trim(),
+          code: body?.invite_code,
+          username: body?.admin_username,
+        })
       );
       setCreateName("");
       setCreateInvite("");
       setAdminPhone("");
       setAdminUsername("");
       setAdminPassword("");
-      await load();
+      await reload();
     } catch (err: any) {
-      setNotice(err.message);
+      setNotice(formatAdminError(err, t, "admin.err.generic"));
     } finally {
       setBusy(null);
     }
@@ -183,13 +220,18 @@ export default function EnterprisesPage() {
           enterprise_id: issueFor.id,
         }),
       });
-      setNotice(`Issued enterprise admin @${body?.username} for ${issueFor.name}.`);
+      setNotice(
+        t("admin.enterprises.issued", {
+          username: body?.username,
+          name: issueFor.name,
+        })
+      );
       setIssueFor(null);
       setIssuePhone("");
       setIssueUsername("");
       setIssuePassword("");
     } catch (err: any) {
-      setNotice(err.message);
+      setNotice(formatAdminError(err, t, "admin.err.generic"));
     } finally {
       setBusy(null);
     }
@@ -197,86 +239,97 @@ export default function EnterprisesPage() {
 
   return (
     <AdminShell>
-      <h1>Enterprises</h1>
-      <div className="page-sub">
-        Organizations, invite codes, and 90-day history retention (DataRetention).
-      </div>
+      <h1>{t("admin.nav.enterprises")}</h1>
+      <div className="page-sub">{t("admin.enterprises.subtitle")}</div>
 
       <div className="toolbar">
         {canInvite ? (
           <>
             <button className="btn" type="button" disabled={!!busy} onClick={rotateInvite}>
-              {busy === "rotate" ? "Rotating…" : "Rotate invite"}
+              {busy === "rotate" ? t("admin.enterprises.rotating") : t("admin.enterprises.rotateInvite")}
             </button>
             <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(false)}>
-              {busy === "revoke" ? "Revoking…" : "Revoke invite"}
+              {busy === "revoke" ? t("admin.enterprises.revoking") : t("admin.enterprises.revokeInvite")}
             </button>
             <button className="btn" type="button" disabled={!!busy} onClick={() => setInviteActive(true)}>
-              {busy === "activate" ? "Activating…" : "Activate invite"}
+              {busy === "activate" ? t("admin.enterprises.activating") : t("admin.enterprises.activateInvite")}
             </button>
           </>
         ) : null}
         {canRetention ? (
           <button className="btn" type="button" disabled={!!busy} onClick={runRetention}>
-            {busy === "run-retention" ? "Running…" : "Run retention now"}
+            {busy === "run-retention" ? t("admin.enterprises.running") : t("admin.enterprises.runRetention")}
           </button>
         ) : null}
       </div>
 
       {notice && <div className="notice">{notice}</div>}
-      {error && <div className="notice">Failed to load enterprises: {error}</div>}
+      {error && (
+        <div className="notice">
+          {t("admin.common.loadFailed", { target: t("admin.enterprises.loadFailed"), error })}
+        </div>
+      )}
 
-      {isPlatformOwner ? (
+      <form className="toolbar toolbar-full" onSubmit={onSearch} style={{ marginBottom: 16 }}>
+        <input
+          placeholder={t("admin.enterprises.searchPlaceholder")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button className="btn" type="submit" disabled={loading}>
+          {t("admin.common.search")}
+        </button>
+      </form>
+
+      {isPlatformAdmin ? (
         <div className="card" style={{ marginBottom: 16, maxWidth: 640 }}>
-          <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Create enterprise + admin</h2>
-          <p className="muted" style={{ marginTop: 0 }}>
-            Platform owners issue a company and its first enterprise administrator account.
-          </p>
+          <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{t("admin.enterprises.createTitle")}</h2>
+          <p className="muted" style={{ marginTop: 0 }}>{t("admin.enterprises.createBlurb")}</p>
           <form onSubmit={createEnterprise} className="form-rows">
             <div className="form-row">
-              <label htmlFor="ent-create-name">Company name</label>
+              <label htmlFor="ent-create-name">{t("admin.enterprises.companyName")}</label>
               <input
                 id="ent-create-name"
                 required
-                placeholder="Acme Corp"
+                placeholder={t("admin.enterprises.companyPlaceholder")}
                 value={createName}
                 onChange={(e) => setCreateName(e.target.value)}
               />
             </div>
             <div className="form-row">
-              <label htmlFor="ent-create-invite">Invite code</label>
+              <label htmlFor="ent-create-invite">{t("admin.enterprises.inviteCode")}</label>
               <input
                 id="ent-create-invite"
-                placeholder="Optional"
+                placeholder={t("admin.common.optional")}
                 value={createInvite}
                 onChange={(e) => setCreateInvite(e.target.value)}
               />
             </div>
             <div className="form-row">
-              <label htmlFor="ent-create-phone">Admin phone</label>
+              <label htmlFor="ent-create-phone">{t("admin.enterprises.adminPhone")}</label>
               <input
                 id="ent-create-phone"
                 required
-                placeholder="11 digits"
+                placeholder={t("admin.common.phonePlaceholder")}
                 value={adminPhone}
                 onChange={(e) => setAdminPhone(e.target.value)}
               />
             </div>
             <div className="form-row">
-              <label htmlFor="ent-create-username">Admin username</label>
+              <label htmlFor="ent-create-username">{t("admin.enterprises.adminUsername")}</label>
               <input
                 id="ent-create-username"
-                placeholder="Optional"
+                placeholder={t("admin.common.optional")}
                 value={adminUsername}
                 onChange={(e) => setAdminUsername(e.target.value)}
               />
             </div>
             <div className="form-row">
-              <label htmlFor="ent-create-password">Admin password</label>
+              <label htmlFor="ent-create-password">{t("admin.enterprises.adminPassword")}</label>
               <PasswordInput
                 id="ent-create-password"
                 required
-                placeholder="Password"
+                placeholder={t("admin.common.password")}
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
                 autoComplete="new-password"
@@ -285,7 +338,7 @@ export default function EnterprisesPage() {
             <div className="form-row">
               <span />
               <button className="btn" type="submit" disabled={busy === "create"}>
-                {busy === "create" ? "Creating…" : "Create enterprise"}
+                {busy === "create" ? t("admin.common.creating") : t("admin.enterprises.createEnterprise")}
               </button>
             </div>
           </form>
@@ -295,35 +348,35 @@ export default function EnterprisesPage() {
       {issueFor ? (
         <div className="card" style={{ marginBottom: 16, maxWidth: 640 }}>
           <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>
-            Issue admin for {issueFor.name}
+            {t("admin.enterprises.issueAdminFor", { name: issueFor.name })}
           </h2>
           <form onSubmit={issueAdmin} className="form-rows">
             <div className="form-row">
-              <label htmlFor="ent-issue-phone">Phone</label>
+              <label htmlFor="ent-issue-phone">{t("admin.common.phone")}</label>
               <input
                 id="ent-issue-phone"
                 required
-                placeholder="11 digits"
+                placeholder={t("admin.common.phonePlaceholder")}
                 value={issuePhone}
                 onChange={(e) => setIssuePhone(e.target.value)}
               />
             </div>
             <div className="form-row">
-              <label htmlFor="ent-issue-username">Username</label>
+              <label htmlFor="ent-issue-username">{t("admin.common.username")}</label>
               <input
                 id="ent-issue-username"
                 required
-                placeholder="Username"
+                placeholder={t("admin.common.username")}
                 value={issueUsername}
                 onChange={(e) => setIssueUsername(e.target.value)}
               />
             </div>
             <div className="form-row">
-              <label htmlFor="ent-issue-password">Password</label>
+              <label htmlFor="ent-issue-password">{t("admin.common.password")}</label>
               <PasswordInput
                 id="ent-issue-password"
                 required
-                placeholder="Password"
+                placeholder={t("admin.common.password")}
                 value={issuePassword}
                 onChange={(e) => setIssuePassword(e.target.value)}
                 autoComplete="new-password"
@@ -333,7 +386,7 @@ export default function EnterprisesPage() {
               <span />
               <div className="toolbar" style={{ margin: 0 }}>
                 <button className="btn" type="submit" disabled={busy === "issue"}>
-                  {busy === "issue" ? "Issuing…" : "Issue enterprise admin"}
+                  {busy === "issue" ? t("admin.enterprises.issuing") : t("admin.enterprises.issueAdmin")}
                 </button>
                 <button
                   className="btn"
@@ -341,7 +394,7 @@ export default function EnterprisesPage() {
                   disabled={!!busy}
                   onClick={() => setIssueFor(null)}
                 >
-                  Cancel
+                  {t("admin.common.cancel")}
                 </button>
               </div>
             </div>
@@ -353,26 +406,26 @@ export default function EnterprisesPage() {
         <table className="data">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Invite code</th>
-              <th>Invite</th>
-              <th>Retention (days)</th>
-              <th>Created</th>
-              {isPlatformOwner ? <th>Actions</th> : null}
+              <th>{t("admin.common.name")}</th>
+              <th>{t("admin.enterprises.inviteCodeCol")}</th>
+              <th>{t("admin.enterprises.invite")}</th>
+              <th>{t("admin.enterprises.retentionDays")}</th>
+              <th>{t("admin.common.created")}</th>
+              {isPlatformAdmin ? <th>{t("admin.common.actions")}</th> : null}
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={isPlatformOwner ? 6 : 5} className="muted">
-                  Loading…
+                <td colSpan={isPlatformAdmin ? 6 : 5} className="muted">
+                  {t("admin.common.loading")}
                 </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={isPlatformOwner ? 6 : 5} className="muted">
-                  No enterprises found.
+                <td colSpan={isPlatformAdmin ? 6 : 5} className="muted">
+                  {t("admin.enterprises.noEnterprises")}
                 </td>
               </tr>
             )}
@@ -382,7 +435,7 @@ export default function EnterprisesPage() {
                 <td style={{ fontFamily: "monospace" }}>{r.inviteCode}</td>
                 <td>
                   <span className={`pill ${r.inviteActive ? "ok" : "warn"}`}>
-                    {r.inviteActive ? "active" : "revoked"}
+                    {translateInviteStatus(t, r.inviteActive)}
                   </span>
                 </td>
                 <td>
@@ -401,15 +454,15 @@ export default function EnterprisesPage() {
                         disabled={busy === `retention-${r.id}`}
                         onClick={() => saveRetention(r.id)}
                       >
-                        Save
+                        {t("admin.common.save")}
                       </button>
                     </div>
                   ) : (
-                    <span>{r.retentionDays} days</span>
+                    <span>{t("admin.enterprises.days", { days: r.retentionDays })}</span>
                   )}
                 </td>
                 <td className="muted">{r.createdAt}</td>
-                {isPlatformOwner ? (
+                {isPlatformAdmin ? (
                   <td>
                     <button
                       className="btn"
@@ -423,7 +476,7 @@ export default function EnterprisesPage() {
                         setNotice(null);
                       }}
                     >
-                      Issue admin
+                      {t("admin.enterprises.issueAdminBtn")}
                     </button>
                   </td>
                 ) : null}
@@ -432,6 +485,16 @@ export default function EnterprisesPage() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        total={total}
+        offset={offset}
+        pageSize={PAGE_SIZE}
+        visibleCount={rows.length}
+        loading={loading}
+        onPageChange={setOffset}
+        emptyLabel={t("admin.enterprises.noEnterprises")}
+      />
     </AdminShell>
   );
 }

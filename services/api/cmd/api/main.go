@@ -52,6 +52,7 @@ func main() {
 		defer rdb.Close()
 	}
 	srv.StartRetentionLoop(runCtx, 24*time.Hour)
+	srv.StartBackupScheduler(runCtx)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,

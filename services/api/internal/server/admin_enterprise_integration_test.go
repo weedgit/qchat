@@ -10,7 +10,7 @@ import (
 	"github.com/qchat/qchat/services/api/internal/config"
 )
 
-func platformOwnerToken(t *testing.T, memberToken string) string {
+func platformAdminToken(t *testing.T, memberToken string) string {
 	t.Helper()
 	cfg := config.Load()
 	claims, err := auth.ParseAccess(cfg.JWTSecret, memberToken)
@@ -19,7 +19,7 @@ func platformOwnerToken(t *testing.T, memberToken string) string {
 	}
 	token, err := auth.IssueAccess(
 		cfg.JWTSecret, time.Minute, claims.UserID, claims.EnterpriseID,
-		"platform_owner", claims.SessionID, claims.DeviceType, claims.DeviceID,
+		"platform_admin", claims.SessionID, claims.DeviceType, claims.DeviceID,
 	)
 	if err != nil {
 		t.Fatalf("issue: %v", err)
@@ -33,7 +33,7 @@ func TestPlatformOwnerCreatesEnterpriseWithAdmin(t *testing.T) {
 	base := ts.URL
 
 	memberTok, _, _, _ := registerUser(t, base, "ACME2026")
-	owner := platformOwnerToken(t, memberTok)
+	owner := platformAdminToken(t, memberTok)
 
 	phone := fmt.Sprintf("138%08d", time.Now().UnixNano()%100000000)
 	uname := "eadm" + uuid.NewString()[:6]
@@ -83,7 +83,7 @@ func TestCreateEnterpriseRequiresAdmin(t *testing.T) {
 	ts, cleanup := testServer(t)
 	defer cleanup()
 	memberTok, _, _, _ := registerUser(t, ts.URL, "ACME2026")
-	owner := platformOwnerToken(t, memberTok)
+	owner := platformAdminToken(t, memberTok)
 
 	st, body := postJSON(t, ts.URL+"/v1/admin/enterprises", owner, map[string]any{
 		"name": "No Admin Co",

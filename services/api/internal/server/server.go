@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/qchat/qchat/services/api/internal/auth"
+	"github.com/qchat/qchat/services/api/internal/backup"
 	"github.com/qchat/qchat/services/api/internal/blobstore"
 	"github.com/qchat/qchat/services/api/internal/config"
 	"github.com/qchat/qchat/services/api/internal/ws"
@@ -23,6 +24,7 @@ type Server struct {
 	db         *pgxpool.Pool
 	hub        *ws.Hub
 	blobs      blobstore.Store
+	backups    *backup.Manager
 	mux        *http.ServeMux
 	upgrader   websocket.Upgrader
 	limitAPI   *ipLimiter
@@ -45,6 +47,7 @@ func New(cfg config.Config, db *pgxpool.Pool, hub *ws.Hub) *Server {
 		db:         db,
 		hub:        hub,
 		blobs:      blobs,
+		backups:    backup.NewManager(cfg.RepoRoot, cfg.BackupDir),
 		mux:        http.NewServeMux(),
 		limitAPI:   newIPLimiter(apiRatePerSec, apiBurst),
 		limitAuth:  newIPLimiter(authRatePerSec, authBurst),
@@ -170,6 +173,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/admin/users/{id}/sessions/{sessionId}/revoke", s.auth(s.handleAdminRevokeUserSession))
 	s.mux.HandleFunc("GET /v1/admin/messages", s.auth(s.handleAdminMessages))
 	s.mux.HandleFunc("GET /v1/admin/audits", s.auth(s.handleAdminAudits))
+	s.mux.HandleFunc("GET /v1/admin/stats/trends", s.auth(s.handleAdminStatsTrends))
 	s.mux.HandleFunc("POST /v1/admin/invite/rotate", s.auth(s.handleAdminRotateInvite))
 	s.mux.HandleFunc("POST /v1/admin/invite/revoke", s.auth(s.handleAdminRevokeInvite))
 	s.mux.HandleFunc("POST /v1/admin/invite/activate", s.auth(s.handleAdminActivateInvite))
@@ -180,6 +184,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v1/admin/security/ip-allowlist/{id}", s.auth(s.handleAdminIPAllowlistDelete))
 	s.mux.HandleFunc("GET /v1/admin/security/login-alerts", s.auth(s.handleAdminLoginAlerts))
 	s.mux.HandleFunc("GET /v1/admin/backup/status", s.auth(s.handleAdminBackupStatus))
+	s.mux.HandleFunc("GET /v1/admin/backup/settings", s.auth(s.handleAdminBackupSettingsGet))
+	s.mux.HandleFunc("PATCH /v1/admin/backup/settings", s.auth(s.handleAdminBackupSettingsPatch))
+	s.mux.HandleFunc("POST /v1/admin/backup/run", s.auth(s.handleAdminBackupRun))
+	s.mux.HandleFunc("POST /v1/admin/backup/restore", s.auth(s.handleAdminBackupRestore))
 
 	// Calls (LiveKit 1:1 + group) + push stubs
 	s.mux.HandleFunc("POST /v1/calls", s.auth(s.handleStartCall))

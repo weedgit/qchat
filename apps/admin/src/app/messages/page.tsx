@@ -2,10 +2,12 @@
 
 import { FormEvent, useState } from "react";
 import AdminShell from "@/components/AdminShell";
+import Pagination from "@/components/Pagination";
 import { api, asList, mediaAuthURL } from "@/lib/api";
+import { formatAdminError } from "@/lib/errors";
+import { useLocale } from "@/lib/locale";
 
-const PAGE_SIZE = 50;
-
+import { PAGE_SIZE } from "@/lib/pagination";
 interface InspectedMessage {
   id: string;
   conversationId: string;
@@ -41,15 +43,13 @@ function normalize(raw: any): InspectedMessage {
   };
 }
 
-function MediaCell({ m }: { m: InspectedMessage }) {
+function MediaCell({ m, recalledLabel }: { m: InspectedMessage; recalledLabel: string }) {
   if (m.recalled && !m.content && !m.mediaUrl) {
-    return <span className="muted">(recalled)</span>;
+    return <span className="muted">{recalledLabel}</span>;
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 360 }}>
-      {m.content ? (
-        <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
-      ) : null}
+      {m.content ? <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div> : null}
       {m.mediaUrl ? (
         <div>
           {m.type === "image" ? (
@@ -83,6 +83,7 @@ function MediaCell({ m }: { m: InspectedMessage }) {
 }
 
 export default function MessageInspectPage() {
+  const { t } = useLocale();
   const [user, setUser] = useState("");
   const [reason, setReason] = useState("");
   const [scope, setScope] = useState<"all" | "sent">("all");
@@ -119,7 +120,7 @@ export default function MessageInspectPage() {
       setInspectedReason(targetReason);
       setInspectedScope(targetScope);
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
       setRows(null);
     } finally {
       setBusy(false);
@@ -129,65 +130,55 @@ export default function MessageInspectPage() {
   async function inspect(e: FormEvent) {
     e.preventDefault();
     if (!user.trim()) {
-      setError("Username or phone number is required.");
+      setError(t("admin.err.targetRequired"));
       return;
     }
     if (reason.trim().length < 8) {
-      setError("A meaningful reason (at least 8 characters) is required.");
+      setError(t("admin.err.reasonRequired"));
       return;
     }
     await loadPage(user.trim(), reason.trim(), scope, 0);
   }
 
-  const from = total === 0 || !rows ? 0 : offset + 1;
-  const to = rows ? Math.min(offset + rows.length, total) : 0;
-
   return (
     <AdminShell>
-      <h1>Message inspect</h1>
-      <div className="page-sub">
-        View membership-scoped chat history for a user in your enterprise (compliance).
-        Includes messages from shared groups even when senders belong to another tenant.
-      </div>
+      <h1>{t("admin.nav.messages")}</h1>
+      <div className="page-sub">{t("admin.messages.subtitle")}</div>
 
-      <div className="notice">
-        Message inspection is a privileged, audited action. Your identity, the
-        target user, scope, and the reason you provide are permanently recorded in the
-        audit log for every page viewed. Recalled messages are shown flagged.
-      </div>
+      <div className="notice">{t("admin.messages.notice")}</div>
 
       <div className="card" style={{ maxWidth: 720 }}>
         <form onSubmit={inspect} className="form-rows" style={{ maxWidth: "100%" }}>
           <div className="form-row">
-            <label htmlFor="msg-inspect-user">Username or phone</label>
+            <label htmlFor="msg-inspect-user">{t("admin.messages.targetLabel")}</label>
             <input
               id="msg-inspect-user"
               value={user}
               onChange={(e) => setUser(e.target.value)}
-              placeholder="e.g. alice or 13800138000"
+              placeholder={t("admin.messages.targetPlaceholder")}
               required
               autoComplete="off"
             />
           </div>
           <div className="form-row">
-            <label htmlFor="msg-inspect-scope">Scope</label>
+            <label htmlFor="msg-inspect-scope">{t("admin.common.scope")}</label>
             <select
               id="msg-inspect-scope"
               value={scope}
               onChange={(e) => setScope(e.target.value as "all" | "sent")}
             >
-              <option value="all">All messages in their conversations</option>
-              <option value="sent">Only messages they sent</option>
+              <option value="all">{t("admin.messages.scopeAll")}</option>
+              <option value="sent">{t("admin.messages.scopeSent")}</option>
             </select>
           </div>
           <div className="form-row" style={{ alignItems: "start" }}>
-            <label htmlFor="msg-inspect-reason">Reason</label>
+            <label htmlFor="msg-inspect-reason">{t("admin.common.reason")}</label>
             <div className="form-control-stack">
               <textarea
                 id="msg-inspect-reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="e.g. Compliance ticket #1234 — reported harassment"
+                placeholder={t("admin.messages.reasonPlaceholder")}
                 rows={3}
                 required
               />
@@ -197,7 +188,7 @@ export default function MessageInspectPage() {
           <div className="form-row">
             <span />
             <button className="btn" disabled={busy} style={{ alignSelf: "flex-start" }}>
-              {busy ? "Inspecting…" : "Inspect messages"}
+              {busy ? t("admin.messages.inspecting") : t("admin.messages.inspect")}
             </button>
           </div>
         </form>
@@ -209,18 +200,18 @@ export default function MessageInspectPage() {
             <table className="data">
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>Conversation</th>
-                  <th>Company</th>
-                  <th>Sender</th>
-                  <th>Type</th>
-                  <th>Content</th>
+                  <th>{t("admin.common.time")}</th>
+                  <th>{t("admin.messages.conversation")}</th>
+                  <th>{t("admin.messages.company")}</th>
+                  <th>{t("admin.messages.sender")}</th>
+                  <th>{t("admin.common.type")}</th>
+                  <th>{t("admin.common.content")}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="muted">No messages returned.</td>
+                    <td colSpan={6} className="muted">{t("admin.messages.noMessagesReturned")}</td>
                   </tr>
                 )}
                 {rows.map((m) => (
@@ -241,50 +232,27 @@ export default function MessageInspectPage() {
                     </td>
                     <td className="muted">
                       {m.type}
-                      {m.recalled ? " · recalled" : ""}
+                      {m.recalled ? t("admin.common.recalledSuffix") : ""}
                     </td>
                     <td>
-                      <MediaCell m={m} />
+                      <MediaCell m={m} recalledLabel={t("admin.common.recalled")} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="toolbar" style={{ justifyContent: "space-between", marginTop: 12 }}>
-            <span className="muted">
-              {total === 0
-                ? "No messages"
-                : `Showing ${from}–${to} of ${total} · scope=${inspectedScope}`}
-            </span>
-            <span style={{ display: "flex", gap: 8 }}>
-              <button
-                className="btn"
-                type="button"
-                disabled={busy || offset === 0}
-                onClick={() =>
-                  loadPage(
-                    inspectedUser,
-                    inspectedReason,
-                    inspectedScope,
-                    Math.max(0, offset - PAGE_SIZE)
-                  )
-                }
-              >
-                Previous
-              </button>
-              <button
-                className="btn"
-                type="button"
-                disabled={busy || to >= total}
-                onClick={() =>
-                  loadPage(inspectedUser, inspectedReason, inspectedScope, offset + PAGE_SIZE)
-                }
-              >
-                Next
-              </button>
-            </span>
-          </div>
+          <Pagination
+            total={total}
+            offset={offset}
+            pageSize={PAGE_SIZE}
+            visibleCount={rows.length}
+            loading={busy}
+            onPageChange={(next) =>
+              loadPage(inspectedUser, inspectedReason, inspectedScope, next)
+            }
+            emptyLabel={t("admin.messages.noMessages")}
+          />
         </>
       )}
     </AdminShell>

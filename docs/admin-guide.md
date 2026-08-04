@@ -4,6 +4,14 @@ Operator guide for the **Rchat Admin** console (`apps/admin`).
 End-user product help: [`user-guide.md`](./user-guide.md).  
 Console permission details: [`qchat-permission-matrix.md`](./qchat-permission-matrix.md) and [`security-implementation.md`](./security-implementation.md) § Admin console RBAC.
 
+## Language
+
+Default language is **简体中文**. Use the **Language** selector in the sidebar (or on the login page) to switch to English.
+
+API and validation errors are shown in the selected language via `@qchat/i18n` (`formatAdminError`). Preference is stored in `localStorage` under `qchat.admin.locale`.
+
+---
+
 ## Access
 
 - Production (typical): `https://<host>/admin/`
@@ -18,7 +26,7 @@ After `go run ./cmd/seed` in `services/api`:
 |---|---|---|
 | `13800000001` | `admin12345` | `enterprise_admin` (ACME) |
 
-Platform owner is provisioned by seed / ops (`platform_owner`). Do not use seed passwords in production.
+Platform admin is provisioned by seed / ops (`platform_admin`). Do not use seed passwords in production.
 
 ---
 
@@ -26,28 +34,26 @@ Platform owner is provisioned by seed / ops (`platform_owner`). Do not use seed 
 
 | Role | Scope | Typical use |
 |---|---|---|
-| **platform_owner** | Whole platform (master account) | Create enterprises, issue enterprise admins, cross-tenant inspect |
+| **platform_admin** | Whole platform | Create enterprises, issue enterprise admins, cross-tenant inspect, backups |
 | **enterprise_admin** | One enterprise | Day-to-day company back-office |
-| **compliance** | Same enterprise | Message inspect + read; no ban/reset |
-| **support** | Same enterprise | Assisted create, password reset, session revoke; no inspect |
-| **read_only** | Same enterprise | View only |
+| **member** | One enterprise | Chat user (no admin console) |
 
 ### Capability matrix (console)
 
-| Capability | platform_owner | enterprise_admin | compliance | support | read_only |
-|---|:---:|:---:|:---:|:---:|:---:|
-| Read lists / audits / backup status | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Inspect messages (reason required) | ✓ | ✓ | ✓ | | |
-| Create member (assisted registration) | ✓ | ✓ | | ✓ | |
-| Create compliance / support / read_only | ✓ | ✓ | | | |
-| Issue `enterprise_admin` | ✓ | | | | |
-| Reset password / revoke sessions | ✓ | ✓ | | ✓ | |
-| Ban / unban | ✓ | ✓ | | | |
-| Invite rotate / revoke / activate | ✓ | ✓ | | | |
-| Enterprise write / retention | ✓ | ✓ | | | |
-| Security write (IP allowlist) | ✓ | ✓ | | | |
+| Capability | platform_admin | enterprise_admin |
+|---|:---:|:---:|
+| Read lists / audits / backup status | ✓ | ✓ |
+| Inspect messages (reason required) | ✓ | ✓ |
+| Create member (assisted registration) | ✓ | ✓ |
+| Issue `enterprise_admin` | ✓ | |
+| Reset password / revoke sessions | ✓ | ✓ |
+| Ban / unban | ✓ | ✓ |
+| Invite rotate / revoke / activate | ✓ | ✓ |
+| Enterprise write / retention | ✓ | ✓ |
+| Security write (IP allowlist) | ✓ | ✓ |
+| Backup / restore | ✓ | |
 
-Most writes are scoped to the operator’s `enterprise_id`. Only **platform_owner** can create companies and assign admins into another enterprise.
+Most writes are scoped to the operator’s `enterprise_id`. Only **platform_admin** can create companies and assign admins into another enterprise.
 
 ---
 
@@ -68,7 +74,7 @@ Most writes are scoped to the operator’s `enterprise_id`. Only **platform_owne
 
 ## Common workflows
 
-### 1. Create an enterprise and its first admin (platform owner)
+### 1. Create an enterprise and its first admin (platform admin)
 
 **Enterprises** → **Create enterprise + admin**
 
@@ -78,7 +84,7 @@ Most writes are scoped to the operator’s `enterprise_id`. Only **platform_owne
 API: `POST /v1/admin/enterprises`  
 Returns invite code + `admin_user_id` / `admin_username`.
 
-### 2. Issue another enterprise admin (platform owner)
+### 2. Issue another enterprise admin (platform admin)
 
 **Enterprises** → issue admin for a row, or `POST /v1/admin/users` with:
 
@@ -100,11 +106,7 @@ Enterprise admins **cannot** create another `enterprise_admin` (403).
 
 Creates the account without self-service captcha/invite flow. Phone must still be 11 digits.
 
-### 4. Create console sub-accounts
-
-Same form; role `compliance`, `support`, or `read_only` (requires create-console-role permission).
-
-### 5. Ban / unblock a user
+### 4. Ban / unblock a user
 
 **Users** → select user → ban/unban with a **reason** (≥ 8 characters).  
 Banned users cannot sign in; sessions are revoked.
@@ -117,7 +119,7 @@ Existing password is **never** viewable or returned. MFA is cleared; sessions re
 ### 7. Inspect message history
 
 **Message inspect** → user/conversation identifiers + **reason** (audited).  
-Platform owners may pass `enterprise_id` for cross-tenant inspect. Enterprise admins stay in-tenant.
+Platform admins may pass `enterprise_id` for cross-tenant inspect. Enterprise admins stay in-tenant.
 
 ### 8. Invite codes
 
@@ -136,24 +138,28 @@ Set `retention_days` per enterprise; **Run retention now** triggers purge for el
 - **IP allowlist** — empty = disabled; when set, admin logins must match  
 - **Login alerts** — new device / IP (and allowlist denials) in audits  
 
-### 11. Backup & recovery status
+### 11. Backup & recovery (platform owner only)
 
-**Backup** page reads `GET /v1/admin/backup/status` (needs `QCHAT_BACKUP_DIR` on the API).
+**Backup** page — browser control for DR (not available to enterprise admins or sub-roles).
 
-Shows:
+| Action | How |
+|---|---|
+| **Automatic backup** | Enable schedule + set interval (1–168 hours); API scheduler runs `deploy/backup.sh` when due |
+| **Manual backup** | **Run backup now** |
+| **Settings** | Include secrets (env + TLS), interval, auto on/off — saved to `backups/settings.json` |
+| **Drill restore** | Restore into isolated `qchat_drill` (production untouched) |
+| **Production restore** | Overwrites live DB/MinIO — requires audited reason + typing `RESTORE` |
 
-- Whether DR looks OK vs RPO 24h  
-- Latest backup age, encryption, off-site flag  
-- Warnings (stale backup, missing drill, etc.)  
-- Latest restore-drill excerpt  
+API (platform owner only):
 
-Ops commands (host): see [`RESTORE_DRILL.md`](./RESTORE_DRILL.md) and the requirement review [`backup-recovery-review.md`](./backup-recovery-review.md).
+| Method | Path |
+|---|---|
+| GET | `/v1/admin/backup/status` |
+| GET/PATCH | `/v1/admin/backup/settings` |
+| POST | `/v1/admin/backup/run` |
+| POST | `/v1/admin/backup/restore` |
 
-Admins do **not** trigger production restore from the UI. Production restore is a host operation:
-
-```bash
-QCHAT_RESTORE_CONFIRM=YES ./deploy/restore.sh /path/to/backup-dir
-```
+Host scripts still work for break-glass: [`RESTORE_DRILL.md`](./RESTORE_DRILL.md).
 
 ---
 
@@ -175,7 +181,10 @@ QCHAT_RESTORE_CONFIRM=YES ./deploy/restore.sh /path/to/backup-dir
 | POST | `/v1/admin/retention/run` | Run retention |
 | GET/POST/DELETE | `/v1/admin/security/ip-allowlist` | IP policy |
 | GET | `/v1/admin/security/login-alerts` | Recent alerts |
-| GET | `/v1/admin/backup/status` | DR status JSON |
+| GET | `/v1/admin/backup/status` | DR status + settings + job (platform owner) |
+| GET/PATCH | `/v1/admin/backup/settings` | Auto schedule settings |
+| POST | `/v1/admin/backup/run` | Manual backup |
+| POST | `/v1/admin/backup/restore` | Drill or production restore |
 
 All admin routes require a valid access token with a console role. Sensitive actions write `audit_logs`.
 
@@ -196,9 +205,9 @@ All admin routes require a valid access token with a console role. Sensitive act
 |---|---|
 | Redirected to login | Token expired / not a console role |
 | 403 on action | Role lacks permission (see matrix above) |
-| Cannot create enterprise | Must be `platform_owner` |
-| Cannot issue enterprise admin | Only `platform_owner`; check `enterprise_id` |
-| Backup page empty / warnings | Run `./deploy/backup.sh`; set `QCHAT_BACKUP_DIR`; check cron / off-site |
+| Cannot create enterprise | Must be `platform_admin` |
+| Cannot issue enterprise admin | Only `platform_admin`; check `enterprise_id` |
+| Backup page empty / 403 | Platform admin only; sign in as `platform_admin` |
 | Message inspect denied | Role must allow inspect; supply reason ≥ 8 chars |
 | Banned user still online | Ban revokes sessions; force refresh if a stale tab remains |
 

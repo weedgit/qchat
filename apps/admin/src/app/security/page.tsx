@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import AdminShell from "@/components/AdminShell";
 import { ApiError, api, asList } from "@/lib/api";
+import { formatAdminError } from "@/lib/errors";
+import { securityAlertLabel } from "@/lib/labels";
+import { useLocale } from "@/lib/locale";
 import { can } from "@/lib/rbac";
 
 type MFAStatus = {
@@ -27,25 +30,13 @@ type LoginAlert = {
   createdAt: string;
 };
 
-function alertLabel(action: string): string {
-  switch (action) {
-    case "admin.login_new_device":
-      return "New device";
-    case "admin.login_new_ip":
-      return "New IP address";
-    case "user.login_denied_ip":
-      return "IP allowlist blocked login";
-    default:
-      return action;
-  }
-}
-
 function asCodeList(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((c) => String(c ?? "").trim()).filter(Boolean);
 }
 
 export default function SecurityPage() {
+  const { t } = useLocale();
   const [status, setStatus] = useState<MFAStatus | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [otpauth, setOtpauth] = useState<string | null>(null);
@@ -70,9 +61,9 @@ export default function SecurityPage() {
       const s = await api<MFAStatus>("/v1/me/mfa");
       setStatus(s);
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
     }
-  }, []);
+  }, [t]);
 
   const loadAllowlist = useCallback(async () => {
     setIpError(null);
@@ -89,28 +80,30 @@ export default function SecurityPage() {
           .filter((e: AllowEntry) => e.id)
       );
     } catch (e: any) {
-      setIpError(e.message);
+      setIpError(formatAdminError(e, t, "admin.err.loadFailed"));
     }
-  }, []);
+  }, [t]);
 
   const loadAlerts = useCallback(async () => {
     setAlertsError(null);
     try {
       const body = await api<any>("/v1/admin/security/login-alerts");
       setAlerts(
-        asList(body, "alerts").map((a: any) => ({
-          id: String(a?.id ?? ""),
-          action: String(a?.action ?? ""),
-          ip: String(a?.ip ?? "") || "—",
-          username: String(a?.username ?? ""),
-          displayName: String(a?.display_name ?? ""),
-          createdAt: String(a?.created_at ?? ""),
-        })).filter((a: LoginAlert) => a.id)
+        asList(body, "alerts")
+          .map((a: any) => ({
+            id: String(a?.id ?? ""),
+            action: String(a?.action ?? ""),
+            ip: String(a?.ip ?? "") || "—",
+            username: String(a?.username ?? ""),
+            displayName: String(a?.display_name ?? ""),
+            createdAt: String(a?.created_at ?? ""),
+          }))
+          .filter((a: LoginAlert) => a.id)
       );
     } catch (e: any) {
-      setAlertsError(e.message);
+      setAlertsError(formatAdminError(e, t, "admin.err.loadFailed"));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();
@@ -152,9 +145,9 @@ export default function SecurityPage() {
       const res = await api<any>("/v1/me/mfa/setup", { method: "POST", body: "{}" });
       setSecret(String(res?.secret ?? ""));
       setOtpauth(String(res?.otpauth_uri ?? ""));
-      setInfo("Scan the QR code (or enter the secret), then enter a code to activate.");
+      setInfo(t("admin.security.scanToActivate"));
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -175,13 +168,11 @@ export default function SecurityPage() {
       setCode("");
       setRecoveryCodes(codes.length ? codes : null);
       setInfo(
-        codes.length
-          ? "MFA enabled. Store these recovery codes now — they are shown only once."
-          : "MFA is now enabled for this administrator account."
+        codes.length ? t("admin.security.mfaEnabledWithCodes") : t("admin.security.mfaEnabled")
       );
       await load();
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -198,10 +189,10 @@ export default function SecurityPage() {
       });
       setCode("");
       setRecoveryCodes(null);
-      setInfo("MFA disabled.");
+      setInfo(t("admin.security.mfaDisabled"));
       await load();
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -221,12 +212,12 @@ export default function SecurityPage() {
       setRecoveryCodes(codes.length ? codes : null);
       setInfo(
         codes.length
-          ? "New recovery codes issued. Previous unused codes no longer work."
-          : "Recovery codes regenerated."
+          ? t("admin.security.recoveryRegenerated")
+          : t("admin.security.recoveryRegeneratedShort")
       );
       await load();
     } catch (e: any) {
-      setError(e.message);
+      setError(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -244,7 +235,7 @@ export default function SecurityPage() {
       setLabelInput("");
       await loadAllowlist();
     } catch (e: any) {
-      setIpError(e instanceof ApiError ? e.message : e.message);
+      setIpError(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -257,7 +248,7 @@ export default function SecurityPage() {
       await api(`/v1/admin/security/ip-allowlist/${id}`, { method: "DELETE" });
       await loadAllowlist();
     } catch (e: any) {
-      setIpError(e.message);
+      setIpError(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -269,28 +260,25 @@ export default function SecurityPage() {
 
   return (
     <AdminShell>
-      <h1>Security</h1>
-      <div className="page-sub">Administrator MFA and IP allowlists</div>
+      <h1>{t("admin.nav.security")}</h1>
+      <div className="page-sub">{t("admin.security.subtitle")}</div>
 
       <div className="card" style={{ maxWidth: 560, marginBottom: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Multi-factor authentication</h2>
+        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{t("admin.security.mfaTitle")}</h2>
         <p>
-          Status: <strong>{active ? "Enabled" : "Disabled"}</strong>
+          {t("admin.security.mfaStatus")}{" "}
+          <strong>{active ? t("admin.common.enabled") : t("admin.common.disabled")}</strong>
           {active ? (
             <span className="muted">
-              {" "}
-              · {remaining} recovery code{remaining === 1 ? "" : "s"} remaining
+              {t("admin.security.recoveryRemaining", { count: remaining })}
             </span>
           ) : null}
         </p>
-        <p className="muted">
-          When enabled, signing in requires a 6-digit authenticator code or a one-time recovery
-          code. Password reset by another admin also clears MFA.
-        </p>
+        <p className="muted">{t("admin.security.mfaBlurb")}</p>
 
         {!active && !secret ? (
           <button className="btn" type="button" disabled={busy} onClick={startSetup}>
-            Set up MFA
+            {t("admin.security.setupMfa")}
           </button>
         ) : null}
 
@@ -299,7 +287,7 @@ export default function SecurityPage() {
             {qrDataUrl ? (
               <div>
                 <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-                  Scan with your authenticator app
+                  {t("admin.security.scanQr")}
                 </div>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -313,16 +301,16 @@ export default function SecurityPage() {
             ) : null}
             <div>
               <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
-                Secret (manual entry)
+                {t("admin.security.secretManual")}
               </div>
               <code style={{ wordBreak: "break-all" }}>{secret}</code>
             </div>
             <label className="field">
-              <span>Verification code</span>
+              <span>{t("admin.security.verificationCode")}</span>
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="6-digit code"
+                placeholder={t("admin.security.codePlaceholder")}
                 inputMode="numeric"
                 autoComplete="one-time-code"
               />
@@ -333,7 +321,7 @@ export default function SecurityPage() {
               disabled={busy || code.length !== 6}
               onClick={activate}
             >
-              Activate MFA
+              {t("admin.security.activateMfa")}
             </button>
           </div>
         ) : null}
@@ -341,11 +329,11 @@ export default function SecurityPage() {
         {active ? (
           <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
             <label className="field">
-              <span>Authenticator or recovery code</span>
+              <span>{t("admin.security.mfaCodeLabel")}</span>
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase().slice(0, 16))}
-                placeholder="6-digit or XXXX-XXXX"
+                placeholder={t("admin.login.mfaPlaceholder")}
                 autoComplete="one-time-code"
               />
             </label>
@@ -356,7 +344,7 @@ export default function SecurityPage() {
                 disabled={busy || code.trim().length < 6}
                 onClick={disable}
               >
-                Disable MFA
+                {t("admin.security.disableMfa")}
               </button>
               <button
                 className="btn"
@@ -364,7 +352,7 @@ export default function SecurityPage() {
                 disabled={busy || !/^\d{6}$/.test(code.trim())}
                 onClick={regenerateRecovery}
               >
-                Regenerate recovery codes
+                {t("admin.security.regenerateRecovery")}
               </button>
             </div>
           </div>
@@ -379,10 +367,8 @@ export default function SecurityPage() {
               borderRadius: 8,
             }}
           >
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>Recovery codes (save now)</div>
-            <p className="muted" style={{ marginTop: 0 }}>
-              Each code works once. Store them offline; they will not be shown again.
-            </p>
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>{t("admin.security.recoveryTitle")}</div>
+            <p className="muted" style={{ marginTop: 0 }}>{t("admin.security.recoveryBlurb")}</p>
             <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "ui-monospace, monospace" }}>
               {recoveryCodes.map((c) => (
                 <li key={c}>{c}</li>
@@ -394,7 +380,7 @@ export default function SecurityPage() {
               style={{ marginTop: 12 }}
               onClick={() => setRecoveryCodes(null)}
             >
-              I have saved these codes
+              {t("admin.security.recoverySaved")}
             </button>
           </div>
         ) : null}
@@ -404,33 +390,33 @@ export default function SecurityPage() {
       </div>
 
       <div className="card" style={{ maxWidth: 560 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Admin IP allowlist</h2>
+        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{t("admin.security.ipTitle")}</h2>
         <p>
-          Policy: <strong>{enforced ? "Enforced" : "Off (empty list)"}</strong>
+          {t("admin.security.policy")}{" "}
+          <strong>
+            {enforced ? t("admin.security.policyEnforced") : t("admin.security.policyOff")}
+          </strong>
         </p>
-        <p className="muted">
-          When at least one CIDR is listed, administrators in this enterprise may only sign in
-          from matching client IPs. Single addresses are stored as /32 (IPv4) or /128 (IPv6).
-        </p>
+        <p className="muted">{t("admin.security.ipBlurb")}</p>
 
         {canWriteSecurity ? (
           <div className="form-rows" style={{ maxWidth: "100%", marginBottom: 12 }}>
             <div className="form-row">
-              <label htmlFor="sec-cidr">CIDR / IP</label>
+              <label htmlFor="sec-cidr">{t("admin.security.cidrLabel")}</label>
               <input
                 id="sec-cidr"
                 value={cidrInput}
                 onChange={(e) => setCidrInput(e.target.value)}
-                placeholder="10.0.0.0/8 or 203.0.113.10"
+                placeholder={t("admin.security.cidrPlaceholder")}
               />
             </div>
             <div className="form-row">
-              <label htmlFor="sec-label">Label</label>
+              <label htmlFor="sec-label">{t("admin.common.label")}</label>
               <input
                 id="sec-label"
                 value={labelInput}
                 onChange={(e) => setLabelInput(e.target.value)}
-                placeholder="Optional"
+                placeholder={t("admin.common.optional")}
               />
             </div>
             <div className="form-row">
@@ -442,16 +428,16 @@ export default function SecurityPage() {
                 onClick={addCIDR}
                 style={{ justifySelf: "start" }}
               >
-                Add
+                {t("admin.common.add")}
               </button>
             </div>
           </div>
         ) : (
-          <p className="muted">IP allowlist is read-only for your role.</p>
+          <p className="muted">{t("admin.security.readOnlyRole")}</p>
         )}
 
         {entries.length === 0 ? (
-          <p className="muted">No entries — allowlist disabled.</p>
+          <p className="muted">{t("admin.security.noEntries")}</p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
             {entries.map((e) => (
@@ -477,7 +463,7 @@ export default function SecurityPage() {
                     disabled={busy}
                     onClick={() => removeCIDR(e.id)}
                   >
-                    Remove
+                    {t("admin.common.remove")}
                   </button>
                 ) : null}
               </li>
@@ -488,14 +474,11 @@ export default function SecurityPage() {
       </div>
 
       <div className="card" style={{ maxWidth: 640, marginTop: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>Login alerts</h2>
-        <p className="muted">
-          In-console notices when an administrator signs in from a new device or IP, or when
-          the IP allowlist blocks a login. These do not send email.
-        </p>
+        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{t("admin.security.alertsTitle")}</h2>
+        <p className="muted">{t("admin.security.alertsBlurb")}</p>
         {alertsError ? <div className="error-text">{alertsError}</div> : null}
         {alerts.length === 0 && !alertsError ? (
-          <p className="muted">No recent login alerts.</p>
+          <p className="muted">{t("admin.security.noAlerts")}</p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
             {alerts.map((a) => (
@@ -507,7 +490,7 @@ export default function SecurityPage() {
                   fontSize: 13,
                 }}
               >
-                <strong>{alertLabel(a.action)}</strong>
+                <strong>{securityAlertLabel(t, a.action)}</strong>
                 <span className="muted">
                   {" "}
                   · {a.displayName || a.username || "admin"} · {a.ip}

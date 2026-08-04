@@ -1,7 +1,7 @@
 /**
  * API origin for the admin console.
  * - NEXT_PUBLIC_API_URL set (including "") → use it; empty means same-origin (nginx).
- * - unset + browser → host:8080 (local `next dev` without nginx).
+ * - unset + browser → same-origin when served at /admin behind nginx; else host:8080 for local dev.
  */
 export function apiBaseUrl(): string {
   if (typeof process.env.NEXT_PUBLIC_API_URL === "string") {
@@ -11,7 +11,18 @@ export function apiBaseUrl(): string {
     return "";
   }
   if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:8080`;
+    const { protocol, hostname, port, pathname } = window.location;
+    // Production: static admin at /admin/* with API proxied on the same host (/v1).
+    if (
+      pathname.startsWith("/admin") ||
+      port === "443" ||
+      port === "80" ||
+      port === ""
+    ) {
+      return window.location.origin;
+    }
+    // Local `next dev -p 3001` without nginx.
+    return `${protocol}//${hostname}:8080`;
   }
   return "http://localhost:8080";
 }
@@ -62,10 +73,13 @@ export function clearToken() {
 export class ApiError extends Error {
   status: number;
   body: unknown;
+  code?: string;
   constructor(status: number, message: string, body: unknown) {
     super(message);
     this.status = status;
     this.body = body;
+    const code = (body as { code?: string } | null)?.code;
+    if (typeof code === "string" && code) this.code = code;
   }
 }
 
@@ -80,7 +94,12 @@ export async function api<T = any>(
   const token = getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${apiBaseUrl()}${path}`, { ...init, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBaseUrl()}${path}`, { ...init, headers });
+  } catch {
+    throw new ApiError(0, "Network error", { code: "network_error" });
+  }
 
   let body: unknown = null;
   const text = await res.text();

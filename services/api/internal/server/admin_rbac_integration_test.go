@@ -51,49 +51,28 @@ func TestAdminConsoleRBAC(t *testing.T) {
 		return fmt.Sprint(login["access_token"])
 	}
 
-	// Compliance: inspect OK, ban forbidden.
-	tok := promote("compliance")
+	// Enterprise admin: inspect and ban OK, cannot issue another enterprise admin.
+	tok := promote("enterprise_admin")
 	st, _ = getJSON(t, base+"/v1/admin/users?limit=1", tok)
 	if st != 200 {
-		t.Fatalf("compliance list users: %d", st)
+		t.Fatalf("enterprise_admin list users: %d", st)
 	}
-	st, msgs := getJSON(t, base+"/v1/admin/messages?user_id="+userID+"&reason=compliance+ticket+inspect+now", tok)
+	st, msgs := getJSON(t, base+"/v1/admin/messages?user_id="+userID+"&reason=admin+inspect+ticket+now", tok)
 	if st == 403 {
-		t.Fatalf("compliance should inspect: %v", msgs)
+		t.Fatalf("enterprise_admin should inspect: %v", msgs)
 	}
-	st, ban := postJSON(t, base+"/v1/admin/users/"+userID+"/ban", tok, map[string]any{
-		"banned": true, "reason": "should not be allowed here",
+	st, issue := postJSON(t, base+"/v1/admin/users", tok, map[string]any{
+		"phone": "13900000998", "password": "user12345", "username": "ea_issue",
+		"role": "enterprise_admin",
 	})
 	if st != 403 {
-		t.Fatalf("compliance ban status=%d want 403 %v", st, ban)
+		t.Fatalf("enterprise_admin issue admin status=%d want 403 %v", st, issue)
 	}
 
-	// Support: reset password OK, inspect forbidden.
-	tok = promote("support")
-	st, inspect := getJSON(t, base+"/v1/admin/messages?user_id="+userID+"&reason=support+trying+to+read+chat", tok)
-	if st != 403 {
-		t.Fatalf("support inspect status=%d want 403 %v", st, inspect)
-	}
-	peerTok, _, peerID, _ := registerUser(t, base, "ACME2026")
-	_ = peerTok
-	st, reset := postJSON(t, base+"/v1/admin/users/"+peerID+"/reset-password", tok, map[string]any{
-		"password": "newpass123", "reason": "support ticket password reset",
-	})
-	if st != 200 {
-		t.Fatalf("support reset: %d %v", st, reset)
-	}
-
-	// Read-only: list OK, create forbidden.
-	tok = promote("read_only")
+	// Members cannot access admin console.
+	tok = promote("member")
 	st, _ = getJSON(t, base+"/v1/admin/users?limit=1", tok)
-	if st != 200 {
-		t.Fatalf("read_only list: %d", st)
-	}
-	st, create := postJSON(t, base+"/v1/admin/users", tok, map[string]any{
-		"phone": "13900000999", "password": "user12345", "username": "ro_create",
-		"role": "member",
-	})
 	if st != 403 {
-		t.Fatalf("read_only create status=%d want 403 %v", st, create)
+		t.Fatalf("member list status=%d want 403", st)
 	}
 }

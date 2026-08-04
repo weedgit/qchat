@@ -6,13 +6,10 @@ import (
 	"github.com/qchat/qchat/services/api/internal/auth"
 )
 
-// Console / admin-console roles (requirements-en §5 recommended RBAC).
+// Console roles: platform_admin (whole platform), enterprise_admin (one company), member (chat user).
 const (
-	rolePlatformOwner   = "platform_owner"
+	rolePlatformAdmin   = "platform_admin"
 	roleEnterpriseAdmin = "enterprise_admin"
-	roleCompliance      = "compliance"
-	roleSupport         = "support"
-	roleReadOnly        = "read_only"
 	roleMember          = "member"
 )
 
@@ -21,7 +18,6 @@ const (
 	permAdminRead            = "admin.read"
 	permMessagesInspect      = "admin.messages.inspect"
 	permUsersCreateMember    = "admin.users.create_member"
-	permUsersCreateSubrole   = "admin.users.create_console_role"
 	permUsersResetPassword   = "admin.users.reset_password"
 	permUsersRevokeSession   = "admin.users.revoke_session"
 	permUsersBan             = "admin.users.ban"
@@ -33,47 +29,50 @@ const (
 )
 
 var rolePerms = map[string]map[string]bool{
-	rolePlatformOwner: {
+	rolePlatformAdmin: {
 		permAdminRead: true, permMessagesInspect: true,
-		permUsersCreateMember: true, permUsersCreateSubrole: true,
+		permUsersCreateMember: true,
 		permUsersResetPassword: true, permUsersRevokeSession: true, permUsersBan: true,
 		permInviteManage: true, permEnterpriseWrite: true, permSecurityWrite: true,
 		permRetention: true, permIssueEnterpriseAdmin: true,
 	},
 	roleEnterpriseAdmin: {
 		permAdminRead: true, permMessagesInspect: true,
-		permUsersCreateMember: true, permUsersCreateSubrole: true,
+		permUsersCreateMember: true,
 		permUsersResetPassword: true, permUsersRevokeSession: true, permUsersBan: true,
 		permInviteManage: true, permEnterpriseWrite: true, permSecurityWrite: true,
 		permRetention: true,
 	},
-	roleCompliance: {
-		permAdminRead: true, permMessagesInspect: true,
-	},
-	roleSupport: {
-		permAdminRead:          true,
-		permUsersCreateMember:  true,
-		permUsersResetPassword: true, permUsersRevokeSession: true,
-	},
-	roleReadOnly: {
-		permAdminRead: true,
-	},
 }
 
-// isAdminRole reports whether the account is an admin-console principal
-// (full admins plus compliance/support/read-only subaccounts). Used for MFA,
-// IP allowlist, and login-alert enrollment.
+// normalizeRole maps legacy JWT/DB values to the current role model.
+func normalizeRole(role string) string {
+	switch role {
+	case "platform_owner":
+		return rolePlatformAdmin
+	case "compliance", "support", "read_only":
+		return roleMember
+	default:
+		return role
+	}
+}
+
+func isPlatformAdminRole(role string) bool {
+	return normalizeRole(role) == rolePlatformAdmin
+}
+
+// isAdminRole reports whether the account may use the admin console.
 func isAdminRole(role string) bool {
-	_, ok := rolePerms[role]
+	r := normalizeRole(role)
+	_, ok := rolePerms[r]
 	return ok
 }
 
 func roleHasPerm(role, perm string) bool {
-	return rolePerms[role][perm]
+	return rolePerms[normalizeRole(role)][perm]
 }
 
-// requireAdmin allows any console role into the admin API surface.
-// Individual handlers must call requirePerm for sensitive actions.
+// requireAdmin allows platform_admin or enterprise_admin into the admin API surface.
 func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) *auth.Claims {
 	c := claimsFrom(r)
 	if !isAdminRole(c.Role) {
