@@ -35,3 +35,9 @@ apps/web/public/downloads/*
 !apps/web/public/downloads/manifest.json
 !apps/web/public/downloads/images/
 !apps/web/public/downloads/images/**
+apps/xin-web/public/downloads/*
+!apps/xin-web/public/downloads/.gitkeep
+!apps/xin-web/public/downloads/README.md
+!apps/xin-web/public/downloads/manifest.json
+!apps/xin-web/public/downloads/images/
+!apps/xin-web/public/downloads/images/**
