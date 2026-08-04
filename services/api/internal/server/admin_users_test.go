@@ -58,3 +58,15 @@ func TestAdminReason(t *testing.T) {
 		t.Fatalf("reason not trimmed: %q", got)
 	}
 }
+
+func TestMessageInspectReason(t *testing.T) {
+	if got := messageInspectReason(""); got != adminInspectReasonEnterprise {
+		t.Fatalf("empty reason: got %q", got)
+	}
+	if got := messageInspectReason("short"); got != adminInspectReasonEnterprise {
+		t.Fatalf("short reason: got %q", got)
+	}
+	if got := messageInspectReason("  compliance ticket inspect  "); got != "compliance ticket inspect" {
+		t.Fatalf("custom reason: got %q", got)
+	}
+}

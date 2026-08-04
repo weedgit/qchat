@@ -13,7 +13,7 @@ export default function LanguageSelect({ id = "admin-lang", className }: Props) 
 
   return (
     <div className={className}>
-      <label htmlFor={id} className="muted" style={{ fontSize: 12, display: "block" }}>
+      <label htmlFor={id} className="muted" style={{ fontSize: 16, display: "block" }}>
         {t("admin.language")}
       </label>
       <select

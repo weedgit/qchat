@@ -7,9 +7,11 @@ import OverviewTrendChart, {
   type TrendPoint,
   type TrendRangeDays,
 } from "@/components/OverviewTrendChart";
-import { api, asList, API_URL } from "@/lib/api";
+import { api, asList } from "@/lib/api";
 import { formatAdminError } from "@/lib/errors";
 import { useLocale } from "@/lib/locale";
+import { isPlatformAdmin } from "@/lib/rbac";
+import { useToast } from "@/components/Toast";
 
 type TrendsResponse = {
   days?: number;
@@ -27,6 +29,7 @@ type TrendsResponse = {
 
 export default function OverviewPage() {
   const { t } = useLocale();
+  const toast = useToast();
   const [rangeDays, setRangeDays] = useState<TrendRangeDays>(30);
   const [counts, setCounts] = useState<{
     users?: number;
@@ -35,8 +38,16 @@ export default function OverviewPage() {
     groups?: number;
   }>({});
   const [trends, setTrends] = useState<TrendsResponse | null>(null);
-  const [trendsError, setTrendsError] = useState<string | null>(null);
   const [trendsLoading, setTrendsLoading] = useState(true);
+  const [meRole, setMeRole] = useState("");
+
+  useEffect(() => {
+    api<any>("/v1/me")
+      .then((me) => setMeRole(String(me?.role ?? "")))
+      .catch(() => {});
+  }, []);
+
+  const platformScope = isPlatformAdmin(meRole);
 
   useEffect(() => {
     api<any>("/v1/admin/users?limit=1")
@@ -58,14 +69,13 @@ export default function OverviewPage() {
     api<TrendsResponse>(`/v1/admin/stats/trends?days=${rangeDays}`)
       .then((body) => {
         setTrends(body);
-        setTrendsError(null);
       })
       .catch((e) => {
         setTrends(null);
-        setTrendsError(formatAdminError(e, t, "admin.overview.trend.loadFailed"));
+        toast.error(formatAdminError(e, t, "admin.overview.trend.loadFailed"));
       })
       .finally(() => setTrendsLoading(false));
-  }, [rangeDays]);
+  }, [rangeDays, t, toast]);
 
   const summary = trends?.summary;
   const recentDays = summary?.recent_days ?? 7;
@@ -95,8 +105,10 @@ export default function OverviewPage() {
 
   return (
     <AdminShell>
-      <h1>{t("admin.nav.overview")}</h1>
-      <div className="page-sub">{t("admin.overview.subtitle", { url: API_URL })}</div>
+
+      {platformScope ? (
+        <p className="muted" style={{ marginBottom: 12 }}>{t("admin.overview.platformScope")}</p>
+      ) : null}
 
       <div className="stat-grid">
         <div className="stat-card">
@@ -117,20 +129,21 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      {trendsError ? <div className="notice" style={{ marginTop: 16 }}>{trendsError}</div> : null}
-
       <OverviewTrendChart
         users={trends?.users ?? []}
         messages={trends?.messages ?? []}
         loading={trendsLoading}
         rangeDays={rangeDays}
         onRangeChange={setRangeDays}
+        hintKey={
+          platformScope ? "admin.overview.trend.hintPlatform" : "admin.overview.trend.hint"
+        }
       />
 
       {!trendsLoading && trends ? (
         <div className="card" style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <div style={{ fontSize: 14, color: trendColor(userTrend.direction) }}>{userTrend.text}</div>
-          <div style={{ fontSize: 14, color: trendColor(msgTrend.direction) }}>{msgTrend.text}</div>
+          <div style={{ fontSize: 17, color: trendColor(userTrend.direction) }}>{userTrend.text}</div>
+          <div style={{ fontSize: 17, color: trendColor(msgTrend.direction) }}>{msgTrend.text}</div>
         </div>
       ) : null}
     </AdminShell>

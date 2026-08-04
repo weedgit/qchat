@@ -2,16 +2,21 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import AdminShell from "@/components/AdminShell";
+import { AdminTime } from "@/components/AdminTime";
 import Pagination from "@/components/Pagination";
+import { StableLabelButton } from "@/components/StableLabelButton";
 import { PasswordInput } from "@/components/PasswordInput";
 import { api, asList } from "@/lib/api";
 import { displayNameError } from "@/lib/credentials";
 import { formatAdminError } from "@/lib/errors";
-import { translateRole, translateUserStatus } from "@/lib/labels";
+import { translateRole, translateSessionStatus, translateUserStatus } from "@/lib/labels";
 import { useLocale } from "@/lib/locale";
+import { useToast } from "@/components/Toast";
 import { can } from "@/lib/rbac";
 
-import { PAGE_SIZE } from "@/lib/pagination";const REASON_MIN = 8;
+import { PAGE_SIZE } from "@/lib/pagination";
+
+const REASON_MIN = 8;
 
 interface AdminUser {
   id: string;
@@ -35,6 +40,8 @@ interface AdminSession {
   location: string;
   lastActiveAt: string;
   expiresAt: string;
+  status: string;
+  revocable: boolean;
 }
 
 function normalize(raw: any): AdminUser {
@@ -63,22 +70,18 @@ function normalizeSession(raw: any): AdminSession {
     location: String(raw?.location ?? "") || "—",
     lastActiveAt: String(raw?.last_active_at ?? ""),
     expiresAt: String(raw?.expires_at ?? ""),
+    status: String(raw?.status ?? "active"),
+    revocable: Boolean(raw?.revocable),
   };
 }
 
-function formatDate(value: string): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
 export default function UsersPage() {
-  const { t } = useLocale();
+  const { t, resolved } = useLocale();
+  const toast = useToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [query, setQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [phone, setPhone] = useState("");
@@ -88,17 +91,16 @@ export default function UsersPage() {
   const [role, setRole] = useState("member");
   const [meRole, setMeRole] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
-  const [createMsg, setCreateMsg] = useState<string | null>(null);
 
   const [target, setTarget] = useState<AdminUser | null>(null);
   const [reason, setReason] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
-  const [actionErr, setActionErr] = useState<string | null>(null);
-  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [sessionsNeverLoggedIn, setSessionsNeverLoggedIn] = useState(false);
+  const [sessionsRecentDays, setSessionsRecentDays] = useState(90);
+  const [openingUserId, setOpeningUserId] = useState<string | null>(null);
   const sessionsRequestRef = useRef(0);
 
   const load = useCallback(async (q: string, from: number) => {
@@ -112,13 +114,17 @@ export default function UsersPage() {
       const body = await api<any>(`/v1/admin/users?${qs.toString()}`);
       setUsers(asList(body, "users").map(normalize));
       setTotal(Number(body?.total ?? 0));
-      setError(null);
     } catch (e: any) {
-      setError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(
+        t("admin.common.loadFailed", {
+          target: t("admin.users.loadFailed"),
+          error: formatAdminError(e, t, "admin.err.loadFailed"),
+        })
+      );
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, toast]);
 
   useEffect(() => {
     load(query, offset);
@@ -139,30 +145,38 @@ export default function UsersPage() {
   async function loadSessions(userId: string) {
     const request = ++sessionsRequestRef.current;
     setSessionsLoading(true);
-    setSessionsError(null);
     try {
       const body = await api<any>(
         `/v1/admin/users/${encodeURIComponent(userId)}/sessions`
       );
       if (request !== sessionsRequestRef.current) return;
       setSessions(asList(body, "sessions").map(normalizeSession));
+      setSessionsNeverLoggedIn(Boolean(body?.never_logged_in));
+      setSessionsRecentDays(Number(body?.recent_days ?? 90));
     } catch (err: any) {
       if (request !== sessionsRequestRef.current) return;
       setSessions([]);
-      setSessionsError(formatAdminError(err, t, "admin.err.loadFailed"));
+      setSessionsNeverLoggedIn(false);
+      toast.error(
+        t("admin.users.sessionsLoadFailed", {
+          error: formatAdminError(err, t, "admin.err.loadFailed"),
+        })
+      );
     } finally {
       if (request === sessionsRequestRef.current) setSessionsLoading(false);
     }
   }
 
   function openActions(u: AdminUser) {
+    setOpeningUserId(u.id);
     setTarget(u);
     setReason("");
     setNewPassword("");
-    setActionErr(null);
-    setActionMsg(null);
     setSessions([]);
-    void loadSessions(u.id);
+    setSessionsNeverLoggedIn(false);
+    void loadSessions(u.id).finally(() => {
+      setOpeningUserId((current) => (current === u.id ? null : current));
+    });
   }
 
   async function onCreate(e: FormEvent) {
@@ -170,11 +184,10 @@ export default function UsersPage() {
     const dn = (displayName || username).trim();
     const dnErr = displayNameError(dn);
     if (dnErr) {
-      setCreateMsg(t(dnErr));
+      toast.error(t(dnErr));
       return;
     }
     setCreateBusy(true);
-    setCreateMsg(null);
     try {
       await api("/v1/admin/users", {
         method: "POST",
@@ -186,7 +199,7 @@ export default function UsersPage() {
           role,
         }),
       });
-      setCreateMsg(t("admin.users.created"));
+      toast.success(t("admin.users.created"));
       setPhone("");
       setUsername("");
       setDisplayName("");
@@ -195,7 +208,7 @@ export default function UsersPage() {
       setCreateOpen(false);
       await load(query, offset);
     } catch (err: any) {
-      setCreateMsg(formatAdminError(err, t, "admin.err.generic"));
+      toast.error(formatAdminError(err, t, "admin.err.generic"));
     } finally {
       setCreateBusy(false);
     }
@@ -203,18 +216,16 @@ export default function UsersPage() {
 
   async function runAction(fn: () => Promise<void>, done: string) {
     if (reason.trim().length < REASON_MIN) {
-      setActionErr(t("admin.err.reasonRequired"));
+      toast.error(t("admin.err.reasonRequired"));
       return;
     }
     setActionBusy(true);
-    setActionErr(null);
-    setActionMsg(null);
     try {
       await fn();
-      setActionMsg(done);
+      toast.success(done);
       await load(query, offset);
     } catch (err: any) {
-      setActionErr(formatAdminError(err, t, "admin.err.generic"));
+      toast.error(formatAdminError(err, t, "admin.err.generic"));
     } finally {
       setActionBusy(false);
     }
@@ -238,7 +249,7 @@ export default function UsersPage() {
   function resetPassword() {
     if (!target) return;
     if (!newPassword) {
-      setActionErr(t("admin.err.tempPasswordRequired"));
+      toast.error(t("admin.err.tempPasswordRequired"));
       return;
     }
     runAction(async () => {
@@ -261,9 +272,44 @@ export default function UsersPage() {
           body: JSON.stringify({ reason: reason.trim() }),
         }
       );
-      setSessions((current) => current.filter((item) => item.id !== session.id));
+      setSessions((current) =>
+        current.map((item) =>
+          item.id === session.id
+            ? { ...item, status: "revoked", revocable: false }
+            : item
+        )
+      );
     }, t("admin.users.sessionSignedOut", { name }));
   }
+
+  function closeCreateModal() {
+    if (createBusy) return;
+    setCreateOpen(false);
+  }
+
+  function closeManageModal() {
+    if (actionBusy) return;
+    setTarget(null);
+    sessionsRequestRef.current += 1;
+  }
+
+  useEffect(() => {
+    if (!createOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !createBusy) closeCreateModal();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createOpen, createBusy]);
+
+  useEffect(() => {
+    if (!target) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !actionBusy) closeManageModal();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [target, actionBusy]);
 
   const canCreate = can(meRole, "createMember") || can(meRole, "issueEnterpriseAdmin");
   const canBan = can(meRole, "ban");
@@ -272,8 +318,6 @@ export default function UsersPage() {
 
   return (
     <AdminShell>
-      <h1>{t("admin.nav.users")}</h1>
-      <div className="page-sub">{t("admin.users.subtitle")}</div>
 
       <div className="toolbar toolbar-full">
         <input
@@ -286,218 +330,256 @@ export default function UsersPage() {
           {t("admin.common.search")}
         </button>
         {canCreate ? (
-          <button className="btn" type="button" onClick={() => setCreateOpen((v) => !v)}>
-            {createOpen ? t("admin.users.closeForm") : t("admin.users.createUser")}
+          <button className="btn" type="button" onClick={() => setCreateOpen(true)}>
+            {t("admin.users.createUser")}
           </button>
         ) : null}
       </div>
 
-      {createOpen && canCreate && (
-        <form className="card" onSubmit={onCreate} style={{ marginBottom: 16, padding: 16 }}>
-          <div className="page-sub" style={{ marginBottom: 12 }}>
-            {t("admin.users.createBlurb")}
-          </div>
-          <div className="form-rows" style={{ marginTop: 4 }}>
-            <div className="form-row">
-              <label htmlFor="admin-create-phone">{t("admin.common.phone")}</label>
-              <input
-                id="admin-create-phone"
-                placeholder={t("admin.common.phonePlaceholder")}
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-row">
-              <label htmlFor="admin-create-username">{t("admin.common.username")}</label>
-              <input
-                id="admin-create-username"
-                placeholder={t("admin.common.username")}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-row">
-              <label htmlFor="admin-create-display">{t("admin.common.displayName")}</label>
-              <input
-                id="admin-create-display"
-                placeholder={t("admin.common.displayName")}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </div>
-            <div className="form-row">
-              <label htmlFor="admin-create-password">{t("admin.common.tempPassword")}</label>
-              <PasswordInput
-                id="admin-create-password"
-                placeholder={t("admin.common.tempPassword")}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="new-password"
-              />
-            </div>
-            <div className="form-row">
-              <label htmlFor="admin-create-role">{t("admin.common.role")}</label>
-              <select
-                id="admin-create-role"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-              >
-                <option value="member">{translateRole(t, "member")}</option>
-                {can(meRole, "issueEnterpriseAdmin") ? (
-                  <option value="enterprise_admin">
-                    {translateRole(t, "enterprise_admin")}
-                  </option>
-                ) : null}
-              </select>
-            </div>
-            <div className="form-row">
-              <span />
-              <button className="btn" type="submit" disabled={createBusy}>
-                {createBusy ? t("admin.common.creating") : t("admin.users.provision")}
-              </button>
-            </div>
-          </div>
-          {createMsg && <div className="notice" style={{ marginTop: 8 }}>{createMsg}</div>}
-        </form>
-      )}
-
-      {target && (
-        <div className="card" style={{ marginBottom: 16, padding: 16 }}>
-          <div className="toolbar" style={{ justifyContent: "space-between" }}>
-            <strong>
-              {target.nickname} <span className="muted">@{target.username}</span>
-            </strong>
-            <button className="btn" type="button" onClick={() => setTarget(null)}>
-              {t("admin.common.close")}
-            </button>
-          </div>
-          <div className="notice" style={{ marginTop: 12 }}>{t("admin.users.actionsBlurb")}</div>
-          <div className="field" style={{ marginTop: 12 }}>
-            <label>{t("admin.common.reasonAudited")}</label>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={t("admin.common.reasonPlaceholder")}
-              rows={2}
-            />
-          </div>
-          <div className="toolbar" style={{ flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-            {canBan ? (
-              <button
-                className="btn"
-                type="button"
-                disabled={actionBusy}
-                onClick={toggleBan}
-              >
-                {target.banned ? t("admin.users.unblockSignIn") : t("admin.users.blockSignIn")}
-              </button>
-            ) : null}
-            {canReset ? (
-              <>
+      {createOpen && canCreate ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={closeCreateModal}
+        >
+          <div
+            className="card card-form modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="user-create-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="user-create-title" className="modal-title">
+              {t("admin.users.createUser")}
+            </h2>
+            <form onSubmit={onCreate} className="form-rows">
+              <div className="form-row">
+                <label htmlFor="admin-create-phone">{t("admin.common.phone")}</label>
+                <input
+                  id="admin-create-phone"
+                  placeholder={t("admin.common.phonePlaceholder")}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-row">
+                <label htmlFor="admin-create-username">{t("admin.common.username")}</label>
+                <input
+                  id="admin-create-username"
+                  placeholder={t("admin.common.username")}
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-row">
+                <label htmlFor="admin-create-display">{t("admin.common.displayName")}</label>
+                <input
+                  id="admin-create-display"
+                  placeholder={t("admin.common.displayName")}
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                />
+              </div>
+              <div className="form-row">
+                <label htmlFor="admin-create-password">{t("admin.common.tempPassword")}</label>
                 <PasswordInput
-                  placeholder={t("admin.users.newTempPassword")}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  id="admin-create-password"
+                  placeholder={t("admin.common.tempPassword")}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
                   autoComplete="new-password"
                 />
+              </div>
+              <div className="form-row">
+                <label htmlFor="admin-create-role">{t("admin.common.role")}</label>
+                <select
+                  id="admin-create-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                >
+                  <option value="member">{translateRole(t, "member")}</option>
+                  {can(meRole, "issueEnterpriseAdmin") ? (
+                    <option value="enterprise_admin">
+                      {translateRole(t, "enterprise_admin")}
+                    </option>
+                  ) : null}
+                </select>
+              </div>
+              <div className="form-row">
+                <span />
+                <div className="toolbar form-actions" style={{ margin: 0 }}>
+                  <button className="btn" type="submit" disabled={createBusy}>
+                    {createBusy ? t("admin.common.creating") : t("admin.users.provision")}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={createBusy}
+                    onClick={closeCreateModal}
+                  >
+                    {t("admin.common.cancel")}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {target ? (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={closeManageModal}
+        >
+          <div
+            className="card card-form modal-panel modal-panel-wide"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="user-manage-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <button
+                className="btn btn-secondary modal-close"
+                type="button"
+                disabled={actionBusy}
+                onClick={closeManageModal}
+              >
+                {t("admin.common.close")}
+              </button>
+              <h2 id="user-manage-title" className="modal-title">
+                {target.nickname}{" "}
+                <span className="muted">@{target.username}</span>
+              </h2>
+            </div>
+            <div className="field">
+              <label className="modal-field-label">{t("admin.common.reasonAudited")}</label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={t("admin.common.reasonPlaceholder")}
+                rows={2}
+              />
+            </div>
+            <div className="modal-actions-stack">
+              {canBan ? (
                 <button
                   className="btn"
                   type="button"
                   disabled={actionBusy}
-                  onClick={resetPassword}
+                  onClick={toggleBan}
                 >
-                  {t("admin.users.resetPassword")}
+                  {target.banned ? t("admin.users.unblockSignIn") : t("admin.users.blockSignIn")}
                 </button>
-              </>
-            ) : null}
-          </div>
-          {actionErr && <div className="error-text" style={{ marginTop: 8 }}>{actionErr}</div>}
-          {actionMsg && <div className="notice" style={{ marginTop: 8 }}>{actionMsg}</div>}
-          <div style={{ marginTop: 20 }}>
-            <div className="toolbar" style={{ justifyContent: "space-between" }}>
-              <strong>{t("admin.users.activeSessions")}</strong>
-              <button
-                className="btn"
-                type="button"
+              ) : null}
+              {canReset ? (
+                <div className="modal-password-stack">
+                  <PasswordInput
+                    placeholder={t("admin.users.newTempPassword")}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    className="btn"
+                    type="button"
+                    disabled={actionBusy}
+                    onClick={resetPassword}
+                  >
+                    {t("admin.users.resetPassword")}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <div className="modal-section-header">
+              <h3 className="modal-section-title">{t("admin.users.activeSessions")}</h3>
+              <StableLabelButton
+                label={
+                  sessionsLoading
+                    ? t("admin.common.refreshing")
+                    : t("admin.common.refresh")
+                }
+                widthLabels={[t("admin.common.refresh"), t("admin.common.refreshing")]}
                 disabled={sessionsLoading}
                 onClick={() => loadSessions(target.id)}
-              >
-                {sessionsLoading ? t("admin.common.refreshing") : t("admin.common.refresh")}
-              </button>
+              />
             </div>
-            {sessionsError && (
-              <div className="error-text" style={{ marginTop: 8 }}>
-                {t("admin.users.sessionsLoadFailed", { error: sessionsError })}
+            <p className="muted" style={{ marginTop: 4, marginBottom: 0 }}>
+              {t("admin.users.sessionsHint", { days: sessionsRecentDays })}
+            </p>
+              <div style={{ overflowX: "auto", marginTop: 8 }}>
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>{t("admin.common.device")}</th>
+                      <th>{t("admin.common.platform")}</th>
+                      <th>{t("admin.common.ipLocation")}</th>
+                      <th>{t("admin.common.status")}</th>
+                      <th>{t("admin.common.lastActive")}</th>
+                      <th>{t("admin.common.expires")}</th>
+                      <th>{t("admin.common.action")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessionsLoading && sessions.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="muted">{t("admin.users.loadingSessions")}</td>
+                      </tr>
+                    ) : null}
+                    {!sessionsLoading && sessions.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="muted">
+                          {sessionsNeverLoggedIn
+                            ? t("admin.users.noSessionsEver")
+                            : t("admin.users.noSessions", { days: sessionsRecentDays })}
+                        </td>
+                      </tr>
+                    ) : null}
+                    {sessions.map((session) => (
+                      <tr key={session.id}>
+                        <td>
+                          {session.deviceName ||
+                            session.deviceType ||
+                            t("admin.common.unknownDevice")}
+                        </td>
+                        <td>{session.platform || "—"}</td>
+                        <td>
+                          <div style={{ fontFamily: "monospace", fontSize: 16 }}>{session.ip}</div>
+                          <div className="muted">{session.location}</div>
+                        </td>
+                        <td>{translateSessionStatus(t, session.status)}</td>
+                        <td className="muted">
+                          <AdminTime value={session.lastActiveAt} resolved={resolved} />
+                        </td>
+                        <td className="muted">
+                          <AdminTime value={session.expiresAt} resolved={resolved} />
+                        </td>
+                        <td>
+                          {canRevoke && session.revocable ? (
+                            <button
+                              className="btn"
+                              type="button"
+                              disabled={actionBusy}
+                              onClick={() => revokeSession(session)}
+                            >
+                              {t("admin.common.signOut")}
+                            </button>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            )}
-            <div style={{ overflowX: "auto", marginTop: 8 }}>
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>{t("admin.common.device")}</th>
-                    <th>{t("admin.common.platform")}</th>
-                    <th>{t("admin.common.ipLocation")}</th>
-                    <th>{t("admin.common.lastActive")}</th>
-                    <th>{t("admin.common.expires")}</th>
-                    <th>{t("admin.common.action")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessionsLoading && sessions.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="muted">{t("admin.users.loadingSessions")}</td>
-                    </tr>
-                  )}
-                  {!sessionsLoading && !sessionsError && sessions.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="muted">{t("admin.users.noSessions")}</td>
-                    </tr>
-                  )}
-                  {sessions.map((session) => (
-                    <tr key={session.id}>
-                      <td>
-                        {session.deviceName ||
-                          session.deviceType ||
-                          t("admin.common.unknownDevice")}
-                      </td>
-                      <td>{session.platform || "—"}</td>
-                      <td>
-                        <div style={{ fontFamily: "monospace", fontSize: 12 }}>{session.ip}</div>
-                        <div className="muted">{session.location}</div>
-                      </td>
-                      <td className="muted">{formatDate(session.lastActiveAt)}</td>
-                      <td className="muted">{formatDate(session.expiresAt)}</td>
-                      <td>
-                        {canRevoke ? (
-                          <button
-                            className="btn"
-                            type="button"
-                            disabled={actionBusy}
-                            onClick={() => revokeSession(session)}
-                          >
-                            {t("admin.common.signOut")}
-                          </button>
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </div>
         </div>
-      )}
-
-      {error && (
-        <div className="notice">
-          {t("admin.common.loadFailed", { target: t("admin.users.loadFailed"), error })}
-        </div>
-      )}
+      ) : null}
 
       <div className="card" style={{ padding: 0, overflowX: "auto" }}>
         <table className="data">
@@ -534,13 +616,22 @@ export default function UsersPage() {
                     {translateUserStatus(t, u.status)}
                   </span>
                 </td>
-                <td style={{ fontFamily: "monospace", fontSize: 12 }}>{u.registerIp}</td>
+                <td style={{ fontFamily: "monospace", fontSize: 16 }}>{u.registerIp}</td>
                 <td>{u.registerRegion}</td>
-                <td className="muted">{u.createdAt}</td>
+                <td className="muted">
+                  <AdminTime value={u.createdAt} resolved={resolved} />
+                </td>
                 <td>
-                  <button className="btn" type="button" onClick={() => openActions(u)}>
-                    {t("admin.common.manage")}
-                  </button>
+                  <StableLabelButton
+                    label={
+                      openingUserId === u.id
+                        ? t("admin.common.loading")
+                        : t("admin.common.manage")
+                    }
+                    widthLabels={[t("admin.common.manage"), t("admin.common.loading")]}
+                    disabled={openingUserId === u.id}
+                    onClick={() => openActions(u)}
+                  />
                 </td>
               </tr>
             ))}

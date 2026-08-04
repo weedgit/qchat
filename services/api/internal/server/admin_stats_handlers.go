@@ -17,7 +17,8 @@ type adminTrendPoint struct {
 }
 
 // handleAdminStatsTrends returns daily new-user and message counts for the
-// operator's enterprise so the overview chart can show growth trends.
+// overview chart. platform_admin sees the whole platform; enterprise_admin
+// sees only their enterprise.
 func (s *Server) handleAdminStatsTrends(w http.ResponseWriter, r *http.Request) {
 	c := s.requirePerm(w, r, permAdminRead)
 	if c == nil {

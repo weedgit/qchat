@@ -492,6 +492,13 @@ func (s *Server) handleFriendRequest(w http.ResponseWriter, r *http.Request) {
 		fromName, _ := payload["from_name"].(string)
 		s.notifyFriendRequestPush(r.Context(), targetID, fromName, fromUser)
 	}
+	entStr := ""
+	if ent != nil {
+		entStr = fmt.Sprint(ent)
+	}
+	s.audit(r.Context(), c.UserID, entStr, "contact.request", "user", targetID, "", clientIP(r), map[string]any{
+		"friendship_id": id.String(), "status": status,
+	})
 	writeJSON(w, 201, resp)
 }
 
@@ -528,6 +535,13 @@ func (s *Server) handleFriendAccept(w http.ResponseWriter, r *http.Request) {
 	s.hub.PublishToUsers([]string{requesterID, c.UserID}, ws.Event{Type: "friend.request", Payload: map[string]any{
 		"from": requesterID, "status": "accepted", "id": id, "conversation_id": convID,
 	}})
+	entStr := ""
+	if ent != nil {
+		entStr = fmt.Sprint(ent)
+	}
+	s.audit(r.Context(), c.UserID, entStr, "contact.accept", "user", requesterID, "", clientIP(r), map[string]any{
+		"friendship_id": id,
+	})
 	writeJSON(w, 200, map[string]any{"ok": true, "conversation_id": convID})
 }
 

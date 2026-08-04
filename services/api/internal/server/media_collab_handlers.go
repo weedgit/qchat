@@ -202,7 +202,7 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "invalid path")
 		return
 	}
-	if !s.canAccessMediaObject(r.Context(), c.UserID, c.EnterpriseID, rel) {
+	if !s.canAccessMediaObject(r.Context(), c.UserID, c.EnterpriseID, c.Role, rel) {
 		writeErr(w, 403, "forbidden")
 		return
 	}
@@ -239,16 +239,43 @@ func (s *Server) handleMediaGet(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, rc)
 }
 
-// canAccessMediaObject allows same-enterprise peers, or any conversation member
-// who already received the object in a message (so DM receivers can view/save media).
-func (s *Server) canAccessMediaObject(ctx context.Context, userID, enterpriseID, rel string) bool {
+// canAccessMediaObject allows same-enterprise peers, conversation members who
+// received the object, or admins inspecting enterprise messages.
+func (s *Server) canAccessMediaObject(ctx context.Context, userID, enterpriseID, role, rel string) bool {
 	if rel == "" {
 		return false
+	}
+	mediaPath := "/v1/media/files/" + rel
+	if isAdminRole(role) {
+		if enterpriseID != "" && strings.HasPrefix(rel, enterpriseID+"/") {
+			return true
+		}
+		if isPlatformAdminRole(role) {
+			var exists bool
+			if err := s.db.QueryRow(ctx, `
+				SELECT EXISTS(SELECT 1 FROM media_objects WHERE storage_key=$1)`, rel).Scan(&exists); err == nil && exists {
+				return true
+			}
+		}
+		if enterpriseID != "" {
+			var linked bool
+			if err := s.db.QueryRow(ctx, `
+				SELECT EXISTS (
+					SELECT 1 FROM messages m
+					WHERE m.enterprise_id = $1::uuid
+					  AND m.media_url <> ''
+					  AND (
+					    split_part(m.media_url, '?', 1) = $2
+					    OR split_part(m.media_url, '?', 1) LIKE '%/' || $3
+					  )
+				)`, enterpriseID, mediaPath, rel).Scan(&linked); err == nil && linked {
+				return true
+			}
+		}
 	}
 	if enterpriseID != "" && strings.HasPrefix(rel, enterpriseID+"/") {
 		return true
 	}
-	mediaPath := "/v1/media/files/" + rel
 	var ok bool
 	err := s.db.QueryRow(ctx, `
 		SELECT EXISTS (

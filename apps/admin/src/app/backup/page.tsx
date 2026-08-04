@@ -2,10 +2,14 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import AdminShell from "@/components/AdminShell";
+import { AdminTime } from "@/components/AdminTime";
+import { StableLabelButton } from "@/components/StableLabelButton";
 import { api } from "@/lib/api";
 import { formatAdminError } from "@/lib/errors";
-import { backupDrStatus, securityAlertKey, yesNo } from "@/lib/labels";
+import { backupDrStatus, yesNo } from "@/lib/labels";
 import { useLocale } from "@/lib/locale";
+import { useToast } from "@/components/Toast";
+import { parseBackupStamp } from "@/lib/formatTime";
 
 type BackupSettings = {
   auto_enabled?: boolean;
@@ -56,10 +60,9 @@ type BackupStatus = {
 };
 
 export default function BackupPage() {
-  const { t } = useLocale();
+  const { t, resolved } = useLocale();
+  const toast = useToast();
   const [data, setData] = useState<BackupStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [autoEnabled, setAutoEnabled] = useState(true);
   const [intervalHours, setIntervalHours] = useState(24);
@@ -71,7 +74,6 @@ export default function BackupPage() {
 
   const load = useCallback(async () => {
     setBusy(true);
-    setError(null);
     try {
       const body = await api<BackupStatus>("/v1/admin/backup/status");
       setData(body);
@@ -81,12 +83,12 @@ export default function BackupPage() {
         setIncludeSecrets(Boolean(body.settings.include_secrets));
       }
     } catch (e) {
-      setError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
       setData(null);
     } finally {
       setBusy(false);
     }
-  }, [t]);
+  }, [t, toast]);
 
   useEffect(() => {
     void load();
@@ -101,7 +103,6 @@ export default function BackupPage() {
   async function saveSettings(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setNotice(null);
     try {
       await api("/v1/admin/backup/settings", {
         method: "PATCH",
@@ -111,10 +112,10 @@ export default function BackupPage() {
           include_secrets: includeSecrets,
         }),
       });
-      setNotice(t("admin.backup.settingsSaved"));
+      toast.success(t("admin.backup.settingsSaved"));
       await load();
     } catch (err) {
-      setNotice(formatAdminError(err, t, "admin.err.saveFailed"));
+      toast.error(formatAdminError(err, t, "admin.err.saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -122,16 +123,15 @@ export default function BackupPage() {
 
   async function runBackup() {
     setBusy(true);
-    setNotice(null);
     try {
       await api("/v1/admin/backup/run", {
         method: "POST",
         body: JSON.stringify({ include_secrets: includeSecrets }),
       });
-      setNotice(t("admin.backup.started"));
+      toast.success(t("admin.backup.started"));
       await load();
     } catch (err) {
-      setNotice(formatAdminError(err, t, "admin.err.generic"));
+      toast.error(formatAdminError(err, t, "admin.err.generic"));
     } finally {
       setBusy(false);
     }
@@ -141,7 +141,6 @@ export default function BackupPage() {
     e.preventDefault();
     if (!restoreId) return;
     setBusy(true);
-    setNotice(null);
     const modeLabel =
       restoreMode === "production"
         ? t("admin.backup.modeProduction")
@@ -157,13 +156,13 @@ export default function BackupPage() {
           include_secrets: includeSecrets,
         }),
       });
-      setNotice(t("admin.backup.restoreStarted", { mode: modeLabel, id: restoreId }));
+      toast.success(t("admin.backup.restoreStarted", { mode: modeLabel, id: restoreId }));
       setRestoreId(null);
       setRestoreReason("");
       setRestoreConfirm("");
       await load();
     } catch (err) {
-      setNotice(formatAdminError(err, t, "admin.err.generic"));
+      toast.error(formatAdminError(err, t, "admin.err.generic"));
     } finally {
       setBusy(false);
     }
@@ -186,16 +185,6 @@ export default function BackupPage() {
 
   return (
     <AdminShell>
-      <h1>{t("admin.nav.backup")}</h1>
-      <div className="page-sub">
-        {t("admin.backup.subtitle", {
-          rpo: data?.settings?.interval_hours ?? 24,
-          rto: data?.rto_hours ?? 4,
-        })}
-      </div>
-
-      {error ? <div className="banner error">{error}</div> : null}
-      {notice ? <div className="notice">{notice}</div> : null}
 
       <div className="stat-grid">
         <div className="stat-card">
@@ -217,192 +206,197 @@ export default function BackupPage() {
       </div>
 
       <div className="card" style={{ marginTop: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{t("admin.backup.scheduleTitle")}</h2>
-        <form onSubmit={saveSettings} className="form-rows">
-          <div className="form-row">
-            <label htmlFor="backup-auto">{t("admin.backup.auto")}</label>
-            <input
-              id="backup-auto"
-              type="checkbox"
-              checked={autoEnabled}
-              onChange={(e) => setAutoEnabled(e.target.checked)}
-            />
-          </div>
-          <div className="form-row">
-            <label htmlFor="backup-interval">{t("admin.backup.interval")}</label>
-            <input
-              id="backup-interval"
-              type="number"
-              min={1}
-              max={168}
-              value={intervalHours}
-              onChange={(e) => setIntervalHours(Number(e.target.value))}
-            />
-          </div>
-          <div className="form-row">
-            <label htmlFor="backup-secrets">{t("admin.backup.includeSecrets")}</label>
-            <input
-              id="backup-secrets"
-              type="checkbox"
-              checked={includeSecrets}
-              onChange={(e) => setIncludeSecrets(e.target.checked)}
-            />
-          </div>
-          <div className="form-row">
-            <span />
+        <h2 style={{ margin: "0 0 12px", fontSize: 20 }}>{t("admin.backup.scheduleTitle")}</h2>
+        <form onSubmit={saveSettings}>
+          <div className="backup-settings-row">
+            <label className="backup-inline-option" htmlFor="backup-auto">
+              <input
+                id="backup-auto"
+                type="checkbox"
+                checked={autoEnabled}
+                onChange={(e) => setAutoEnabled(e.target.checked)}
+              />
+              <span>{t("admin.backup.auto")}</span>
+            </label>
+            <label className="backup-inline-option" htmlFor="backup-interval">
+              <span>{t("admin.backup.interval")}</span>
+              <input
+                id="backup-interval"
+                type="number"
+                min={1}
+                max={168}
+                value={intervalHours}
+                onChange={(e) => setIntervalHours(Number(e.target.value))}
+              />
+            </label>
+            <label className="backup-inline-option" htmlFor="backup-secrets">
+              <input
+                id="backup-secrets"
+                type="checkbox"
+                checked={includeSecrets}
+                onChange={(e) => setIncludeSecrets(e.target.checked)}
+              />
+              <span>{t("admin.backup.includeSecrets")}</span>
+            </label>
             <button className="btn" type="submit" disabled={busy || jobRunning}>
               {t("admin.backup.saveSettings")}
             </button>
+            <StableLabelButton
+              label={
+                jobRunning && job?.kind === "backup"
+                  ? t("admin.backup.backingUp")
+                  : t("admin.backup.runNow")
+              }
+              widthLabels={[t("admin.backup.runNow"), t("admin.backup.backingUp")]}
+              disabled={busy || jobRunning}
+              onClick={() => void runBackup()}
+            />
+            <StableLabelButton
+              className="btn-secondary"
+              label={busy ? t("admin.common.refreshing") : t("admin.common.refresh")}
+              widthLabels={[t("admin.common.refresh"), t("admin.common.refreshing")]}
+              disabled={busy}
+              onClick={() => void load()}
+            />
           </div>
         </form>
-        <div className="toolbar" style={{ marginTop: 12 }}>
-          <button
-            className="btn"
-            type="button"
-            disabled={busy || jobRunning}
-            onClick={() => void runBackup()}
-          >
-            {jobRunning && job?.kind === "backup"
-              ? t("admin.backup.backingUp")
-              : t("admin.backup.runNow")}
-          </button>
-          <button type="button" disabled={busy} onClick={() => void load()}>
-            {busy ? t("admin.common.refreshing") : t("admin.common.refresh")}
-          </button>
-        </div>
+        <dl className="backup-action-hints">
+          <dt>{t("admin.backup.runNow")}</dt>
+          <dd>{t("admin.backup.runNowHint")}</dd>
+          <dt>{t("admin.common.refresh")}</dt>
+          <dd>{t("admin.backup.refreshHint")}</dd>
+        </dl>
       </div>
 
-      {job && (job.running || job.message) ? (
-        <div className="card" style={{ marginTop: 16 }}>
-          <strong>{t("admin.backup.currentJob")}</strong>
-          <p className="muted">
-            {job.kind} {job.backup_id ? `· ${job.backup_id}` : ""}{" "}
-            {job.mode ? `· ${job.mode}` : ""} · {jobState}
-          </p>
-          {job.message ? <p className="muted">{job.message}</p> : null}
-          {job.output ? (
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-                fontSize: 12,
-                maxHeight: 200,
-                overflow: "auto",
-              }}
-            >
-              {job.output}
-            </pre>
+      <div className="backup-panels-grid">
+        <div className="card backup-panel-card">
+          <h2>{t("admin.backup.backupsTitle")}</h2>
+          {recent.length > 0 ? (
+            <>
+              {restoreId ? (
+                <form onSubmit={runRestore} className="form-rows" style={{ marginTop: 12 }}>
+                  <p>
+                    {t("admin.backup.restoreTarget")} <strong>{restoreId}</strong>
+                  </p>
+                  <div className="form-row">
+                    <label htmlFor="restore-mode">{t("admin.common.mode")}</label>
+                    <select
+                      id="restore-mode"
+                      value={restoreMode}
+                      onChange={(e) => setRestoreMode(e.target.value as "drill" | "production")}
+                    >
+                      <option value="drill">{t("admin.backup.modeDrill")}</option>
+                      <option value="production">{t("admin.backup.modeProduction")}</option>
+                    </select>
+                  </div>
+                  <div className="form-row">
+                    <label htmlFor="restore-reason">{t("admin.backup.reasonAudited")}</label>
+                    <input
+                      id="restore-reason"
+                      value={restoreReason}
+                      onChange={(e) => setRestoreReason(e.target.value)}
+                      placeholder={t("admin.backup.reasonPlaceholder")}
+                      required
+                    />
+                  </div>
+                  {restoreMode === "production" ? (
+                    <div className="form-row">
+                      <label htmlFor="restore-confirm">{t("admin.backup.typeRestore")}</label>
+                      <input
+                        id="restore-confirm"
+                        value={restoreConfirm}
+                        onChange={(e) => setRestoreConfirm(e.target.value)}
+                        placeholder="RESTORE"
+                        required
+                      />
+                    </div>
+                  ) : null}
+                  <div className="form-row">
+                    <span />
+                    <button className="btn" type="submit" disabled={busy || jobRunning}>
+                      {t("admin.backup.startRestore")}
+                    </button>
+                    <button className="btn btn-secondary" type="button" onClick={() => setRestoreId(null)}>
+                      {t("admin.common.cancel")}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+              <div style={{ overflowX: "auto", marginTop: 8 }}>
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>{t("admin.common.time")}</th>
+                      <th>{t("admin.backup.id")}</th>
+                      <th>{t("admin.backup.components")}</th>
+                      <th>{t("admin.backup.encrypted")}</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recent.map((r) => (
+                      <tr key={r.id}>
+                        <td className="muted">
+                          <AdminTime
+                            value={parseBackupStamp(r.manifest?.created_at ?? r.id)}
+                            resolved={resolved}
+                          />
+                        </td>
+                        <td style={{ fontFamily: "monospace", fontSize: 16 }}>{r.id}</td>
+                        <td>{(r.manifest?.components || []).join(", ") || "—"}</td>
+                        <td>{yesNo(t, Boolean(r.manifest?.encrypted))}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn"
+                            disabled={jobRunning}
+                            onClick={() => {
+                              setRestoreId(r.id || null);
+                              setRestoreMode("drill");
+                            }}
+                          >
+                            {t("admin.backup.restoreBtn")}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <p className="muted">{t("admin.backup.noBackups")}</p>
+          )}
+        </div>
+
+        <div className="card backup-panel-card">
+          <h2>{t("admin.backup.currentJob")}</h2>
+          {job && (job.running || job.message || job.output) ? (
+            <>
+              <p className="muted backup-job-meta">
+                {job.kind || "—"}
+                {job.backup_id ? ` · ${job.backup_id}` : ""}
+                {job.mode ? ` · ${job.mode}` : ""} · {jobState}
+              </p>
+              {job.message ? <p className="muted backup-job-meta">{job.message}</p> : null}
+              {job.output ? <pre className="backup-job-log">{job.output}</pre> : null}
+            </>
+          ) : (
+            <p className="muted">{t("admin.backup.noJobOutput")}</p>
+          )}
+
+          {(data?.warnings || []).length > 0 ? (
+            <div className="backup-warnings-block">
+              <strong>{t("admin.common.warnings")}</strong>
+              <ul>
+                {(data?.warnings || []).map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
           ) : null}
         </div>
-      ) : null}
-
-      {(data?.warnings || []).length > 0 ? (
-        <div className="card" style={{ marginTop: 16 }}>
-          <strong>{t("admin.common.warnings")}</strong>
-          <ul>
-            {(data?.warnings || []).map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      <div className="card" style={{ marginTop: 16 }}>
-        <strong>{t("admin.backup.restoreTitle")}</strong>
-        <p className="muted">{t("admin.backup.restoreBlurb")}</p>
-        {restoreId ? (
-          <form onSubmit={runRestore} className="form-rows" style={{ marginTop: 8 }}>
-            <p>
-              {t("admin.backup.restoreTarget")} <strong>{restoreId}</strong>
-            </p>
-            <div className="form-row">
-              <label htmlFor="restore-mode">{t("admin.common.mode")}</label>
-              <select
-                id="restore-mode"
-                value={restoreMode}
-                onChange={(e) => setRestoreMode(e.target.value as "drill" | "production")}
-              >
-                <option value="drill">{t("admin.backup.modeDrill")}</option>
-                <option value="production">{t("admin.backup.modeProduction")}</option>
-              </select>
-            </div>
-            <div className="form-row">
-              <label htmlFor="restore-reason">{t("admin.backup.reasonAudited")}</label>
-              <input
-                id="restore-reason"
-                value={restoreReason}
-                onChange={(e) => setRestoreReason(e.target.value)}
-                placeholder={t("admin.backup.reasonPlaceholder")}
-                required
-              />
-            </div>
-            {restoreMode === "production" ? (
-              <div className="form-row">
-                <label htmlFor="restore-confirm">{t("admin.backup.typeRestore")}</label>
-                <input
-                  id="restore-confirm"
-                  value={restoreConfirm}
-                  onChange={(e) => setRestoreConfirm(e.target.value)}
-                  placeholder="RESTORE"
-                  required
-                />
-              </div>
-            ) : null}
-            <div className="form-row">
-              <span />
-              <button className="btn" type="submit" disabled={busy || jobRunning}>
-                {t("admin.backup.startRestore")}
-              </button>
-              <button type="button" onClick={() => setRestoreId(null)}>
-                {t("admin.common.cancel")}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <p className="muted">{t("admin.backup.chooseBackup")}</p>
-        )}
       </div>
-
-      {recent.length > 0 ? (
-        <div className="card" style={{ marginTop: 16 }}>
-          <strong>{t("admin.backup.backupsTitle")}</strong>
-          <table className="data-table" style={{ width: "100%", marginTop: 8 }}>
-            <thead>
-              <tr>
-                <th>{t("admin.backup.id")}</th>
-                <th>{t("admin.backup.components")}</th>
-                <th>{t("admin.backup.encrypted")}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {recent.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.id}</td>
-                  <td>{(r.manifest?.components || []).join(", ") || "—"}</td>
-                  <td>{yesNo(t, Boolean(r.manifest?.encrypted))}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={jobRunning}
-                      onClick={() => {
-                        setRestoreId(r.id || null);
-                        setRestoreMode("drill");
-                      }}
-                    >
-                      {t("admin.backup.restoreBtn")}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="card" style={{ marginTop: 16 }}>
-          <p className="muted">{t("admin.backup.noBackups")}</p>
-        </div>
-      )}
 
       <p className="muted" style={{ marginTop: 16 }}>
         {t("admin.backup.backupDir")} {data?.backup_dir || "—"}

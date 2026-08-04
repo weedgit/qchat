@@ -1,13 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import AdminShell from "@/components/AdminShell";
-import { ApiError, api, asList } from "@/lib/api";
+import { AdminTime } from "@/components/AdminTime";
+import Pagination from "@/components/Pagination";
+import { api, asList } from "@/lib/api";
 import { formatAdminError } from "@/lib/errors";
 import { securityAlertLabel } from "@/lib/labels";
 import { useLocale } from "@/lib/locale";
+import { useToast } from "@/components/Toast";
 import { can } from "@/lib/rbac";
+
+const ALERTS_PAGE_SIZE = 10;
 
 type MFAStatus = {
   mfa_active?: boolean;
@@ -36,7 +41,8 @@ function asCodeList(raw: unknown): string[] {
 }
 
 export default function SecurityPage() {
-  const { t } = useLocale();
+  const { t, resolved } = useLocale();
+  const toast = useToast();
   const [status, setStatus] = useState<MFAStatus | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [otpauth, setOtpauth] = useState<string | null>(null);
@@ -44,29 +50,29 @@ export default function SecurityPage() {
   const [code, setCode] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
   const [entries, setEntries] = useState<AllowEntry[]>([]);
   const [enforced, setEnforced] = useState(false);
   const [cidrInput, setCidrInput] = useState("");
   const [labelInput, setLabelInput] = useState("");
-  const [ipError, setIpError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<LoginAlert[]>([]);
-  const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [alertsTotal, setAlertsTotal] = useState(0);
+  const [alertsOffset, setAlertsOffset] = useState(0);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [alertIp, setAlertIp] = useState("");
+  const [alertFrom, setAlertFrom] = useState("");
+  const [alertTo, setAlertTo] = useState("");
   const [meRole, setMeRole] = useState("");
 
   const load = useCallback(async () => {
-    setError(null);
     try {
       const s = await api<MFAStatus>("/v1/me/mfa");
       setStatus(s);
     } catch (e: any) {
-      setError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
     }
-  }, [t]);
+  }, [t, toast]);
 
   const loadAllowlist = useCallback(async () => {
-    setIpError(null);
     try {
       const body = await api<any>("/v1/admin/security/ip-allowlist");
       setEnforced(Boolean(body?.enforced));
@@ -80,16 +86,23 @@ export default function SecurityPage() {
           .filter((e: AllowEntry) => e.id)
       );
     } catch (e: any) {
-      setIpError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
     }
-  }, [t]);
+  }, [t, toast]);
 
-  const loadAlerts = useCallback(async () => {
-    setAlertsError(null);
-    try {
-      const body = await api<any>("/v1/admin/security/login-alerts");
-      setAlerts(
-        asList(body, "alerts")
+  const loadAlerts = useCallback(
+    async (ip: string, from: string, to: string, off: number) => {
+      setAlertsLoading(true);
+      try {
+        const qs = new URLSearchParams({
+          limit: String(ALERTS_PAGE_SIZE),
+          offset: String(off),
+        });
+        if (ip.trim()) qs.set("ip", ip.trim());
+        if (from.trim()) qs.set("from", from.trim());
+        if (to.trim()) qs.set("to", to.trim());
+        const body = await api<any>(`/v1/admin/security/login-alerts?${qs.toString()}`);
+        const allItems = asList(body, "alerts")
           .map((a: any) => ({
             id: String(a?.id ?? ""),
             action: String(a?.action ?? ""),
@@ -98,21 +111,55 @@ export default function SecurityPage() {
             displayName: String(a?.display_name ?? ""),
             createdAt: String(a?.created_at ?? ""),
           }))
-          .filter((a: LoginAlert) => a.id)
-      );
-    } catch (e: any) {
-      setAlertsError(formatAdminError(e, t, "admin.err.loadFailed"));
-    }
-  }, [t]);
+          .filter((a: LoginAlert) => a.id);
+
+        const apiTotal = Number(body?.total);
+        let total = Number.isFinite(apiTotal) && apiTotal > 0 ? apiTotal : 0;
+        let pageItems = allItems;
+
+        if (total > 0 && allItems.length > ALERTS_PAGE_SIZE) {
+          total = Math.max(total, allItems.length);
+          pageItems = allItems.slice(off, off + ALERTS_PAGE_SIZE);
+        } else if (total > 0) {
+          pageItems = allItems;
+        } else if (allItems.length > ALERTS_PAGE_SIZE) {
+          total = allItems.length;
+          pageItems = allItems.slice(off, off + ALERTS_PAGE_SIZE);
+        } else {
+          total = allItems.length;
+        }
+
+        setAlerts(pageItems);
+        setAlertsTotal(total);
+      } catch (e: any) {
+        toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
+        setAlerts([]);
+        setAlertsTotal(0);
+      } finally {
+        setAlertsLoading(false);
+      }
+    },
+    [t, toast]
+  );
 
   useEffect(() => {
     load();
     loadAllowlist();
-    loadAlerts();
     api<any>("/v1/me")
       .then((me) => setMeRole(String(me?.role ?? "")))
       .catch(() => setMeRole(""));
-  }, [load, loadAllowlist, loadAlerts]);
+  }, [load, loadAllowlist]);
+
+  useEffect(() => {
+    loadAlerts(alertIp, alertFrom, alertTo, alertsOffset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadAlerts, alertsOffset]);
+
+  function onAlertFilter(e: FormEvent) {
+    e.preventDefault();
+    setAlertsOffset(0);
+    void loadAlerts(alertIp, alertFrom, alertTo, 0);
+  }
 
   useEffect(() => {
     if (!otpauth) {
@@ -138,16 +185,14 @@ export default function SecurityPage() {
 
   async function startSetup() {
     setBusy(true);
-    setError(null);
-    setInfo(null);
     setRecoveryCodes(null);
     try {
       const res = await api<any>("/v1/me/mfa/setup", { method: "POST", body: "{}" });
       setSecret(String(res?.secret ?? ""));
       setOtpauth(String(res?.otpauth_uri ?? ""));
-      setInfo(t("admin.security.scanToActivate"));
+      toast.info(t("admin.security.scanToActivate"));
     } catch (e: any) {
-      setError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -155,8 +200,6 @@ export default function SecurityPage() {
 
   async function activate() {
     setBusy(true);
-    setError(null);
-    setInfo(null);
     try {
       const res = await api<any>("/v1/me/mfa/activate", {
         method: "POST",
@@ -167,12 +210,12 @@ export default function SecurityPage() {
       setOtpauth(null);
       setCode("");
       setRecoveryCodes(codes.length ? codes : null);
-      setInfo(
+      toast.success(
         codes.length ? t("admin.security.mfaEnabledWithCodes") : t("admin.security.mfaEnabled")
       );
       await load();
     } catch (e: any) {
-      setError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -180,8 +223,6 @@ export default function SecurityPage() {
 
   async function disable() {
     setBusy(true);
-    setError(null);
-    setInfo(null);
     try {
       await api("/v1/me/mfa/disable", {
         method: "POST",
@@ -189,10 +230,10 @@ export default function SecurityPage() {
       });
       setCode("");
       setRecoveryCodes(null);
-      setInfo(t("admin.security.mfaDisabled"));
+      toast.success(t("admin.security.mfaDisabled"));
       await load();
     } catch (e: any) {
-      setError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -200,8 +241,6 @@ export default function SecurityPage() {
 
   async function regenerateRecovery() {
     setBusy(true);
-    setError(null);
-    setInfo(null);
     try {
       const res = await api<any>("/v1/me/mfa/recovery/regenerate", {
         method: "POST",
@@ -210,14 +249,14 @@ export default function SecurityPage() {
       const codes = asCodeList(res?.recovery_codes);
       setCode("");
       setRecoveryCodes(codes.length ? codes : null);
-      setInfo(
+      toast.success(
         codes.length
           ? t("admin.security.recoveryRegenerated")
           : t("admin.security.recoveryRegeneratedShort")
       );
       await load();
     } catch (e: any) {
-      setError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -225,7 +264,6 @@ export default function SecurityPage() {
 
   async function addCIDR() {
     setBusy(true);
-    setIpError(null);
     try {
       await api("/v1/admin/security/ip-allowlist", {
         method: "POST",
@@ -235,7 +273,7 @@ export default function SecurityPage() {
       setLabelInput("");
       await loadAllowlist();
     } catch (e: any) {
-      setIpError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -243,12 +281,11 @@ export default function SecurityPage() {
 
   async function removeCIDR(id: string) {
     setBusy(true);
-    setIpError(null);
     try {
       await api(`/v1/admin/security/ip-allowlist/${id}`, { method: "DELETE" });
       await loadAllowlist();
     } catch (e: any) {
-      setIpError(formatAdminError(e, t, "admin.err.loadFailed"));
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -260,33 +297,31 @@ export default function SecurityPage() {
 
   return (
     <AdminShell>
-      <h1>{t("admin.nav.security")}</h1>
-      <div className="page-sub">{t("admin.security.subtitle")}</div>
 
-      <div className="card" style={{ maxWidth: 560, marginBottom: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{t("admin.security.mfaTitle")}</h2>
-        <p>
-          {t("admin.security.mfaStatus")}{" "}
-          <strong>{active ? t("admin.common.enabled") : t("admin.common.disabled")}</strong>
-          {active ? (
-            <span className="muted">
-              {t("admin.security.recoveryRemaining", { count: remaining })}
-            </span>
+      <div className="card" style={{ maxWidth: 720, marginBottom: 16 }}>
+        <div className="security-inline-row">
+          <h2>{t("admin.security.mfaTitle")}</h2>
+          <span>
+            {t("admin.security.mfaStatus")}{" "}
+            <strong>{active ? t("admin.common.enabled") : t("admin.common.disabled")}</strong>
+            {active ? (
+              <span className="muted">
+                {t("admin.security.recoveryRemaining", { count: remaining })}
+              </span>
+            ) : null}
+          </span>
+          {!active && !secret ? (
+            <button className="btn" type="button" disabled={busy} onClick={startSetup}>
+              {t("admin.security.setupMfa")}
+            </button>
           ) : null}
-        </p>
-        <p className="muted">{t("admin.security.mfaBlurb")}</p>
-
-        {!active && !secret ? (
-          <button className="btn" type="button" disabled={busy} onClick={startSetup}>
-            {t("admin.security.setupMfa")}
-          </button>
-        ) : null}
+        </div>
 
         {secret ? (
           <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
             {qrDataUrl ? (
               <div>
-                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                <div className="muted" style={{ fontSize: 16, marginBottom: 8 }}>
                   {t("admin.security.scanQr")}
                 </div>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -300,7 +335,7 @@ export default function SecurityPage() {
               </div>
             ) : null}
             <div>
-              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+              <div className="muted" style={{ fontSize: 16, marginBottom: 4 }}>
                 {t("admin.security.secretManual")}
               </div>
               <code style={{ wordBreak: "break-all" }}>{secret}</code>
@@ -385,121 +420,163 @@ export default function SecurityPage() {
           </div>
         ) : null}
 
-        {error ? <div className="error-text" style={{ marginTop: 12 }}>{error}</div> : null}
-        {info ? <div className="muted" style={{ marginTop: 12 }}>{info}</div> : null}
       </div>
 
-      <div className="card" style={{ maxWidth: 560 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{t("admin.security.ipTitle")}</h2>
-        <p>
-          {t("admin.security.policy")}{" "}
-          <strong>
-            {enforced ? t("admin.security.policyEnforced") : t("admin.security.policyOff")}
-          </strong>
-        </p>
-        <p className="muted">{t("admin.security.ipBlurb")}</p>
+      <div className="security-panels-grid">
+        <div className="card security-panel-card">
+          <div className="security-panel-header">
+            <h2>{t("admin.security.ipTitle")}</h2>
+            <span className="security-panel-header-status">
+              {t("admin.security.policy")}{" "}
+              <strong>
+                {enforced ? t("admin.security.policyEnforced") : t("admin.security.policyOff")}
+              </strong>
+            </span>
+          </div>
 
-        {canWriteSecurity ? (
-          <div className="form-rows" style={{ maxWidth: "100%", marginBottom: 12 }}>
-            <div className="form-row">
-              <label htmlFor="sec-cidr">{t("admin.security.cidrLabel")}</label>
-              <input
-                id="sec-cidr"
-                value={cidrInput}
-                onChange={(e) => setCidrInput(e.target.value)}
-                placeholder={t("admin.security.cidrPlaceholder")}
-              />
-            </div>
-            <div className="form-row">
-              <label htmlFor="sec-label">{t("admin.common.label")}</label>
-              <input
-                id="sec-label"
-                value={labelInput}
-                onChange={(e) => setLabelInput(e.target.value)}
-                placeholder={t("admin.common.optional")}
-              />
-            </div>
-            <div className="form-row">
-              <span />
-              <button
-                className="btn"
-                type="button"
-                disabled={busy || !cidrInput.trim()}
-                onClick={addCIDR}
-                style={{ justifySelf: "start" }}
-              >
+          {canWriteSecurity ? (
+            <form
+              className="security-ip-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!busy && cidrInput.trim()) addCIDR();
+              }}
+            >
+              <label className="field" htmlFor="sec-cidr">
+                <span>{t("admin.security.cidrLabel")}</span>
+                <input
+                  id="sec-cidr"
+                  value={cidrInput}
+                  onChange={(e) => setCidrInput(e.target.value)}
+                  placeholder={t("admin.security.cidrPlaceholder")}
+                />
+              </label>
+              <label className="field" htmlFor="sec-label">
+                <span>{t("admin.common.label")}</span>
+                <input
+                  id="sec-label"
+                  value={labelInput}
+                  onChange={(e) => setLabelInput(e.target.value)}
+                  placeholder={t("admin.common.optional")}
+                />
+              </label>
+              <button className="btn" type="submit" disabled={busy || !cidrInput.trim()}>
                 {t("admin.common.add")}
               </button>
-            </div>
-          </div>
-        ) : (
-          <p className="muted">{t("admin.security.readOnlyRole")}</p>
-        )}
+            </form>
+          ) : (
+            <p className="muted">{t("admin.security.readOnlyRole")}</p>
+          )}
 
-        {entries.length === 0 ? (
-          <p className="muted">{t("admin.security.noEntries")}</p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
-            {entries.map((e) => (
-              <li
-                key={e.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  borderTop: "1px solid var(--border, #333)",
-                  paddingTop: 8,
-                }}
-              >
-                <div>
-                  <code>{e.cidr}</code>
-                  {e.label ? <span className="muted"> · {e.label}</span> : null}
-                </div>
-                {canWriteSecurity ? (
-                  <button
-                    className="btn"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => removeCIDR(e.id)}
-                  >
-                    {t("admin.common.remove")}
-                  </button>
+          {entries.length === 0 ? (
+            <p className="muted">{t("admin.security.noEntries")}</p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+              {entries.map((e) => (
+                <li
+                  key={e.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    borderTop: "1px solid var(--border, #333)",
+                    paddingTop: 8,
+                  }}
+                >
+                  <div>
+                    <code>{e.cidr}</code>
+                    {e.label ? <span className="muted"> · {e.label}</span> : null}
+                  </div>
+                  {canWriteSecurity ? (
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => removeCIDR(e.id)}
+                    >
+                      {t("admin.common.remove")}
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="card security-panel-card">
+          <h2>{t("admin.security.alertsTitle")}</h2>
+          <form className="security-alerts-filters" onSubmit={onAlertFilter}>
+            <input
+              type="date"
+              value={alertFrom}
+              onChange={(e) => setAlertFrom(e.target.value)}
+              aria-label={t("admin.security.filterFrom")}
+            />
+            <input
+              type="date"
+              value={alertTo}
+              onChange={(e) => setAlertTo(e.target.value)}
+              aria-label={t("admin.security.filterTo")}
+            />
+            <input
+              type="text"
+              value={alertIp}
+              onChange={(e) => setAlertIp(e.target.value)}
+              placeholder={t("admin.security.filterIp")}
+              aria-label={t("admin.security.filterIp")}
+            />
+            <button className="btn" type="submit" disabled={alertsLoading}>
+              {t("admin.common.search")}
+            </button>
+          </form>
+          <div style={{ overflowX: "auto" }}>
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>{t("admin.security.colEvent")}</th>
+                  <th>{t("admin.security.colUser")}</th>
+                  <th>{t("admin.security.colIp")}</th>
+                  <th>{t("admin.security.colTime")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {alertsLoading && alerts.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      {t("admin.common.loading")}
+                    </td>
+                  </tr>
                 ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        {ipError ? <div className="error-text" style={{ marginTop: 12 }}>{ipError}</div> : null}
-      </div>
-
-      <div className="card" style={{ maxWidth: 640, marginTop: 16 }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>{t("admin.security.alertsTitle")}</h2>
-        <p className="muted">{t("admin.security.alertsBlurb")}</p>
-        {alertsError ? <div className="error-text">{alertsError}</div> : null}
-        {alerts.length === 0 && !alertsError ? (
-          <p className="muted">{t("admin.security.noAlerts")}</p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
-            {alerts.map((a) => (
-              <li
-                key={a.id}
-                style={{
-                  borderTop: "1px solid var(--border, #333)",
-                  paddingTop: 8,
-                  fontSize: 13,
-                }}
-              >
-                <strong>{securityAlertLabel(t, a.action)}</strong>
-                <span className="muted">
-                  {" "}
-                  · {a.displayName || a.username || "admin"} · {a.ip}
-                </span>
-                <div className="muted">{a.createdAt}</div>
-              </li>
-            ))}
-          </ul>
-        )}
+                {!alertsLoading && alerts.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      {t("admin.security.noAlerts")}
+                    </td>
+                  </tr>
+                ) : null}
+                {alerts.map((a) => (
+                  <tr key={a.id}>
+                    <td>{securityAlertLabel(t, a.action)}</td>
+                    <td>{a.displayName || a.username || "—"}</td>
+                    <td style={{ fontFamily: "monospace", fontSize: 16 }}>{a.ip}</td>
+                    <td className="muted">
+                      <AdminTime value={a.createdAt} resolved={resolved} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination
+            total={alertsTotal}
+            offset={alertsOffset}
+            pageSize={ALERTS_PAGE_SIZE}
+            visibleCount={alerts.length}
+            loading={alertsLoading}
+            onPageChange={setAlertsOffset}
+          />
+        </div>
       </div>
     </AdminShell>
   );

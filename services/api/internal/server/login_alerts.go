@@ -3,7 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
+	"time"
 )
 
 // recordAdminLoginAlerts writes audit rows when an administrator signs in from
@@ -52,15 +55,49 @@ func (s *Server) handleAdminLoginAlerts(w http.ResponseWriter, r *http.Request) 
 	if c == nil {
 		return
 	}
-	rows, err := s.db.Query(r.Context(), `
+
+	where := `a.action IN ('admin.login_new_device', 'admin.login_new_ip', 'user.login_denied_ip')
+		AND ($1 = 'platform_admin' OR a.enterprise_id = $2::uuid)`
+	args := []any{normalizeRole(c.Role), c.EnterpriseID}
+
+	if ip := strings.TrimSpace(r.URL.Query().Get("ip")); ip != "" {
+		args = append(args, "%"+escapeLike(ip)+"%")
+		where += fmt.Sprintf(` AND a.ip ILIKE $%d ESCAPE '\'`, len(args))
+	}
+	if from := strings.TrimSpace(r.URL.Query().Get("from")); from != "" {
+		if start, err := time.Parse("2006-01-02", from); err == nil {
+			args = append(args, start.UTC())
+			where += fmt.Sprintf(` AND a.created_at >= $%d`, len(args))
+		}
+	}
+	if to := strings.TrimSpace(r.URL.Query().Get("to")); to != "" {
+		if endDay, err := time.Parse("2006-01-02", to); err == nil {
+			args = append(args, endDay.Add(24*time.Hour).UTC())
+			where += fmt.Sprintf(` AND a.created_at < $%d`, len(args))
+		}
+	}
+
+	var total int
+	if err := s.db.QueryRow(r.Context(), `
+		SELECT COUNT(*)
+		FROM audit_logs a
+		WHERE `+where, args...).Scan(&total); err != nil {
+		writeErrCode(w, 500, "query_failed", "query failed")
+		return
+	}
+
+	limit, offset := adminListRange(r)
+	listArgs := append(append([]any{}, args...), limit, offset)
+	nLimit := len(listArgs) - 1
+	nOffset := len(listArgs)
+	rows, err := s.db.Query(r.Context(), fmt.Sprintf(`
 		SELECT a.id::text, COALESCE(a.actor_id::text,''), a.action, COALESCE(a.ip,''), a.meta, a.created_at,
 		       COALESCE(u.username,''), COALESCE(u.display_name,'')
 		FROM audit_logs a
 		LEFT JOIN users u ON u.id = a.actor_id
-		WHERE a.action IN ('admin.login_new_device', 'admin.login_new_ip', 'user.login_denied_ip')
-		  AND (a.enterprise_id=$1 OR $2='platform_admin')
+		WHERE %s
 		ORDER BY a.created_at DESC
-		LIMIT 50`, c.EnterpriseID, c.Role)
+		LIMIT $%d OFFSET $%d`, where, nLimit, nOffset), listArgs...)
 	if err != nil {
 		writeErrCode(w, 500, "query_failed", "query failed")
 		return
@@ -87,5 +124,10 @@ func (s *Server) handleAdminLoginAlerts(w http.ResponseWriter, r *http.Request) 
 	if alerts == nil {
 		alerts = []map[string]any{}
 	}
-	writeJSON(w, 200, map[string]any{"alerts": alerts})
+	writeJSON(w, 200, map[string]any{
+		"alerts": alerts,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
 }

@@ -135,6 +135,25 @@ func getJSON(t *testing.T, url, token string) (int, map[string]any) {
 	return res.StatusCode, body
 }
 
+func patchJSON(t *testing.T, url, token string, payload any) (int, map[string]any) {
+	t.Helper()
+	b, _ := json.Marshal(payload)
+	req, _ := http.NewRequest(http.MethodPatch, url, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	raw, _ := io.ReadAll(res.Body)
+	var body map[string]any
+	_ = json.Unmarshal(raw, &body)
+	return res.StatusCode, body
+}
+
 func registerUser(t *testing.T, base, invite string) (token, refresh, userID, username string) {
 	t.Helper()
 	if invite == "" {

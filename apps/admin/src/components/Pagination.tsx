@@ -30,9 +30,9 @@ export default function Pagination({
   const to = total === 0 ? 0 : Math.min(offset + visibleCount, total);
   const canPrev = !loading && offset > 0;
   const canNext = !loading && offset + pageSize < total;
-  const showNav = total > 0 && pages > 1;
+  const showNav = total > pageSize;
 
-  if (total === 0) {
+  if (total === 0 && visibleCount === 0) {
     return emptyLabel ? (
       <div className="pagination">
         <span className="muted">{emptyLabel}</span>
@@ -40,10 +40,16 @@ export default function Pagination({
     ) : null;
   }
 
+  const effectiveTotal = total > 0 ? total : visibleCount;
+
   return (
     <div className="pagination">
       <span className="pagination-summary">
-        {t("admin.common.showing", { from, to, total })}
+        {t("admin.common.showing", {
+          from: effectiveTotal === 0 ? 0 : offset + 1,
+          to: Math.min(offset + visibleCount, effectiveTotal),
+          total: effectiveTotal,
+        })}
       </span>
 
       {showNav ? (

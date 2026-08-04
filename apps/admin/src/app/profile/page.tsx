@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { formatAdminError } from "@/lib/errors";
 import { translateRole } from "@/lib/labels";
 import { useLocale } from "@/lib/locale";
+import { useToast } from "@/components/Toast";
 
 type Me = {
   phone?: string;
@@ -19,19 +20,18 @@ type Me = {
 
 export default function ProfilePage() {
   const { t } = useLocale();
+  const toast = useToast();
   const [me, setMe] = useState<Me | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api<Me>("/v1/me")
       .then((body) => {
         setMe(body);
-        setError(null);
       })
-      .catch((e) => setError(formatAdminError(e, t, "admin.err.loadFailed")))
+      .catch((e) => toast.error(formatAdminError(e, t, "admin.err.loadFailed")))
       .finally(() => setLoading(false));
-  }, [t]);
+  }, [t, toast]);
 
   const role = String(me?.role ?? "");
   const label = role ? translateRole(t, role) : "—";
@@ -40,8 +40,6 @@ export default function ProfilePage() {
     <AdminShell>
       <h1>{t("admin.nav.profile")}</h1>
       <div className="page-sub">{t("admin.profile.subtitle")}</div>
-
-      {error ? <div className="notice">{error}</div> : null}
 
       <div className="card" style={{ maxWidth: 480 }}>
         {loading ? (

@@ -322,6 +322,15 @@ func (s *Server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
 			INSERT INTO conversation_members(conversation_id, user_id, role, history_visible_from)
 			VALUES ($1,$2,'member', now()) ON CONFLICT DO NOTHING`, id, mid)
 	}
+	memberIDs := make([]string, 0, len(unique))
+	for mid := range unique {
+		if mid != c.UserID {
+			memberIDs = append(memberIDs, mid)
+		}
+	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.create", "conversation", id.String(), "", clientIP(r), map[string]any{
+		"title": req.Title, "public_id": publicID, "member_ids": memberIDs,
+	})
 	writeJSON(w, 201, map[string]any{"id": id.String(), "public_id": publicID})
 }
 
@@ -396,6 +405,9 @@ func (s *Server) handleAddGroupMembers(w http.ResponseWriter, r *http.Request) {
 				"conversation_id":  convID,
 				"added_member_ids": added,
 			},
+		})
+		s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.member_add", "conversation", convID, "", clientIP(r), map[string]any{
+			"member_ids": added,
 		})
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "added": added, "skipped": skipped})
@@ -834,6 +846,9 @@ func (s *Server) handleJoinGroup(w http.ResponseWriter, r *http.Request) {
 		approvers = []string{owner}
 	}
 	s.hub.PublishToUsers(approvers, ws.Event{Type: "group.join_request", Payload: map[string]any{"conversation_id": convID, "user_id": c.UserID}})
+	var entID string
+	_ = s.db.QueryRow(r.Context(), `SELECT COALESCE(enterprise_id::text,'') FROM conversations WHERE id=$1`, convID).Scan(&entID)
+	s.audit(r.Context(), c.UserID, entID, "group.join_request", "conversation", convID, "", clientIP(r), nil)
 	writeJSON(w, 202, s.joinGroupResponse(r.Context(), "pending_approval", convID, "pending"))
 }
 

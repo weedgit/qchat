@@ -27,6 +27,7 @@ type Props = {
   loading?: boolean;
   rangeDays: TrendRangeDays;
   onRangeChange: (days: TrendRangeDays) => void;
+  hintKey?: MessageKey;
 };
 
 const W = 720;
@@ -64,6 +65,7 @@ export default function OverviewTrendChart({
   loading,
   rangeDays,
   onRangeChange,
+  hintKey = "admin.overview.trend.hint",
 }: Props) {
   const { t, resolved } = useLocale();
   const locale = resolved === "zh" ? "zh-CN" : "en-US";
@@ -101,6 +103,58 @@ export default function OverviewTrendChart({
     }));
   }, [users, locale]);
 
+  const gridStroke = "rgba(255, 255, 255, 0.1)";
+  const gridRows = 4;
+
+  function formatAxisValue(n: number): string {
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(n);
+  }
+
+  function yAxisTicks(max: number, y0: number, y1: number) {
+    const ticks: { y: number; value: number }[] = [];
+    for (let i = 0; i <= gridRows; i++) {
+      const y = y0 + ((y1 - y0) * i) / gridRows;
+      const value =
+        max <= 0 ? 0 : Math.round((max * (gridRows - i)) / gridRows);
+      ticks.push({ y, value });
+    }
+    return ticks;
+  }
+
+  function horizontalGridLines(y0: number, y1: number, prefix: string) {
+    const lines = [];
+    for (let i = 0; i <= gridRows; i++) {
+      const y = y0 + ((y1 - y0) * i) / gridRows;
+      lines.push(
+        <line
+          key={`${prefix}-h-${i}`}
+          x1={PAD.left}
+          x2={W - PAD.right}
+          y1={y}
+          y2={y}
+          stroke={gridStroke}
+          strokeWidth="1"
+        />
+      );
+    }
+    return lines;
+  }
+
+  function yAxisLabels(max: number, y0: number, y1: number, prefix: string) {
+    return yAxisTicks(max, y0, y1).map((tick, i) => (
+      <text
+        key={`${prefix}-y-${i}`}
+        x={PAD.left - 6}
+        y={tick.y + 4}
+        textAnchor="end"
+        fill="var(--text-faint)"
+        fontSize="11"
+      >
+        {formatAxisValue(tick.value)}
+      </text>
+    ));
+  }
+
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div
@@ -122,7 +176,7 @@ export default function OverviewTrendChart({
               </button>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 16, fontSize: 12 }}>
+          <div style={{ display: "flex", gap: 16, fontSize: 16 }}>
             {series.map((s) => (
               <span key={s.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span
@@ -140,8 +194,8 @@ export default function OverviewTrendChart({
           </div>
         </div>
       </div>
-      <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
-        {t("admin.overview.trend.hint")}
+      <p className="muted" style={{ marginTop: 0, fontSize: 15 }}>
+        {t(hintKey)}
       </p>
 
       {loading ? (
@@ -157,6 +211,21 @@ export default function OverviewTrendChart({
             role="img"
             aria-label={t("admin.overview.trend.title")}
           >
+            {horizontalGridLines(PAD.top, mid - 8, "users")}
+            {yAxisLabels(userMax, PAD.top, mid - 8, "users")}
+            {horizontalGridLines(mid + 8, H - PAD.bottom, "messages")}
+            {yAxisLabels(msgMax, mid + 8, H - PAD.bottom, "messages")}
+            {ticks.map((tick) => (
+              <line
+                key={`v-${tick.x}`}
+                x1={tick.x}
+                x2={tick.x}
+                y1={PAD.top}
+                y2={H - PAD.bottom}
+                stroke={gridStroke}
+                strokeWidth="1"
+              />
+            ))}
             <line
               x1={PAD.left}
               x2={W - PAD.right}
@@ -165,22 +234,6 @@ export default function OverviewTrendChart({
               stroke="var(--border, #334155)"
               strokeDasharray="4 4"
             />
-            {userMax > 0 ? (
-              <text x={PAD.left - 6} y={PAD.top + 10} textAnchor="end" fill="var(--text-faint)" fontSize="10">
-                {userMax}
-              </text>
-            ) : null}
-            {msgMax > 0 ? (
-              <text
-                x={PAD.left - 6}
-                y={H - PAD.bottom - 4}
-                textAnchor="end"
-                fill="var(--text-faint)"
-                fontSize="10"
-              >
-                {msgMax}
-              </text>
-            ) : null}
             {topPath ? (
               <path d={topPath} fill="none" stroke={series[0].color} strokeWidth="2" />
             ) : null}
@@ -194,7 +247,7 @@ export default function OverviewTrendChart({
                 y={H - 6}
                 textAnchor="middle"
                 fill="var(--text-faint)"
-                fontSize="10"
+                fontSize="12"
               >
                 {tick.label}
               </text>

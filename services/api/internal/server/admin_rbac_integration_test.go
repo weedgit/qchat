@@ -57,7 +57,7 @@ func TestAdminConsoleRBAC(t *testing.T) {
 	if st != 200 {
 		t.Fatalf("enterprise_admin list users: %d", st)
 	}
-	st, msgs := getJSON(t, base+"/v1/admin/messages?user_id="+userID+"&reason=admin+inspect+ticket+now", tok)
+	st, msgs := getJSON(t, base+"/v1/admin/messages?user_id="+userID+"&scope=all", tok)
 	if st == 403 {
 		t.Fatalf("enterprise_admin should inspect: %v", msgs)
 	}

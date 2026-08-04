@@ -400,6 +400,13 @@ func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "update failed")
 		return
 	}
+	changed := make([]string, 0, len(req))
+	for k := range req {
+		changed = append(changed, k)
+	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.profile_update", "user", c.UserID, "", clientIP(r), map[string]any{
+		"fields": changed,
+	})
 	s.handleMe(w, r)
 }
 

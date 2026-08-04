@@ -37,26 +37,59 @@ export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY);
 }
 
+export function resolveMediaPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  const withoutQuery = trimmed.split("?")[0] || trimmed;
+  if (withoutQuery.startsWith("/v1/media/")) {
+    return withoutQuery;
+  }
+  if (withoutQuery.startsWith("http://") || withoutQuery.startsWith("https://")) {
+    try {
+      const u = new URL(withoutQuery);
+      if (u.pathname.startsWith("/v1/media/")) {
+        return u.pathname;
+      }
+    } catch {
+      /* ignore malformed URL */
+    }
+  }
+  const bare = withoutQuery.replace(/^\//, "");
+  if (bare && !bare.startsWith("v1/")) {
+    return `/v1/media/files/${bare}`;
+  }
+  return withoutQuery.startsWith("/") ? withoutQuery : `/${withoutQuery}`;
+}
+
 /** Absolute media URL with admin access token for <img>/download links. */
 export function mediaAuthURL(path?: string | null): string | undefined {
   if (!path) return undefined;
   if (path.startsWith("data:") || path.startsWith("blob:")) return path;
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    if (path.includes("/v1/media/")) {
-      const token = getToken();
-      if (token && !path.includes("token=")) {
-        return `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
-      }
-    }
-    return path;
-  }
-  const rel = path.startsWith("/") ? path : `/${path}`;
-  const abs = `${apiBaseUrl()}${rel}`;
+  const mediaPath = resolveMediaPath(path);
+  if (!mediaPath.startsWith("/v1/media/")) return undefined;
+  const origin =
+    apiBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
+  const abs = `${origin}${mediaPath}`;
   const token = getToken();
-  if (rel.startsWith("/v1/media/") && token) {
-    return `${abs}${abs.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  if (!token) return abs;
+  if (abs.includes("token=")) return abs;
+  return `${abs}?token=${encodeURIComponent(token)}`;
+}
+
+/** Fetch protected media for admin preview (img/audio/video). */
+export async function fetchAdminMediaBlob(path: string): Promise<Blob> {
+  const mediaPath = resolveMediaPath(path);
+  if (!mediaPath.startsWith("/v1/media/")) {
+    throw new Error("invalid media path");
   }
-  return abs;
+  const token = getToken();
+  const res = await fetch(`${apiBaseUrl()}${mediaPath}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    throw new Error(`media fetch failed (${res.status})`);
+  }
+  return res.blob();
 }
 
 export function setToken(token: string, remember: boolean) {

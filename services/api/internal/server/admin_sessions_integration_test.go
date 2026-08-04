@@ -52,6 +52,9 @@ func TestAdminListsAndRevokesUserSession(t *testing.T) {
 	if session["platform"] == nil || session["last_active_at"] == nil {
 		t.Fatalf("session metadata missing: %v", session)
 	}
+	if session["status"] != "active" || session["revocable"] != true {
+		t.Fatalf("expected active revocable session: %v", session)
+	}
 
 	revokeURL := fmt.Sprintf(
 		"%s/v1/admin/users/%s/sessions/%s/revoke", ts.URL, userID, sessionID,
@@ -74,8 +77,12 @@ func TestAdminListsAndRevokesUserSession(t *testing.T) {
 		t.Fatalf("list after revoke: %d %v", status, body)
 	}
 	sessions, _ = body["sessions"].([]any)
-	if len(sessions) != 0 {
-		t.Fatalf("revoked session still active: %v", sessions)
+	if len(sessions) != 1 {
+		t.Fatalf("revoked session should remain in recent list: %v", sessions)
+	}
+	revoked, _ := sessions[0].(map[string]any)
+	if revoked["status"] != "revoked" {
+		t.Fatalf("expected revoked status: %v", revoked)
 	}
 
 	status, _ = getJSON(t, ts.URL+"/v1/me", userToken)

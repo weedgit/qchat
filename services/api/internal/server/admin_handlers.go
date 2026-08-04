@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/qchat/qchat/services/api/internal/auth"
+	"github.com/qchat/qchat/services/api/internal/ws"
 )
 
 var (
@@ -18,12 +19,28 @@ var (
 	errAdminUserInvalid  = errors.New("invalid user identifier")
 )
 
+// adminManagedUser returns the target user's enterprise when the operator may manage them.
+func (s *Server) adminManagedUser(ctx context.Context, c *auth.Claims, userID string) (enterpriseID string, ok bool, err error) {
+	err = s.db.QueryRow(ctx, `
+		SELECT COALESCE(enterprise_id::text, '') FROM users WHERE id=$1`, userID).Scan(&enterpriseID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if !isPlatformAdminRole(c.Role) && enterpriseID != c.EnterpriseID {
+		return "", false, nil
+	}
+	return enterpriseID, true, nil
+}
+
 const (
 	adminUsersDefaultLimit = 50
 	adminUsersMaxLimit     = 200
-	// adminReasonMinLen matches the message-inspect gate: every audited action
-	// against a user account must carry a usable justification.
+	// adminReasonMinLen is the minimum when an operator supplies a custom audit reason.
 	adminReasonMinLen = 8
+	adminInspectReasonEnterprise = "enterprise_scope"
 )
 
 // escapeLike neutralises LIKE wildcards in operator-supplied search text so a
@@ -182,6 +199,30 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 	} else {
 		req.InviteCode = strings.ToUpper(strings.TrimSpace(req.InviteCode))
 	}
+
+	var taken bool
+	if err := s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM enterprises WHERE lower(trim(name))=lower($1))`, req.Name).Scan(&taken); err != nil {
+		writeErrCode(w, 500, "query_failed", "query failed")
+		return
+	} else if taken {
+		writeErrCode(w, 409, "enterprise_name_taken", "company name already exists")
+		return
+	}
+	if err := s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM enterprises WHERE invite_code=$1)`, req.InviteCode).Scan(&taken); err != nil {
+		writeErrCode(w, 500, "query_failed", "query failed")
+		return
+	} else if taken {
+		writeErrCode(w, 409, "invite_code_taken", "invite code already in use")
+		return
+	}
+	if err := s.db.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM users WHERE phone=$1)`, req.AdminPhone).Scan(&taken); err != nil {
+		writeErrCode(w, 500, "query_failed", "query failed")
+		return
+	} else if taken {
+		writeErrCode(w, 409, "phone_taken", "admin phone already registered")
+		return
+	}
+
 	hash, err := auth.HashPassword(req.AdminPassword)
 	if err != nil {
 		writeErrCode(w, 500, "hash_failed", "hash failed")
@@ -197,7 +238,7 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 
 	id := uuid.New()
 	if _, err := tx.Exec(r.Context(), `INSERT INTO enterprises(id, name, invite_code) VALUES ($1,$2,$3)`, id, req.Name, req.InviteCode); err != nil {
-		writeErrCode(w, 409, "create_failed", "create failed")
+		writeErrCode(w, 409, "invite_code_taken", "invite code already in use")
 		return
 	}
 	uid := uuid.New()
@@ -226,8 +267,12 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
-	where := "u.enterprise_id=$1"
-	args := []any{c.EnterpriseID}
+	where := "TRUE"
+	args := []any{}
+	if !isPlatformAdminRole(c.Role) {
+		args = append(args, c.EnterpriseID)
+		where = "u.enterprise_id=$1"
+	}
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		args = append(args, "%"+escapeLike(q)+"%")
 		where += fmt.Sprintf(
@@ -288,8 +333,12 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
-	where := "conv.type='social_group' AND conv.enterprise_id IS NOT DISTINCT FROM $1"
-	args := []any{entArg(c.EnterpriseID)}
+	where := "conv.type='social_group'"
+	args := []any{}
+	if !isPlatformAdminRole(c.Role) {
+		args = append(args, entArg(c.EnterpriseID))
+		where += " AND conv.enterprise_id IS NOT DISTINCT FROM $1"
+	}
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		args = append(args, "%"+escapeLike(q)+"%")
 		where += fmt.Sprintf(
@@ -311,10 +360,12 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 		       COALESCE(conv.public_id, ''),
 		       COALESCE(conv.title, ''),
 		       COALESCE(conv.owner_id::text, ''),
-		       COALESCE(ou.display_name, ou.username, ''),
+		       COALESCE(ou.display_name, ''),
+		       COALESCE(ou.username, ''),
 		       (SELECT COUNT(*)::bigint FROM conversation_members cm
 		         WHERE cm.conversation_id=conv.id AND cm.role <> 'pending'),
-		       conv.created_at
+		       conv.created_at,
+		       COALESCE(conv.is_enterprise_default, FALSE)
 		FROM conversations conv
 		LEFT JOIN users ou ON ou.id=conv.owner_id
 		WHERE %s
@@ -327,22 +378,209 @@ func (s *Server) handleAdminGroups(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var id, publicID, title, ownerID, ownerName string
+		var id, publicID, title, ownerID, ownerDisplayName, ownerUsername string
 		var memberCount int64
+		var isEnterpriseDefault bool
 		var created any
-		if rows.Scan(&id, &publicID, &title, &ownerID, &ownerName, &memberCount, &created) != nil {
+		if rows.Scan(&id, &publicID, &title, &ownerID, &ownerDisplayName, &ownerUsername, &memberCount, &created, &isEnterpriseDefault) != nil {
 			continue
 		}
 		out = append(out, map[string]any{
 			"id": id, "public_id": publicID, "title": title,
-			"owner_id": ownerID, "owner_display_name": ownerName,
+			"owner_id": ownerID, "owner_display_name": ownerDisplayName,
+			"owner_username": ownerUsername,
 			"member_count": memberCount, "created_at": created,
+			"status": "active", "is_enterprise_default": isEnterpriseDefault,
 		})
 	}
 	if out == nil {
 		out = []map[string]any{}
 	}
 	writeJSON(w, 200, map[string]any{"groups": out, "total": total, "limit": limit, "offset": offset})
+}
+
+func (s *Server) adminSocialGroupAccessible(ctx context.Context, c *auth.Claims, convID string) (isEnterpriseDefault bool, err error) {
+	q := `
+		SELECT conv.type, COALESCE(conv.is_enterprise_default, FALSE)
+		FROM conversations conv
+		WHERE conv.id=$1
+		  AND conv.type='social_group'`
+	args := []any{convID}
+	if !isPlatformAdminRole(c.Role) {
+		args = append(args, entArg(c.EnterpriseID))
+		q += ` AND conv.enterprise_id IS NOT DISTINCT FROM $2`
+	}
+	var typ string
+	err = s.db.QueryRow(ctx, q, args...).Scan(&typ, &isEnterpriseDefault)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, errAdminUserNotFound
+	}
+	return isEnterpriseDefault, err
+}
+
+func (s *Server) handleAdminGetGroup(w http.ResponseWriter, r *http.Request) {
+	c := s.requirePerm(w, r, permAdminRead)
+	if c == nil {
+		return
+	}
+	convID := strings.TrimSpace(r.PathValue("id"))
+	if convID == "" {
+		writeErr(w, 400, "group id required")
+		return
+	}
+	isEnterpriseDefault, err := s.adminSocialGroupAccessible(r.Context(), c, convID)
+	if errors.Is(err, errAdminUserNotFound) {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+
+	var title, description, publicID, ownerID, ownerDisplayName, ownerUsername string
+	err = s.db.QueryRow(r.Context(), `
+		SELECT COALESCE(conv.title, ''),
+		       COALESCE(conv.description, ''),
+		       COALESCE(conv.public_id, ''),
+		       COALESCE(conv.owner_id::text, ''),
+		       COALESCE(ou.display_name, ''),
+		       COALESCE(ou.username, '')
+		FROM conversations conv
+		LEFT JOIN users ou ON ou.id = conv.owner_id
+		WHERE conv.id=$1`, convID).Scan(&title, &description, &publicID, &ownerID, &ownerDisplayName, &ownerUsername)
+	if err != nil {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+
+	mrows, _ := s.db.Query(r.Context(), `
+		SELECT u.id::text, u.username, COALESCE(u.display_name, ''), cm.role
+		FROM conversation_members cm
+		JOIN users u ON u.id = cm.user_id
+		WHERE cm.conversation_id=$1 AND cm.role <> 'pending'
+		ORDER BY CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, u.display_name`, convID)
+	var members []map[string]any
+	if mrows != nil {
+		defer mrows.Close()
+		for mrows.Next() {
+			var uid, un, dn, role string
+			if mrows.Scan(&uid, &un, &dn, &role) != nil {
+				continue
+			}
+			members = append(members, map[string]any{
+				"user_id": uid, "username": un, "display_name": dn, "role": role,
+			})
+		}
+	}
+	if members == nil {
+		members = []map[string]any{}
+	}
+
+	writeJSON(w, 200, map[string]any{
+		"id": convID, "title": title, "description": description, "public_id": publicID,
+		"owner_id": ownerID, "owner_display_name": ownerDisplayName,
+		"owner_username": ownerUsername,
+		"status": "active", "is_enterprise_default": isEnterpriseDefault,
+		"members": members,
+	})
+}
+
+func (s *Server) handleAdminDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	c := s.requirePerm(w, r, permEnterpriseWrite)
+	if c == nil {
+		return
+	}
+	convID := strings.TrimSpace(r.PathValue("id"))
+	if convID == "" {
+		writeErr(w, 400, "group id required")
+		return
+	}
+	isEnterpriseDefault, err := s.adminSocialGroupAccessible(r.Context(), c, convID)
+	if errors.Is(err, errAdminUserNotFound) {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	}
+	if err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+	if isEnterpriseDefault {
+		writeErrCode(w, 403, "forbidden", "enterprise default group cannot be deleted")
+		return
+	}
+
+	memberIDs := s.memberIDsCtx(r.Context(), convID)
+	_, _ = s.db.Exec(r.Context(), `DELETE FROM call_sessions WHERE conversation_id=$1`, convID)
+	_, _ = s.db.Exec(r.Context(), `UPDATE webhooks SET conversation_id=NULL WHERE conversation_id=$1`, convID)
+	tag, err := s.db.Exec(r.Context(), `DELETE FROM conversations WHERE id=$1`, convID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErrCode(w, 500, "delete_failed", "delete failed")
+		return
+	}
+
+	for _, uid := range memberIDs {
+		s.hub.PublishToUsers([]string{uid}, ws.Event{Type: "group.member_removed", Payload: map[string]any{
+			"conversation_id": convID,
+			"removed_user_id": uid,
+			"removed_by":      c.UserID,
+			"deleted":         true,
+		}})
+	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.delete", "conversation", convID, "admin_console", clientIP(r), nil)
+	writeJSON(w, 200, map[string]any{"ok": true, "status": "deleted"})
+}
+
+func (s *Server) handleAdminRemoveGroupMember(w http.ResponseWriter, r *http.Request) {
+	c := s.requirePerm(w, r, permEnterpriseWrite)
+	if c == nil {
+		return
+	}
+	convID := strings.TrimSpace(r.PathValue("id"))
+	targetID := strings.TrimSpace(r.PathValue("userId"))
+	if convID == "" || targetID == "" {
+		writeErr(w, 400, "group id and user id required")
+		return
+	}
+	if _, err := s.adminSocialGroupAccessible(r.Context(), c, convID); errors.Is(err, errAdminUserNotFound) {
+		writeErrCode(w, 404, "not_found", "group not found")
+		return
+	} else if err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+
+	targetRole := s.memberRole(r, convID, targetID)
+	if targetRole == "" || targetRole == "pending" {
+		writeErrCode(w, 404, "not_found", "member not found")
+		return
+	}
+	if targetRole == "owner" {
+		writeErrCode(w, 403, "forbidden", "cannot remove the owner")
+		return
+	}
+
+	tag, err := s.db.Exec(r.Context(), `
+		DELETE FROM conversation_members
+		WHERE conversation_id=$1 AND user_id=$2 AND role IN ('member','admin')`, convID, targetID)
+	if err != nil || tag.RowsAffected() == 0 {
+		writeErrCode(w, 404, "not_found", "member not found")
+		return
+	}
+
+	payload := map[string]any{
+		"conversation_id": convID,
+		"removed_user_id": targetID,
+		"removed_by":      c.UserID,
+	}
+	s.audit(r.Context(), c.UserID, c.EnterpriseID, "group.member_remove", "user", targetID, "admin_console", clientIP(r), map[string]any{
+		"conversation_id": convID,
+		"target_role":     targetRole,
+	})
+	s.hub.PublishToUsers([]string{targetID}, ws.Event{Type: "group.member_removed", Payload: payload})
+	s.hub.PublishToUsers(s.adminIDs(r, convID), ws.Event{Type: "group.member_removed", Payload: payload})
+	s.insertAdminMemberNotice(r, convID, c.UserID, targetID, "member_removed")
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 // handleAdminCreateUser provisions a member without self-service registration.
@@ -465,7 +703,16 @@ func (s *Server) handleAdminBan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	tag, err := s.db.Exec(r.Context(), `UPDATE users SET banned=$3 WHERE id=$1 AND enterprise_id=$2`, uid, c.EnterpriseID, req.Banned)
+	userEntID, managed, err := s.adminManagedUser(r.Context(), c, uid)
+	if err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+	if !managed {
+		writeErr(w, 404, "user not found")
+		return
+	}
+	tag, err := s.db.Exec(r.Context(), `UPDATE users SET banned=$2 WHERE id=$1`, uid, req.Banned)
 	if err != nil {
 		writeErr(w, 400, "ban failed")
 		return
@@ -477,7 +724,7 @@ func (s *Server) handleAdminBan(w http.ResponseWriter, r *http.Request) {
 	if req.Banned {
 		s.revokeUserSessions(r, uid, "banned")
 	}
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.ban", "user", uid, reason, clientIP(r), map[string]any{"banned": req.Banned})
+	s.audit(r.Context(), c.UserID, userEntID, "user.ban", "user", uid, reason, clientIP(r), map[string]any{"banned": req.Banned})
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -508,9 +755,18 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 		writeErr(w, 500, "hash failed")
 		return
 	}
+	userEntID, managed, err := s.adminManagedUser(r.Context(), c, uid)
+	if err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+	if !managed {
+		writeErr(w, 404, "user not found")
+		return
+	}
 	tag, err := s.db.Exec(r.Context(), `
-		UPDATE users SET password_hash=$3, mfa_active=FALSE, mfa_secret=''
-		WHERE id=$1 AND enterprise_id=$2`, uid, c.EnterpriseID, hash)
+		UPDATE users SET password_hash=$2, mfa_active=FALSE, mfa_secret=''
+		WHERE id=$1`, uid, hash)
 	if err != nil {
 		writeErr(w, 400, "reset failed")
 		return
@@ -521,7 +777,7 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 	}
 	s.clearMFARecoveryCodes(r.Context(), uid)
 	s.revokeUserSessions(r, uid, "password_reset")
-	s.audit(r.Context(), c.UserID, c.EnterpriseID, "user.reset_password", "user", uid, reason, clientIP(r), nil)
+	s.audit(r.Context(), c.UserID, userEntID, "user.reset_password", "user", uid, reason, clientIP(r), nil)
 	writeJSON(w, 200, map[string]any{"ok": true, "note": "password reset; existing password is never viewable"})
 }
 
@@ -567,150 +823,87 @@ func (s *Server) resolveEnterpriseUserID(ctx context.Context, entID, raw string)
 	return id, err
 }
 
-func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
-	c := s.requirePerm(w, r, permMessagesInspect)
-	if c == nil {
-		return
+func messageInspectReason(raw string) string {
+	reason := strings.TrimSpace(raw)
+	if len(reason) >= adminReasonMinLen {
+		return reason
 	}
-	reason := strings.TrimSpace(r.URL.Query().Get("reason"))
-	if len(reason) < 8 {
-		writeErr(w, 400, "reason required (≥8 chars) for message access")
-		return
-	}
+	return adminInspectReasonEnterprise
+}
 
-	scope := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("scope")))
+func enterpriseMemberConvSQL(entArg int) string {
+	return fmt.Sprintf(`m.conversation_id IN (
+		SELECT cm.conversation_id FROM conversation_members cm
+		JOIN users u ON u.id = cm.user_id
+		WHERE u.enterprise_id = $%d::uuid
+	)`, entArg)
+}
+
+const adminMessageListSQL = `
+	SELECT m.id::text, m.conversation_id::text, m.sender_id::text,
+	       COALESCE(u.username,''), COALESCE(u.display_name,''),
+	       COALESCE(c.title,''), COALESCE(c.type,''),
+	       COALESCE(c.enterprise_id::text,''), COALESCE(e.name,''),
+	       m.body, m.type, COALESCE(m.media_url,''), m.recalled, m.created_at
+	FROM messages m
+	JOIN users u ON u.id = m.sender_id
+	JOIN conversations c ON c.id = m.conversation_id
+	LEFT JOIN enterprises e ON e.id = c.enterprise_id`
+
+func normalizeAdminMessageScope(raw string) (string, bool) {
+	scope := strings.ToLower(strings.TrimSpace(raw))
 	if scope == "" {
-		scope = "all"
+		return "all", true
 	}
-	if scope != "all" && scope != "sent" {
-		writeErrCode(w, 400, "invalid_scope", "scope must be all or sent")
-		return
+	switch scope {
+	case "all", "dm", "group":
+		return scope, true
+	default:
+		return "", false
 	}
+}
 
-	entID := c.EnterpriseID
-	if rawEnt := strings.TrimSpace(r.URL.Query().Get("enterprise_id")); rawEnt != "" {
-		if !isPlatformAdminRole(c.Role) {
-			writeErrCode(w, 403, "forbidden", "only platform admin can set enterprise_id")
-			return
-		}
-		if _, err := uuid.Parse(rawEnt); err != nil {
-			writeErrCode(w, 400, "invalid_enterprise", "enterprise_id must be a valid uuid")
-			return
-		}
-		entID = rawEnt
+func adminMessageScopeTypeSQL(scope string) string {
+	switch scope {
+	case "dm":
+		return ` AND c.type = 'dm'`
+	case "group":
+		return ` AND c.type = 'social_group'`
+	default:
+		return ""
 	}
+}
 
-	// Prefer username/phone ("user"); keep user_id for older clients/tests.
-	target := strings.TrimSpace(r.URL.Query().Get("user"))
-	if target == "" {
-		target = strings.TrimSpace(r.URL.Query().Get("username"))
-	}
-	if target == "" {
-		target = strings.TrimSpace(r.URL.Query().Get("phone"))
-	}
-	if target == "" {
-		target = strings.TrimSpace(r.URL.Query().Get("user_id"))
-	}
-	if target == "" {
-		writeErr(w, 400, "username or phone required for message access")
-		return
-	}
-	userID, err := s.resolveEnterpriseUserID(r.Context(), entID, target)
-	if errors.Is(err, errAdminUserNotFound) {
-		writeErr(w, 404, "user not found")
-		return
-	}
-	if errors.Is(err, errAdminUserInvalid) {
-		writeErr(w, 400, "username or phone required for message access")
-		return
-	}
-	if err != nil {
-		writeErr(w, 500, "query failed")
-		return
-	}
+func adminMessageGroupTitleSQL(argIndex int) string {
+	return fmt.Sprintf(` AND c.title ILIKE $%d ESCAPE '\'`, argIndex)
+}
 
-	var convFilter *uuid.UUID
-	if rawConv := strings.TrimSpace(r.URL.Query().Get("conversation_id")); rawConv != "" {
-		parsed, err := uuid.Parse(rawConv)
-		if err != nil {
-			writeErrCode(w, 400, "invalid_conversation", "conversation_id must be a valid uuid")
-			return
-		}
-		convFilter = &parsed
+func normalizeAdminMessageType(raw string) (string, bool) {
+	typ := strings.ToLower(strings.TrimSpace(raw))
+	if typ == "" || typ == "all" {
+		return "", true
 	}
+	switch typ {
+	case "text", "image", "file", "voice", "video", "system", "call":
+		return typ, true
+	default:
+		return "", false
+	}
+}
 
-	limit, offset := adminListRange(r)
+func appendAdminMessageFilters(q string, args []any, msgType, textQ string) (string, []any) {
+	if msgType != "" {
+		args = append(args, msgType)
+		q += fmt.Sprintf(` AND LOWER(m.type) = LOWER($%d)`, len(args))
+	}
+	if t := strings.TrimSpace(textQ); t != "" {
+		args = append(args, "%"+escapeLike(t)+"%")
+		q += fmt.Sprintf(` AND m.body ILIKE $%d ESCAPE '\'`, len(args))
+	}
+	return q, args
+}
 
-	// Membership-scoped inspect (not message.enterprise_id alone).
-	// group joins, senders stamp their own tenant on rows — filtering by message
-	// enterprise_id drops cross-tenant history the user actually saw.
-	memberConvSQL := `m.conversation_id IN (
-		SELECT conversation_id FROM conversation_members WHERE user_id=$1
-	)`
-	var total int
-	var rows pgx.Rows
-	if scope == "sent" {
-		countQ := `SELECT COUNT(*) FROM messages m WHERE m.sender_id=$1 AND ` + memberConvSQL
-		countArgs := []any{userID}
-		listQ := `
-			SELECT m.id::text, m.conversation_id::text, m.sender_id::text,
-			       COALESCE(u.username,''), COALESCE(u.display_name,''),
-			       COALESCE(c.title,''), COALESCE(c.type,''),
-			       COALESCE(c.enterprise_id::text,''), COALESCE(e.name,''),
-			       m.body, m.type, COALESCE(m.media_url,''), m.recalled, m.created_at
-			FROM messages m
-			JOIN users u ON u.id = m.sender_id
-			JOIN conversations c ON c.id = m.conversation_id
-			LEFT JOIN enterprises e ON e.id = c.enterprise_id
-			WHERE m.sender_id=$1 AND ` + memberConvSQL
-		listArgs := []any{userID}
-		if convFilter != nil {
-			countQ += ` AND m.conversation_id=$2`
-			countArgs = append(countArgs, *convFilter)
-			listQ += ` AND m.conversation_id=$2`
-			listArgs = append(listArgs, *convFilter)
-		}
-		if err := s.db.QueryRow(r.Context(), countQ, countArgs...).Scan(&total); err != nil {
-			writeErr(w, 500, "query failed")
-			return
-		}
-		listArgs = append(listArgs, limit, offset)
-		listQ += fmt.Sprintf(` ORDER BY m.created_at DESC LIMIT $%d OFFSET $%d`, len(listArgs)-1, len(listArgs))
-		rows, err = s.db.Query(r.Context(), listQ, listArgs...)
-	} else {
-		countQ := `SELECT COUNT(*) FROM messages m WHERE ` + memberConvSQL
-		countArgs := []any{userID}
-		listQ := `
-			SELECT m.id::text, m.conversation_id::text, m.sender_id::text,
-			       COALESCE(u.username,''), COALESCE(u.display_name,''),
-			       COALESCE(c.title,''), COALESCE(c.type,''),
-			       COALESCE(c.enterprise_id::text,''), COALESCE(e.name,''),
-			       m.body, m.type, COALESCE(m.media_url,''), m.recalled, m.created_at
-			FROM messages m
-			JOIN users u ON u.id = m.sender_id
-			JOIN conversations c ON c.id = m.conversation_id
-			LEFT JOIN enterprises e ON e.id = c.enterprise_id
-			WHERE ` + memberConvSQL
-		listArgs := []any{userID}
-		if convFilter != nil {
-			countQ += ` AND m.conversation_id=$2`
-			countArgs = append(countArgs, *convFilter)
-			listQ += ` AND m.conversation_id=$2`
-			listArgs = append(listArgs, *convFilter)
-		}
-		if err := s.db.QueryRow(r.Context(), countQ, countArgs...).Scan(&total); err != nil {
-			writeErr(w, 500, "query failed")
-			return
-		}
-		listArgs = append(listArgs, limit, offset)
-		listQ += fmt.Sprintf(` ORDER BY m.created_at DESC LIMIT $%d OFFSET $%d`, len(listArgs)-1, len(listArgs))
-		rows, err = s.db.Query(r.Context(), listQ, listArgs...)
-	}
-	if err != nil {
-		writeErr(w, 500, "query failed")
-		return
-	}
-	defer rows.Close()
+func scanAdminMessageRows(rows pgx.Rows) []map[string]any {
 	var out []map[string]any
 	for rows.Next() {
 		var id, cid, sid, sun, sdn, title, ctype, cent, ename, body, typ, media string
@@ -737,16 +930,202 @@ func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
 		out = append(out, row)
 	}
 	if out == nil {
-		out = []map[string]any{}
+		return []map[string]any{}
 	}
+	return out
+}
+
+func (s *Server) handleAdminMessages(w http.ResponseWriter, r *http.Request) {
+	c := s.requirePerm(w, r, permMessagesInspect)
+	if c == nil {
+		return
+	}
+	reason := messageInspectReason(r.URL.Query().Get("reason"))
+
+	scope, ok := normalizeAdminMessageScope(r.URL.Query().Get("scope"))
+	if !ok {
+		writeErrCode(w, 400, "invalid_scope", "scope must be all, dm, or group")
+		return
+	}
+	scopeSQL := adminMessageScopeTypeSQL(scope)
+
+	entID := c.EnterpriseID
+	if rawEnt := strings.TrimSpace(r.URL.Query().Get("enterprise_id")); rawEnt != "" {
+		if !isPlatformAdminRole(c.Role) {
+			writeErrCode(w, 403, "forbidden", "only platform admin can set enterprise_id")
+			return
+		}
+		if _, err := uuid.Parse(rawEnt); err != nil {
+			writeErrCode(w, 400, "invalid_enterprise", "enterprise_id must be a valid uuid")
+			return
+		}
+		entID = rawEnt
+	}
+	if entID == "" {
+		writeErr(w, 400, "enterprise scope required for message access")
+		return
+	}
+	if _, err := uuid.Parse(entID); err != nil {
+		writeErrCode(w, 400, "invalid_enterprise", "enterprise_id must be a valid uuid")
+		return
+	}
+
+	// Prefer username/phone ("user"); keep user_id for older clients/tests.
+	target := strings.TrimSpace(r.URL.Query().Get("user"))
+	if target == "" {
+		target = strings.TrimSpace(r.URL.Query().Get("username"))
+	}
+	if target == "" {
+		target = strings.TrimSpace(r.URL.Query().Get("phone"))
+	}
+	if target == "" {
+		target = strings.TrimSpace(r.URL.Query().Get("user_id"))
+	}
+
+	var convFilter *uuid.UUID
+	if rawConv := strings.TrimSpace(r.URL.Query().Get("conversation_id")); rawConv != "" {
+		parsed, err := uuid.Parse(rawConv)
+		if err != nil {
+			writeErrCode(w, 400, "invalid_conversation", "conversation_id must be a valid uuid")
+			return
+		}
+		convFilter = &parsed
+	}
+
+	groupName := strings.TrimSpace(r.URL.Query().Get("group"))
+	if groupName == "" {
+		groupName = strings.TrimSpace(r.URL.Query().Get("group_name"))
+	}
+	groupTitleArg := ""
+	if groupName != "" {
+		groupTitleArg = "%" + escapeLike(groupName) + "%"
+	}
+
+	msgType, ok := normalizeAdminMessageType(r.URL.Query().Get("message_type"))
+	if !ok {
+		msgType, ok = normalizeAdminMessageType(r.URL.Query().Get("type"))
+	}
+	if !ok {
+		writeErrCode(w, 400, "invalid_message_type", "message_type must be text, image, file, voice, video, system, or call")
+		return
+	}
+	textQ := strings.TrimSpace(r.URL.Query().Get("text"))
+	if textQ == "" {
+		textQ = strings.TrimSpace(r.URL.Query().Get("q"))
+	}
+
+	limit, offset := adminListRange(r)
+
+	auditTargetType := "enterprise"
+	auditTargetID := entID
+	var total int
+	var rows pgx.Rows
+	var err error
+
+	if target == "" {
+		entConvSQL := enterpriseMemberConvSQL(1)
+		countQ := `SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE ` + entConvSQL + scopeSQL
+		countArgs := []any{entID}
+		listQ := adminMessageListSQL + ` WHERE ` + entConvSQL + scopeSQL
+		listArgs := []any{entID}
+		if convFilter != nil {
+			countQ += ` AND m.conversation_id=$2`
+			countArgs = append(countArgs, *convFilter)
+			listQ += ` AND m.conversation_id=$2`
+			listArgs = append(listArgs, *convFilter)
+		}
+		if groupTitleArg != "" {
+			n := len(countArgs) + 1
+			countQ += adminMessageGroupTitleSQL(n)
+			countArgs = append(countArgs, groupTitleArg)
+			n = len(listArgs) + 1
+			listQ += adminMessageGroupTitleSQL(n)
+			listArgs = append(listArgs, groupTitleArg)
+		}
+		countQ, countArgs = appendAdminMessageFilters(countQ, countArgs, msgType, textQ)
+		listQ, listArgs = appendAdminMessageFilters(listQ, listArgs, msgType, textQ)
+		if err := s.db.QueryRow(r.Context(), countQ, countArgs...).Scan(&total); err != nil {
+			writeErr(w, 500, "query failed")
+			return
+		}
+		listArgs = append(listArgs, limit, offset)
+		listQ += fmt.Sprintf(` ORDER BY m.created_at DESC LIMIT $%d OFFSET $%d`, len(listArgs)-1, len(listArgs))
+		rows, err = s.db.Query(r.Context(), listQ, listArgs...)
+	} else {
+		userID, resolveErr := s.resolveEnterpriseUserID(r.Context(), entID, target)
+		if errors.Is(resolveErr, errAdminUserNotFound) {
+			writeErr(w, 404, "user not found")
+			return
+		}
+		if errors.Is(resolveErr, errAdminUserInvalid) {
+			writeErr(w, 400, "username or phone required for message access")
+			return
+		}
+		if resolveErr != nil {
+			writeErr(w, 500, "query failed")
+			return
+		}
+		auditTargetType = "user"
+		auditTargetID = userID.String()
+
+		// Membership-scoped inspect (not message.enterprise_id alone).
+		memberConvSQL := `m.conversation_id IN (
+			SELECT conversation_id FROM conversation_members WHERE user_id=$1
+		)`
+		countQ := `SELECT COUNT(*) FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE ` + memberConvSQL + scopeSQL
+		countArgs := []any{userID}
+		listQ := adminMessageListSQL + ` WHERE ` + memberConvSQL + scopeSQL
+		listArgs := []any{userID}
+		if convFilter != nil {
+			countQ += ` AND m.conversation_id=$2`
+			countArgs = append(countArgs, *convFilter)
+			listQ += ` AND m.conversation_id=$2`
+			listArgs = append(listArgs, *convFilter)
+		}
+		if groupTitleArg != "" {
+			n := len(countArgs) + 1
+			countQ += adminMessageGroupTitleSQL(n)
+			countArgs = append(countArgs, groupTitleArg)
+			n = len(listArgs) + 1
+			listQ += adminMessageGroupTitleSQL(n)
+			listArgs = append(listArgs, groupTitleArg)
+		}
+		countQ, countArgs = appendAdminMessageFilters(countQ, countArgs, msgType, textQ)
+		listQ, listArgs = appendAdminMessageFilters(listQ, listArgs, msgType, textQ)
+		if err := s.db.QueryRow(r.Context(), countQ, countArgs...).Scan(&total); err != nil {
+			writeErr(w, 500, "query failed")
+			return
+		}
+		listArgs = append(listArgs, limit, offset)
+		listQ += fmt.Sprintf(` ORDER BY m.created_at DESC LIMIT $%d OFFSET $%d`, len(listArgs)-1, len(listArgs))
+		rows, err = s.db.Query(r.Context(), listQ, listArgs...)
+	}
+	if err != nil {
+		writeErr(w, 500, "query failed")
+		return
+	}
+	defer rows.Close()
+	out := scanAdminMessageRows(rows)
 	meta := map[string]any{
 		"count": len(out), "total": total, "limit": limit, "offset": offset,
 		"scope": scope, "enterprise_id": entID,
 	}
+	if target != "" {
+		meta["user"] = target
+	}
 	if convFilter != nil {
 		meta["conversation_id"] = convFilter.String()
 	}
-	s.audit(r.Context(), c.UserID, entID, "messages.inspect", "user", userID.String(), reason, clientIP(r), meta)
+	if groupName != "" {
+		meta["group"] = groupName
+	}
+	if msgType != "" {
+		meta["message_type"] = msgType
+	}
+	if textQ != "" {
+		meta["text"] = textQ
+	}
+	s.audit(r.Context(), c.UserID, entID, "messages.inspect", auditTargetType, auditTargetID, reason, clientIP(r), meta)
 	writeJSON(w, 200, map[string]any{
 		"messages": out, "total": total, "limit": limit, "offset": offset,
 		"has_more": offset+len(out) < total, "scope": scope,
@@ -760,14 +1139,14 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 	}
 
 	args := []any{normalizeRole(c.Role), c.EnterpriseID}
-	where := `($1 = 'platform_admin' OR a.enterprise_id = $2::uuid)`
+	where := `($1 = 'platform_admin' OR a.enterprise_id = $2::uuid)` + userLogSQLFilter
 
 	if q := strings.TrimSpace(r.URL.Query().Get("q")); q != "" {
 		args = append(args, "%"+escapeLike(q)+"%")
 		n := len(args)
 		where += fmt.Sprintf(
-			` AND (a.action ILIKE $%d ESCAPE '\' OR a.target_id ILIKE $%d ESCAPE '\' OR a.reason ILIKE $%d ESCAPE '\' OR COALESCE(u.username,'') ILIKE $%d ESCAPE '\' OR COALESCE(u.phone,'') ILIKE $%d ESCAPE '\' OR COALESCE(u.display_name,'') ILIKE $%d ESCAPE '\')`,
-			n, n, n, n, n, n)
+			` AND (a.action ILIKE $%d ESCAPE '\' OR a.ip ILIKE $%d ESCAPE '\' OR COALESCE(u.username,'') ILIKE $%d ESCAPE '\' OR COALESCE(u.phone,'') ILIKE $%d ESCAPE '\' OR COALESCE(u.display_name,'') ILIKE $%d ESCAPE '\')`,
+			n, n, n, n, n)
 	}
 	if action := strings.TrimSpace(r.URL.Query().Get("action")); action != "" {
 		args = append(args, action)
@@ -791,7 +1170,7 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(), fmt.Sprintf(`
 		SELECT a.id::text,
 		       COALESCE(NULLIF(u.display_name,''), NULLIF(u.username,''), NULLIF(u.phone,''), a.actor_id::text, ''),
-		       a.action, a.target_type, a.target_id, a.reason, a.ip, a.created_at
+		       a.action, a.reason, a.ip, a.meta, a.created_at
 		FROM audit_logs a
 		LEFT JOIN users u ON u.id = a.actor_id
 		WHERE %s
@@ -804,13 +1183,23 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var id, actor, action, tt, tid, reason, ip string
+		var id, actor, action, reason, ip string
+		var metaRaw []byte
 		var created any
-		_ = rows.Scan(&id, &actor, &action, &tt, &tid, &reason, &ip, &created)
+		if rows.Scan(&id, &actor, &action, &reason, &ip, &metaRaw, &created) != nil {
+			continue
+		}
+		meta := parseAuditMeta(metaRaw)
+		platform := auditPlatformCategory(action, reason, meta)
+		location := auditLogLocation(ip, meta)
 		out = append(out, map[string]any{
-			"id": id, "actor": actor, "action": action,
-			"target_type": tt, "target_id": tid, "target": tid,
-			"reason": reason, "ip": ip, "created_at": created,
+			"id":         id,
+			"actor":      actor,
+			"action":     action,
+			"platform":   platform,
+			"ip":         ip,
+			"location":   location,
+			"created_at": created,
 		})
 	}
 	if out == nil {
@@ -819,7 +1208,7 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 
 	actionRows, err := s.db.Query(r.Context(), `
 		SELECT DISTINCT action FROM audit_logs a
-		WHERE ($1 = 'platform_admin' OR a.enterprise_id = $2::uuid)
+		WHERE ($1 = 'platform_admin' OR a.enterprise_id = $2::uuid)`+userLogSQLFilter+`
 		ORDER BY action`, normalizeRole(c.Role), c.EnterpriseID)
 	actions := []string{}
 	if err == nil {
@@ -833,6 +1222,6 @@ func (s *Server) handleAdminAudits(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, 200, map[string]any{
-		"audits": out, "total": total, "limit": limit, "offset": offset, "actions": actions,
+		"logs": out, "audits": out, "total": total, "limit": limit, "offset": offset, "actions": actions,
 	})
 }

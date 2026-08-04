@@ -8,6 +8,7 @@ import { validateLoginCredentials } from "@/lib/credentials";
 import { formatAdminError } from "@/lib/errors";
 import LanguageSelect from "@/components/LanguageSelect";
 import { useLocale } from "@/lib/locale";
+import { useToast } from "@/components/Toast";
 
 interface CaptchaState {
   id: string;
@@ -17,6 +18,7 @@ interface CaptchaState {
 export default function AdminLoginPage() {
   const router = useRouter();
   const { t } = useLocale();
+  const toast = useToast();
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [captchaCode, setCaptchaCode] = useState("");
@@ -25,7 +27,6 @@ export default function AdminLoginPage() {
   const [mfaRequired, setMfaRequired] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const loadCaptcha = useCallback(async () => {
     setCaptcha(null);
@@ -38,9 +39,9 @@ export default function AdminLoginPage() {
       }
       setCaptcha({ id, image });
     } catch (e) {
-      setError(formatAdminError(e, t, "admin.err.captchaUnavailable"));
+      toast.error(formatAdminError(e, t, "admin.err.captchaUnavailable"));
     }
-  }, [t]);
+  }, [t, toast]);
 
   useEffect(() => {
     loadCaptcha();
@@ -49,11 +50,10 @@ export default function AdminLoginPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setError(null);
     try {
       const early = validateLoginCredentials({ phone, password });
       if (early) {
-        setError(t(early));
+        toast.error(t(early));
         return;
       }
       const payload: Record<string, unknown> = {
@@ -81,14 +81,14 @@ export default function AdminLoginPage() {
       const code = e instanceof ApiError ? String((e.body as { code?: string })?.code ?? "") : "";
       if (code === "mfa_required") {
         setMfaRequired(true);
-        setError(t("admin.err.mfaRequired"));
+        toast.warn(t("admin.err.mfaRequired"));
       } else if (code === "mfa_invalid") {
         setMfaRequired(true);
-        setError(t("admin.err.mfaInvalid"));
+        toast.error(t("admin.err.mfaInvalid"));
       } else if (code === "ip_not_allowed") {
-        setError(t("admin.err.ipNotAllowed"));
+        toast.error(t("admin.err.ipNotAllowed"));
       } else {
-        setError(formatAdminError(e, t, "admin.err.generic"));
+        toast.error(formatAdminError(e, t, "admin.err.generic"));
       }
       setCaptchaCode("");
       setMfaCode("");
@@ -169,7 +169,6 @@ export default function AdminLoginPage() {
           />
           {t("admin.login.remember")}
         </label>
-        {error && <div className="error-text">{error}</div>}
         <button className="btn" type="submit" disabled={busy}>
           {busy ? t("admin.login.submitting") : t("admin.login.submit")}
         </button>
