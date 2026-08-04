@@ -87,7 +87,7 @@
 
 **In progress:** supply real `CSC_*` / `APPLE_*` credentials when ready to ship signed builds.
 
-> Note: `IMPLEMENTATION_STATUS.md` Phase 6 still says desktop is “scaffolded.” That understates D1–D3 progress on this branch.
+> Desktop shell (Rchat + XinChat Electron) is shipped — see [`desktop-feature-status.md`](./desktop-feature-status.md) for the Rchat shell matrix.
 
 ---
 

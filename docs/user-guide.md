@@ -398,4 +398,4 @@ Full EN/中文 glossary: [`qchat-domain-terminology.md`](./qchat-domain-terminol
 - Deployment (VPS vs LAN): [`deployment-modes.md`](./deployment-modes.md)
 - Desktop developer notes: [`../apps/desktop/README.md`](../apps/desktop/README.md)
 - Mobile developer notes: [`../apps/mobile/README.md`](../apps/mobile/README.md)
-- Implementation status: [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md)
+- XinChat: [`../apps/XINCHAT.md`](../apps/XINCHAT.md) · [`xinchat-release.md`](./xinchat-release.md)

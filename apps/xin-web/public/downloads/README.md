@@ -23,6 +23,8 @@ Then set `available: true` and `sizeBytes` in `manifest.json` (or let sync scrip
 
 Rebuild XinChat web: `./deploy/redeploy.sh --xin-web --skip-env-check`
 
+**Do not commit** large binaries — they are gitignored. Use `sync-xin-installers.sh` on the deploy host.
+
 ## Images
 
 Hero/marketing images live in `images/` (shared with Rchat layout). Brand icon uses `/xin/icons/icon-192.png` in the download page header.

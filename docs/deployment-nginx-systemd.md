@@ -300,7 +300,7 @@ Desktop auto-update feeds:
 ```
 
 Mobile: separate EAS project and `com.xinchat.mobile` — see
-[`docs/xinchat-mobile-release.md`](xinchat-mobile-release.md) and
+[`docs/xinchat-release.md`](xinchat-release.md) and
 [`apps/XINCHAT.md`](../apps/XINCHAT.md).
 
 Optional subdomain (`xin.example.com`): include

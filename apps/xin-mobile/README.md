@@ -1,67 +1,35 @@
 # XinChat mobile (Expo / React Native)
 
-XinChat Android/iOS — same API as Rchat, separate store listing (`com.xinchat.mobile`).
+XinChat Android/iOS — same API and accounts as Rchat, separate store listing (`com.xinchat.mobile`). Emerald green UI; storage keys `xinchat.*`.
 
 ## Dev
 
 ```bash
 cd apps/xin-mobile
-cp .env.example .env   # EXPO_PUBLIC_API_URL, LIVEKIT URL
+cp .env.example .env
 npm ci
 npx expo start
 ```
 
-Login screen links to Rchat web on the same host (`/login`).
+Login screen links to Rchat on the same host (`/login`).
 
-## Release checks
+## Checks
 
 ```bash
+npm run bootstrap       # .env + typecheck + check:release
 npm run typecheck
 npm run check:release
 ```
 
-## Quick bootstrap (no Expo login)
+## Release & stores
 
-```bash
-cd apps/xin-mobile
-npm run bootstrap    # .env from example + typecheck + check:release
-```
-
-## EAS (first time)
+Full guide: [`docs/xinchat-release.md`](../../docs/xinchat-release.md)
 
 ```bash
 npm run eas:onboard
-npx eas-cli credentials --platform android
-```
-
-## Preview APK (internal QA)
-
-```bash
 npm run eas:build:preview
-# or: bash scripts/eas-build-preview.sh
-```
-
-After the cloud build finishes:
-
-```bash
 ../../scripts/eas-pull-xin-apk.sh preview
-../../scripts/publish-xin-release.sh --skip-dist
+make publish-xin
 ```
 
-APK appears on `https://<host>/xin/download`.
-
-## Production (stores)
-
-```bash
-npm run eas:build:android
-npm run eas:build:ios
-npx eas-cli submit --profile production --platform android
-```
-
-See [docs/xinchat-mobile-release.md](../docs/xinchat-mobile-release.md) and [docs/xinchat-store-submit.md](../docs/xinchat-store-submit.md).
-
-## Branding
-
-- Violet theme: `src/theme.ts`
-- App name: `src/lib/brand.ts`
-- Storage keys: `xinchat.*` (separate from Rchat if both apps installed)
+Use `npm run eas:*` scripts (pinned `eas-cli@16.x`).

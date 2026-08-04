@@ -1,14 +1,31 @@
-# Qchat Desktop architecture
+# Qchat architecture
 
-Thin Electron shell around the Qchat **web** client (`apps/web`), using a
-main / preload / shared separation — without embedding a
-local React UI (the renderer is the remote Next.js app).
+## Monorepo layout
 
-## Process diagram
+| Layer | Rchat | XinChat | Shared |
+|-------|-------|---------|--------|
+| Web UI | `apps/web` → `/` | `apps/xin-web` → `/xin/` | Same `/v1/` API |
+| Mobile | `apps/mobile` (`com.qchat.mobile`) | `apps/xin-mobile` (`com.xinchat.mobile`) | Same accounts |
+| Desktop | `apps/desktop` | `apps/xin-desktop` | Electron shells |
+| Admin | `apps/admin` → `/admin/` | — | — |
+| API | `services/api` | — | Go monolith + WS |
+| i18n | `packages/i18n` | — | — |
+
+XinChat is a branded client only — no separate user database. Auth tokens use different localStorage keys (`qchat.*` vs `xinchat.*`) so both web apps can run on one host.
+
+Deploy: [`deployment-nginx-systemd.md`](./deployment-nginx-systemd.md) · XinChat release: [`xinchat-release.md`](./xinchat-release.md)
+
+---
+
+## Desktop shell (Electron)
+
+Thin shell around the **web** client (`apps/web` or `apps/xin-desktop` loading `apps/xin-web`), using main / preload / shared separation — no embedded local React UI.
+
+### Process diagram
 
 ```mermaid
 flowchart LR
-    UI["Renderer: apps/web in BrowserWindow"]
+    UI["Renderer: web app in BrowserWindow"]
     PRELOAD["Preload: src/preload"]
     MAIN["Main: src/main"]
     SHARED["Shared: src/shared IPC contracts"]
@@ -26,70 +43,47 @@ flowchart LR
     MAIN -->|"same-origin captcha fetch"| API
 ```
 
-## Responsibilities
+### Responsibilities
 
 | Layer | Path | Responsibility |
 |---|---|---|
 | **Main** | `src/main/` | App lifecycle, `BrowserWindow`, menus, notifications, downloads, permissions, navigation guards, IPC handlers |
-| **Preload** | `src/preload/` | Narrow `contextBridge` API as `window.qchatDesktop` (no raw `ipcRenderer`) |
-| **Shared** | `src/shared/` | IPC channel names + app constants safe for main and preload |
-| **Renderer** | remote `apps/web` | All chat UI, REST, WebSocket, auth tokens in web storage — **not** vendored into this package |
+| **Preload** | `src/preload/` | Narrow `contextBridge` — `window.qchatDesktop` or `window.xinchatDesktop` |
+| **Shared** | `src/shared/` | IPC channel names + app constants |
+| **Renderer** | remote web app | All chat UI, REST, WebSocket, auth tokens in web storage |
 | **Go backend** | `services/api` | Unchanged; desktop must not alter API contracts |
 
-## Folder tree
+Rchat desktop: `apps/desktop` · XinChat desktop: `apps/xin-desktop` (same structure, different `production.json` and bridge name).
+
+### Folder tree (Rchat)
 
 ```text
 apps/desktop/
 ├── assets/
 ├── production.json
-├── package.json          # main → src/main/index.js
-├── run.sh
-├── src/
-│   ├── main/
-│   │   ├── index.js
-│   │   ├── app/
-│   │   │   ├── lifecycle.js
-│   │   │   └── configuration/
-│   │   │       ├── paths.js
-│   │   │       └── webUrl.js
-│   │   ├── windows/
-│   │   │   └── mainWindow.js
-│   │   ├── ipc/handlers/
-│   │   ├── native/         # menu, about
-│   │   ├── security/       # permissions, navigation
-│   │   └── services/       # downloads
-│   ├── preload/
-│   │   └── index.js
-│   └── shared/
-│       ├── constants.js
-│       └── ipc/channels.js
-└── …
+├── package.json
+├── src/main/
+├── src/preload/
+└── src/shared/
 ```
 
-Empty folders (tray, updater, local renderer features) are
-**omitted** until those features exist.
+See [`apps/desktop/README.md`](../apps/desktop/README.md) and [`desktop-feature-status.md`](./desktop-feature-status.md).
 
-## IPC data flow
+### IPC data flow
 
-1. Web calls `window.qchatDesktop.notifyMessage(payload)`.
-2. Preload `invoke`s channel `qchat:desktop-notify` (from `shared/ipc/channels`).
-3. Main handler validates payload shape, shows `Notification`, on click focuses window and `send`s `qchat:open-conversation`.
-4. Preload `onOpenConversation` delivers the id to web.
+1. Web calls `window.qchatDesktop.notifyMessage(payload)` (or `xinchatDesktop`).
+2. Preload `invoke`s a channel from `shared/ipc/channels`.
+3. Main handler shows `Notification`; click focuses window and opens the conversation.
 
-Channels are defined once in `src/shared/ipc/channels.js`.
+### REST / WebSocket
 
-## REST / WebSocket
+Chat REST and WebSocket stay in the web renderer. Desktop main only performs captcha `GET` to avoid renderer CORS issues.
 
-- Chat REST and WebSocket stay in **`apps/web`** (same as browser).
-- Desktop main only performs **captcha** `GET {webUrl}/v1/auth/captcha` to avoid renderer CORS issues — path and response shape unchanged.
+### Auth / tokens
 
-## Auth / tokens
+Tokens remain in the web renderer (localStorage). Preload does not expose tokens or generic IPC.
 
-- Tokens remain in the web renderer (localStorage / cookies as implemented by web).
-- Preload does **not** expose tokens, filesystem, or generic IPC send.
-- Future `safeStorage` would live under `src/main/security/` and a narrow preload method (ask before touching web).
-
-## Security settings (preserved)
+### Security settings
 
 ```js
 contextIsolation: true
@@ -97,15 +91,11 @@ nodeIntegration: false
 sandbox: true
 ```
 
-External / off-origin navigations open in the OS browser.
+External navigations open in the OS browser.
 
-## Adding a new IPC method
+### Adding a new IPC method
 
 1. Add channel name to `src/shared/ipc/channels.js`.
-2. Add handler under `src/main/ipc/handlers/` and register in `handlers/index.js`.
-3. Expose one explicit function in `src/preload/index.js` (no generic `send`).
-4. If web must call it, coordinate a small change in `apps/web` (separate branch / ask owner).
-
-## Adding a “renderer feature”
-
-There is no local renderer package. Implement UI in `apps/web` (Hitman). Desktop only adds OS integrations via IPC when needed.
+2. Add handler under `src/main/ipc/handlers/`.
+3. Expose one function in `src/preload/index.js`.
+4. Coordinate web changes in `apps/web` or `apps/xin-web` if needed.
