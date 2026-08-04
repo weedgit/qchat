@@ -46,6 +46,46 @@ Qchat can run on a **VPS** or on a **local LAN computer** (no VPS):
 See [`docs/deployment-modes.md`](docs/deployment-modes.md) for both setups.
 VPS nginx details: [`docs/deployment-nginx-systemd.md`](docs/deployment-nginx-systemd.md).
 
+## XinChat (second branded client)
+
+Same API and enterprises as Rchat; separate web/mobile/desktop apps and store listings.
+
+| Client | URL / path | Folder |
+|--------|------------|--------|
+| XinChat web | `https://<host>/xin/` | `apps/xin-web` |
+| XinChat mobile | `com.xinchat.mobile` | `apps/xin-mobile` |
+| XinChat desktop | loads `/xin/` | `apps/xin-desktop` |
+
+```bash
+make xin-web                              # dev http://localhost:3001/xin/
+make xin-mobile                           # Expo dev
+make xin-desktop                          # Electron dev
+make xin-icons                            # regenerate violet X assets
+make xin-redeploy                         # build xin-web + reload nginx
+make setup-xin                            # host dirs for xin-desktop-updates
+make sync-xin-installers                  # copy APK/dist into xin-web downloads
+make publish-xin                          # sync installers + redeploy xin-web
+make publish-xin-linux                    # Linux desktop build + publish
+make xin-desktop-dist-win-docker          # Windows .exe via Docker
+make sync-xin-desktop-updates             # dist/ → /var/www/xin-desktop-updates/
+make publish-xin-full                    # update feed + downloads + redeploy + smoke
+make xin-mobile-bootstrap                # local dev .env + checks (no EAS)
+make xin-mobile-eas-onboard              # EAS login/init helper
+make wait-eas-xin-apk                    # poll EAS → publish APK (needs EXPO_TOKEN)
+```
+
+Details: [`apps/XINCHAT.md`](apps/XINCHAT.md)
+
+One-command full publish (desktop feed + downloads + redeploy):
+
+```bash
+make publish-xin-full
+```
+
+Details: [`apps/XINCHAT.md`](apps/XINCHAT.md) · [`docs/xinchat-release-status.md`](docs/xinchat-release-status.md)
+
+Store submit checklist: [`docs/xinchat-store-submit.md`](docs/xinchat-store-submit.md)
+
 ## Brand assets
 
 Web/PWA, admin, desktop, and mobile icons are generated from
@@ -53,6 +93,7 @@ Web/PWA, admin, desktop, and mobile icons are generated from
 
 ```bash
 ./scripts/sync-brand-icons.sh
+./scripts/generate-xinchat-icons.sh   # XinChat violet X icons
 ```
 
 ## Docs

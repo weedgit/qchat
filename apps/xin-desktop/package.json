@@ -1,0 +1,142 @@
+{
+  "name": "xinchat-desktop",
+  "productName": "XinChat Desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "XinChat desktop shell (Electron + web client)",
+  "author": "XinChat <dev@xinchat.local>",
+  "homepage": "https://github.com/qchat/qchat",
+  "main": "src/main/index.js",
+  "desktopName": "xinchat-desktop",
+  "scripts": {
+    "start": "node scripts/launch.js",
+    "dev": "node scripts/dev.js",
+    "dev:desktop": "node scripts/launch.js --dev --url=http://localhost:3001/xin",
+    "dev:no-sandbox": "node scripts/dev.js --no-sandbox",
+    "start:local": "node scripts/launch.js --url=http://localhost:3001/xin",
+    "start:lan": "node scripts/launch-lan.js",
+    "start:server": "node scripts/launch.js --url=https://135.181.224.36/xin",
+    "start:ubuntu": "node scripts/launch.js --url=http://192.168.1.124:3000",
+    "start:headless": "xvfb-run -a node scripts/launch.js",
+    "sign:dev": "node scripts/sign-dev-electron.js",
+    "postinstall": "node scripts/sign-dev-electron.js",
+    "check": "node scripts/check.js && node scripts/check-protocol.js && node scripts/check-context-menu.js && node scripts/check-sandbox.js && node scripts/check-signing.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --publish never",
+    "icon:ico": "node scripts/build-icon-ico.js",
+    "dist:linux": "electron-builder --linux AppImage --publish never",
+    "dist:linux:deb": "electron-builder --linux deb --publish never",
+    "dist:linux:full": "electron-builder --linux AppImage deb --publish never",
+    "dist:linux:publish": "electron-builder --linux AppImage --publish always",
+    "dist:win": "electron-builder --win nsis --publish never",
+    "dist:win:publish": "electron-builder --win nsis --publish always",
+    "dist:win:docker": "bash scripts/dist-win-docker.sh",
+    "dist:mac": "electron-builder --mac dmg --publish never",
+    "dist:win:signed": "electron-builder --win nsis --publish never",
+    "dist:mac:signed": "electron-builder --mac dmg --publish never"
+  },
+  "build": {
+    "appId": "com.xinchat.desktop",
+    "productName": "XinChat Desktop",
+    "copyright": "Copyright © XinChat",
+    "afterPack": "./scripts/afterPack.js",
+    "afterSign": "./scripts/afterSign.js",
+    "forceCodeSigning": false,
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://135.181.224.36/xin-desktop-updates/"
+      }
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "production.json",
+      "package.json",
+      "assets/**/*"
+    ],
+    "extraMetadata": {
+      "main": "src/main/index.js"
+    },
+    "protocols": {
+      "name": "XinChat",
+      "schemes": [
+        "xinchat"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network",
+      "icon": "assets/icon.png",
+      "executableName": "xinchat-desktop",
+      "synopsis": "XinChat desktop client",
+      "maintainer": "XinChat <dev@xinchat.local>",
+      "artifactName": "xinchat-desktop-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "xinchat-desktop-Setup-${version}.${ext}",
+      "signtoolOptions": {
+        "signingHashAlgorithms": [
+          "sha256"
+        ],
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      },
+      "verifyUpdateCodeSignature": true
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "XinChat Desktop",
+      "include": "assets/installer.nsh",
+      "runAfterFinish": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.social-networking",
+      "artifactName": "xinchat-desktop-${version}-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "notarize": false
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  },
+  "devDependencies": {
+    "@electron/notarize": "^3.1.1",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "^2.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

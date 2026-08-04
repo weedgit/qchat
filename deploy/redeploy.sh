@@ -5,19 +5,23 @@
 #   ./deploy/redeploy.sh                # pull + rebuild API, web, and admin
 #   ./deploy/redeploy.sh --api          # pull + API only
 #   ./deploy/redeploy.sh --web          # pull + web only
+#   ./deploy/redeploy.sh --xin-web      # pull + XinChat web only
 #   ./deploy/redeploy.sh --admin        # pull + admin only
 #   ./deploy/redeploy.sh --require-media  # fail if LiveKit/coturn do not come up
 #   ./deploy/redeploy.sh --skip-env-check # skip deploy/check-env.sh
+#   ./deploy/redeploy.sh --sync-xin-installers # copy dist/APK before xin-web build
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DO_API=0
 DO_WEB=0
+DO_XIN_WEB=0
 DO_ADMIN=0
 ANY_TARGET=0
 REQUIRE_MEDIA=0
 SKIP_ENV_CHECK=0
+SYNC_XIN_INSTALLERS=0
 
 usage() {
   cat <<'EOF'
@@ -27,9 +31,11 @@ Usage:
   ./deploy/redeploy.sh
   ./deploy/redeploy.sh --api
   ./deploy/redeploy.sh --web
+  ./deploy/redeploy.sh --xin-web
   ./deploy/redeploy.sh --admin
   ./deploy/redeploy.sh --require-media
   ./deploy/redeploy.sh --skip-env-check
+  ./deploy/redeploy.sh --sync-xin-installers
 EOF
   exit "${1:-0}"
 }
@@ -38,18 +44,21 @@ for arg in "$@"; do
   case "$arg" in
     --api) DO_API=1; ANY_TARGET=1 ;;
     --web) DO_WEB=1; ANY_TARGET=1 ;;
+    --xin-web) DO_XIN_WEB=1; ANY_TARGET=1 ;;
     --admin) DO_ADMIN=1; ANY_TARGET=1 ;;
     --require-media) REQUIRE_MEDIA=1 ;;
     --skip-env-check) SKIP_ENV_CHECK=1 ;;
+    --sync-xin-installers) SYNC_XIN_INSTALLERS=1 ;;
     -h|--help) usage 0 ;;
     *) echo "Unknown option: $arg" >&2; usage 1 ;;
   esac
 done
 
-# Default: API + web + admin when no target flag is given.
+# Default: API + web + xin-web + admin when no target flag is given.
 if [[ "$ANY_TARGET" -eq 0 ]]; then
   DO_API=1
   DO_WEB=1
+  DO_XIN_WEB=1
   DO_ADMIN=1
 fi
 
@@ -191,6 +200,35 @@ if [[ "$DO_WEB" -eq 1 ]]; then
   fi
 fi
 
+if [[ "$DO_XIN_WEB" -eq 1 ]]; then
+  if [[ "$SYNC_XIN_INSTALLERS" -eq 1 ]]; then
+    log "sync XinChat installers into xin-web/public/downloads"
+    "$ROOT/scripts/sync-xin-installers.sh"
+  fi
+
+  log "install xin-web deps"
+  (
+    cd "$ROOT/apps/xin-web"
+    npm ci
+  )
+
+  log "build xin-web (static export → /xin/)"
+  (
+    cd "$ROOT/apps/xin-web"
+    NEXT_PUBLIC_API_URL="" \
+      NEXT_PUBLIC_LIVEKIT_URL="${NEXT_PUBLIC_LIVEKIT_URL:-}" \
+      npm run build
+  )
+
+  log "reload nginx"
+  if command -v nginx >/dev/null 2>&1; then
+    nginx -t
+    systemctl reload nginx
+  else
+    echo "warning: nginx not found; static files are in apps/xin-web/out/" >&2
+  fi
+fi
+
 if [[ "$DO_ADMIN" -eq 1 ]]; then
   log "install admin deps"
   (
@@ -223,10 +261,22 @@ fi
 if command -v nginx >/dev/null 2>&1; then
   curl -kfsS --retry 3 --retry-delay 1 -o /dev/null https://127.0.0.1/
   echo "Web  :443/ OK"
+  curl -kfsS --retry 3 --retry-delay 1 -o /dev/null https://127.0.0.1/xin/
+  echo "Xin  :443/xin/ OK"
+  curl -kfsS --retry 3 --retry-delay 1 -o /dev/null https://127.0.0.1/xin/login
+  echo "Xin  :443/xin/login OK"
+  curl -kfsS --retry 3 --retry-delay 1 -o /dev/null https://127.0.0.1/xin/download
+  echo "Xin  :443/xin/download OK"
   curl -kfsS --retry 3 --retry-delay 1 -o /dev/null https://127.0.0.1/admin/
   echo "Admin :443/admin/ OK"
   curl -kfsS --retry 3 --retry-delay 1 https://127.0.0.1/healthz >/dev/null
   echo "Nginx /healthz OK"
+  if [[ -x "$ROOT/deploy/smoke-xin.sh" ]]; then
+    BASE=https://127.0.0.1 "$ROOT/deploy/smoke-xin.sh"
+  fi
+  if [[ -d /var/www/xin-desktop-updates ]] && [[ -x "$ROOT/deploy/smoke-xin-desktop-updates.sh" ]]; then
+    BASE=https://127.0.0.1 "$ROOT/deploy/smoke-xin-desktop-updates.sh"
+  fi
 fi
 
 if [[ "$MEDIA_OK" -eq 1 ]]; then

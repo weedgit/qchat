@@ -1,0 +1,30 @@
+{
+  "name": "@xinchat/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "typecheck": "tsc --noEmit",
+    "icons:generate": "python3 ../../scripts/generate-xinchat-icons.py",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium"
+  },
+  "dependencies": {
+    "@qchat/i18n": "file:../../packages/i18n",
+    "livekit-client": "^2.20.1",
+    "next": "14.2.35",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^20.14.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.4"
+  }
+}

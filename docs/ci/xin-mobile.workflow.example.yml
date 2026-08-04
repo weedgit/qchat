@@ -1,0 +1,81 @@
+name: xin-mobile
+
+on:
+  pull_request:
+    paths:
+      - "apps/xin-mobile/**"
+      - "packages/i18n/**"
+      - ".github/workflows/xin-mobile.yml"
+  push:
+    branches: [master, main]
+    paths:
+      - "apps/xin-mobile/**"
+      - "packages/i18n/**"
+      - ".github/workflows/xin-mobile.yml"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile (requires EXPO_TOKEN secret)"
+        required: true
+        default: "preview"
+        type: choice
+        options:
+          - development
+          - preview
+          - production
+      platform:
+        description: "EAS platform"
+        required: true
+        default: "android"
+        type: choice
+        options:
+          - android
+          - ios
+          - all
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/xin-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/xin-mobile/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Release-ready
+        run: npm run check:release
+
+  eas-build:
+    if: github.event_name == 'workflow_dispatch'
+    needs: check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/xin-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/xin-mobile/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: EAS build (XinChat com.xinchat.mobile)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APP_ENV: ${{ inputs.profile }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "EXPO_TOKEN secret is not set — skip cloud build."
+            exit 1
+          fi
+          npx eas-cli build --non-interactive --profile "${{ inputs.profile }}" --platform "${{ inputs.platform }}"

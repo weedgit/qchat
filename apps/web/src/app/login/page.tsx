@@ -358,6 +358,14 @@ export default function LoginPage() {
               ? t("login.submitLogin")
               : t("login.register")}
         </button>
+        {showDownload ? (
+          <p className="auth-sibling muted">
+            {t("login.alsoTryLink")}{" "}
+            <Link href="/xin/login" className="auth-sibling-link">
+              XinChat
+            </Link>
+          </p>
+        ) : null}
       </form>
     </div>
   );

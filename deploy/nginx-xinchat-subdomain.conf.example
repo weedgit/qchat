@@ -1,0 +1,70 @@
+# Optional: XinChat on a subdomain (same VPS as Rchat)
+#
+# Example: https://xin.example.com/xin/  (same basePath as path hosting)
+#
+# 1. DNS: xin.example.com → same VPS IP
+# 2. TLS: add server_name to cert or use wildcard
+# 3. Include from nginx main config:
+#    include /root/qchat/deploy/nginx-xinchat-subdomain.conf.example;
+#
+# Root https://xin.example.com/ redirects to /xin/ so one static build works everywhere.
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name xin.example.com;
+
+    ssl_certificate     /root/qchat/deploy/certs/qchat.crt;
+    ssl_certificate_key /root/qchat/deploy/certs/qchat.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    client_max_body_size 210m;
+
+    location /v1/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /v1/ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection upgrade;
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+    }
+
+    location = /healthz {
+        proxy_pass http://127.0.0.1:8080;
+    }
+
+    location = / {
+        return 301 https://$host/xin/;
+    }
+
+    location = /xin {
+        return 301 https://$host/xin/;
+    }
+
+    location ^~ /xin/ {
+        alias /root/qchat/apps/xin-web/out/;
+        index index.html;
+        try_files $uri $uri.html $uri/ =404;
+    }
+
+    location = /xin/sw.js {
+        alias /root/qchat/apps/xin-web/out/sw.js;
+        add_header Cache-Control "no-cache";
+        add_header Service-Worker-Allowed "/xin/";
+    }
+
+    location = /xin/manifest.webmanifest {
+        alias /root/qchat/apps/xin-web/out/manifest.webmanifest;
+        default_type application/manifest+json;
+        add_header Cache-Control "no-cache";
+    }
+}

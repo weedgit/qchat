@@ -1,0 +1,68 @@
+{
+  "version": "0.1.0",
+  "updatedAt": "2026-08-04",
+  "notes": "XinChat installers — copy builds into public/downloads/ or sync via scripts/sync-xin-installers.sh",
+  "apps": [
+    {
+      "id": "windows",
+      "group": "desktop",
+      "os": "windows",
+      "title": "Windows",
+      "subtitle": "XinChat Desktop installer (.exe)",
+      "file": "xinchat-desktop-Setup-0.1.0.exe",
+      "sizeBytes": 100229919,
+      "available": true
+    },
+    {
+      "id": "macos",
+      "group": "desktop",
+      "os": "macos",
+      "title": "macOS",
+      "subtitle": "Disk image (.dmg, Apple Silicon)",
+      "file": "xinchat-desktop-0.1.0-arm64.dmg",
+      "sizeBytes": null,
+      "available": false
+    },
+    {
+      "id": "linux-appimage",
+      "group": "desktop",
+      "os": "linux",
+      "title": "Linux",
+      "subtitle": "AppImage (x64)",
+      "file": "xinchat-desktop-0.1.0-x86_64.AppImage",
+      "sizeBytes": 127490980,
+      "available": true
+    },
+    {
+      "id": "linux-deb",
+      "group": "desktop",
+      "os": "linux",
+      "title": "Debian / Ubuntu",
+      "subtitle": "Package (.deb)",
+      "file": "xinchat-desktop-0.1.0-amd64.deb",
+      "sizeBytes": null,
+      "available": false
+    },
+    {
+      "id": "android",
+      "group": "mobile",
+      "os": "android",
+      "title": "Android",
+      "subtitle": "XinChat APK",
+      "file": "xinchat-mobile.apk",
+      "sizeBytes": null,
+      "available": false
+    },
+    {
+      "id": "ios",
+      "group": "mobile",
+      "os": "ios",
+      "title": "iPhone & iPad",
+      "subtitle": "App Store",
+      "file": null,
+      "storeUrl": null,
+      "sizeBytes": null,
+      "available": false
+    }
+  ]
+}

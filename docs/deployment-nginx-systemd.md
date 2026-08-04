@@ -258,3 +258,53 @@ until this is ready):
 
 Local desktop scaffold checks: `make desktop-check`. Wine Windows build on Linux:
 `make desktop-dist-win-docker` (requires Docker).
+
+## XinChat (second client, same API)
+
+Both Rchat and XinChat can run on one VPS. One Go API; separate static apps and store bundle IDs.
+
+| Path | Static root |
+|------|-------------|
+| `/` | `apps/web/out` (Rchat) |
+| `/xin/` | `apps/xin-web/out` (XinChat) |
+| `/admin/` | `apps/admin/out` |
+
+Build and deploy XinChat web:
+
+```bash
+cd /root/qchat/apps/xin-web
+npm ci
+NEXT_PUBLIC_API_URL="" npm run build
+
+# Or use the redeploy script (default full redeploy includes xin-web):
+./deploy/redeploy.sh --xin-web --skip-env-check
+```
+
+Verify:
+
+```bash
+curl -k -o /dev/null -w '%{http_code}\n' https://127.0.0.1/xin/
+curl -k -o /dev/null -w '%{http_code}\n' https://127.0.0.1/xin/login
+```
+
+Desktop auto-update feeds:
+
+- Rchat: `https://YOUR_HOST/desktop-updates/` → `/var/www/qchat-desktop-updates/`
+- XinChat: `https://YOUR_HOST/xin-desktop-updates/` → `/var/www/xin-desktop-updates/`
+
+```bash
+./deploy/setup-xin-release.sh
+# After building installers:
+./scripts/sync-xin-installers.sh
+./deploy/redeploy.sh --xin-web --sync-xin-installers --skip-env-check
+```
+
+Mobile: separate EAS project and `com.xinchat.mobile` — see
+[`docs/xinchat-mobile-release.md`](xinchat-mobile-release.md) and
+[`apps/XINCHAT.md`](../apps/XINCHAT.md).
+
+Optional subdomain (`xin.example.com`): include
+`deploy/nginx-xinchat-subdomain.conf.example` in nginx after DNS is set.
+
+Dev shortcuts: `make xin-web`, `make xin-mobile`, `make xin-desktop`, `make xin-icons`.
+

@@ -1,4 +1,4 @@
-.PHONY: infra-up infra-down media api web admin admin-dev desktop desktop-check desktop-pack desktop-dist-win-docker mobile mobile-typecheck mobile-check-release test test-api test-e2e migrate seed generate check-openapi redeploy soak soak-multi
+.PHONY: infra-up infra-down media api web admin admin-dev desktop desktop-check desktop-pack desktop-dist-win-docker mobile mobile-typecheck mobile-check-release xin-web xin-mobile xin-desktop xin-icons xin-redeploy xin-mobile-check-release xin-mobile-bootstrap xin-mobile-eas-onboard xin-mobile-eas-preview wait-eas-xin-apk xin-desktop-dist-linux xin-desktop-dist-win-docker sync-xin-desktop-updates publish-xin publish-xin-linux publish-xin-full setup-xin smoke-xin test test-api test-e2e migrate seed generate check-openapi redeploy soak soak-multi
 
 infra-up:
 	./deploy/render-media-config.sh
@@ -45,6 +45,61 @@ mobile-typecheck:
 mobile-check-release:
 	cd apps/mobile && npm run check:release
 
+xin-web:
+	cd apps/xin-web && npm run dev
+
+xin-mobile:
+	cd apps/xin-mobile && npx expo start
+
+xin-mobile-check-release:
+	cd apps/xin-mobile && npm run check:release
+
+xin-mobile-eas-onboard:
+	cd apps/xin-mobile && npm run eas:onboard
+
+make xin-mobile-bootstrap:
+	cd apps/xin-mobile && npm run bootstrap
+
+xin-mobile-eas-preview:
+	cd apps/xin-mobile && npm run eas:build:preview:cloud
+
+wait-eas-xin-apk:
+	bash scripts/wait-eas-xin-apk.sh preview
+
+xin-desktop:
+	cd apps/xin-desktop && npm run dev
+
+xin-icons:
+	python3 scripts/generate-xinchat-icons.py
+	cd apps/xin-desktop && node scripts/build-icon-ico.js
+
+xin-redeploy:
+	bash deploy/redeploy.sh --xin-web --skip-env-check
+
+setup-xin:
+	bash deploy/setup-xin-release.sh
+
+sync-xin-installers:
+	bash scripts/sync-xin-installers.sh
+
+xin-desktop-dist-linux:
+	cd apps/xin-desktop && npm ci && npm run check && npm run dist:linux
+
+xin-desktop-dist-win-docker:
+	cd apps/xin-desktop && npm run dist:win:docker
+
+sync-xin-desktop-updates:
+	bash scripts/sync-xin-desktop-updates.sh
+
+publish-xin:
+	bash scripts/publish-xin-release.sh
+
+publish-xin-linux:
+	bash scripts/publish-xin-release.sh --linux-dist
+
+publish-xin-full:
+	bash scripts/publish-xin-full.sh
+
 migrate:
 	cd services/api && go run ./cmd/api -migrate-only
 
@@ -66,6 +121,9 @@ test-e2e:
 smoke:
 	bash deploy/smoke-core.sh
 
+smoke-xin:
+	bash deploy/smoke-xin.sh
+
 redeploy:
 	bash deploy/redeploy.sh
 
@@ -77,3 +135,5 @@ soak-multi:
 
 test: test-api check-openapi smoke
 	cd apps/web && npm run typecheck
+	cd apps/xin-web && npm run typecheck
+	cd apps/xin-mobile && npm run typecheck

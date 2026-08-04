@@ -623,6 +623,22 @@ select:focus {
   max-width: 100%;
 }
 
+.auth-sibling {
+  text-align: center;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.auth-sibling-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.auth-sibling-link:hover {
+  text-decoration: underline;
+}
+
 /* ---------- main layout ---------- */
 
 .shell {
