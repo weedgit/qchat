@@ -73,6 +73,7 @@ import {
 } from "@/lib/mediaLimits";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import { unregisterWebPush } from "@/lib/webPush";
+import { markVoluntaryLogout } from "@/lib/sessionLogout";
 import ShellConnectionBanner from "@/components/ShellConnectionBanner";
 import { formatConversationTime } from "@/lib/datetime";
 
@@ -1962,6 +1963,7 @@ export default function ChatPageInner() {
     } catch {
       /* stale endpoints are pruned after 404/410 */
     }
+    markVoluntaryLogout();
     await api("/v1/auth/logout", { method: "POST" }).catch(() => { });
     clearToken();
     router.replace("/login");

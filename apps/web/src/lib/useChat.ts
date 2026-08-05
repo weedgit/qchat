@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatApiErrorLocale, formatSystemNotice } from "@qchat/i18n";
 import { api, asList, clearToken, ensureAccessToken, formatSendError, getToken, mediaAuthURL, uploadMedia, wsUrl } from "./api";
+import {
+  clearVoluntaryLogoutPending,
+  isLoginPath,
+  isVoluntaryLogoutPending,
+  loginPath,
+} from "./sessionLogout";
 import { useMe } from "./MeContext";
 import { isQchatDesktop } from "./device";
 import { loadLocalNotifyProps, shouldNotifyDesktop } from "./notifyProps";
@@ -382,17 +388,19 @@ export function useChat() {
 
     // Same-type login / remote revoke — sign out immediately (desk/web/mobile).
     if (type === "session.revoked") {
-      try {
-        sessionStorage.setItem(
-          "qchat.session_revoked",
-          String(payload?.reason || "replaced")
-        );
-      } catch {
-        /* ignore */
+      const reason = String(payload?.reason || "replaced");
+      const voluntary = isVoluntaryLogoutPending();
+      if (!voluntary && reason !== "logout") {
+        try {
+          sessionStorage.setItem("qchat.session_revoked", reason);
+        } catch {
+          /* ignore */
+        }
       }
+      if (voluntary) clearVoluntaryLogoutPending();
       clearToken();
-      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-        window.location.replace("/login");
+      if (typeof window !== "undefined" && !isLoginPath(window.location.pathname)) {
+        window.location.replace(loginPath());
       }
       return;
     }

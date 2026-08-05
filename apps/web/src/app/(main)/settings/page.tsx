@@ -17,6 +17,7 @@ import {
   unregisterWebPush,
   type PushDevice,
 } from "@/lib/webPush";
+import { markVoluntaryLogout } from "@/lib/sessionLogout";
 import { useLocale } from "@/lib/locale";
 import { useTheme, type ThemeMode } from "@/lib/theme";
 
@@ -116,6 +117,7 @@ export default function SettingsPage() {
     setSessionsBusy(true);
     setError(null);
     try {
+      if (isCurrent) markVoluntaryLogout();
       await api(`/v1/me/sessions/${id}`, { method: "DELETE" });
       if (isCurrent) {
         clearToken();
@@ -448,6 +450,7 @@ export default function SettingsPage() {
               style={{ background: "var(--danger)" }}
               onClick={async () => {
                 await unregisterWebPush().catch(() => false);
+                markVoluntaryLogout();
                 await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
                 clearToken();
                 router.replace("/login");

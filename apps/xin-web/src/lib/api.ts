@@ -5,6 +5,7 @@
  */
 import { apiErrorMessageKey, formatApiErrorLocale } from "@qchat/i18n";
 import { getStoredResolvedLocale } from "./brand";
+import { isLoginPath, loginPath } from "./sessionLogout";
 
 export function apiBaseUrl(): string {
   if (typeof process.env.NEXT_PUBLIC_API_URL === "string") {
@@ -212,8 +213,8 @@ export async function ensureAccessToken(): Promise<boolean> {
 
 function redirectLogin() {
   if (typeof window === "undefined") return;
-  if (!window.location.pathname.startsWith("/login")) {
-    window.location.replace("/login");
+  if (!isLoginPath(window.location.pathname)) {
+    window.location.replace(loginPath());
   }
 }
 

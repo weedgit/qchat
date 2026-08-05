@@ -11,10 +11,10 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { formatApiError } from "@qchat/i18n";
+import { formatApiError, sessionRevokedLoginMessageKey } from "@qchat/i18n";
 import { Redirect, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { api, takeSessionRevokedReason } from "../src/lib/api";
+import { api, takeSessionRevokedReason, consumeVoluntaryLogout } from "../src/lib/api";
 import { validateLoginCredentials } from "../src/lib/credentials";
 import { getAuthDevice, useAuth } from "../src/context/AuthContext";
 import { useLocale } from "../src/context/LocaleContext";
@@ -54,11 +54,12 @@ export default function LoginScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const voluntary = await consumeVoluntaryLogout();
+      if (cancelled || voluntary) return;
       const reason = await takeSessionRevokedReason();
       if (cancelled || !reason) return;
-      setError(
-        reason === "banned" ? t("login.errBanned") : t("login.errSignedOut")
-      );
+      const key = sessionRevokedLoginMessageKey(reason);
+      if (key) setError(t(key));
     })();
     return () => {
       cancelled = true;

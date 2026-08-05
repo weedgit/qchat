@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatApiError } from "@qchat/i18n";
+import { formatApiError, sessionRevokedLoginMessageKey } from "@qchat/i18n";
 import LoadingSplash from "@/components/LoadingSplash";
 import { PasswordInput } from "@/components/PasswordInput";
 import { api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
@@ -11,6 +11,7 @@ import { validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
 import { isElectronShell } from "@/lib/downloads";
 import { useLocale } from "@/lib/locale";
+import { consumeVoluntaryLogout } from "@/lib/sessionLogout";
 import type { MessageKey } from "@qchat/i18n";
 
 interface CaptchaState {
@@ -52,12 +53,15 @@ export default function LoginPage() {
         return;
       }
       try {
-        const reason = sessionStorage.getItem("qchat.session_revoked");
-        if (reason) {
-          sessionStorage.removeItem("qchat.session_revoked");
-          setError(
-            reason === "banned" ? t("login.errBanned") : t("login.errSignedOut")
-          );
+        if (consumeVoluntaryLogout()) {
+          /* user chose sign out — no kick banner */
+        } else {
+          const reason = sessionStorage.getItem("qchat.session_revoked");
+          if (reason) {
+            sessionStorage.removeItem("qchat.session_revoked");
+            const key = sessionRevokedLoginMessageKey(reason);
+            if (key) setError(t(key));
+          }
         }
       } catch {
         /* ignore */

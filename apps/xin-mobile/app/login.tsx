@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -12,16 +11,16 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { formatApiError } from "@qchat/i18n";
+import { formatApiError, sessionRevokedLoginMessageKey } from "@qchat/i18n";
 import { Redirect, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { api, takeSessionRevokedReason, apiBaseUrl } from "../src/lib/api";
+import { api, takeSessionRevokedReason, consumeVoluntaryLogout, markVoluntaryLogout } from "../src/lib/api";
 import { validateLoginCredentials } from "../src/lib/credentials";
 import { getAuthDevice, useAuth } from "../src/context/AuthContext";
 import { useLocale } from "../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../src/theme";
-import { APP_LOGO_LETTER, SIBLING_APP, siblingLoginUrl } from "../src/lib/brand";
+import { APP_LOGO_LETTER } from "../src/lib/brand";
 
 export default function LoginScreen() {
   const { signedIn, ready, signIn } = useAuth();
@@ -38,7 +37,6 @@ export default function LoginScreen() {
   const [captchaImage, setCaptchaImage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const rchatLoginUrl = siblingLoginUrl(apiBaseUrl());
 
   const loadCaptcha = useCallback(async () => {
     try {
@@ -57,11 +55,12 @@ export default function LoginScreen() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const voluntary = await consumeVoluntaryLogout();
+      if (cancelled || voluntary) return;
       const reason = await takeSessionRevokedReason();
       if (cancelled || !reason) return;
-      setError(
-        reason === "banned" ? t("login.errBanned") : t("login.errSignedOut")
-      );
+      const key = sessionRevokedLoginMessageKey(reason);
+      if (key) setError(t(key));
     })();
     return () => {
       cancelled = true;
@@ -239,17 +238,6 @@ export default function LoginScreen() {
               </Text>
             )}
           </Pressable>
-          {rchatLoginUrl ? (
-            <Pressable
-              onPress={() => Linking.openURL(rchatLoginUrl)}
-              style={styles.siblingLink}
-            >
-              <Text style={styles.siblingText}>
-                {t("login.alsoTryLink")}{" "}
-                <Text style={styles.siblingName}>{SIBLING_APP.name}</Text>
-              </Text>
-            </Pressable>
-          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -342,9 +330,6 @@ function makeStyles(c: ColorTokens) {
       marginTop: spacing.md,
     },
     primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 16 },
-    siblingLink: { marginTop: spacing.lg, alignItems: "center" as const },
-    siblingText: { color: c.textSecondary, fontSize: 14 },
-    siblingName: { color: c.accent, fontWeight: "600" as const },
     hint: { color: c.textSecondary, marginBottom: spacing.sm },
     error: {
       color: c.danger,

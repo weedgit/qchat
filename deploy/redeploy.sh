@@ -218,7 +218,6 @@ if [[ "$DO_XIN_WEB" -eq 1 ]]; then
     cd "$ROOT/apps/xin-web"
     NEXT_PUBLIC_API_URL="" \
       NEXT_PUBLIC_LIVEKIT_URL="${NEXT_PUBLIC_LIVEKIT_URL:-}" \
-      NEXT_PUBLIC_RCHAT_ORIGIN="${NEXT_PUBLIC_RCHAT_ORIGIN:-https://rchat.boostbunny.io}" \
       npm run build
   )
 

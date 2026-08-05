@@ -23,3 +23,5 @@ export {
 } from "./formatApiError";
 
 export { formatSystemNotice } from "./formatSystemNotice";
+
+export { sessionRevokedLoginMessageKey } from "./sessionRevokedLogin";

@@ -17,10 +17,9 @@ import {
   unregisterWebPush,
   type PushDevice,
 } from "@/lib/webPush";
+import { markVoluntaryLogout } from "@/lib/sessionLogout";
 import { useLocale } from "@/lib/locale";
-import Link from "next/link";
 import { useTheme, type ThemeMode } from "@/lib/theme";
-import { SIBLING_APP } from "@/lib/brand";
 
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
@@ -118,6 +117,7 @@ export default function SettingsPage() {
     setSessionsBusy(true);
     setError(null);
     try {
+      if (isCurrent) markVoluntaryLogout();
       await api(`/v1/me/sessions/${id}`, { method: "DELETE" });
       if (isCurrent) {
         clearToken();
@@ -430,21 +430,6 @@ export default function SettingsPage() {
       )}
 
       <section className="menu-modal-section">
-        <div className="menu-modal-section-title">{t("settings.about")}</div>
-        <div className="menu-modal-row menu-modal-row-lead is-static">
-          <span className="menu-modal-row-main">
-            <span className="menu-modal-value" style={{ color: "var(--text-dim)" }}>
-              {t("login.alsoTryLink")}{" "}
-              <Link href={SIBLING_APP.loginHref} className="auth-sibling-link">
-                {SIBLING_APP.name}
-              </Link>
-            </span>
-            <span className="menu-modal-label">{t("settings.otherClient")}</span>
-          </span>
-        </div>
-      </section>
-
-      <section className="menu-modal-section">
         <div className="menu-modal-section-title">{t("settings.apiServer")}</div>
         <div className="menu-modal-row menu-modal-row-lead is-static">
           <span className="menu-modal-row-main">
@@ -465,6 +450,7 @@ export default function SettingsPage() {
               style={{ background: "var(--danger)" }}
               onClick={async () => {
                 await unregisterWebPush().catch(() => false);
+                markVoluntaryLogout();
                 await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
                 clearToken();
                 router.replace("/login");

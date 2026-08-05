@@ -20,7 +20,7 @@ import type { LocaleMode } from "@qchat/i18n";
 import { useAuth } from "../../src/context/AuthContext";
 import { useLocale } from "../../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
-import { api, apiBaseUrl } from "../../src/lib/api";
+import { api, apiBaseUrl, markVoluntaryLogout } from "../../src/lib/api";
 import {
   normalizeNotifyProps,
   saveLocalNotifyProps,
@@ -179,6 +179,7 @@ export default function SettingsScreen() {
             setSessionsBusy(true);
             setError(null);
             try {
+              if (s.current) await markVoluntaryLogout();
               await api(`/v1/me/sessions/${s.id}`, { method: "DELETE" });
               if (s.current) {
                 await signOut();

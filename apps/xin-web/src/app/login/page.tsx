@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatApiError, type MessageKey } from "@qchat/i18n";
+import { formatApiError, sessionRevokedLoginMessageKey, type MessageKey } from "@qchat/i18n";
 import LoadingSplash from "@/components/LoadingSplash";
 import { PasswordInput } from "@/components/PasswordInput";
 import { api, getToken, restoreDesktopSession, setTokens } from "@/lib/api";
@@ -11,7 +11,8 @@ import { validateLoginCredentials } from "@/lib/credentials";
 import { getAuthDevice } from "@/lib/device";
 import { isElectronShell } from "@/lib/downloads";
 import { useLocale } from "@/lib/locale";
-import { APP_LOGO_LETTER, APP_NAME, SIBLING_APP } from "@/lib/brand";
+import { consumeVoluntaryLogout } from "@/lib/sessionLogout";
+import { APP_LOGO_LETTER, APP_NAME } from "@/lib/brand";
 
 interface CaptchaState {
   id: string;
@@ -52,12 +53,15 @@ export default function LoginPage() {
         return;
       }
       try {
-        const reason = sessionStorage.getItem("xinchat.session_revoked");
-        if (reason) {
-          sessionStorage.removeItem("xinchat.session_revoked");
-          setError(
-            reason === "banned" ? t("login.errBanned") : t("login.errSignedOut")
-          );
+        if (consumeVoluntaryLogout()) {
+          /* user chose sign out — no kick banner */
+        } else {
+          const reason = sessionStorage.getItem("xinchat.session_revoked");
+          if (reason) {
+            sessionStorage.removeItem("xinchat.session_revoked");
+            const key = sessionRevokedLoginMessageKey(reason);
+            if (key) setError(t(key));
+          }
         }
       } catch {
         /* ignore */
@@ -364,14 +368,6 @@ export default function LoginPage() {
               ? t("login.submitLogin")
               : t("login.register")}
         </button>
-        {showDownload ? (
-          <p className="auth-sibling muted">
-            {t("login.alsoTryLink")}{" "}
-            <Link href={SIBLING_APP.loginHref} className="auth-sibling-link">
-              {SIBLING_APP.name}
-            </Link>
-          </p>
-        ) : null}
       </form>
       </div>
     </div>

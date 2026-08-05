@@ -4,12 +4,14 @@ import * as SecureStore from "expo-secure-store";
 const ACCESS_KEY = "xinchat.access_token";
 const REFRESH_KEY = "xinchat.refresh_token";
 const SESSION_REVOKED_KEY = "xinchat.session_revoked";
+const VOLUNTARY_LOGOUT_KEY = "xinchat.voluntary_logout";
 
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
 let ready: Promise<void> | null = null;
 let onUnauthorized: (() => void) | null = null;
 let sessionRevokedReason: string | null = null;
+let voluntaryLogoutPending = false;
 
 export function setOnUnauthorized(fn: (() => void) | null) {
   onUnauthorized = fn;
@@ -89,8 +91,32 @@ export async function clearToken(): Promise<void> {
   await SecureStore.deleteItemAsync(REFRESH_KEY);
 }
 
+export async function markVoluntaryLogout(): Promise<void> {
+  voluntaryLogoutPending = true;
+  sessionRevokedReason = null;
+  await SecureStore.setItemAsync(VOLUNTARY_LOGOUT_KEY, "1").catch(() => {});
+  await SecureStore.deleteItemAsync(SESSION_REVOKED_KEY).catch(() => {});
+}
+
+export function isVoluntaryLogoutPending(): boolean {
+  return voluntaryLogoutPending;
+}
+
+export async function consumeVoluntaryLogout(): Promise<boolean> {
+  voluntaryLogoutPending = false;
+  const flag = await SecureStore.getItemAsync(VOLUNTARY_LOGOUT_KEY);
+  if (flag === "1") {
+    await SecureStore.deleteItemAsync(VOLUNTARY_LOGOUT_KEY).catch(() => {});
+    await SecureStore.deleteItemAsync(SESSION_REVOKED_KEY).catch(() => {});
+    sessionRevokedReason = null;
+    return true;
+  }
+  return false;
+}
+
 /** Persist why this device was signed out (same-type kick / ban). */
 export async function setSessionRevokedReason(reason: string): Promise<void> {
+  if (voluntaryLogoutPending) return;
   sessionRevokedReason = reason || "replaced";
   await SecureStore.setItemAsync(SESSION_REVOKED_KEY, sessionRevokedReason);
 }

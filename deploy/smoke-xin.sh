@@ -18,6 +18,7 @@ check() {
 }
 
 echo "== XinChat static smoke ($BASE) =="
+export SMOKE_BASE="$BASE"
 
 check "/xin/"
 check "/xin/login"
@@ -40,25 +41,29 @@ PY
 rm -f "$MANIFEST"
 
 python3 - <<PY
-import json,ssl,urllib.request
+import json, os, ssl, urllib.request
+
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
-base = "$BASE"
+base = os.environ.get("SMOKE_BASE", "$BASE")
+
 with urllib.request.urlopen(f"{base}/xin/downloads/manifest.json", context=ctx) as r:
     d = json.load(r)
-linux = next(a for a in d.get("apps", []) if a.get("id") == "linux-appimage")
-assert linux.get("available"), linux
-fp = linux.get("file")
-with urllib.request.urlopen(f"{base}/xin/downloads/{fp}", context=ctx) as r:
-    assert r.status == 200
-print(f"download asset ok: {fp}")
-win = next((a for a in d.get("apps", []) if a.get("id") == "windows"), None)
-if win and win.get("available") and win.get("file"):
-    wfp = win["file"]
-    with urllib.request.urlopen(f"{base}/xin/downloads/{wfp}", context=ctx) as r:
-        assert r.status == 200
-    print(f"download asset ok: {wfp}")
-PY
 
-echo "xin smoke complete"
+for app in d.get("apps", []):
+    if not app.get("available"):
+        continue
+    fp = app.get("file")
+    if not fp:
+        continue
+    url = f"{base}/xin/downloads/{fp}"
+    try:
+        with urllib.request.urlopen(url, context=ctx) as r:
+            assert r.status == 200
+        print(f"download asset ok: {fp}")
+    except Exception as e:
+        raise SystemExit(f"download asset FAIL: {fp} ({e})")
+
+print("xin smoke complete")
+PY

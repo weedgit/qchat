@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { MessageKey } from "@qchat/i18n";
 import { api, clearToken, getToken, restoreDesktopSession } from "@/lib/api";
 import { APP_LOGO_LETTER, APP_NAME } from "@/lib/brand";
+import { loginPath, markVoluntaryLogout } from "@/lib/sessionLogout";
 import { useLocale } from "@/lib/locale";
 import { unregisterWebPush } from "@/lib/webPush";
 
@@ -39,7 +40,7 @@ export default function AppShell({
       const ok = (await restoreDesktopSession()) || Boolean(getToken());
       if (cancelled) return;
       if (!ok) {
-        window.location.replace("/login");
+        window.location.replace(loginPath());
       }
     })();
     return () => {
@@ -53,6 +54,7 @@ export default function AppShell({
     } catch {
       /* stale endpoints are pruned after 404/410 */
     }
+    markVoluntaryLogout();
     await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     clearToken();
     router.replace("/login");

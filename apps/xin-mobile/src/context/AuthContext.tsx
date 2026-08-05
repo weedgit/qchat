@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, clearToken, getToken, initTokens, setOnUnauthorized, setSessionRevokedReason, setTokens } from "../lib/api";
+import { api, clearToken, getToken, initTokens, setOnUnauthorized, setSessionRevokedReason, setTokens, markVoluntaryLogout, isVoluntaryLogoutPending } from "../lib/api";
 import { getAuthDevice } from "../lib/device";
 import { notificationPort } from "../lib/notifyPort";
 import type { CurrentUser, PresenceStatus } from "../lib/types";
@@ -72,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     await notificationPort.unregisterRemote().catch(() => {});
+    await markVoluntaryLogout();
     await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     await clearToken();
     setUser(null);
@@ -79,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const forceLocalSignOut = useCallback(async (reason?: string) => {
     await notificationPort.unregisterRemote().catch(() => {});
-    if (reason) {
+    if (reason && !isVoluntaryLogoutPending()) {
       await setSessionRevokedReason(reason).catch(() => {});
     }
     await clearToken();

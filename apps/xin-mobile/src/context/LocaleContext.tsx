@@ -73,7 +73,7 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<LocaleContextValue>(() => {
     const t = (key: MessageKey, vars?: Record<string, string | number>) =>
-      overrideI18n(key, translate(resolved, key, vars));
+      overrideI18n(key, translate(resolved, key, vars), resolved);
     return {
       locale,
       resolved,

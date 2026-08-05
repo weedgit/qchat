@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, clearToken, getToken, restoreDesktopSession } from "@/lib/api";
 import { unregisterWebPush } from "@/lib/webPush";
+import { markVoluntaryLogout } from "@/lib/sessionLogout";
 
 const NAV = [
   { href: "/", label: "Chats", icon: "\u{1F4AC}" },
@@ -51,6 +52,7 @@ export default function AppShell({
     } catch {
       /* stale endpoints are pruned after 404/410 */
     }
+    markVoluntaryLogout();
     await api("/v1/auth/logout", { method: "POST" }).catch(() => {});
     clearToken();
     router.replace("/login");

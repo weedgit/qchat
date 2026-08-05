@@ -10,7 +10,7 @@ import React, {
 import { AppState, type AppStateStatus } from "react-native";
 import { router } from "expo-router";
 import { formatApiErrorLocale, formatSystemNotice } from "@qchat/i18n";
-import { api, asList, ensureAccessToken, getToken, uploadMedia, wsUrl } from "../lib/api";
+import { api, asList, ensureAccessToken, getToken, isVoluntaryLogoutPending, uploadMedia, wsUrl } from "../lib/api";
 import { notificationPort } from "../lib/notifyPort";
 import { loadLocalNotifyProps, getNotifyProps, shouldNotify, saveLocalNotifyProps, normalizeNotifyProps } from "../lib/notifyProps";
 import {
@@ -382,7 +382,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           wsRef.current = null;
         }
         setConnected(false);
-        void forceLocalSignOut(String(payload?.reason || "replaced"));
+        const reason = String(payload?.reason || "replaced");
+        void forceLocalSignOut(
+          reason === "logout" || isVoluntaryLogoutPending() ? undefined : reason
+        );
         try {
           router.replace("/login");
         } catch {

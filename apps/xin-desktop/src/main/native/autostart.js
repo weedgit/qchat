@@ -36,7 +36,7 @@ function syncLinuxAutostart(enabled) {
       `Type=Application\n` +
       `Version=1.0\n` +
       `Name=${APP_TITLE}\n` +
-      `Comment=Rchat desktop client\n` +
+      `Comment=XinChat desktop client\n` +
       `Exec="${execPath}"${hidden}\n` +
       `Terminal=false\n` +
       `X-GNOME-Autostart-enabled=true\n` +
