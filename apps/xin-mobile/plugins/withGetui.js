@@ -43,18 +43,20 @@ function readGetui(config) {
 function withGetuiMaven(config) {
   return withProjectBuildGradle(config, (cfg) => {
     if (cfg.modResults.language !== "groovy") return cfg;
-    const needle = "maven { url 'https://www.jitpack.io' }";
-    const repo = `maven { url "https://mvn.getui.com/nexus/content/repositories/releases/" }`;
+    const repo = `maven {
+            url "https://mvn.getui.com/nexus/content/repositories/releases/"
+            content {
+                includeGroupByRegex "com\\\\.(getui|igexin).*"
+            }
+        }`;
     if (!cfg.modResults.contents.includes("mvn.getui.com") && cfg.modResults.contents.includes("allprojects")) {
       cfg.modResults.contents = cfg.modResults.contents.replace(
         /allprojects\s*\{\s*repositories\s*\{/,
         (m) => `${m}\n        ${repo}`
       );
     } else if (!cfg.modResults.contents.includes("mvn.getui.com")) {
-      // Expo often uses dependencyResolutionManagement — append a comment block for operators.
       cfg.modResults.contents += `\n// Getui Maven (ensure settings.gradle repositories include):\n// ${repo}\n`;
     }
-    void needle;
     return cfg;
   });
 }

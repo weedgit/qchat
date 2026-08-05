@@ -26,8 +26,8 @@
         "APP_ENV": "preview",
         "QCHAT_TRUST_CERT": "1",
         "QCHAT_ALLOW_CLEARTEXT": "0",
-        "EXPO_PUBLIC_API_URL": "https://135.181.224.36",
-        "EXPO_PUBLIC_LIVEKIT_URL": "wss://135.181.224.36:7443"
+        "EXPO_PUBLIC_API_URL": "https://rchat.boostbunny.io",
+        "EXPO_PUBLIC_LIVEKIT_URL": "wss://rchat.boostbunny.io:7443"
       },
       "android": {
         "buildType": "apk"

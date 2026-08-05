@@ -17,6 +17,9 @@ const isDevelopment = profile === "development" || profile === "dev";
 const trustCert = !isProduction && process.env.XINCHAT_TRUST_CERT !== "0";
 const allowCleartext =
   !isProduction && process.env.XINCHAT_ALLOW_CLEARTEXT !== "0";
+const getuiAppId = String(
+  process.env.EXPO_PUBLIC_GETUI_APP_ID || process.env.GETUI_APP_ID || ""
+).trim();
 
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
@@ -52,7 +55,7 @@ module.exports = {
     "expo-secure-store",
     "expo-font",
     ...(isDevelopment ? ["expo-dev-client"] : []),
-    "./plugins/withGetui.js",
+    ...(getuiAppId ? ["./plugins/withGetui.js"] : []),
     [
       "expo-notifications",
       {

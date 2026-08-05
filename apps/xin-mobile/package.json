@@ -49,7 +49,6 @@
   },
   "scripts": {
     "GetuiConfigure": "node node_modules/react-native-getui/GetuiConfiguration.js",
-    "GetuiConfigure": "node node_modules/react-native-getui/GetuiConfiguration.js",
     "start": "expo start --dev-client",
     "start:go": "expo start",
     "android": "expo run:android",
@@ -68,6 +67,7 @@
     "bootstrap": "bash ./scripts/dev-bootstrap.sh",
     "icons:generate": "python3 ../../scripts/generate-xinchat-icons.py",
     "eas:build:development": "bash ./scripts/eas.sh build --profile development --platform android",
+    "build:apk:preview": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apk-preview.ps1",
     "eas:build:preview": "bash ./scripts/eas.sh build --profile preview --platform android",
     "eas:build:android": "bash ./scripts/eas.sh build --profile production --platform android",
     "eas:build:ios": "bash ./scripts/eas.sh build --profile production --platform ios"

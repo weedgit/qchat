@@ -57,6 +57,7 @@
     "typecheck": "tsc --noEmit",
     "check:release": "node ./scripts/check-release-ready.js",
     "eas:build:development": "npx eas-cli build --profile development --platform android",
+    "build:apk:preview": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apk-preview.ps1",
     "eas:build:preview": "npx eas-cli build --profile preview --platform android",
     "eas:build:android": "npx eas-cli build --profile production --platform android",
     "eas:build:ios": "npx eas-cli build --profile production --platform ios"
