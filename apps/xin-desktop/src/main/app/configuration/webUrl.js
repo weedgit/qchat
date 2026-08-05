@@ -117,9 +117,64 @@ function resolveStartUrl(base, opts = {}) {
   }
 }
 
+/** Origin + optional path prefix (e.g. https://host/xin). */
+function resolveWebBase(webUrl) {
+  try {
+    const u = new URL(String(webUrl).trim());
+    const path = u.pathname.replace(/\/$/, "");
+    return path && path !== "/" ? `${u.origin}${path}` : u.origin;
+  } catch {
+    return String(webUrl || "").trim().replace(/\/$/, "");
+  }
+}
+
+/** Join a pathname onto the configured web base. */
+function joinWebPath(webUrl, pathname) {
+  const base = resolveWebBase(webUrl);
+  const path = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  if (path === "/") {
+    return `${base}/`;
+  }
+  return `${base.replace(/\/$/, "")}${path}`;
+}
+
+function normalizePathname(pathname) {
+  const path = String(pathname || "/").replace(/\/$/, "");
+  return path || "/";
+}
+
+function resolveWebPathPrefix(webUrl) {
+  try {
+    const path = new URL(webUrl).pathname.replace(/\/$/, "");
+    return path && path !== "/" ? path : "";
+  } catch {
+    return "";
+  }
+}
+
+function isLoginPath(webUrl, pathname) {
+  const prefix = resolveWebPathPrefix(webUrl);
+  const path = normalizePathname(pathname);
+  const login = prefix ? `${prefix}/login` : "/login";
+  return path === login || path.startsWith(`${login}/`);
+}
+
+function isAppHomePath(webUrl, pathname) {
+  const prefix = resolveWebPathPrefix(webUrl);
+  const path = normalizePathname(pathname);
+  if (prefix) {
+    return path === prefix;
+  }
+  return path === "/";
+}
+
 module.exports = {
   resolveWebUrl,
   resolveStartUrl,
+  resolveWebBase,
+  joinWebPath,
+  isLoginPath,
+  isAppHomePath,
   loadEnvFile,
   isPackagedApp,
   DEFAULT_DEV_URL,

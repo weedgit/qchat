@@ -14,6 +14,12 @@ const { getTray } = require("../native/tray");
 const { isAppQuitting } = require("../app/quitState");
 const { hasSecureSession } = require("../secureStorage");
 const {
+  joinWebPath,
+  resolveWebBase,
+  isLoginPath,
+  isAppHomePath,
+} = require("../app/configuration/webUrl");
+const {
   attachSessionPersistence,
   prepareEarlySessionBootstrap,
 } = require("./sessionPersistence");
@@ -60,9 +66,9 @@ function getMainWindow() {
  * Detect and hard-reload once; if still stuck, surface an error dialog.
  *
  * @param {Electron.BrowserWindow} win
- * @param {string} webOrigin
+ * @param {string} webBase
  */
-async function ensureRemoteUiHydrated(win, webOrigin) {
+async function ensureRemoteUiHydrated(win, webBase) {
   if (!win || win.isDestroyed()) return;
   const probe = `
     (async function () {
@@ -137,7 +143,7 @@ async function ensureRemoteUiHydrated(win, webOrigin) {
   dialog.showErrorBox(
     "XinChat Desktop",
     `Login UI did not load (web assets stalled).\n\n` +
-      `Server: ${webOrigin}\n` +
+      `Server: ${webBase}\n` +
       `Detail: ${result?.reason || "unknown"}\n\n` +
       `The HTML shell loaded but CSS/JS did not finish. Check network reachability ` +
       `to the server, disable VPN/proxy if needed, then reopen the app.\n\n` +
@@ -285,12 +291,7 @@ function createMainWindow(opts) {
     /* keep default */
   }
 
-  let webOrigin = webUrl;
-  try {
-    webOrigin = new URL(webUrl).origin;
-  } catch {
-    webOrigin = String(webUrl).replace(/\/$/, "");
-  }
+  let webBase = resolveWebBase(webUrl);
 
   mainWindow = new BrowserWindow({
     width: saved.width || DEFAULT_WINDOW.width,
@@ -533,11 +534,15 @@ function createMainWindow(opts) {
 
     // Don't force /login while a remembered session exists — auth gates handle expiry.
     if (!isAppPage || hasSecureSession(webUrl)) return;
+    const homePath =
+      new URL(joinWebPath(webUrl, "/")).pathname.replace(/\/$/, "") || "/";
+    const loginUrl = joinWebPath(webUrl, "/login");
     const watchdog = `
       (function () {
         try {
-          var path = location.pathname || "/";
-          if (path !== "/" && path !== "") return;
+          var path = (location.pathname || "/").replace(/\\/$/, "") || "/";
+          var home = ${JSON.stringify(homePath)};
+          if (path !== home) return;
           var text = (document.body && document.body.innerText || "").trim();
           if (text !== "Loading…" && text !== "Loading..." && text.indexOf("Starting XinChat") === -1) return;
           setTimeout(function () {
@@ -547,7 +552,7 @@ function createMainWindow(opts) {
               still === "Loading..." ||
               still.indexOf("Starting XinChat") !== -1
             ) {
-              location.replace("/login");
+              location.replace(${JSON.stringify(loginUrl)});
             }
           }, 4000);
         } catch (e) {}
@@ -580,16 +585,16 @@ function createMainWindow(opts) {
 
     if (remembered) {
       await prepareEarlySessionBootstrap(mainWindow.webContents, webUrl, fresh);
-      await loadUrlWithRetry(mainWindow, `${webOrigin}/`);
+      await loadUrlWithRetry(mainWindow, joinWebPath(webUrl, "/"));
       revealMainWindow();
-      void ensureRemoteUiHydrated(mainWindow, webOrigin);
+      void ensureRemoteUiHydrated(mainWindow, webBase);
       return;
     }
 
     // No usable session — open login (splash already covered the wait).
-    await loadUrlWithRetry(mainWindow, `${webOrigin}/login`);
+    await loadUrlWithRetry(mainWindow, joinWebPath(webUrl, "/login"));
     revealMainWindow();
-    void ensureRemoteUiHydrated(mainWindow, webOrigin);
+    void ensureRemoteUiHydrated(mainWindow, webBase);
   })();
 
   mainWindow.on("closed", () => {

@@ -4,6 +4,11 @@ const {
   setSecureSession,
   clearSecureSession,
 } = require("../secureStorage");
+const {
+  joinWebPath,
+  isLoginPath,
+  isAppHomePath,
+} = require("../app/configuration/webUrl");
 
 const ACCESS_KEY = "qchat.access_token";
 const REFRESH_KEY = "qchat.refresh_token";
@@ -96,11 +101,22 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
     const session = getSecureSession(webUrl);
     if (!session?.accessToken) return false;
     suppressClearUntil = Date.now() + 8000;
+    let loginPath = "/login";
+    let homeUrl = joinWebPath(webUrl, "/");
+    try {
+      loginPath =
+        new URL(joinWebPath(webUrl, "/login")).pathname.replace(/\/$/, "") ||
+        "/login";
+      homeUrl = joinWebPath(webUrl, "/");
+    } catch {
+      /* keep defaults */
+    }
     const redirect = allowRedirect
       ? `
-          var path = location.pathname || "/";
-          if (path === "/login" || path.indexOf("/login") === 0) {
-            location.replace("/");
+          var path = (location.pathname || "/").replace(/\\/$/, "") || "/";
+          var login = ${JSON.stringify(loginPath)};
+          if (path === login || path.indexOf(login + "/") === 0) {
+            location.replace(${JSON.stringify(homeUrl)});
           }
         `
       : "";
@@ -155,7 +171,7 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
       const refresh = String(snap?.refresh || "").trim();
       const remember = snap?.remember === "1";
       const path = String(snap?.path || "/");
-      const onLogin = path === "/login" || path.startsWith("/login/");
+      const onLogin = isLoginPath(webUrl, path);
 
       if (remember && access) {
         const prev = getSecureSession(webUrl);
@@ -208,12 +224,12 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
       }
       const path = String(snap?.path || "/");
       const access = String(snap?.access || "").trim();
-      const onLogin = path === "/login" || path.startsWith("/login/");
+      const onLogin = isLoginPath(webUrl, path);
 
       // Stay hidden on splash ("Starting XinChat") / login bounce — match web UX.
       const onSplash =
         !onLogin &&
-        (path === "/" || path === "") &&
+        isAppHomePath(webUrl, path) &&
         !access;
 
       if (access && !onLogin && !onSplash) {
@@ -221,7 +237,7 @@ function attachSessionPersistence(win, webUrl, opts = {}) {
         reveal();
         return;
       }
-      if (access && (path === "/" || path === "")) {
+      if (access && isAppHomePath(webUrl, path)) {
         // Tokens ready on home — reveal even while chat is still connecting.
         await sleep(80);
         reveal();

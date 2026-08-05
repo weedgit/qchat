@@ -28,7 +28,7 @@
     "dist:linux:deb": "electron-builder --linux deb --publish never",
     "dist:linux:full": "electron-builder --linux AppImage deb --publish never",
     "dist:linux:publish": "electron-builder --linux AppImage --publish always",
-    "dist:win": "electron-builder --win nsis --publish never",
+    "dist:win": "node scripts/dist-win.js",
     "dist:win:publish": "electron-builder --win nsis --publish always",
     "dist:win:docker": "bash scripts/dist-win-docker.sh",
     "dist:mac": "electron-builder --mac dmg --publish never",
