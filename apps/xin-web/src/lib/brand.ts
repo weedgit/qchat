@@ -11,9 +11,10 @@ export const APP_LOGO_LETTER = "X";
 export const APP_BASE_PATH = "/xin";
 
 /** Same server — other branded client (for login cross-link). */
+const rchatOrigin = (process.env.NEXT_PUBLIC_RCHAT_ORIGIN || "").replace(/\/$/, "");
 export const SIBLING_APP = {
   name: "Rchat",
-  loginHref: "/login",
+  loginHref: rchatOrigin ? `${rchatOrigin}/login` : "/login",
 } as const;
 
 /** localStorage keys — must not collide with Rchat on the same origin. */

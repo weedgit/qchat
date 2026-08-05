@@ -361,7 +361,14 @@ export default function LoginPage() {
         {showDownload ? (
           <p className="auth-sibling muted">
             {t("login.alsoTryLink")}{" "}
-            <Link href="/xin/login" className="auth-sibling-link">
+            <Link
+              href={
+                process.env.NEXT_PUBLIC_XINCHAT_ORIGIN
+                  ? `${process.env.NEXT_PUBLIC_XINCHAT_ORIGIN.replace(/\/$/, "")}/xin/login`
+                  : "/xin/login"
+              }
+              className="auth-sibling-link"
+            >
               XinChat
             </Link>
           </p>
