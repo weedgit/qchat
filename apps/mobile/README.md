@@ -79,16 +79,16 @@ Use a development build that embeds that cert via Android `network_security_conf
 
 ```bash
 # from the deploy host, or scrape the live cert:
-# scp root@135.181.224.36:/root/qchat/deploy/certs/qchat.crt apps/mobile/certs/qchat.crt
+# scp root@YOUR_SERVER:/root/qchat/deploy/certs/qchat.crt apps/mobile/certs/qchat.crt
 ```
 
 Ensure `apps/mobile/certs/qchat.crt` exists (PEM).
 
-2. Set `.env`:
+2. Set `.env` (or run `make sync-hosts` from repo root):
 
 ```
-EXPO_PUBLIC_API_URL=https://135.181.224.36
-EXPO_PUBLIC_LIVEKIT_URL=wss://135.181.224.36:7443
+EXPO_PUBLIC_API_URL=https://rchat.boostbunny.io
+EXPO_PUBLIC_LIVEKIT_URL=wss://rchat.boostbunny.io:7443
 ```
 
 Voice/video calls use LiveKit + WebRTC native modules. After installing or changing those plugins, rebuild the native app (`npx expo run:android` / `run:ios`) — Metro reload alone is not enough.

@@ -164,7 +164,7 @@ Config precedence:
 ## Packaging
 
 Artifacts are written to `apps/desktop/dist/`. Packaged apps load
-`production.json` (`https://135.181.224.36`). The shell trusts that host’s
+`production.json` (default `https://rchat.boostbunny.io` — edit via `deploy/hosts.env` + `make sync-hosts`). The shell trusts that host’s
 TLS certificate when it is self-signed (nginx IP cert), so the installer does
 not fail with `ERR_CERT_AUTHORITY_INVALID`.
 

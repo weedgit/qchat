@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * LiveKit signaling proxy for iPhone (WebRTC media still goes phone → VPS).
- * Phone → ws://<mac-lan>:7444/... → ws://135.181.224.36:7880/...
+ * Phone → ws://<mac-lan>:7444/... → ws://<your-livekit-host>:7880/...
  *
  * Usage: node scripts/dev-livekit-proxy.js
  */
@@ -10,8 +10,16 @@ const { URL } = require("url");
 
 const LISTEN = Number(process.env.QCHAT_LIVEKIT_PROXY_PORT || 7444);
 const UPSTREAM = (
-  process.env.QCHAT_LIVEKIT_UPSTREAM || "ws://135.181.224.36:7880"
+  process.env.QCHAT_LIVEKIT_UPSTREAM ||
+  process.env.EXPO_PUBLIC_LIVEKIT_URL ||
+  ""
 ).replace(/\/$/, "");
+if (!UPSTREAM) {
+  console.error(
+    "[dev-livekit-proxy] Set QCHAT_LIVEKIT_UPSTREAM or EXPO_PUBLIC_LIVEKIT_URL (see deploy/hosts.env)"
+  );
+  process.exit(1);
+}
 
 function quietSocket(sock) {
   if (!sock || typeof sock.on !== "function") return;

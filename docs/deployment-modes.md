@@ -5,7 +5,7 @@ desktop clients only need the **web URL**.
 
 | | **A — VPS** | **B — Local computer / LAN** (no VPS) |
 |---|---|---|
-| Typical host | Public VPS (`135.181.224.36`) | Home/office PC or LAN VM (`192.168.1.124`) |
+| Typical host | Public domain (`rchat.boostbunny.io`) | Home/office PC or LAN VM (`192.168.1.124`) |
 | How users reach it | Public IP / domain | Same Wi‑Fi / LAN IP |
 | Reverse proxy | **nginx** on 80/443 (recommended) | Optional; bare ports also work |
 | Web URL | `https://SERVER_IP/` | `http://LAN_IP:3000` or `https://LAN_IP/` |
@@ -44,11 +44,12 @@ Desktop (Windows / any client):
 
 ```powershell
 cd apps/desktop
+# Set QCHAT_WEB_URL in apps/desktop/.env (see deploy/hosts.env.example)
 npm run start:server
-# → https://135.181.224.36
+# → https://rchat.boostbunny.io
 ```
 
-Packaged installers read `apps/desktop/production.json` (`webUrl`).
+Packaged installers read `apps/desktop/production.json` (`webUrl`). Sync from `deploy/hosts.env`: `make sync-hosts`.
 
 ---
 
@@ -114,7 +115,7 @@ If you want one URL without `:3000`:
 |---|---|
 | This machine’s Next.js | `npm run start:local` → `http://localhost:3000` |
 | LAN host (Ubuntu VM) | `npm run start:lan` / `start:ubuntu` → `http://192.168.1.124:3000` |
-| Public VPS | `npm run start:server` → `https://135.181.224.36` |
+| Public VPS | `npm run start:server` → `https://rchat.boostbunny.io` (from `.env`) |
 | Custom | `npm start -- --url=https://YOUR_HOST` or `QCHAT_WEB_URL=...` |
 
 Optional override for main-process API fetches:

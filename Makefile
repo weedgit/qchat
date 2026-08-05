@@ -1,4 +1,7 @@
-.PHONY: infra-up infra-down media api web admin admin-dev desktop desktop-check desktop-pack desktop-dist-win-docker mobile mobile-typecheck mobile-check-release xin-web xin-mobile xin-desktop xin-icons xin-redeploy xin-mobile-check-release xin-mobile-bootstrap xin-mobile-eas-onboard xin-mobile-eas-preview wait-eas-xin-apk xin-desktop-dist-linux xin-desktop-dist-win-docker sync-xin-desktop-updates publish-xin publish-xin-linux publish-xin-full setup-xin smoke-xin test test-api test-e2e migrate seed generate check-openapi redeploy soak soak-multi
+.PHONY: infra-up infra-down media api web admin admin-dev desktop desktop-check desktop-pack desktop-dist-win-docker mobile mobile-typecheck mobile-check-release xin-web xin-mobile xin-desktop xin-icons xin-redeploy xin-mobile-check-release xin-mobile-bootstrap xin-mobile-eas-onboard xin-mobile-eas-preview wait-eas-xin-apk xin-desktop-dist-linux xin-desktop-dist-win-docker sync-xin-desktop-updates publish-xin publish-xin-linux publish-xin-full setup-xin smoke-xin sync-hosts test test-api test-e2e migrate seed generate check-openapi redeploy soak soak-multi
+
+sync-hosts:
+	node scripts/sync-hosts-env.js
 
 infra-up:
 	./deploy/render-media-config.sh

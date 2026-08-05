@@ -35,11 +35,23 @@ cd apps/desktop && npm install && npm run dev
 
 Desktop development: [`apps/desktop/README.md`](apps/desktop/README.md).
 
+## Public hosts (domains)
+
+Edit **`deploy/hosts.env`** (copy from `deploy/hosts.env.example`), then sync all apps:
+
+```bash
+cp deploy/hosts.env.example deploy/hosts.env   # first time only
+# edit deploy/hosts.env — set RCHAT_ORIGIN, XINCHAT_ORIGIN, etc.
+make sync-hosts
+```
+
+That writes each app's `.env` and desktop `production.json`. **You do not need the VPS IP in code** — use HTTPS domains; the IP is only commented in `hosts.env` as a fallback.
+
 ## Deploy modes
 
 | Mode | Host | Desktop command |
 |------|------|-----------------|
-| **VPS** | nginx + HTTPS (e.g. `135.181.224.36`) | `cd apps/desktop && npm run start:server` |
+| **Production** | `rchat.boostbunny.io` / `xinchat.boostbunny.io` | `npm run start:server` (reads `.env`) |
 | **LAN** | PC or VM (e.g. `192.168.1.124:3000`) | `npm run start:lan` |
 
 See [`docs/deployment-modes.md`](docs/deployment-modes.md) and [`docs/deployment-nginx-systemd.md`](docs/deployment-nginx-systemd.md).

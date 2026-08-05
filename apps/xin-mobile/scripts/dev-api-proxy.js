@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Cleartext LAN API proxy for iPhone when the VPS uses a self-signed cert.
- * Phone → http://<mac-lan>:9080 → https://135.181.224.36
+ * Phone → http://<mac-lan>:9080 → https://<your-api-host>
  * Also proxies WebSocket (/v1/ws) so call.ring / chat events reach the phone.
  *
  * Usage: node scripts/dev-api-proxy.js
@@ -12,8 +12,16 @@ const { URL } = require("url");
 
 const LISTEN = Number(process.env.QCHAT_API_PROXY_PORT || 9080);
 const UPSTREAM = (
-  process.env.QCHAT_API_UPSTREAM || "https://135.181.224.36"
+  process.env.QCHAT_API_UPSTREAM ||
+  process.env.EXPO_PUBLIC_API_URL ||
+  ""
 ).replace(/\/$/, "");
+if (!UPSTREAM) {
+  console.error(
+    "[dev-api-proxy] Set QCHAT_API_UPSTREAM or EXPO_PUBLIC_API_URL (see deploy/hosts.env)"
+  );
+  process.exit(1);
+}
 
 function quietSocket(sock) {
   if (!sock || typeof sock.on !== "function") return;

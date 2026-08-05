@@ -11,7 +11,7 @@ const TOAST_ACTIVATOR_CLSID = "{A7F3C2E1-9B4D-4E8A-9F21-6D8B0C4E1A2F}";
 const WINDOW_STATE_FILE = "window-state.json";
 const DEFAULT_WINDOW = { width: 1280, height: 800 };
 const DEFAULT_DEV_URL = "http://localhost:3000";
-const DEFAULT_PROD_URL = "https://135.181.224.36";
+const DEFAULT_PROD_URL = "https://rchat.boostbunny.io";
 /** Custom URL scheme for OS deep links (SHELL-28). */
 const APP_PROTOCOL = "qchat";
 

@@ -484,8 +484,7 @@ function createMainWindow(opts) {
         `Could not load XinChat web UI.\n\n` +
           `URL: ${validatedURL || webUrl}\n` +
           `Error: ${errorDescription} (${errorCode})\n\n` +
-          `Start apps/web (npm run dev) or set QCHAT_WEB_URL, e.g.\n` +
-          `QCHAT_WEB_URL=https://135.181.224.36 npm start`
+          `Start apps/xin-web (npm run dev) or set XINCHAT_WEB_URL in apps/xin-desktop/.env`
       );
     }
   );

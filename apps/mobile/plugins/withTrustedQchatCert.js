@@ -17,7 +17,19 @@ const path = require("path");
 
 const CERT_SRC = "certs/qchat.crt";
 const RAW_NAME = "qchat_cert";
-const API_HOST = process.env.QCHAT_TRUST_HOST || "135.181.224.36";
+function trustHost() {
+  const explicit =
+    process.env.QCHAT_TRUST_HOST || process.env.XINCHAT_TRUST_HOST || "";
+  if (explicit.trim()) return explicit.trim();
+  const api = process.env.EXPO_PUBLIC_API_URL || "";
+  try {
+    return new URL(api).hostname;
+  } catch {
+    return "localhost";
+  }
+}
+
+const API_HOST = trustHost();
 
 function networkSecurityXml(host) {
   // Cleartext must be allowed broadly for Metro (LAN IPs like 192.168.x.x /

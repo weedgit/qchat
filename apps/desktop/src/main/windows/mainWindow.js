@@ -483,8 +483,7 @@ function createMainWindow(opts) {
         `Could not load Rchat web UI.\n\n` +
           `URL: ${validatedURL || webUrl}\n` +
           `Error: ${errorDescription} (${errorCode})\n\n` +
-          `Start apps/web (npm run dev) or set QCHAT_WEB_URL, e.g.\n` +
-          `QCHAT_WEB_URL=https://135.181.224.36 npm start`
+          `Start apps/web (npm run dev) or set QCHAT_WEB_URL in apps/desktop/.env`
       );
     }
   );

@@ -11,7 +11,7 @@ const TOAST_ACTIVATOR_CLSID = "{B8E4D3F2-0C5E-5F9B-A032-7E9C1D5F2B3F}";
 const WINDOW_STATE_FILE = "window-state.json";
 const DEFAULT_WINDOW = { width: 1280, height: 800 };
 const DEFAULT_DEV_URL = "http://localhost:3001/xin";
-const DEFAULT_PROD_URL = "https://135.181.224.36/xin";
+const DEFAULT_PROD_URL = "https://xinchat.boostbunny.io/xin";
 /** Custom URL scheme for OS deep links. */
 const APP_PROTOCOL = "xinchat";
 
