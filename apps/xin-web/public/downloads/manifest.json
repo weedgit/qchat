@@ -10,8 +10,8 @@
       "title": "Windows",
       "subtitle": "XinChat Desktop installer (.exe)",
       "file": "xinchat-desktop-Setup-0.1.0.exe",
-      "sizeBytes": null,
-      "available": false
+      "sizeBytes": 100230226,
+      "available": true
     },
     {
       "id": "macos",

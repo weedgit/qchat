@@ -10,7 +10,7 @@
       "title": "Windows",
       "subtitle": "NSIS installer (.exe)",
       "file": "qchat-desktop-Setup-0.1.0.exe",
-      "sizeBytes": 23068672,
+      "sizeBytes": 99974825,
       "available": true
     },
     {
@@ -21,7 +21,7 @@
       "subtitle": "Disk image (.dmg, Apple Silicon)",
       "file": "qchat-desktop-0.1.0-arm64.dmg",
       "sizeBytes": 119847716,
-      "available": true
+      "available": false
     },
     {
       "id": "linux-appimage",
@@ -51,7 +51,7 @@
       "subtitle": "APK install",
       "file": "qchat-mobile.apk",
       "sizeBytes": 152676562,
-      "available": true
+      "available": false
     },
     {
       "id": "ios",
