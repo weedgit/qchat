@@ -118,6 +118,8 @@ module.exports = {
     appEnv: profile,
     apiUrl: (process.env.EXPO_PUBLIC_API_URL || "").trim().replace(/\/$/, ""),
     livekitUrl: (process.env.EXPO_PUBLIC_LIVEKIT_URL || "").trim().replace(/\/$/, ""),
+    supportEmail: (process.env.EXPO_PUBLIC_SUPPORT_EMAIL || "").trim(),
+    supportUrl: (process.env.EXPO_PUBLIC_SUPPORT_URL || "").trim(),
     getui: {
       appId: (process.env.EXPO_PUBLIC_GETUI_APP_ID || process.env.GETUI_APP_ID || "").trim(),
       appKey: (process.env.EXPO_PUBLIC_GETUI_APP_KEY || process.env.GETUI_APP_KEY || "").trim(),

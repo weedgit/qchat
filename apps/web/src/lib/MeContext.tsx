@@ -24,6 +24,8 @@ const MeContext = createContext<MeContextValue | null>(null);
 function userFromApi(u: any): CurrentUser {
   const enterpriseId = String(u?.enterprise_id ?? "").trim();
   const enterpriseName = String(u?.enterprise_name ?? "").trim();
+  const enterpriseSupportEmail = String(u?.enterprise_support_email ?? "").trim();
+  const enterpriseSupportPhone = String(u?.enterprise_support_phone ?? "").trim();
   return {
     id: String(u?.id ?? ""),
     phone: String(u?.phone ?? ""),
@@ -32,6 +34,8 @@ function userFromApi(u: any): CurrentUser {
     avatarUrl: u?.avatar_url || undefined,
     enterpriseId: enterpriseId || undefined,
     enterpriseName: enterpriseName || undefined,
+    enterpriseSupportEmail: enterpriseSupportEmail || undefined,
+    enterpriseSupportPhone: enterpriseSupportPhone || undefined,
   };
 }
 

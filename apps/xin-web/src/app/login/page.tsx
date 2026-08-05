@@ -13,6 +13,7 @@ import { isElectronShell } from "@/lib/downloads";
 import { useLocale } from "@/lib/locale";
 import { consumeVoluntaryLogout } from "@/lib/sessionLogout";
 import { APP_LOGO_LETTER, APP_NAME } from "@/lib/brand";
+import { PlatformSupportBlock } from "@/components/SupportContact";
 
 interface CaptchaState {
   id: string;
@@ -368,6 +369,7 @@ export default function LoginPage() {
               ? t("login.submitLogin")
               : t("login.register")}
         </button>
+        <PlatformSupportBlock t={t} />
       </form>
       </div>
     </div>

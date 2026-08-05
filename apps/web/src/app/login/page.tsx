@@ -12,6 +12,7 @@ import { getAuthDevice } from "@/lib/device";
 import { isElectronShell } from "@/lib/downloads";
 import { useLocale } from "@/lib/locale";
 import { consumeVoluntaryLogout } from "@/lib/sessionLogout";
+import { PlatformSupportBlock } from "@/components/SupportContact";
 import type { MessageKey } from "@qchat/i18n";
 
 interface CaptchaState {
@@ -362,21 +363,7 @@ export default function LoginPage() {
               ? t("login.submitLogin")
               : t("login.register")}
         </button>
-        {showDownload ? (
-          <p className="auth-sibling muted">
-            {t("login.alsoTryLink")}{" "}
-            <Link
-              href={
-                process.env.NEXT_PUBLIC_XINCHAT_ORIGIN
-                  ? `${process.env.NEXT_PUBLIC_XINCHAT_ORIGIN.replace(/\/$/, "")}/xin/login`
-                  : "/xin/login"
-              }
-              className="auth-sibling-link"
-            >
-              XinChat
-            </Link>
-          </p>
-        ) : null}
+        <PlatformSupportBlock t={t} />
       </form>
     </div>
   );

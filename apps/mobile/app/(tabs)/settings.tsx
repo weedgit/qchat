@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -411,7 +412,32 @@ export default function SettingsScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t("settings.about")}</Text>
-        <Text style={styles.label}>{t("settings.apiServer")}</Text>
+        {user?.enterpriseSupportEmail || user?.enterpriseSupportPhone ? (
+          <>
+            <Text style={styles.label}>{t("settings.enterpriseSupport")}</Text>
+            {user.enterpriseSupportEmail ? (
+              <Text
+                style={styles.linkText}
+                onPress={() => Linking.openURL(`mailto:${user.enterpriseSupportEmail}`)}
+              >
+                {t("support.enterpriseEmail")}: {user.enterpriseSupportEmail}
+              </Text>
+            ) : null}
+            {user.enterpriseSupportPhone ? (
+              <Text
+                style={styles.linkText}
+                onPress={() =>
+                  Linking.openURL(`tel:${user.enterpriseSupportPhone!.replace(/\s/g, "")}`)
+                }
+              >
+                {t("support.enterprisePhone")}: {user.enterpriseSupportPhone}
+              </Text>
+            ) : null}
+          </>
+        ) : (
+          <Text style={styles.muted}>{t("settings.enterpriseSupportHint")}</Text>
+        )}
+        <Text style={[styles.label, { marginTop: spacing.md }]}>{t("settings.apiServer")}</Text>
         <Text style={styles.muted}>{apiBaseUrl()}</Text>
       </View>
 
@@ -643,6 +669,7 @@ function makeStyles(c: ColorTokens) {
     primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 15 },
     hint: { color: c.textSecondary, fontSize: 13 },
     muted: { color: c.textSecondary, fontSize: 13 },
+    linkText: { color: c.accent, fontSize: 13, marginBottom: 4 },
     mutedSmall: { color: c.textMuted, fontSize: 11, marginTop: 2 },
     sessionRow: {
       flexDirection: "row" as const,

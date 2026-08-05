@@ -20,6 +20,8 @@ interface Enterprise {
   inviteCode: string;
   inviteActive: boolean;
   retentionDays: number;
+  supportEmail: string;
+  supportPhone: string;
   createdAt: string;
 }
 
@@ -30,6 +32,8 @@ function normalize(raw: any): Enterprise {
     inviteCode: String(raw?.invite_code ?? ""),
     inviteActive: Boolean(raw?.invite_active ?? false),
     retentionDays: Number(raw?.retention_days ?? 90),
+    supportEmail: String(raw?.support_email ?? ""),
+    supportPhone: String(raw?.support_phone ?? ""),
     createdAt: String(raw?.created_at ?? raw?.createdAt ?? ""),
   };
 }
@@ -44,6 +48,8 @@ export default function EnterprisesPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [retentionDraft, setRetentionDraft] = useState<Record<string, string>>({});
+  const [supportEmailDraft, setSupportEmailDraft] = useState<Record<string, string>>({});
+  const [supportPhoneDraft, setSupportPhoneDraft] = useState<Record<string, string>>({});
   const [meRole, setMeRole] = useState<string>("");
 
   const [createName, setCreateName] = useState("");
@@ -51,6 +57,8 @@ export default function EnterprisesPage() {
   const [adminPhone, setAdminPhone] = useState("");
   const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
+  const [createSupportEmail, setCreateSupportEmail] = useState("");
+  const [createSupportPhone, setCreateSupportPhone] = useState("");
 
   const [issueFor, setIssueFor] = useState<Enterprise | null>(null);
   const [issuePhone, setIssuePhone] = useState("");
@@ -75,8 +83,16 @@ export default function EnterprisesPage() {
       setRows(list);
       setTotal(Number(body?.total ?? list.length));
       const drafts: Record<string, string> = {};
-      for (const e of list) drafts[e.id] = String(e.retentionDays);
+      const emailDrafts: Record<string, string> = {};
+      const phoneDrafts: Record<string, string> = {};
+      for (const e of list) {
+        drafts[e.id] = String(e.retentionDays);
+        emailDrafts[e.id] = e.supportEmail;
+        phoneDrafts[e.id] = e.supportPhone;
+      }
       setRetentionDraft((prev) => ({ ...prev, ...drafts }));
+      setSupportEmailDraft((prev) => ({ ...prev, ...emailDrafts }));
+      setSupportPhoneDraft((prev) => ({ ...prev, ...phoneDrafts }));
     } catch (e: any) {
       toast.error(
         t("admin.common.loadFailed", {
@@ -163,6 +179,25 @@ export default function EnterprisesPage() {
     }
   }
 
+  async function saveSupport(id: string) {
+    setBusy(`support-${id}`);
+    try {
+      await api(`/v1/admin/enterprises/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          support_email: supportEmailDraft[id] ?? "",
+          support_phone: supportPhoneDraft[id] ?? "",
+        }),
+      });
+      toast.success(t("admin.enterprises.supportSaved"));
+      await reload();
+    } catch (e: any) {
+      toast.error(formatAdminError(e, t, "admin.err.loadFailed"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function runRetention() {
     setBusy("run-retention");
     try {
@@ -187,6 +222,8 @@ export default function EnterprisesPage() {
           admin_phone: adminPhone.trim(),
           admin_password: adminPassword,
           admin_username: adminUsername.trim() || undefined,
+          support_email: createSupportEmail.trim() || undefined,
+          support_phone: createSupportPhone.trim() || undefined,
         }),
       });
       toast.success(
@@ -201,6 +238,8 @@ export default function EnterprisesPage() {
       setAdminPhone("");
       setAdminUsername("");
       setAdminPassword("");
+      setCreateSupportEmail("");
+      setCreateSupportPhone("");
       setCreateOpen(false);
       await reload();
     } catch (err: any) {
@@ -349,6 +388,25 @@ export default function EnterprisesPage() {
                 />
               </div>
               <div className="form-row">
+                <label htmlFor="ent-create-support-email">{t("admin.enterprises.supportEmail")}</label>
+                <input
+                  id="ent-create-support-email"
+                  type="email"
+                  placeholder={t("admin.common.optional")}
+                  value={createSupportEmail}
+                  onChange={(e) => setCreateSupportEmail(e.target.value)}
+                />
+              </div>
+              <div className="form-row">
+                <label htmlFor="ent-create-support-phone">{t("admin.enterprises.supportPhone")}</label>
+                <input
+                  id="ent-create-support-phone"
+                  placeholder={t("admin.common.optional")}
+                  value={createSupportPhone}
+                  onChange={(e) => setCreateSupportPhone(e.target.value)}
+                />
+              </div>
+              <div className="form-row">
                 <label htmlFor="ent-create-password">{t("admin.enterprises.adminPassword")}</label>
                 <PasswordInput
                   id="ent-create-password"
@@ -446,6 +504,7 @@ export default function EnterprisesPage() {
               <th>{t("admin.common.name")}</th>
               <th>{t("admin.enterprises.inviteCodeCol")}</th>
               <th>{t("admin.enterprises.invite")}</th>
+              <th>{t("admin.enterprises.supportCol")}</th>
               <th>{t("admin.enterprises.retentionDays")}</th>
               <th>{t("admin.common.created")}</th>
               {isPlatformAdmin ? <th>{t("admin.common.actions")}</th> : null}
@@ -454,14 +513,14 @@ export default function EnterprisesPage() {
           <tbody>
             {loading && rows.length === 0 && (
               <tr>
-                <td colSpan={isPlatformAdmin ? 6 : 5} className="muted">
+                <td colSpan={isPlatformAdmin ? 7 : 6} className="muted">
                   {t("admin.common.loading")}
                 </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={isPlatformAdmin ? 6 : 5} className="muted">
+                <td colSpan={isPlatformAdmin ? 7 : 6} className="muted">
                   {t("admin.enterprises.noEnterprises")}
                 </td>
               </tr>
@@ -532,6 +591,42 @@ export default function EnterprisesPage() {
                       />
                     ) : null}
                   </div>
+                </td>
+                <td>
+                  {canRetention ? (
+                    <div className="toolbar" style={{ gap: 6, margin: 0, flexWrap: "wrap" }}>
+                      <input
+                        style={{ width: 140 }}
+                        placeholder={t("admin.enterprises.supportEmail")}
+                        value={supportEmailDraft[r.id] ?? r.supportEmail}
+                        onChange={(e) =>
+                          setSupportEmailDraft((d) => ({ ...d, [r.id]: e.target.value }))
+                        }
+                      />
+                      <input
+                        style={{ width: 100 }}
+                        placeholder={t("admin.enterprises.supportPhone")}
+                        value={supportPhoneDraft[r.id] ?? r.supportPhone}
+                        onChange={(e) =>
+                          setSupportPhoneDraft((d) => ({ ...d, [r.id]: e.target.value }))
+                        }
+                      />
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={busy === `support-${r.id}`}
+                        onClick={() => saveSupport(r.id)}
+                      >
+                        {t("admin.common.save")}
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="muted">
+                      {r.supportEmail || r.supportPhone
+                        ? `${r.supportEmail}${r.supportEmail && r.supportPhone ? " · " : ""}${r.supportPhone}`
+                        : "—"}
+                    </span>
+                  )}
                 </td>
                 <td>
                   {canRetention ? (

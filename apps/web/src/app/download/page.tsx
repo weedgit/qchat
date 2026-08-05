@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/locale";
+import { PlatformSupportBlock } from "@/components/SupportContact";
 import {
   detectDownloadOs,
   downloadHref,
@@ -328,6 +329,8 @@ export default function DownloadPage() {
             </Link>
           </div>
         </section>
+
+        <PlatformSupportBlock t={t} className="dl-support" />
       </main>
 
       <footer className="dl-foot">

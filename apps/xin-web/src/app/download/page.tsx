@@ -17,6 +17,7 @@ import {
   type DownloadOs,
 } from "@/lib/downloads";
 import { APP_NAME, withBasePath } from "@/lib/brand";
+import { PlatformSupportBlock } from "@/components/SupportContact";
 
 function PlatformIcon({ os }: { os: DownloadOs }) {
   const common = {
@@ -329,6 +330,8 @@ export default function DownloadPage() {
             </Link>
           </div>
         </section>
+
+        <PlatformSupportBlock t={t} className="dl-support" />
       </main>
 
       <footer className="dl-foot">

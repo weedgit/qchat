@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -20,6 +21,7 @@ import { getAuthDevice, useAuth } from "../src/context/AuthContext";
 import { useLocale } from "../src/context/LocaleContext";
 import { useTheme, useThemedStyles } from "../src/context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../src/theme";
+import { getPlatformSupport } from "../src/lib/support";
 
 export default function LoginScreen() {
   const { signedIn, ready, signIn } = useAuth();
@@ -234,6 +236,7 @@ export default function LoginScreen() {
               </Text>
             )}
           </Pressable>
+          <PlatformSupportFooter t={t} styles={styles} />
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -241,6 +244,41 @@ export default function LoginScreen() {
 }
 
 type Styles = ReturnType<typeof makeStyles>;
+
+function PlatformSupportFooter({
+  t,
+  styles,
+}: {
+  t: ReturnType<typeof useLocale>["t"];
+  styles: Styles;
+}) {
+  const support = getPlatformSupport();
+  if (!support) return null;
+  return (
+    <View style={styles.supportWrap}>
+      <Text style={styles.supportText}>
+        {t("support.needCompanyAccount")}{" "}
+        {support.url ? (
+          <Text
+            style={styles.supportLink}
+            onPress={() => Linking.openURL(support.url!)}
+          >
+            {t("support.contactUs")}
+          </Text>
+        ) : null}
+        {support.url && support.email ? " · " : ""}
+        {support.email ? (
+          <Text
+            style={styles.supportLink}
+            onPress={() => Linking.openURL(`mailto:${support.email}`)}
+          >
+            {support.email}
+          </Text>
+        ) : null}
+      </Text>
+    </View>
+  );
+}
 
 function Field({
   label,
@@ -313,6 +351,9 @@ function makeStyles(c: ColorTokens) {
       marginTop: spacing.md,
     },
     primaryBtnText: { color: "#fff", fontWeight: "700" as const, fontSize: 16 },
+    supportWrap: { marginTop: spacing.lg, alignItems: "center" as const },
+    supportText: { color: c.textSecondary, fontSize: 13, textAlign: "center" as const },
+    supportLink: { color: c.accent, fontWeight: "600" as const },
     hint: { color: c.textSecondary, marginBottom: spacing.sm },
     error: {
       color: c.danger,

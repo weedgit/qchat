@@ -129,7 +129,8 @@ func (s *Server) handleAdminEnterprises(w http.ResponseWriter, r *http.Request) 
 	nLimit := len(listArgs) - 1
 	nOffset := len(listArgs)
 	listQ := fmt.Sprintf(`
-		SELECT id::text, name, invite_code, invite_active, retention_days, created_at
+		SELECT id::text, name, invite_code, invite_active, retention_days,
+		       COALESCE(support_email,''), COALESCE(support_phone,''), created_at
 		FROM enterprises
 		WHERE %s
 		ORDER BY created_at DESC
@@ -143,12 +144,16 @@ func (s *Server) handleAdminEnterprises(w http.ResponseWriter, r *http.Request) 
 	defer rows.Close()
 	var out []map[string]any
 	for rows.Next() {
-		var id, name, code string
+		var id, name, code, supportEmail, supportPhone string
 		var active bool
 		var days int
 		var created any
-		_ = rows.Scan(&id, &name, &code, &active, &days, &created)
-		out = append(out, map[string]any{"id": id, "name": name, "invite_code": code, "invite_active": active, "retention_days": days, "created_at": created})
+		_ = rows.Scan(&id, &name, &code, &active, &days, &supportEmail, &supportPhone, &created)
+		out = append(out, map[string]any{
+			"id": id, "name": name, "invite_code": code, "invite_active": active,
+			"retention_days": days, "support_email": supportEmail, "support_phone": supportPhone,
+			"created_at": created,
+		})
 	}
 	if out == nil {
 		out = []map[string]any{}
@@ -168,12 +173,24 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 		AdminPhone    string `json:"admin_phone"`
 		AdminPassword string `json:"admin_password"`
 		AdminUsername string `json:"admin_username"`
+		SupportEmail  string `json:"support_email"`
+		SupportPhone  string `json:"support_phone"`
 	}
 	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.Name) == "" {
 		writeErrCode(w, 400, "invalid_request", "name required")
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
+	supportEmail, err := normalizeEnterpriseSupportEmail(req.SupportEmail)
+	if err != nil {
+		writeErrCode(w, 400, "invalid_support_email", err.Error())
+		return
+	}
+	supportPhone, err := normalizeEnterpriseSupportPhone(req.SupportPhone)
+	if err != nil {
+		writeErrCode(w, 400, "invalid_support_phone", err.Error())
+		return
+	}
 	if !auth.ValidatePhone(req.AdminPhone) {
 		writeErrCode(w, 400, "invalid_phone", "admin_phone must be 11 digits")
 		return
@@ -237,7 +254,9 @@ func (s *Server) handleAdminCreateEnterprise(w http.ResponseWriter, r *http.Requ
 	defer tx.Rollback(r.Context())
 
 	id := uuid.New()
-	if _, err := tx.Exec(r.Context(), `INSERT INTO enterprises(id, name, invite_code) VALUES ($1,$2,$3)`, id, req.Name, req.InviteCode); err != nil {
+	if _, err := tx.Exec(r.Context(), `
+		INSERT INTO enterprises(id, name, invite_code, support_email, support_phone)
+		VALUES ($1,$2,$3,$4,$5)`, id, req.Name, req.InviteCode, supportEmail, supportPhone); err != nil {
 		writeErrCode(w, 409, "invite_code_taken", "invite code already in use")
 		return
 	}

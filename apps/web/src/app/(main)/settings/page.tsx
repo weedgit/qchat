@@ -20,6 +20,8 @@ import {
 import { markVoluntaryLogout } from "@/lib/sessionLogout";
 import { useLocale } from "@/lib/locale";
 import { useTheme, type ThemeMode } from "@/lib/theme";
+import { useMe } from "@/lib/MeContext";
+import { EnterpriseSupportBlock } from "@/components/SupportContact";
 
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
@@ -49,6 +51,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { locale, setLocale, t, labelLocale, labelTheme, resolved } = useLocale();
+  const { me } = useMe();
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [ready, setReady] = useState(false);
@@ -428,6 +431,26 @@ export default function SettingsPage() {
           </div>
         </section>
       )}
+
+      <section className="menu-modal-section">
+        <div className="menu-modal-section-title">{t("settings.about")}</div>
+        <EnterpriseSupportBlock
+          t={t}
+          email={me?.enterpriseSupportEmail}
+          phone={me?.enterpriseSupportPhone}
+          className="menu-modal-row"
+        />
+        {!me?.enterpriseSupportEmail && !me?.enterpriseSupportPhone ? (
+          <div className="menu-modal-row menu-modal-row-lead is-static">
+            <span className="menu-modal-row-main">
+              <span className="menu-modal-value" style={{ color: "var(--text-dim)" }}>
+                {t("settings.enterpriseSupportHint")}
+              </span>
+              <span className="menu-modal-label">{t("settings.enterpriseSupport")}</span>
+            </span>
+          </div>
+        ) : null}
+      </section>
 
       <section className="menu-modal-section">
         <div className="menu-modal-section-title">{t("settings.apiServer")}</div>

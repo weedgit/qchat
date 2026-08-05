@@ -39,6 +39,8 @@ function mapMe(u: any): CurrentUser {
     friendPrivacy: String(u?.friend_privacy ?? "approval"),
     enterpriseId: String(u?.enterprise_id ?? "").trim() || undefined,
     enterpriseName: String(u?.enterprise_name ?? "").trim() || undefined,
+    enterpriseSupportEmail: String(u?.enterprise_support_email ?? "").trim() || undefined,
+    enterpriseSupportPhone: String(u?.enterprise_support_phone ?? "").trim() || undefined,
     status: parseStatus(u?.status) ?? "online",
   };
 }

@@ -121,6 +121,8 @@ module.exports = {
     // host when Metro does not inline EXPO_PUBLIC_* (common with local Gradle).
     apiUrl: (process.env.EXPO_PUBLIC_API_URL || "").trim().replace(/\/$/, ""),
     livekitUrl: (process.env.EXPO_PUBLIC_LIVEKIT_URL || "").trim().replace(/\/$/, ""),
+    supportEmail: (process.env.EXPO_PUBLIC_SUPPORT_EMAIL || "").trim(),
+    supportUrl: (process.env.EXPO_PUBLIC_SUPPORT_URL || "").trim(),
     // 个推 — China mainland manufacturer push (set via env for release builds).
     getui: {
       appId: (process.env.EXPO_PUBLIC_GETUI_APP_ID || process.env.GETUI_APP_ID || "").trim(),

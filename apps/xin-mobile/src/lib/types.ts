@@ -16,6 +16,8 @@ export interface CurrentUser {
   enterpriseId?: string;
   /** Enterprise display name when enterpriseId is set. */
   enterpriseName?: string;
+  enterpriseSupportEmail?: string;
+  enterpriseSupportPhone?: string;
   /** Manual / idle presence status from GET /v1/me. */
   status?: PresenceStatus;
 }

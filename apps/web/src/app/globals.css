@@ -639,6 +639,30 @@ select:focus {
   text-decoration: underline;
 }
 
+.auth-support {
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.auth-support-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.auth-support-link:hover {
+  text-decoration: underline;
+}
+
+.dl-support {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
 /* ---------- main layout ---------- */
 
 .shell {

@@ -275,18 +275,19 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	c := claimsFrom(r)
 	row := map[string]any{}
-	var id, ent, entName, phone, username, display, realName, region, sig, avatar, vis, fp, role, status, statusText string
+	var id, ent, entName, entSupportEmail, entSupportPhone, phone, username, display, realName, region, sig, avatar, vis, fp, role, status, statusText string
 	var age *int
 	var banned, mfaActive bool
 	err := s.db.QueryRow(r.Context(), `
 		SELECT u.id::text, COALESCE(u.enterprise_id::text, ''), COALESCE(e.name, ''),
+		       COALESCE(e.support_email,''), COALESCE(e.support_phone,''),
 		       u.phone, u.username, u.display_name, u.real_name, u.age, u.region, u.signature,
 		       u.avatar_url, u.profile_visibility, u.friend_privacy, u.role, u.banned,
 		       COALESCE(u.status,'offline'), COALESCE(u.status_text,''), u.mfa_active
 		FROM users u
 		LEFT JOIN enterprises e ON e.id = u.enterprise_id
 		WHERE u.id=$1`, c.UserID).
-		Scan(&id, &ent, &entName, &phone, &username, &display, &realName, &age, &region, &sig, &avatar, &vis, &fp, &role, &banned, &status, &statusText, &mfaActive)
+		Scan(&id, &ent, &entName, &entSupportEmail, &entSupportPhone, &phone, &username, &display, &realName, &age, &region, &sig, &avatar, &vis, &fp, &role, &banned, &status, &statusText, &mfaActive)
 	if err != nil {
 		writeErr(w, 404, "not found")
 		return
@@ -294,6 +295,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	row["id"] = id
 	row["enterprise_id"] = ent
 	row["enterprise_name"] = entName
+	row["enterprise_support_email"] = entSupportEmail
+	row["enterprise_support_phone"] = entSupportPhone
 	row["phone"] = phone
 	row["username"] = username
 	row["display_name"] = display

@@ -57,7 +57,7 @@ func (s *Server) StartRetentionLoop(ctx context.Context, every time.Duration) {
 	}()
 }
 
-// handleAdminPatchEnterprise updates retention_days (DataRetention policy knob).
+// handleAdminPatchEnterprise updates enterprise policy fields (retention, support contact).
 func (s *Server) handleAdminPatchEnterprise(w http.ResponseWriter, r *http.Request) {
 	c := s.requirePerm(w, r, permEnterpriseWrite)
 	if c == nil {
@@ -69,28 +69,77 @@ func (s *Server) handleAdminPatchEnterprise(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var req struct {
-		RetentionDays *int `json:"retention_days"`
+		RetentionDays *int    `json:"retention_days"`
+		SupportEmail  *string `json:"support_email"`
+		SupportPhone  *string `json:"support_phone"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeErr(w, 400, "invalid json")
 		return
 	}
-	if req.RetentionDays == nil {
-		writeErr(w, 400, "retention_days required")
+	if req.RetentionDays == nil && req.SupportEmail == nil && req.SupportPhone == nil {
+		writeErr(w, 400, "no fields to update")
 		return
 	}
-	days := *req.RetentionDays
-	if days < 1 || days > 3650 {
-		writeErr(w, 400, "retention_days must be 1–3650")
-		return
+
+	auditMeta := map[string]any{}
+	if req.RetentionDays != nil {
+		days := *req.RetentionDays
+		if days < 1 || days > 3650 {
+			writeErr(w, 400, "retention_days must be 1–3650")
+			return
+		}
+		_, err := s.db.Exec(r.Context(), `UPDATE enterprises SET retention_days=$2 WHERE id=$1`, entID, days)
+		if err != nil {
+			writeErr(w, 500, "update failed")
+			return
+		}
+		auditMeta["retention_days"] = days
 	}
-	_, err := s.db.Exec(r.Context(), `UPDATE enterprises SET retention_days=$2 WHERE id=$1`, entID, days)
-	if err != nil {
-		writeErr(w, 500, "update failed")
-		return
+	if req.SupportEmail != nil {
+		email, err := normalizeEnterpriseSupportEmail(*req.SupportEmail)
+		if err != nil {
+			writeErrCode(w, 400, "invalid_support_email", err.Error())
+			return
+		}
+		_, err = s.db.Exec(r.Context(), `UPDATE enterprises SET support_email=$2 WHERE id=$1`, entID, email)
+		if err != nil {
+			writeErr(w, 500, "update failed")
+			return
+		}
+		auditMeta["support_email"] = email
 	}
-	s.audit(r.Context(), c.UserID, entID, "enterprise.retention", "enterprise", entID, "", clientIP(r), map[string]any{"retention_days": days})
-	writeJSON(w, 200, map[string]any{"id": entID, "retention_days": days})
+	if req.SupportPhone != nil {
+		phone, err := normalizeEnterpriseSupportPhone(*req.SupportPhone)
+		if err != nil {
+			writeErrCode(w, 400, "invalid_support_phone", err.Error())
+			return
+		}
+		_, err = s.db.Exec(r.Context(), `UPDATE enterprises SET support_phone=$2 WHERE id=$1`, entID, phone)
+		if err != nil {
+			writeErr(w, 500, "update failed")
+			return
+		}
+		auditMeta["support_phone"] = phone
+	}
+
+	action := "enterprise.update"
+	if _, ok := auditMeta["retention_days"]; ok && len(auditMeta) == 1 {
+		action = "enterprise.retention"
+	}
+	s.audit(r.Context(), c.UserID, entID, action, "enterprise", entID, "", clientIP(r), auditMeta)
+
+	out := map[string]any{"id": entID}
+	if req.RetentionDays != nil {
+		out["retention_days"] = *req.RetentionDays
+	}
+	if req.SupportEmail != nil {
+		out["support_email"] = auditMeta["support_email"]
+	}
+	if req.SupportPhone != nil {
+		out["support_phone"] = auditMeta["support_phone"]
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) handleAdminRunRetention(w http.ResponseWriter, r *http.Request) {
