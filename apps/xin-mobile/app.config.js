@@ -49,6 +49,8 @@ module.exports = {
     package: "com.xinchat.mobile",
     versionCode: 1,
     predictiveBackGestureEnabled: false,
+    // Chat lifts the composer with keyboard height; pan avoids double-resize with that padding.
+    softwareKeyboardLayoutMode: "pan",
   },
   plugins: [
     "expo-router",

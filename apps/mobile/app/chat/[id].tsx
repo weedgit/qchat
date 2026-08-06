@@ -4,7 +4,6 @@ import {
   Alert,
   FlatList,
   Image,
-  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -39,6 +38,7 @@ import { alertSaveResult, saveChatMedia } from "../../src/lib/saveMedia";
 import type { CallKind } from "../../src/lib/useCall";
 import { getDraft, saveDraft } from "../../src/lib/drafts";
 import { isVideoAttachmentHint } from "../../src/lib/mediaLimits";
+import { useKeyboardHeight } from "../../src/lib/useKeyboardHeight";
 import { maybeAnimateStickerUrl } from "../../src/lib/stickerData";
 import { Conversation, Message, Reaction, conversationDisplayName, formatLastSeen } from "../../src/lib/types";
 import {
@@ -795,6 +795,7 @@ export default function ChatScreen() {
   const convId = String(id);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const {
@@ -1627,11 +1628,7 @@ export default function ChatScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={88}
-    >
+    <View style={[styles.root, keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null]}>
       {selecting ? (
         <View style={[styles.actionBar, { paddingTop: insets.top + 10 }]}>
           <Pressable
@@ -1967,7 +1964,7 @@ export default function ChatScreen() {
           })();
         }}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

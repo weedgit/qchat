@@ -27,6 +27,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmojiPickerSheet } from "./EmojiPickerSheet";
 import { isVideoAttachmentHint, isVideoMime, MESSAGE_MAX_CHARS, clipMessageText, messageCharCount } from "../lib/mediaLimits";
+import { useKeyboardHeight } from "../lib/useKeyboardHeight";
 import { Message } from "../lib/types";
 import { useTheme, useThemedStyles } from "../context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../theme";
@@ -106,6 +107,7 @@ export function ChatComposer({
   const styles = useThemedStyles(makeStyles);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
   const recording = Boolean(recorderState?.isRecording);
@@ -340,7 +342,16 @@ export function ChatComposer({
   }
 
   return (
-    <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+    <View
+      style={[
+        styles.wrap,
+        {
+          // Home-indicator padding only when the keyboard is closed; otherwise it
+          // leaves a gap above the keyboard and wastes vertical space.
+          paddingBottom: keyboardHeight > 0 ? spacing.sm : Math.max(insets.bottom, spacing.sm),
+        },
+      ]}
+    >
       {disabled && disabledReason ? (
         <View style={styles.muteBanner}>
           <Ionicons name="mic-off-outline" size={16} color="#fbbf24" />

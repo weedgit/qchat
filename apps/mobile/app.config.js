@@ -50,6 +50,8 @@ module.exports = {
     package: "com.qchat.mobile",
     versionCode: 1,
     predictiveBackGestureEnabled: false,
+    // Chat lifts the composer with keyboard height; pan avoids double-resize with that padding.
+    softwareKeyboardLayoutMode: "pan",
   },
   plugins: [
     "expo-router",
