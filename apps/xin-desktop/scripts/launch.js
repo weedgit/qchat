@@ -11,21 +11,19 @@ const APP_ROOT = path.resolve(__dirname, "..");
  * QCHAT_DESKTOP_NO_SANDBOX=1. Never implied for normal start / start:server.
  */
 function launchElectron(argumentsList = process.argv.slice(2), options = {}) {
-  // Electron 42+: drop linker-signed flag so the app can boot cleanly.
-  // Unpackaged Mac message toasts use the in-app window (macNotify), so a
-  // trusted "Electron Dev" identity is optional — fall back to ad-hoc.
-  if (process.platform === "darwin") {
-    const signed = signDevElectron();
-    if (!signed.ok) {
-      console.warn(
-        "[xinchat-desktop] Electron.app signing skipped:",
-        signed.reason
-      );
-    } else if (!signed.skipped) {
-      console.log(
-        `[xinchat-desktop] Electron.app signed (${signed.identity})`
-      );
-    }
+  // Electron 42+: binary is downloaded lazily; signDevElectron fetches it
+  // first, then (on macOS) replaces linker-signed with a real signature so
+  // UNNotification banners work. Trusted "Electron Dev" is optional.
+  const signed = signDevElectron();
+  if (!signed.ok) {
+    console.warn(
+      "[xinchat-desktop] Electron setup skipped:",
+      signed.reason
+    );
+  } else if (process.platform === "darwin" && !signed.skipped) {
+    console.log(
+      `[xinchat-desktop] Electron.app signed (${signed.identity})`
+    );
   }
 
   const electron = require("electron");

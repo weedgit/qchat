@@ -265,7 +265,48 @@ function needsResign(info, identity) {
   return false;
 }
 
+/**
+ * Electron 42+ no longer downloads its binary in a package postinstall
+ * (supply-chain hardening). `install.js` is now opt-in / first-run.
+ * Our postinstall signs Electron.app, so we must fetch the binary first.
+ */
+function ensureElectronDist() {
+  const installJs = path.join(ROOT, "node_modules", "electron", "install.js");
+  if (!fs.existsSync(installJs)) {
+    return {
+      ok: false,
+      reason: "electron package missing (run npm install)",
+    };
+  }
+
+  try {
+    // install.js no-ops when dist already matches path.txt + version
+    execFileSync(process.execPath, [installJs], {
+      cwd: path.join(ROOT, "node_modules", "electron"),
+      stdio: "pipe",
+      env: process.env,
+    });
+  } catch (err) {
+    const detail =
+      (err && err.stderr && String(err.stderr).trim()) ||
+      (err && err.stdout && String(err.stdout).trim()) ||
+      err?.message ||
+      err;
+    return {
+      ok: false,
+      reason: `electron binary download failed: ${detail}`,
+    };
+  }
+
+  return { ok: true };
+}
+
 function signDevElectron({ force = false, ensureCert = true } = {}) {
+  const downloaded = ensureElectronDist();
+  if (!downloaded.ok) {
+    return downloaded;
+  }
+
   if (process.platform !== "darwin") {
     return { ok: true, skipped: true, reason: "not darwin" };
   }
@@ -392,6 +433,7 @@ if (require.main === module) {
 
 module.exports = {
   signDevElectron,
+  ensureElectronDist,
   ensureElectronDevCertificate,
   ELECTRON_APP,
   needsResign,
