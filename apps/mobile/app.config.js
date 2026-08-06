@@ -137,8 +137,9 @@ module.exports = {
       ).trim(),
     },
     eas: {
-      // Run `npx eas-cli init` in apps/mobile and set EAS_PROJECT_ID or paste id here.
-      projectId: process.env.EAS_PROJECT_ID || undefined,
+      // Override with EAS_PROJECT_ID if you need a different Expo project.
+      projectId:
+        process.env.EAS_PROJECT_ID || "9ddc8dca-db6a-43cb-a360-aa3ae2955a46",
     },
   },
 };
