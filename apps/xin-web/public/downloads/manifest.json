@@ -19,9 +19,9 @@
       "os": "macos",
       "title": "macOS",
       "subtitle": "Disk image (.dmg, Apple Silicon)",
-      "file": "xinchat-desktop-0.1.0-arm64.dmg",
+      "file": "Xinchat-0.1.0.dmg",
       "sizeBytes": null,
-      "available": false
+      "available": true
     },
     {
       "id": "linux-appimage",
