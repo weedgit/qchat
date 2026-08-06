@@ -19,7 +19,7 @@
       "os": "macos",
       "title": "macOS",
       "subtitle": "Disk image (.dmg, Apple Silicon)",
-      "file": "Rchat0.1.0-arm64.dmg",
+      "file": "Rchat-0.1.0.dmg",
       "sizeBytes": 119847716,
       "available": true
     },
