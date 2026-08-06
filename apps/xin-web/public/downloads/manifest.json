@@ -9,7 +9,7 @@
       "os": "windows",
       "title": "Windows",
       "subtitle": "XinChat Desktop installer (.exe)",
-      "file": "xinchat-desktop-Setup-0.1.0.exe",
+      "file": "Xinchat-0.1.0.exe",
       "sizeBytes": 100230226,
       "available": true
     },
@@ -49,20 +49,20 @@
       "os": "android",
       "title": "Android",
       "subtitle": "XinChat APK",
-      "file": "xinchat-mobile.apk",
+      "file": "Xinchat-0.1.0.apk",
       "sizeBytes": null,
-      "available": false
+      "available": true
     },
     {
       "id": "ios",
       "group": "mobile",
       "os": "ios",
       "title": "iPhone & iPad",
-      "subtitle": "App Store",
-      "file": null,
+      "subtitle": "IPA for App Store upload",
+      "file": "Xinchat-0.1.0.ipa",
       "storeUrl": null,
-      "sizeBytes": null,
-      "available": false
+      "sizeBytes": 85000000,
+      "available": true
     }
   ]
 }

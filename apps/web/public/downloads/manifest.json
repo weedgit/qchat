@@ -9,7 +9,7 @@
       "os": "windows",
       "title": "Windows",
       "subtitle": "NSIS installer (.exe)",
-      "file": "qchat-desktop-Setup-0.1.0.exe",
+      "file": "Rchat-0.1.0.exe",
       "sizeBytes": 99974825,
       "available": true
     },
@@ -19,9 +19,9 @@
       "os": "macos",
       "title": "macOS",
       "subtitle": "Disk image (.dmg, Apple Silicon)",
-      "file": "qchat-desktop-0.1.0-arm64.dmg",
+      "file": "Rchat0.1.0-arm64.dmg",
       "sizeBytes": 119847716,
-      "available": false
+      "available": true
     },
     {
       "id": "linux-appimage",
@@ -49,20 +49,20 @@
       "os": "android",
       "title": "Android",
       "subtitle": "APK install",
-      "file": "qchat-mobile.apk",
+      "file": "Rchat-0.1.0.apk",
       "sizeBytes": 152676562,
-      "available": false
+      "available": true
     },
     {
       "id": "ios",
       "group": "mobile",
       "os": "ios",
       "title": "iPhone & iPad",
-      "subtitle": "App Store / TestFlight",
-      "file": null,
+      "subtitle": "IPA for App Store upload",
+      "file": "Rchat-0.1.0.ipa",
       "storeUrl": null,
-      "sizeBytes": null,
-      "available": false
+      "sizeBytes": 85000000,
+      "available": true
     }
   ]
 }
