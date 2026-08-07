@@ -295,10 +295,11 @@ export default function LoginPage() {
             <input
               className="captcha-input"
               value={captchaCode}
-              onChange={(e) => setCaptchaCode(e.target.value.toUpperCase())}
+              onChange={(e) => setCaptchaCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
               placeholder={t("login.captchaPlaceholder")}
               autoComplete="off"
-              autoCapitalize="characters"
+              inputMode="numeric"
+              pattern="[0-9]*"
               spellCheck={false}
               required
             />

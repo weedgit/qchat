@@ -146,10 +146,12 @@ export default function AdminLoginPage() {
           <div className="captcha-row">
             <input
               value={captchaCode}
-              onChange={(e) => setCaptchaCode(e.target.value)}
+              onChange={(e) => setCaptchaCode(e.target.value.replace(/\D/g, "").slice(0, 5))}
               required
               placeholder={t("admin.login.captchaPlaceholder")}
               autoComplete="off"
+              inputMode="numeric"
+              pattern="[0-9]*"
             />
             <div className="captcha-image-wrap" aria-label="Captcha image">
               {captcha?.image ? (

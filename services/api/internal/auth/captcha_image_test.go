@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+func TestNewCaptchaCodeDigitsOnly(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		code := NewCaptchaCode()
+		if len(code) != 5 {
+			t.Fatalf("len=%d code=%s", len(code), code)
+		}
+		for j := 0; j < len(code); j++ {
+			if code[j] < '0' || code[j] > '9' {
+				t.Fatalf("non-digit in code=%s", code)
+			}
+		}
+	}
+}
+
 func TestRenderCaptchaPNG(t *testing.T) {
 	code := NewCaptchaCode()
 	url, err := RenderCaptchaPNG(code)

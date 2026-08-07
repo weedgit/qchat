@@ -113,7 +113,7 @@ def warp(src, amp, freq):
     return dst
 
 
-def render(code="H7K3P"):
+def render(code="48291"):
     scale = 5
     pad_x, pad_y = 18, 14
     char_step = 5 * scale + 6 + random.randrange(4)
@@ -193,7 +193,7 @@ def render(code="H7K3P"):
 
 if __name__ == "__main__":
     random.seed(42)  # stable sample for review
-    code = "H7K3P"
+    code = "48291"
     img = render(code)
     out = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
     path = r"D:\Work\1-InProgress\qchat\assets\captcha-sample.png"

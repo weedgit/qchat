@@ -88,25 +88,31 @@ export default function ContactsScreen() {
 
     const out: Row[] = [];
     if (incoming.length > 0) {
-      out.push({ kind: "header", title: "Friend requests", key: "hdr-req" });
+      out.push({
+        kind: "header",
+        title: t("contacts.incomingCount", { n: incoming.length }),
+        key: "hdr-req",
+      });
       for (const f of incoming) out.push({ kind: "incoming", friend: f });
     }
     out.push({
       kind: "header",
-      title: accepted.length ? `Friends (${accepted.length})` : "Friends",
+      title: accepted.length
+        ? t("contacts.friendsCount", { n: accepted.length })
+        : t("contacts.friends"),
       key: "hdr-friends",
     });
     for (const f of accepted) out.push({ kind: "friend", friend: f });
     if (blocked.length > 0) {
       out.push({
         kind: "header",
-        title: `Blocked (${blocked.length})`,
+        title: t("contacts.blockedCount", { n: blocked.length }),
         key: "hdr-blocked",
       });
       for (const f of blocked) out.push({ kind: "blocked", friend: f });
     }
     return out;
-  }, [friends, query]);
+  }, [friends, query, t]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -118,7 +124,7 @@ export default function ContactsScreen() {
     setBusy(true);
     try {
       const q = phoneOrUser.trim();
-      if (!q) throw new Error("Enter a username or phone number");
+      if (!q) throw new Error(t("contacts.enterUserOrPhone"));
       const look = await api<any>(`/v1/users/lookup?q=${encodeURIComponent(q)}`);
       const users = asList(look, "users");
       if (users.length === 0) throw new Error(t("api.err.userNotFound"));
@@ -193,14 +199,14 @@ export default function ContactsScreen() {
       <View style={styles.toolbar}>
         <TextInput
           style={styles.search}
-          placeholder="Search friends"
+          placeholder={t("contacts.searchFriends")}
           placeholderTextColor={colors.textMuted}
           value={query}
           onChangeText={setQuery}
           autoCapitalize="none"
         />
         <Pressable style={styles.addBtn} onPress={() => setAddOpen(true)}>
-          <Text style={styles.addBtnText}>Add</Text>
+          <Text style={styles.addBtnText}>{t("contacts.addButton")}</Text>
         </Pressable>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -214,9 +220,7 @@ export default function ContactsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
           <Text style={styles.empty}>
-            {hasPeople
-              ? "No matches"
-              : "No contacts yet. Tap Add to find someone by phone or username, then message them."}
+            {hasPeople ? t("contacts.noMatches") : t("contacts.empty")}
           </Text>
         }
         renderItem={({ item }) => {
@@ -235,13 +239,15 @@ export default function ContactsScreen() {
                 <Avatar name={name} url={f.avatarUrl} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{name}</Text>
-                  <Text style={styles.sub}>@{f.username} · Friend request</Text>
+                  <Text style={styles.sub}>
+                    @{f.username} · {t("contacts.friendRequest")}
+                  </Text>
                 </View>
                 <Pressable style={styles.accept} onPress={() => accept(f)}>
-                  <Text style={styles.acceptText}>Accept</Text>
+                  <Text style={styles.acceptText}>{t("contacts.accept")}</Text>
                 </Pressable>
                 <Pressable style={styles.reject} onPress={() => reject(f)}>
-                  <Text style={styles.rejectText}>Decline</Text>
+                  <Text style={styles.rejectText}>{t("contacts.reject")}</Text>
                 </Pressable>
               </View>
             );
@@ -252,14 +258,14 @@ export default function ContactsScreen() {
                 <Avatar name={name} url={f.avatarUrl} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{name}</Text>
-                  <Text style={styles.sub}>@{f.username} · Blocked</Text>
+                  <Text style={styles.sub}>@{f.username} · {t("contacts.blocked")}</Text>
                 </View>
                 <Pressable
                   style={styles.unblock}
                   onPress={() => onUnblock(f)}
                   disabled={busy}
                 >
-                  <Text style={styles.unblockText}>Unblock</Text>
+                  <Text style={styles.unblockText}>{t("contacts.unblock")}</Text>
                 </Pressable>
               </View>
             );
@@ -274,7 +280,7 @@ export default function ContactsScreen() {
                 <Text style={styles.name}>{name}</Text>
                 <Text style={styles.sub}>@{f.username}</Text>
               </View>
-              <Text style={styles.messageHint}>Message</Text>
+              <Text style={styles.messageHint}>{t("contacts.message")}</Text>
             </Pressable>
           );
         }}
@@ -283,17 +289,19 @@ export default function ContactsScreen() {
       <Modal visible={addOpen} transparent animationType="fade">
         <Pressable style={styles.modalBg} onPress={() => setAddOpen(false)}>
           <Pressable style={styles.modalCard} onPress={() => {}}>
-            <Text style={styles.modalTitle}>Add friend</Text>
+            <Text style={styles.modalTitle}>{t("contacts.addFriend")}</Text>
             <TextInput
               style={styles.input}
-              placeholder="Phone or username"
+              placeholder={t("contacts.phoneOrUsername")}
               placeholderTextColor={colors.textMuted}
               value={phoneOrUser}
               onChangeText={setPhoneOrUser}
               autoCapitalize="none"
             />
             <Pressable style={styles.primary} onPress={requestFriend} disabled={busy}>
-              <Text style={styles.primaryText}>{busy ? "…" : "Send request"}</Text>
+              <Text style={styles.primaryText}>
+                {busy ? t("common.saving") : t("contacts.sendRequest")}
+              </Text>
             </Pressable>
           </Pressable>
         </Pressable>

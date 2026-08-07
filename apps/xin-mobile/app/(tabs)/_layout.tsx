@@ -1,15 +1,19 @@
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ActivityIndicator, Platform, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../src/context/AuthContext";
 import { useLocale } from "../../src/context/LocaleContext";
 import { useTheme } from "../../src/context/ThemeContext";
+import { tabBarLayoutInsets } from "../../src/lib/tabBarLayout";
 import { radius, spacing } from "../../src/theme";
 
 export default function TabsLayout() {
   const { ready, signedIn } = useAuth();
   const { colors } = useTheme();
   const { t } = useLocale();
+  const insets = useSafeAreaInsets();
+  const tabBar = tabBarLayoutInsets(insets);
 
   if (!ready) {
     return (
@@ -26,8 +30,6 @@ export default function TabsLayout() {
     );
   }
   if (!signedIn) return <Redirect href="/login" />;
-
-  const tabBarHeight = Platform.OS === "ios" ? 64 : 60;
 
   return (
     <Tabs
@@ -47,9 +49,9 @@ export default function TabsLayout() {
           backgroundColor: colors.surface,
           borderTopWidth: 3,
           borderTopColor: colors.accent,
-          height: tabBarHeight,
-          paddingTop: spacing.sm,
-          paddingBottom: Platform.OS === "ios" ? spacing.md : spacing.sm,
+          height: tabBar.height,
+          paddingTop: tabBar.paddingTop,
+          paddingBottom: tabBar.bottomPad,
           ...Platform.select({
             ios: {
               shadowColor: "#064e3b",

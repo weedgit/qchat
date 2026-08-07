@@ -23,7 +23,7 @@ import {
 import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { radius, spacing, type ColorTokens } from "../../src/theme";
 import { useLocale } from "../../src/context/LocaleContext";
-import { intlLocale, type ResolvedLocale } from "@qchat/i18n";
+import { intlLocale, type MessageKey, type ResolvedLocale } from "@qchat/i18n";
 
 type SearchHit = {
   id: string;
@@ -55,12 +55,15 @@ function formatTime(iso: string | undefined, locale: ResolvedLocale): string {
 }
 
 /** Mirror web ConversationRow last-message preview. */
-function previewText(c: Conversation): string {
-  if (c.lastMessageRecalled) return "Message deleted";
-  if (!c.lastMessage) return "No messages yet";
+function previewText(
+  c: Conversation,
+  t: (key: string, vars?: Record<string, string | number>) => string
+): string {
+  if (c.lastMessageRecalled) return t("chat.messageRecalled");
+  if (!c.lastMessage) return t("chat.noMessagesYet");
   const showSender = c.lastMessageMine || c.type !== "dm";
   if (showSender && c.lastMessageSender) {
-    const who = c.lastMessageMine ? "You" : c.lastMessageSender;
+    const who = c.lastMessageMine ? t("chat.you") : c.lastMessageSender;
     return `${who}: ${c.lastMessage}`;
   }
   return c.lastMessage;
@@ -70,7 +73,7 @@ export default function ChatsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { resolved } = useLocale();
+  const { resolved, t } = useLocale();
   const styles = useThemedStyles(makeStyles);
   const {
     conversations,
@@ -183,7 +186,7 @@ export default function ChatsScreen() {
                   marginRight: 12,
                 }}
               >
-                Reconnecting…
+                {t("common.reconnecting")}
               </Text>
             ),
     });
@@ -238,14 +241,14 @@ export default function ChatsScreen() {
   const applyClearHistory = useCallback(() => {
     const n = selectedIds.length;
     Alert.alert(
-      "Clear history",
+      t("chats.clearHistoryTitle"),
       n === 1
-        ? "Delete all messages in this conversation? The chat stays in your list."
-        : `Clear message history in ${n} conversations?`,
+        ? t("chats.clearHistoryBody")
+        : t("chats.clearHistoryMulti", { n }),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Clear",
+          text: t("common.clear"),
           style: "destructive",
           onPress: async () => {
             await Promise.all(selectedIds.map((id) => clearHistory(id).catch(() => {})));
@@ -254,19 +257,17 @@ export default function ChatsScreen() {
         },
       ]
     );
-  }, [selectedIds, clearHistory, clearSelection]);
+  }, [selectedIds, clearHistory, clearSelection, t]);
 
   const applyDelete = useCallback(() => {
     const n = selectedIds.length;
     Alert.alert(
-      "Delete conversation",
-      n === 1
-        ? "Remove this conversation from your list?"
-        : `Remove ${n} conversations from your list?`,
+      t("chats.deleteChatTitle"),
+      n === 1 ? t("chats.deleteChatBody") : t("chats.deleteChatMulti", { n }),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: t("common.delete"),
           style: "destructive",
           onPress: async () => {
             await Promise.all(
@@ -277,7 +278,7 @@ export default function ChatsScreen() {
         },
       ]
     );
-  }, [selectedIds, deleteConversation, clearSelection]);
+  }, [selectedIds, deleteConversation, clearSelection, t]);
 
   const anyUnread = selectedConvs.some((c) => c.unreadCount > 0);
 
@@ -366,7 +367,7 @@ export default function ChatsScreen() {
             <Ionicons name="search" size={16} color={colors.textMuted} />
             <TextInput
               style={styles.search}
-              placeholder={connected ? "Search" : "Reconnecting…"}
+              placeholder={connected ? t("common.search") : t("common.reconnecting")}
               placeholderTextColor={colors.textMuted}
               value={query}
               onChangeText={setQuery}
@@ -387,7 +388,7 @@ export default function ChatsScreen() {
             <Ionicons name="qr-code-outline" size={20} color={colors.accent} />
           </Pressable>
           <Pressable style={styles.newChat} onPress={() => router.push("/(tabs)/contacts")}>
-            <Text style={styles.newChatText}>New</Text>
+            <Text style={styles.newChatText}>{t("chats.newChat")}</Text>
           </Pressable>
         </View>
       )}
@@ -397,11 +398,11 @@ export default function ChatsScreen() {
         <View style={styles.searchResults}>
           <Text style={styles.searchSection}>
             {searchBusy
-              ? "Searching people…"
-              : `People (${searchUsers.length})`}
+              ? t("chats.searchingPeople")
+              : t("chats.peopleCount", { n: searchUsers.length })}
           </Text>
           {searchUsers.length === 0 && !searchBusy ? (
-            <Text style={styles.searchEmpty}>No people matches</Text>
+            <Text style={styles.searchEmpty}>{t("chats.noPeopleMatches")}</Text>
           ) : (
             searchUsers.slice(0, 12).map((u) => (
               <Pressable
@@ -424,10 +425,12 @@ export default function ChatsScreen() {
             ))
           )}
           <Text style={[styles.searchSection, { marginTop: spacing.sm }]}>
-            {searchBusy ? "Searching messages…" : `Messages (${searchHits.length})`}
+            {searchBusy
+              ? t("chats.searchingMessages")
+              : t("chats.messagesCount", { n: searchHits.length })}
           </Text>
           {searchHits.length === 0 && !searchBusy ? (
-            <Text style={styles.searchEmpty}>No message matches</Text>
+            <Text style={styles.searchEmpty}>{t("chats.noMessageMatches")}</Text>
           ) : (
             searchHits.slice(0, 20).map((hit) => {
               const conv = conversations.find((c) => c.id === hit.conversationId);
@@ -473,7 +476,7 @@ export default function ChatsScreen() {
           <Text style={styles.empty}>
             {query.trim()
               ? "No matching conversations"
-              : "No conversations yet. Tap New for a DM, or the people icon to create a group."}
+              : t("chats.emptyChats")}
           </Text>
         }
         renderItem={({ item }) => {
@@ -542,7 +545,7 @@ export default function ChatsScreen() {
                     ]}
                     numberOfLines={1}
                   >
-                    {previewText(item)}
+                    {previewText(item, t)}
                   </Text>
                   {!selecting && item.unreadCount > 0 ? (
                     <View

@@ -91,7 +91,7 @@ func NewNumericCode(digits int) (string, error) {
 }
 
 func NewCaptchaCode() string {
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	const alphabet = "0123456789"
 	b := make([]byte, 5)
 	_, _ = rand.Read(b)
 	out := make([]byte, 5)

@@ -23,6 +23,7 @@ import { useTheme, useThemedStyles } from "../../src/context/ThemeContext";
 import { api, uploadMedia } from "../../src/lib/api";
 import { displayNameError, isValidUsername } from "../../src/lib/credentials";
 import type { PresenceStatus } from "../../src/lib/types";
+import type { MessageKey } from "@qchat/i18n";
 import { radius, spacing, type ColorTokens } from "../../src/theme";
 
 type Profile = {
@@ -41,11 +42,11 @@ type Profile = {
   enterprise_name: string;
 };
 
-const STATUS_OPTIONS: { value: PresenceStatus; label: string }[] = [
-  { value: "online", label: "Online" },
-  { value: "away", label: "Away" },
-  { value: "dnd", label: "Do not disturb" },
-  { value: "offline", label: "Appear offline" },
+const STATUS_OPTIONS: { value: PresenceStatus; labelKey: MessageKey }[] = [
+  { value: "online", labelKey: "status.online" },
+  { value: "away", labelKey: "status.away" },
+  { value: "dnd", labelKey: "status.dnd" },
+  { value: "offline", labelKey: "status.appearOffline" },
 ];
 
 function mapProfile(u: any): Profile {
@@ -136,7 +137,7 @@ export default function MeScreen() {
     if (!me || saving) return;
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("Permission needed", "Allow photo library access to change your avatar.");
+      Alert.alert(t("me.permissionPhotos"), t("me.permissionPhotosBody"));
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -161,7 +162,7 @@ export default function MeScreen() {
       await refreshMe();
       setSaved(true);
     } catch (e: any) {
-      setError(e?.message || "Avatar upload failed");
+      setError(e?.message || t("me.avatarUploadFailed"));
     } finally {
       setSaving(false);
     }
@@ -212,70 +213,72 @@ export default function MeScreen() {
 
   function pickVisibility() {
     if (!me) return;
-    Alert.alert("Profile visibility", undefined, [
+    Alert.alert(t("me.profileVisibilityTitle"), undefined, [
       {
-        text: "Public",
+        text: t("me.visibilityPublic"),
         onPress: () => setMe({ ...me, profile_visibility: "public" }),
       },
       {
-        text: "Friends only",
+        text: t("me.visibilityFriends"),
         onPress: () => setMe({ ...me, profile_visibility: "friends" }),
       },
-      { text: "Cancel", style: "cancel" },
+      { text: t("common.cancel"), style: "cancel" },
     ]);
   }
 
   function pickFriendPrivacy() {
     if (!me) return;
-    Alert.alert("Friend requests", undefined, [
+    Alert.alert(t("me.friendRequestsTitle"), undefined, [
       {
-        text: "Anyone can add me",
+        text: t("me.friendOpen"),
         onPress: () => setMe({ ...me, friend_privacy: "open" }),
       },
       {
-        text: "Need my approval",
+        text: t("me.friendApproval"),
         onPress: () => setMe({ ...me, friend_privacy: "approval" }),
       },
       {
-        text: "Nobody can add me",
+        text: t("me.friendClosed"),
         onPress: () => setMe({ ...me, friend_privacy: "closed" }),
       },
-      { text: "Cancel", style: "cancel" },
+      { text: t("common.cancel"), style: "cancel" },
     ]);
   }
 
   function pickStatus() {
     Alert.alert(
-      "Status",
+      t("me.statusTitle"),
       undefined,
       [
         ...STATUS_OPTIONS.map((opt) => ({
-          text: opt.label,
+          text: t(opt.labelKey),
           onPress: () => {
             setMyStatus(opt.value).catch((e: any) =>
-              Alert.alert("Error", e?.message || "Could not update status")
+              Alert.alert(t("common.error"), e?.message || t("common.error"))
             );
           },
         })),
-        { text: "Cancel", style: "cancel" as const },
+        { text: t("common.cancel"), style: "cancel" as const },
       ]
     );
   }
 
   const visibilityLabel =
-    me?.profile_visibility === "public" ? "Public" : "Friends only";
+    me?.profile_visibility === "public" ? t("me.visibilityPublic") : t("me.visibilityFriends");
   const friendLabel =
     me?.friend_privacy === "open"
-      ? "Anyone can add me"
+      ? t("me.friendOpen")
       : me?.friend_privacy === "closed"
-        ? "Nobody can add me"
-        : "Need my approval";
+        ? t("me.friendClosed")
+        : t("me.friendApproval");
   const statusLabel =
-    STATUS_OPTIONS.find((o) => o.value === (user?.status || "online"))?.label || "Online";
+    STATUS_OPTIONS.find((o) => o.value === (user?.status || "online"))
+      ? t(STATUS_OPTIONS.find((o) => o.value === (user?.status || "online"))!.labelKey)
+      : t("status.online");
   const enterpriseLabel = me?.enterprise_id
     ? me.enterprise_name
-      ? `Enterprise · ${me.enterprise_name}`
-      : "Enterprise"
+      ? t("me.enterpriseNamed", { name: me.enterprise_name })
+      : t("me.enterprise")
     : null;
 
   return (
@@ -308,7 +311,7 @@ export default function MeScreen() {
 
       <View style={styles.card}>
         <SelectRow
-          label="Status"
+          label={t("status.label")}
           value={statusLabel}
           onPress={pickStatus}
           styles={styles}
@@ -320,38 +323,38 @@ export default function MeScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{t("me.editProfile")}</Text>
           <Field
-            label="Username"
+            label={t("me.username")}
             value={me.username}
             onChangeText={(text) => setMe({ ...me, username: text })}
-            hint={usernameTaken ? "Username is taken" : undefined}
+            hint={usernameTaken ? t("me.usernameTaken") : undefined}
             styles={styles}
             colors={colors}
           />
-          {usernameTaken ? <Text style={styles.fieldError}>Username is taken</Text> : null}
+          {usernameTaken ? <Text style={styles.fieldError}>{t("me.usernameTaken")}</Text> : null}
           <Field
-            label="Phone (login ID)"
+            label={t("me.phone")}
             value={me.phone}
             editable={false}
-            hint="Change in Settings"
+            hint={t("me.changeInSettings")}
             styles={styles}
             colors={colors}
           />
           <Field
-            label="Display name"
+            label={t("me.displayName")}
             value={me.display_name}
             onChangeText={(text) => setMe({ ...me, display_name: text })}
             styles={styles}
             colors={colors}
           />
           <Field
-            label="Real name"
+            label={t("me.realName")}
             value={me.real_name}
             onChangeText={(text) => setMe({ ...me, real_name: text })}
             styles={styles}
             colors={colors}
           />
           <Field
-            label="Age"
+            label={t("me.age")}
             value={me.age == null ? "" : String(me.age)}
             keyboardType="number-pad"
             onChangeText={(text) =>
@@ -361,21 +364,33 @@ export default function MeScreen() {
             colors={colors}
           />
           <Field
-            label="Region"
+            label={t("me.region")}
             value={me.region}
             onChangeText={(text) => setMe({ ...me, region: text })}
             styles={styles}
             colors={colors}
           />
           <Field
-            label="Role"
+            label={t("me.signature")}
             value={me.signature}
             onChangeText={(text) => setMe({ ...me, signature: text })}
             styles={styles}
             colors={colors}
           />
-          <SelectRow label="Profile visibility" value={visibilityLabel} onPress={pickVisibility} styles={styles} colors={colors} />
-          <SelectRow label="Friend requests" value={friendLabel} onPress={pickFriendPrivacy} styles={styles} colors={colors} />
+          <SelectRow
+            label={t("me.profileVisibility")}
+            value={visibilityLabel}
+            onPress={pickVisibility}
+            styles={styles}
+            colors={colors}
+          />
+          <SelectRow
+            label={t("me.friendRequests")}
+            value={friendLabel}
+            onPress={pickFriendPrivacy}
+            styles={styles}
+            colors={colors}
+          />
           <Pressable
             style={[styles.primaryBtn, usernameTaken && styles.btnDisabled]}
             onPress={onSaveProfile}
@@ -397,8 +412,8 @@ export default function MeScreen() {
 
       {me?.username ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>My QR code</Text>
-          <Text style={styles.cardHint}>Others can scan this to find your profile.</Text>
+          <Text style={styles.cardTitle}>{t("me.myQr")}</Text>
+          <Text style={styles.cardHint}>{t("me.qrHint")}</Text>
           <UserQr username={me.username} size={180} />
         </View>
       ) : null}

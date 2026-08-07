@@ -29,7 +29,7 @@ func (s *Server) handleCaptcha(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"captcha_id": id.String(),
 		"image":      imageURL, // data:image/png;base64,… — answer never returned in prod
-		"hint":       "Enter the characters shown (case-insensitive)",
+		"hint":       "Enter the 5 digits shown",
 	}
 	// Non-production only: let automated tests / local tooling solve captcha.
 	if s.cfg.Env != "production" {

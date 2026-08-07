@@ -1,6 +1,7 @@
 import { registerGlobals } from "@livekit/react-native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "../src/context/AuthContext";
 import { CallProvider } from "../src/context/CallContext";
 import { ChatProvider } from "../src/context/ChatContext";
@@ -39,16 +40,18 @@ function RootNavigator() {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <LocaleProvider>
-        <AuthProvider>
-          <ChatProvider>
-            <CallProvider>
-              <RootNavigator />
-            </CallProvider>
-          </ChatProvider>
-        </AuthProvider>
-      </LocaleProvider>
-    </ThemeProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <LocaleProvider>
+          <AuthProvider>
+            <ChatProvider>
+              <CallProvider>
+                <RootNavigator />
+              </CallProvider>
+            </ChatProvider>
+          </AuthProvider>
+        </LocaleProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }

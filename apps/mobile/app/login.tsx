@@ -203,12 +203,13 @@ export default function LoginScreen() {
             <TextInput
               style={[styles.input, { flex: 1 }]}
               value={captchaCode}
-              onChangeText={(t) => setCaptchaCode(t.toUpperCase())}
-              autoCapitalize="characters"
+              onChangeText={(text) => setCaptchaCode(text.replace(/\D/g, "").slice(0, 5))}
+              keyboardType="number-pad"
+              autoCapitalize="none"
               autoCorrect={false}
               spellCheck={false}
               textContentType="oneTimeCode"
-              placeholder="CODE"
+              placeholder={t("login.captchaPlaceholder")}
               placeholderTextColor={colors.textMuted}
               returnKeyType="go"
               blurOnSubmit
