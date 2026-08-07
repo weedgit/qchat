@@ -7,14 +7,17 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Avatar } from "./Avatar";
+import { useLocale } from "../context/LocaleContext";
 import { useTheme, useThemedStyles } from "../context/ThemeContext";
 import { api } from "../lib/api";
 import { spacing, type ColorTokens } from "../theme";
@@ -69,6 +72,7 @@ export function GroupCallInviteSheet({
   onConfirm,
   onCancel,
 }: GroupCallInviteSheetProps) {
+  const { t } = useLocale();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const exclude = useMemo(() => new Set(excludeIds ?? []), [excludeIds]);
@@ -106,49 +110,58 @@ export function GroupCallInviteSheet({
     });
   }
 
+  const confirmText =
+    selected.size > 0 ? `${confirmLabel} (${selected.size})` : confirmLabel;
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
-      presentationStyle="pageSheet"
+      presentationStyle={Platform.OS === "android" ? "fullScreen" : "pageSheet"}
+      statusBarTranslucent={false}
       onRequestClose={() => {
         if (!busy) onCancel();
       }}
     >
-      <View style={styles.root}>
+      <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
         <View style={styles.header}>
-          <Pressable
-            onPress={() => {
-              if (!busy) onCancel();
-            }}
-            hitSlop={8}
-            disabled={busy}
-          >
-            <Text style={[styles.link, busy && styles.disabled]}>Cancel</Text>
-          </Pressable>
-          <Text style={styles.title} numberOfLines={1}>
-            {title}
-          </Text>
-          <Pressable
-            onPress={() => onConfirm(Array.from(selected))}
-            hitSlop={8}
-            disabled={busy || selected.size === 0}
-          >
-            <Text
-              style={[
-                styles.link,
-                (busy || selected.size === 0) && styles.disabled,
-              ]}
+          <View style={styles.headerRow}>
+            <Pressable
+              style={styles.headerSide}
+              onPress={() => {
+                if (!busy) onCancel();
+              }}
+              hitSlop={8}
+              disabled={busy}
             >
-              {confirmLabel}
-              {selected.size > 0 ? ` (${selected.size})` : ""}
-            </Text>
-          </Pressable>
+              <Text style={[styles.link, busy && styles.disabled]}>
+                {t("common.cancel")}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.headerSide, styles.headerSideEnd]}
+              onPress={() => onConfirm(Array.from(selected))}
+              hitSlop={8}
+              disabled={busy || selected.size === 0}
+            >
+              <Text
+                style={[
+                  styles.link,
+                  styles.linkEnd,
+                  (busy || selected.size === 0) && styles.disabled,
+                ]}
+                numberOfLines={1}
+              >
+                {confirmText}
+              </Text>
+            </Pressable>
+          </View>
+          <Text style={styles.title} numberOfLines={2}>{title}</Text>
         </View>
 
         <TextInput
           style={styles.search}
-          placeholder="Search members"
+          placeholder={t("call.searchMembers")}
           placeholderTextColor={colors.textMuted}
           value={query}
           onChangeText={setQuery}
@@ -167,7 +180,7 @@ export function GroupCallInviteSheet({
             keyExtractor={(m) => m.userId}
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
-              <Text style={styles.empty}>No members available to invite.</Text>
+              <Text style={styles.empty}>{t("call.noInviteMembers")}</Text>
             }
             renderItem={({ item: m }) => {
               const on = selected.has(m.userId);
@@ -198,7 +211,7 @@ export function GroupCallInviteSheet({
             }}
           />
         )}
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }
@@ -210,28 +223,43 @@ function makeStyles(c: ColorTokens) {
       backgroundColor: c.bg,
     },
     header: {
-      flexDirection: "row" as const,
-      alignItems: "center" as const,
-      justifyContent: "space-between" as const,
       paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.md,
       borderBottomWidth: 1,
       borderBottomColor: c.border,
       backgroundColor: c.surface,
-      gap: spacing.sm,
+    },
+    headerRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "space-between" as const,
+      minHeight: 40,
+      gap: spacing.md,
+    },
+    headerSide: {
+      minWidth: 72,
+      maxWidth: 140,
+      flexShrink: 0,
+    },
+    headerSideEnd: {
+      alignItems: "flex-end" as const,
     },
     title: {
-      flex: 1,
       textAlign: "center" as const,
       color: c.text,
-      fontSize: 16,
-      fontWeight: "600" as const,
+      fontSize: 17,
+      fontWeight: "700" as const,
+      marginTop: spacing.xs,
+      paddingHorizontal: spacing.sm,
     },
     link: {
       color: c.accent,
       fontSize: 16,
       fontWeight: "600" as const,
-      minWidth: 64,
+    },
+    linkEnd: {
+      textAlign: "right" as const,
     },
     disabled: {
       opacity: 0.4,

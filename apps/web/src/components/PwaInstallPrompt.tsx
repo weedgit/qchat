@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/locale";
 
 type BeforeInstallPromptEvent = Event & {
@@ -29,13 +29,15 @@ function isElectronShell(): boolean {
 }
 
 const DISMISS_KEY = "qchat.pwaInstallDismissed";
+const RESHOW_EVENT = "qchat:pwa-install-reshow";
 
 /**
- * Chromium beforeinstallprompt chip + iOS Add-to-Home-Screen hint.
- * Hidden in Electron and when already installed as a PWA.
+ * PWA install UI — shown only when the user opens it from Settings (not on first visit).
+ * Still captures beforeinstallprompt so Settings → Install can trigger the browser dialog.
  */
 export default function PwaInstallPrompt() {
   const { t } = useLocale();
+  const deferredRef = useRef<BeforeInstallPromptEvent | null>(null);
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIos, setShowIos] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -43,42 +45,38 @@ export default function PwaInstallPrompt() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (isElectronShell() || isStandalone()) return;
-    try {
-      if (localStorage.getItem(DISMISS_KEY) === "1") return;
-    } catch {
-      /* ignore */
-    }
 
     const onBip = (e: Event) => {
       e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
-      setVisible(true);
+      const ev = e as BeforeInstallPromptEvent;
+      deferredRef.current = ev;
+      setDeferred(ev);
     };
     window.addEventListener("beforeinstallprompt", onBip);
 
     const onReshow = () => {
       if (isElectronShell() || isStandalone()) return;
+      if (deferredRef.current) {
+        setDeferred(deferredRef.current);
+        setShowIos(false);
+        setVisible(true);
+        return;
+      }
       if (isIosSafari()) {
         setShowIos(true);
         setVisible(true);
       }
     };
-    window.addEventListener("qchat:pwa-install-reshow", onReshow);
-
-    if (isIosSafari()) {
-      setShowIos(true);
-      setVisible(true);
-    }
+    window.addEventListener(RESHOW_EVENT, onReshow);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", onBip);
-      window.removeEventListener("qchat:pwa-install-reshow", onReshow);
+      window.removeEventListener(RESHOW_EVENT, onReshow);
     };
   }, []);
 
   const dismiss = useCallback(() => {
     setVisible(false);
-    setDeferred(null);
     setShowIos(false);
     try {
       localStorage.setItem(DISMISS_KEY, "1");
@@ -88,13 +86,15 @@ export default function PwaInstallPrompt() {
   }, []);
 
   const install = useCallback(async () => {
-    if (!deferred) return;
-    await deferred.prompt();
+    const ev = deferredRef.current ?? deferred;
+    if (!ev) return;
+    await ev.prompt();
     try {
-      await deferred.userChoice;
+      await ev.userChoice;
     } catch {
       /* ignore */
     }
+    deferredRef.current = null;
     setDeferred(null);
     setVisible(false);
   }, [deferred]);

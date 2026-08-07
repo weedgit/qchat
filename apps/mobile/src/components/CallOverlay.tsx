@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTrackVolume, VideoTrack } from "@livekit/react-native";
 import type { TrackReference } from "@livekit/components-react";
 import type { LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   GroupCallInviteSheet,
   loadGroupCallInviteMembers,
@@ -22,6 +23,7 @@ import { useAuth } from "../context/AuthContext";
 import { qualityLabel } from "../lib/callQuality";
 import type { useCall } from "../lib/useCall";
 import { useThemedStyles } from "../context/ThemeContext";
+import { useLocale } from "../context/LocaleContext";
 import { radius, spacing, type ColorTokens } from "../theme";
 
 type CallApi = ReturnType<typeof useCall>;
@@ -126,6 +128,8 @@ function ControlBtn({
 /** Incoming ring + in-call panel (Calls UI placement). */
 export function CallOverlay({ call }: { call: CallApi }) {
   const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+  const { t } = useLocale();
   const { user } = useAuth();
   const {
     incoming,
@@ -290,7 +294,10 @@ export function CallOverlay({ call }: { call: CallApi }) {
           </View>
         )}
 
-        <View style={styles.topMeta} pointerEvents="box-none">
+        <View
+          style={[styles.topMeta, { paddingTop: insets.top + spacing.md }]}
+          pointerEvents="box-none"
+        >
           {incoming ? (
             <>
               <Text style={styles.title}>
@@ -461,7 +468,13 @@ export function CallOverlay({ call }: { call: CallApi }) {
           </Pressable>
         ) : null}
 
-        <View style={[styles.actions, crowdedControls ? styles.actionsCrowded : null]}>
+        <View
+          style={[
+            styles.actions,
+            crowdedControls ? styles.actionsCrowded : null,
+            { paddingBottom: Math.max(insets.bottom, spacing.xxl) },
+          ]}
+        >
           {incoming ? (
             <>
               <ControlBtn label="Decline" danger onPress={() => declineCall().catch(() => {})}>
@@ -537,8 +550,8 @@ export function CallOverlay({ call }: { call: CallApi }) {
 
       <GroupCallInviteSheet
         visible={inviteOpen}
-        title="Invite to call"
-        confirmLabel="Invite"
+        title={t("call.inviteToCall")}
+        confirmLabel={t("call.invite")}
         members={inviteMembers}
         loading={inviteLoading}
         busy={inviteBusy}
@@ -612,7 +625,6 @@ function makeStyles(c: ColorTokens) {
     fontWeight: "600" as const,
   },
   topMeta: {
-    paddingTop: 72,
     paddingHorizontal: spacing.xl,
     alignItems: "center" as const,
   },
@@ -793,7 +805,6 @@ function makeStyles(c: ColorTokens) {
     alignContent: "center" as const,
     gap: 20,
     width: "100%" as const,
-    paddingBottom: 56,
     paddingHorizontal: spacing.lg,
   },
   /** Group video: 5 controls — shrink so they fit one phone width. */

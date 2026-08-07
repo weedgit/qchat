@@ -30,6 +30,7 @@ import {
 import { MessageBody } from "../../src/components/MessageBody";
 import { MessageActionPopup } from "../../src/components/MessageActionPopup";
 import { VoiceNotePlayer } from "../../src/components/VoiceNotePlayer";
+import { useLocale } from "../../src/context/LocaleContext";
 import { useAuth } from "../../src/context/AuthContext";
 import { useChat } from "../../src/context/ChatContext";
 import { useCallApi } from "../../src/context/CallContext";
@@ -795,6 +796,7 @@ export default function ChatScreen() {
   const convId = String(id);
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { t } = useLocale();
   const keyboardHeight = useKeyboardHeight();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -1938,8 +1940,10 @@ export default function ChatScreen() {
 
       <GroupCallInviteSheet
         visible={Boolean(groupCallInvite) && isGroup}
-        title={groupCallInvite === "video" ? "Start video call" : "Start voice call"}
-        confirmLabel="Start"
+        title={
+          groupCallInvite === "video" ? t("call.startVideo") : t("call.startVoice")
+        }
+        confirmLabel={t("call.start")}
         members={groupCallInviteMembers}
         loading={groupCallInviteLoading}
         busy={groupCallInviteBusy}
