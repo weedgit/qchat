@@ -7,6 +7,7 @@ import { ApiError, api, setToken } from "@/lib/api";
 import { validateLoginCredentials } from "@/lib/credentials";
 import { formatAdminError } from "@/lib/errors";
 import LanguageSelect from "@/components/LanguageSelect";
+import ThemeSelect from "@/components/ThemeSelect";
 import { useLocale } from "@/lib/locale";
 import { useToast } from "@/components/Toast";
 
@@ -107,6 +108,9 @@ export default function AdminLoginPage() {
 
         <div className="field" style={{ marginBottom: 12 }}>
           <LanguageSelect id="login-lang" />
+        </div>
+        <div className="field" style={{ marginBottom: 12 }}>
+          <ThemeSelect />
         </div>
 
         <div className="field">

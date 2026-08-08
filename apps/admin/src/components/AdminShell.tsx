@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, clearToken, getToken } from "@/lib/api";
 import LanguageSelect from "@/components/LanguageSelect";
+import ThemeSelect from "@/components/ThemeSelect";
+import { AdminNavIcon, NAV_ICON_BY_HREF } from "@/components/AdminNavIcon";
 import { translateRole } from "@/lib/labels";
 import { useLocale } from "@/lib/locale";
 import { can, isConsoleRole } from "@/lib/rbac";
@@ -24,6 +26,22 @@ const NAV: { href: string; labelKey: MessageKey; cap: Parameters<typeof can>[1] 
 function profileInitial(name: string, username: string): string {
   const src = (name || username || "?").trim();
   return src.charAt(0).toUpperCase();
+}
+
+function pageTitleForPath(
+  pathname: string,
+  navItems: typeof NAV,
+  t: (key: MessageKey) => string
+): string {
+  if (pathname === "/profile" || pathname.startsWith("/profile/")) {
+    return t("admin.nav.profile");
+  }
+  const item = navItems.find((n) =>
+    n.href === "/"
+      ? pathname === "/" || pathname === ""
+      : pathname === n.href || pathname.startsWith(`${n.href}/`)
+  );
+  return item ? t(item.labelKey) : t("admin.brand");
 }
 
 export default function AdminShell({
@@ -66,6 +84,7 @@ export default function AdminShell({
   const navItems = ready ? NAV.filter((item) => can(role, item.cap)) : NAV;
   const roleLabel = role ? translateRole(t, role) : "";
   const profileActive = pathname === "/profile" || pathname.startsWith("/profile/");
+  const pageTitle = pageTitleForPath(pathname, navItems, t);
 
   return (
     <div className="admin-shell">
@@ -74,13 +93,13 @@ export default function AdminShell({
           <span className="logo">R</span>
           <span className="admin-brand-text">{t("admin.brand")}</span>
         </div>
-        <div className="admin-nav-label">{t("admin.menu")}</div>
         <nav className="admin-nav">
           {navItems.map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/" || pathname === ""
                 : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const icon = NAV_ICON_BY_HREF[item.href] ?? "overview";
             return (
               <Link
                 key={item.href}
@@ -90,14 +109,18 @@ export default function AdminShell({
                 }`}
                 aria-current={active ? "page" : undefined}
               >
+                <span className="admin-nav-icon" aria-hidden>
+                  <AdminNavIcon name={icon} />
+                </span>
                 <span className="admin-nav-item-label">{t(item.labelKey)}</span>
               </Link>
             );
           })}
         </nav>
         <div className="spacer" />
-        <div className="admin-locale">
-          <LanguageSelect />
+        <div className="admin-sidebar-tools">
+          <ThemeSelect />
+          <LanguageSelect className="admin-locale" />
         </div>
         {role ? (
           <Link
@@ -120,16 +143,24 @@ export default function AdminShell({
         )}
         <button
           type="button"
-          className="admin-nav-item"
+          className="admin-nav-item admin-logout"
           onClick={() => {
             clearToken();
             router.replace("/login");
           }}
         >
+          <span className="admin-nav-icon" aria-hidden>
+            <AdminNavIcon name="security" />
+          </span>
           <span className="admin-nav-item-label">{t("admin.logOut")}</span>
         </button>
       </aside>
-      <main className="admin-main">{children}</main>
+      <div className="admin-content">
+        <header className="admin-topbar">
+          <h1 className="admin-page-title">{pageTitle}</h1>
+        </header>
+        <main className="admin-main">{children}</main>
+      </div>
     </div>
   );
 }

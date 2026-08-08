@@ -111,19 +111,19 @@ export default function OverviewPage() {
       ) : null}
 
       <div className="stat-grid">
-        <div className="stat-card">
+        <div className="stat-card stat-card-tone-red">
           <div className="v">{counts.users ?? "—"}</div>
           <div className="k">{t("admin.overview.stat.users")}</div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card stat-card-tone-green">
           <div className="v">{counts.groups ?? "—"}</div>
           <div className="k">{t("admin.overview.stat.groups")}</div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card stat-card-tone-orange">
           <div className="v">{counts.enterprises ?? "—"}</div>
           <div className="k">{t("admin.overview.stat.enterprises")}</div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card stat-card-tone-purple">
           <div className="v">{counts.audits ?? "—"}</div>
           <div className="k">{t("admin.overview.stat.audits")}</div>
         </div>

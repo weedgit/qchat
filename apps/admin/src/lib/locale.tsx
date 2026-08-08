@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  DEFAULT_LOCALE,
   localeModeLabel,
   resolveLocale,
   translate,
@@ -32,11 +31,11 @@ type LocaleContextValue = {
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 function getStoredLocale(): LocaleMode {
-  if (typeof window === "undefined") return DEFAULT_LOCALE;
+  if (typeof window === "undefined") return "zh";
   const raw = localStorage.getItem(ADMIN_LOCALE_KEY);
   if (raw === "en" || raw === "zh") return raw;
   // First visit: Chinese default (admin does not inherit web qchat.locale).
-  return DEFAULT_LOCALE;
+  return "zh";
 }
 
 function seedDefaultLocale(): LocaleMode {
@@ -53,7 +52,7 @@ function applyDocumentLang(resolved: ResolvedLocale) {
 }
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<LocaleMode>(DEFAULT_LOCALE);
+  const [locale, setLocaleState] = useState<LocaleMode>("zh");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
